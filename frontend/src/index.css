@@ -1,0 +1,67 @@
+@import "./styles/theme.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全域過渡效果 */
+*, *::before, *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 背景圖 + 單層遮罩（亮/暗） */
+body { background: var(--bg); color: var(--foreground); min-height:100dvh; }
+
+/* 背景：依主題覆寫（可換成對應圖檔） */
+:root[data-theme='default'] body {background-image:
+  radial-gradient(circle at 40% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 60%),
+  linear-gradient(to bottom,rgba(250,248,243,0.42),rgba(248,245,238,0.34)),
+  url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+/* 海霧 (ocean) 輕藍層 */
+:root[data-theme='ocean'] body {background-image:linear-gradient(to bottom,rgba(220,238,248,0.68),rgba(205,230,242,0.68)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+/* 森雨 (forest) 淺綠層 */
+:root[data-theme='forest'] body {background-image:linear-gradient(to bottom,rgba(224,238,226,0.70),rgba(210,231,214,0.70)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+/* 暗暮/霧朦 (mist) 中性灰層 */
+:root[data-theme='mist'] body {background-image:linear-gradient(to bottom,rgba(238,240,242,0.66),rgba(226,229,232,0.66)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+:root[data-theme='dark'] body {background-image:linear-gradient(to bottom,rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url(/images/bg-dark.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+
+/* 初始淡入避免 FOUC */
+html { opacity:0; transition:opacity .4s ease; }
+html.theme-ready { opacity:1; }
+
+/* 自訂滾動條 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* 按鈕/文字雙格式：亮色 -> 深灰底白字；暗色 -> 淺灰底深色字 */
+.dual-btn {
+  background:#2E2F31; color:#FFFFFF; border:1px solid #2E2F31;
+}
+.dual-btn:hover { background:#1F2022; }
+.dual-text { color:#2E2F31; }
+.dark .dual-btn, [data-theme='dim'] .dual-btn, [data-theme='dark'] .dual-btn {
+  background:#F5F5F5; color:#1F1F1F; border:1px solid #F5F5F5;
+}
+.dark .dual-btn:hover, [data-theme='dim'] .dual-btn:hover, [data-theme='dark'] .dual-btn:hover { background:#E6E6E6; }
+.dark .dual-text, [data-theme='dim'] .dual-text, [data-theme='dark'] .dual-text { color:#F5F5F5; }
+
+/* 簡易 tooltip */
+[data-tip] { position:relative; }
+[data-tip]:hover::after { content:attr(data-tip); position:absolute; top:100%; left:50%; transform:translate(-50%,6px); background:rgba(0,0,0,0.75); color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; white-space:nowrap; pointer-events:none; z-index:60; }
+
+/* text-fg utility */
+.text-fg { color: var(--fg); }

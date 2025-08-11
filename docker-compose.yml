@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: forumkit
+      POSTGRES_PASSWORD: forumkit
+      POSTGRES_DB: forumkit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [ core ]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server","--appendonly","yes"]
+    volumes:
+      - redisdata:/data
+    networks: [ core ]
+
+  backend:
+    build: ./backend
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: change-me
+      MAINTENANCE_MODE: "off"
+    # 對外需使用 12006 (host) -> 8000 (container)，避免使用 80/8000/8080/8081
+    ports:
+      - "12006:8000"
+    networks: [ core ]
+
+  nginx:
+    build: ./frontend
+    # 對外只開 12005 (host) -> 80 (container)；主機不直接用 80
+    ports: [ "12005:80" ]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [ backend ]
+    networks: [ core ]
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  core:
