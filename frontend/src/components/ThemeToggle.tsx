@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { ThemeName, loadTheme, applyTheme, saveTheme, THEME_ORDER } from '../lib/theme'
 
 const NAME_MAP: Record<ThemeName,string> = {
-  default: '米白',
+  beige: '米白',
   ocean: '霧藍',
   forest: '霧綠',
   mist: '灰白',
@@ -26,7 +26,7 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
   const baseIconCls = theme==='dark' ? 'w-4 h-4 text-white' : 'w-4 h-4 text-fg';
   const icon = () => {
     switch(theme){
-      case 'default': return <Sun className={baseIconCls} />
+      case 'beige': return <Sun className={baseIconCls} />
       case 'ocean': return <Cloud className={baseIconCls} />
       case 'forest': return <Leaf className={baseIconCls} />
       case 'mist': return <Eye className={baseIconCls} />

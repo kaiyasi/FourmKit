@@ -5,8 +5,18 @@ services:
       POSTGRES_USER: forumkit
       POSTGRES_PASSWORD: forumkit
       POSTGRES_DB: forumkit
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # 對外開放主機 5432 -> 容器 5432，若主機已有本地 PostgreSQL 可改為 55432:5432
+    ports:
+      - "12001:80"
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U forumkit -d forumkit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks: [ core ]
 
   redis:
@@ -21,24 +31,44 @@ services:
     environment:
       FLASK_ENV: production
       SECRET_KEY: change-me
-      MAINTENANCE_MODE: "off"
-    # 對外需使用 12006 (host) -> 8000 (container)，避免使用 80/8000/8080/8081
-    ports:
-      - "12006:8000"
+      APP_MODE: dev          # Day3 之後可 normal/maintenance/dev
+      FORUMKIT_DB: sqlite:////data/forumkit.db
+      JWT_SECRET_KEY: change-me
+      ADMIN_PASSWORD: change-me-strong
+      REDIS_URL: redis://redis:6379/0
+      MAINT_ALLOWLIST: 127.0.0.1
+      # SMTP 郵件設定
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 12006
+      SMTP_USER: zengcode0315@gmail.com
+      SMTP_PASSWORD: zengcode0315
+      SMTP_FROM: zengcode0315@gmail.com
+      REPORT_TO: zengcode0315@gmail.com
+    # ✅ 不對外暴露任何埠口（只讓 Nginx 內網反代）
+    volumes:
+      - backenddata:/data
     networks: [ core ]
-
+    depends_on: [ postgres, redis ]
   nginx:
+    # 使用自定義 Dockerfile 構建，避免權限問題
     build: ./frontend
-    # 對外只開 12005 (host) -> 80 (container)；主機不直接用 80
-    ports: [ "12005:80" ]
+    ports: ["12005:80"]
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on: [ backend ]
     networks: [ core ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
 
 volumes:
   pgdata:
   redisdata:
+  backenddata:
 
 networks:
   core:

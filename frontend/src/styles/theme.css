@@ -5,7 +5,7 @@
 :root {  --font-cjk:'Huninn','PingFang TC','Noto Sans TC','Microsoft JhengHei',system-ui,sans-serif;  --font-latin-decor:'Birthstone',cursive;  --font-mono:ui-monospace,'Fira Code',Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace; }
 
 /* 預設 (米白) */
-:root, :root[data-theme='default'] {  --bg:#F8F5EE; --fg:#1F2937; --muted:#6F757C; --border:#DCCFBD; --surface:#FFFFFF; --surface-hover:#F4F4F4; --surface-active:#E9E9E9; --primary:#357CF4; --primary-600:#1D56D6; --primary-100:#E3EEFF; --primary-hover:#1D56D6; --nav-bg:rgba(255,255,255,0.78); --nav-border:rgba(215,205,190,0.60); --button-secondary:#F1F1F1; --button-secondary-hover:#E6E6E6; --shadow-soft:0 1px 3px rgba(0,0,0,0.055); --shadow-medium:0 4px 12px rgba(0,0,0,0.09); }
+:root[data-theme='beige'] {  --bg:#F8F5EE; --fg:#1F2937; --muted:#6F757C; --border:#DCCFBD; --surface:#FFFFFF; --surface-hover:#F4F4F4; --surface-active:#E9E9E9; --primary:#357CF4; --primary-600:#1D56D6; --primary-100:#E3EEFF; --primary-hover:#1D56D6; --nav-bg:rgba(255,255,255,0.78); --nav-border:rgba(215,205,190,0.60); --button-secondary:#F1F1F1; --button-secondary-hover:#E6E6E6; --shadow-soft:0 1px 3px rgba(0,0,0,0.055); --shadow-medium:0 4px 12px rgba(0,0,0,0.09); }
 
 /* 海霧 (霧藍) */
 :root[data-theme='ocean'] {  --bg:#EEF5F8; --fg:#1E2F38; --muted:#56666E; --border:#BCD2DB; --surface:#FFFFFF; --surface-hover:#F4F7F9; --surface-active:#E9EFF2; --primary:#2A78A7; --primary-600:#1E5E82; --primary-100:#CFE8F5; --primary-hover:#1F5F84; --nav-bg:rgba(255,255,255,0.80); --nav-border:rgba(185,205,215,0.60); --button-secondary:#ECF1F4; --button-secondary-hover:#E1E9EC; --shadow-soft:0 1px 3px rgba(0,70,110,0.055); --shadow-medium:0 4px 14px rgba(0,70,110,0.11); }

@@ -1,2 +1,3 @@
 flask==3.0.3
 flask-cors==4.0.1
+# 使用 Python 標準庫 urllib 發送 Discord Webhook，無需額外依賴

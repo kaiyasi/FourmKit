@@ -1,0 +1,11 @@
+HTTP/2 403 
+date: Tue, 12 Aug 2025 17:13:51 GMT
+content-type: text/html
+server: cloudflare
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=ACFsZNt4sVRy1P%2BzcVaSHqDVIFjXZh%2BZPm62yqIMfxo752q3smSD07EMxgyxzY5m%2BtwDlt87H3kWWKo%2Fl%2FRzDnKLssMmfEJTCV%2FszrVCwXY3XNM%3D"}]}
+cf-cache-status: DYNAMIC
+vary: accept-encoding
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+cf-ray: 96e19b0e5ceffa13-ORD
+alt-svc: h3=":443"; ma=86400
+

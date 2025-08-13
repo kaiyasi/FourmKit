@@ -3,7 +3,7 @@ import { Moon, Sun } from 'lucide-react'
 import { applyTheme, saveTheme, loadTheme, ThemeName } from '../lib/theme'
 
 const THEMES: { key: ThemeName; label: string }[] = [
-  { key: 'default', label: '米白' },
+  { key: 'beige', label: '米白' },
   { key: 'ocean',   label: '霧藍' },
   { key: 'forest',  label: '霧綠' },
   { key: 'mist',    label: '灰白' },
