@@ -1,22 +1,26 @@
-import json
+import json, os
 from pathlib import Path
 from typing import Any, Dict
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / 'config.json'
+# 依 Day1~Day4 設計：設定寫入容器可持久化目錄 /data（或經 CONFIG_DIR 覆寫）
+DATA_DIR = Path(os.getenv("CONFIG_DIR", "/data"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_PATH = DATA_DIR / "config.json"
 
 DEFAULT_DATA: Dict[str, Any] = {
-    "mode": "normal",  # normal | maintenance | development
+    # 允許以 APP_MODE 指定預設（normal | maintenance | development）
+    "mode": os.getenv("APP_MODE", "normal"),
     "maintenance_message": "",
-    "maintenance_until": "",  # ISO datetime string
+    "maintenance_until": "",
 }
 
 
 def load_config() -> Dict[str, Any]:
     if not CONFIG_PATH.exists():
         save_config(DEFAULT_DATA)
+        return DEFAULT_DATA.copy()
     try:
-        with CONFIG_PATH.open('r', encoding='utf-8') as f:
-            data = json.load(f)
+        data: Dict[str, Any] = json.loads(CONFIG_PATH.read_text("utf-8"))
     except Exception:
         data = DEFAULT_DATA.copy()
     # ensure keys
@@ -31,16 +35,15 @@ def load_config() -> Dict[str, Any]:
 
 
 def save_config(data: Dict[str, Any]) -> None:
-    with CONFIG_PATH.open('w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def set_mode(mode: str, maintenance_message: str | None = None, maintenance_until: str | None = None) -> Dict[str, Any]:
     data = load_config()
-    data['mode'] = mode
+    data["mode"] = mode
     if maintenance_message is not None:
-        data['maintenance_message'] = maintenance_message
+        data["maintenance_message"] = maintenance_message
     if maintenance_until is not None:
-        data['maintenance_until'] = maintenance_until
+        data["maintenance_until"] = maintenance_until
     save_config(data)
     return data

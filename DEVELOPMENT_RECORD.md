@@ -91,3 +91,69 @@
 
 ---
 
+## Day 5 — 基礎登入/權限與後台
+
+日期：2025-08-15
+時數：約 2 小時
+狀態：已完成
+
+### 目標
+
+* 建立最小可用的**身分與權限**：未登入 / 已登入 / 管理員（Admin）。
+* 讓 **/mode**（平台模式管理）只允許管理員操作；一般使用者看到引導訊息。
+* 打好安全底座：**HttpOnly Cookie**、**同源 CORS 收斂**、**登入節流（rate limit）**、**密碼雜湊**、**CSRF 基礎**。
+* 前端補上**登入流程與狀態切換**，將原本「登入圖示」→「設定圖示」的 UI 規則串接後端。
+* 保留你既有的主題系統與模式頁邏輯，不影響 Day 1–Day 4 的成果。
+
+---
+
+### 達成情況
+
+1. **後端（Flask）**
+
+   * `auth` 路由組
+
+     * `POST /api/auth/login`：表單或 JSON 帳密登入，成功後簽發 **HttpOnly、SameSite=Lax** 的 `session` Cookie。
+     * `POST /api/auth/logout`：清除 Cookie。
+     * `GET /api/auth/me`：回傳目前使用者狀態（guest/user/admin），供前端初始化。
+   * **管理員初始化**
+
+     * 以環境變數 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 設定唯一管理員；密碼以 **bcrypt** 雜湊存放（目前暫存於檔案或記憶體，Day 6 將遷移 DB）。
+   * **權限中介層**
+
+     * `/api/mode`：改為**必須 Admin** 才能 `POST`；`GET` 仍開放（維護期間要看得到）。
+     * `/api/report` 與 `/api/color_vote` 照常開放（維護期間亦允許，符合 Day 4 行為）。
+   * **Rate limit**
+
+     * 登入端點加入簡易節流：同 IP 多次失敗會短暫阻擋，遏止暴力猜測。
+   * **CSRF 基礎**
+
+     * 新增 `GET /api/auth/csrf` 發 CSRF token（亦可回傳在 `me`），前端送表單時夾帶 `X-CSRF-Token`。
+   * **CORS/Headers 收斂**
+
+     * 僅允許前端來源（Nginx 站點）呼叫 `/api/*`；保留必要的 `X-Request-ID`、`X-ForumKit-*` 標頭。
+
+2. **前端（React）**
+
+   * **全域狀態**：App 啟動時呼叫 `/api/auth/me`，決定 Navbar 顯示（未登入→登入圖示；已登入→設定圖示）。
+   * **登入介面**：提供一個最小化登入面板（可彈窗或獨立頁），成功後自動刷新身分狀態。
+   * **/mode 守門**：
+
+     * 未登入或非管理員：顯示「需管理員權限」提示與「去登入」按鈕。
+     * 管理員：正常顯示 Day 4 的模式切換 UI；**儲存後直接跳回首頁**（修掉你 Day 4 反映的行為）。
+   * **表單可重複提交**：針對你回報「寫一次就不能再送」的情況，標準化送出後的狀態清理（重置 `busy/submitted` 與欄位），確保可再次提交。
+
+3. **Nginx（前端容器）**
+
+   * 無需調整反代規則；但將 `add_header` 收斂以配合 Cookie（保留 `SameSite=Lax` 預設行為即可）。
+
+4. **Docker Compose（環境變數）**
+
+   * 新增：
+
+     * `ADMIN_USERNAME`、`ADMIN_PASSWORD`（管理員憑證）
+     * `JWT_SECRET_KEY`（若後續要支援 JWT；目前以 Session 為主）
+     * `FORUMKIT_DEBUG=0/1`（錯誤訊息詳細度控制）
+   * 未對外暴露 Backend 連接埠，仍由 Nginx 反代 12005 總入口。
+
+---

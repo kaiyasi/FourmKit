@@ -11,8 +11,8 @@ const THEMES: { key: ThemeName; label: string }[] = [
 ]
 
 export function ThemeSwitcher(){
-  const [{ theme, isDark }, setState] = useState(loadTheme())
-  useEffect(()=>{ applyTheme(theme, isDark) }, [theme, isDark])
+  const [theme, setTheme] = useState(loadTheme().theme)
+  useEffect(()=>{ applyTheme(theme, true) }, [theme])
 
   return (
     <div className="flex items-center gap-2">
@@ -21,24 +21,14 @@ export function ThemeSwitcher(){
         value={theme}
         onChange={e => {
           const t = e.target.value as ThemeName
-          setState((s: { theme: ThemeName; isDark: boolean }) => { const n={...s, theme:t}; saveTheme(n.theme,n.isDark); return n })
-          applyTheme(t, isDark)
+          setTheme(t)
+          saveTheme(t, true)
+          applyTheme(t, true)
         }}
       >
         {THEMES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
       </select>
-
-      <button
-        className="inline-flex items-center gap-1 border border-border bg-surface rounded-xl px-2 py-1 text-sm hover:bg-surface-hover transition"
-        onClick={() => {
-          setState((s: { theme: ThemeName; isDark: boolean }) => { const n={...s, isDark:!s.isDark}; saveTheme(n.theme,n.isDark); applyTheme(n.theme,n.isDark); return n })
-        }}
-        aria-label={isDark ? '切到淺色' : '切到深色'}
-        title={isDark ? '切到淺色' : '切到深色'}
-      >
-        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        <span>{isDark ? '淺色' : '深色'}</span>
-      </button>
+      {/* 已移除深/淺色切換，僅保留主題選擇 */}
     </div>
   )
 }

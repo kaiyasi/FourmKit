@@ -1,3 +1,13 @@
 flask==3.0.3
 flask-cors==4.0.1
+flask-socketio==5.3.6
+eventlet==0.36.1
+python-engineio==4.9.0
+python-socketio==5.11.3
+gunicorn==23.0.0
+
+# Socket 支援
+Flask-SocketIO==5.3.6
+eventlet==0.36.1
+
 # 使用 Python 標準庫 urllib 發送 Discord Webhook，無需額外依賴

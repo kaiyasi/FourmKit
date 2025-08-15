@@ -1,5 +1,5 @@
 {
-  "mode": "maintenance",
+  "mode": "development",
   "maintenance_message": "test",
   "maintenance_until": ""
 }
