@@ -41,9 +41,20 @@ def save_config(data: Dict[str, Any]) -> None:
 def set_mode(mode: str, maintenance_message: str | None = None, maintenance_until: str | None = None) -> Dict[str, Any]:
     data = load_config()
     data["mode"] = mode
+    
+    # 處理維護訊息，確保不會是空白字串
     if maintenance_message is not None:
-        data["maintenance_message"] = maintenance_message
+        data["maintenance_message"] = maintenance_message if maintenance_message.strip() else ""
+    elif mode == "maintenance" and not data.get("maintenance_message"):
+        # 如果切換到維護模式但沒有訊息，設定空字串避免顯示 None
+        data["maintenance_message"] = ""
+    
+    # 處理維護時間
     if maintenance_until is not None:
-        data["maintenance_until"] = maintenance_until
+        data["maintenance_until"] = maintenance_until if maintenance_until.strip() else ""
+    elif mode == "maintenance" and not data.get("maintenance_until"):
+        # 如果切換到維護模式但沒有時間，設定空字串避免顯示 None
+        data["maintenance_until"] = ""
+    
     save_config(data)
     return data

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { getSocket, on as wsOn, off as wsOff } from './socket'
-import { NavBar } from './components/NavBar'
-import { MobileFabNav } from './components/MobileFabNav'
-import { ThemeToggle } from './components/ThemeToggle'
-import SocketBadge from './components/SocketBadge'
+import { getSocket, on as wsOn, off as wsOff } from './services/socket'
+import { NavBar } from './components/layout/NavBar'
+import { MobileFabNav } from './components/layout/MobileFabNav'
+import { ThemeToggle } from './components/ui/ThemeToggle'
+import SocketBadge from './components/ui/SocketBadge'
+import PostForm from './components/forms/PostForm'
+import PostList from './components/PostList'
+import ResizableSection from './components/ResizableSection'
 
 type PlatformMode = {
   mode: 'normal' | 'maintenance' | 'development'
@@ -17,51 +20,71 @@ interface ProgressItem { name: string; status: 'completed'|'in_progress'|'planne
 interface ProgressData { progress_items: ProgressItem[]; recent_updates: string[]; last_updated: string; error?: string }
 
 export default function App() {
-function useRealtimeToasts() {
-  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
-
-  useEffect(() => {
-    let idSeq = 1
-    const push = (text: string) => {
-      const id = idSeq++
-      setToasts((cur) => [...cur, { id, text }])
-      setTimeout(() => setToasts((cur) => cur.filter((t) => t.id !== id)), 5000)
-    }
-
-    const onPost = (p: any) => push(`新貼文：${p?.title ?? '(無標題)'}`)
-    const onCmt = (c: any) => push(`新留言：${(c?.content ?? '').slice(0, 20)}…`)
-    const onAnn = (a: any) => push(`公告：${(a?.message ?? '').slice(0, 30)}…`)
-
-    wsOn('post.created', onPost)
-    wsOn('comment.created', onCmt)
-    wsOn('announce', onAnn)
-
-    // 確保至少初始化 socket
-    getSocket()
-
-    return () => {
-      wsOff('post.created', onPost)
-      wsOff('comment.created', onCmt)
-      wsOff('announce', onAnn)
-    }
-  }, [])
-
-  return toasts
-}
-
-function RealtimeToastPanel() {
-  const toasts = useRealtimeToasts()
-  return (
-    <div className="fixed bottom-4 right-4 z-50 space-y-2">
-      {toasts.map(t => (
-        <div key={t.id} className="rounded-xl border border-border bg-surface/90 px-3 py-2 shadow-soft">
-          <span className="text-sm text-fg">{t.text}</span>
-        </div>
-      ))}
-    </div>
+  /* ---------- 局部 CSS：740–820px 調整右欄 ---------- */
+  const MidWidthCSS = () => (
+    <style>{`
+      @media (min-width: 740px) and (max-width: 820px) {
+        .right-col-spacing { row-gap: 1rem; }
+        .right-top-fixed  { height: 300px !important; }
+      }
+    `}</style>
   )
-}
-  const [role, setRole] = useState<Role>('guest')
+
+  // 響應式螢幕尺寸檢測
+  function useScreenSize() {
+    const [isSmallScreen, setIsSmallScreen] = useState(false)
+    const [isTinyScreen, setIsTinyScreen] = useState(false)
+    useEffect(() => {
+      const checkScreenSize = () => {
+        const width = window.innerWidth
+        setIsSmallScreen(width < 768)
+        setIsTinyScreen(width < 640)
+      }
+      checkScreenSize()
+      window.addEventListener('resize', checkScreenSize)
+      return () => window.removeEventListener('resize', checkScreenSize)
+    }, [])
+    return { isSmallScreen, isTinyScreen }
+  }
+
+  function useRealtimeToasts() {
+    const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
+    useEffect(() => {
+      let idSeq = 1
+      const push = (text: string) => {
+        const id = idSeq++
+        setToasts(cur => [...cur, { id, text }])
+        setTimeout(() => setToasts(cur => cur.filter(t => t.id !== id)), 5000)
+      }
+      const onPost = (p: any) => push(`新貼文：${p?.title ?? '(無標題)'}`)
+      const onCmt = (c: any) => push(`新留言：${(c?.content ?? '').slice(0, 20)}…`)
+      const onAnn = (a: any) => push(`公告：${(a?.message ?? '').slice(0, 30)}…`)
+      wsOn('post.created', onPost)
+      wsOn('comment.created', onCmt)
+      wsOn('announce', onAnn)
+      getSocket()
+      return () => {
+        wsOff('post.created', onPost)
+        wsOff('comment.created', onCmt)
+        wsOff('announce', onAnn)
+      }
+    }, [])
+    return toasts
+  }
+
+  function RealtimeToastPanel() {
+    const toasts = useRealtimeToasts()
+    return (
+      <div className="fixed bottom-3 sm:bottom-4 right-3 sm:right-4 left-3 sm:left-auto z-50 space-y-2">
+        {toasts.map(t => (
+          <div key={t.id} className="rounded-xl border border-border bg-surface/90 px-3 py-2 shadow-soft max-w-sm sm:max-w-none ml-auto">
+            <span className="text-sm text-fg">{t.text}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   const [pathname, setPathname] = useState(window.location.pathname)
   const [platform, setPlatform] = useState<PlatformMode | null>(null)
   const [loading, setLoading] = useState(true)
@@ -70,7 +93,10 @@ function RealtimeToastPanel() {
   const [progressData, setProgressData] = useState<ProgressData | null>(null)
   const [progressLoading, setProgressLoading] = useState(true)
 
-  // 初始化主題（預設米白/beige，交給全站主題系統自動判斷深淺）
+  const { isSmallScreen } = useScreenSize()
+  const [injected, setInjected] = useState<any|null>(null)
+
+  // 初始化主題
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
@@ -81,18 +107,11 @@ function RealtimeToastPanel() {
   useEffect(() => {
     fetch('/api/mode')
       .then(r => {
-        console.log('[Debug] /api/mode response status:', r.status)
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`)
         return r.json()
       })
-      .then(data => {
-        console.log('[Debug] /api/mode data:', data)
-        setPlatform(data)
-      })
-      .catch(e => {
-        console.error('[Debug] /api/mode error:', e)
-        setError(String(e))
-      })
+      .then(setPlatform)
+      .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
   }, [])
 
@@ -104,13 +123,13 @@ function RealtimeToastPanel() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  // 只在開發模式的首頁載入開發進度
+  // 只在開發模式首頁載入進度（後端已合併 CHANGELOG）
   useEffect(() => {
     if (platform?.mode === 'development' && pathname === '/') {
       (async () => {
         try {
           setProgressLoading(true)
-          const r = await fetch('/api/progress')
+          const r = await fetch('/api/progress', { cache: 'no-store' })
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           const data = await r.json()
           if (data && typeof data === 'object' && Array.isArray(data.progress_items) && Array.isArray(data.recent_updates)) {
@@ -127,7 +146,6 @@ function RealtimeToastPanel() {
     }
   }, [platform?.mode, pathname])
 
-  // ---- Loading / Error ----
   if (loading) {
     return <div className="min-h-screen grid place-items-center"><div className="text-muted">載入中...</div></div>
   }
@@ -135,37 +153,63 @@ function RealtimeToastPanel() {
     return <div className="min-h-screen grid place-items-center"><div className="text-rose-600">{error ? `載入失敗：${error}` : '無法取得平台模式'}</div></div>
   }
 
-  // ---- /mode 模式管理頁 ----
+  // /mode 管理頁
   if (pathname === '/mode') {
     return <AdminModePanel platform={platform} onUpdated={setPlatform} full />
   }
 
-  // ---- 維護模式頁（固定模式，不顯示導航欄避免錯誤）----
+  // 維護模式
   if (platform.mode === 'maintenance') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 text-center">
-        {/* 右上角主題切換器 */}
-        <div className="fixed top-4 right-4 z-50">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm">
+      <div className="min-h-screen flex items-center justify-center p-3 sm:p-6 text-center">
+        <div className="fixed top-3 sm:top-4 right-3 sm:right-4 z-50">
+          <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm">
             <ThemeToggle />
             <span className="text-xs text-muted">主題</span>
           </div>
         </div>
-        <div className="max-w-2xl w-full rounded-2xl p-8 shadow-lg bg-white/70 dark:bg-neutral-900/70 border border-neutral-200 dark:border-neutral-800 backdrop-blur">
-          <h1 className="text-3xl font-bold mb-2">系統維護中</h1>
+        <div className="max-w-2xl w-full rounded-2xl p-4 sm:p-6 md:p-8 shadow-lg bg-white/70 dark:bg-neutral-900/70 border border-neutral-200 dark:border-neutral-800 backdrop-blur">
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2">系統維護中</h1>
           <p className="text-sm text-muted mb-4">我們正在升級服務以提供更佳體驗，造成不便敬請見諒。</p>
-          <p className="mb-4 whitespace-pre-wrap">{platform.maintenance_message || '維護作業進行中。'}</p>
-          {platform.maintenance_until && <p className="text-sm text-muted mb-6">預計完成：{platform.maintenance_until}</p>}
+          <p className="mb-4 whitespace-pre-wrap text-sm sm:text-base">{platform.maintenance_message || '維護作業進行中。'}</p>
+          {platform.maintenance_until && <p className="text-sm text-muted mb-4 sm:mb-6">預計完成：{platform.maintenance_until}</p>}
           <ReportForm />
         </div>
       </div>
     )
   }
 
-  // ---- 開發模式的首頁（固定模式，不顯示導航欄避免錯誤）----
+  // 取代原本的 splitDatePrefix
+  const parseUpdate = (raw: string): { date?: string; text: string } => {
+    if (!raw) return { text: '' }
+
+    // 支援：YYYY-MM-DD / YYYY/M/D / M/D / M月D日，分隔符可有可無
+    const dateRe = /(^(?:\d{4}-\d{2}-\d{2}|\d{4}\/\d{1,2}\/\d{1,2}|\d{1,2}\/\d{1,2}|\d{1,2}月\d{1,2}日))\s*[-：:·]?\s*/
+
+    let s = raw.trim()
+    let badge: string | undefined
+
+    // 第一次擷取作為徽章
+    const first = s.match(dateRe)
+    if (first) {
+      badge = first[1]
+    }
+
+    // 無論是否有抓到徽章，都把開頭連續的「日期 + 分隔」清掉到見不到為止
+    let guard = 0
+    while (dateRe.test(s) && guard++ < 10) {
+      s = s.replace(dateRe, '')
+    }
+
+    return { date: badge, text: s.trim() }
+  }
+
+  // 開發模式首頁
   if (platform.mode === 'development' && pathname === '/') {
     return (
       <div className="min-h-screen">
+        <MidWidthCSS />
+
         {/* 右上角主題切換器 */}
         <div className="fixed top-4 right-4 z-50">
           <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm">
@@ -173,107 +217,205 @@ function RealtimeToastPanel() {
             <span className="text-xs text-muted">主題</span>
           </div>
         </div>
-        <div className="flex flex-col items-center pt-16 md:pt-20 px-4 pb-8">
-          <div className="max-w-4xl w-full space-y-6 md:space-y-8">
+
+        <div className="flex flex-col items-center pt-12 sm:pt-16 md:pt-20 px-3 sm:px-4 pb-6 sm:pb-8">
+          <div className="max-w-4xl w-full space-y-4 sm:space-y-6 md:space-y-8">
             <div className="flex justify-center"><SocketBadge /></div>
 
-          <div className="bg-surface border border-border rounded-2xl p-6 md:p-8 shadow-soft">
-            <div className="text-center mb-8">
-              <h1 className="text-4xl font-bold dual-text mb-3">ForumKit</h1>
-              <h2 className="text-lg text-fg mb-4">校園匿名討論平台</h2>
-              <p className="leading-relaxed text-sm md:text-base text-fg">
-                ForumKit 是一個專為校園環境設計的現代化討論平台，提供安全、匿名且友善的交流空間。
-              </p>
+            {/* 頂部介紹卡 */}
+            <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 md:p-8 shadow-soft">
+              <div className="text-center mb-4 sm:mb-6 md:mb-8">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold dual-text mb-2 sm:mb-3">ForumKit</h1>
+                <h2 className="text-base sm:text-lg text-fg mb-3 sm:mb-4">校園匿名討論平台</h2>
+                <p className="leading-relaxed text-sm md:text-base text-fg px-2 sm:px-0">
+                  ForumKit 是一個專為校園環境設計的現代化討論平台，提供安全、匿名且友善的交流空間。
+                </p>
+              </div>
             </div>
 
-            {/* 特色三卡略 */}
-          </div>
+            {/* 開發專區：左顏色搭配器 + 右進度/更新 */}
+            {isSmallScreen ? (
+              <div className="space-y-4 sm:space-y-6">
+                {/* 左：顏色搭配器 */}
+                <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft">
+                  <h3 className="font-semibold dual-text mb-3 sm:mb-4">顏色搭配器</h3>
+                  <ColorDesigner />
+                </div>
 
-          {/* 開發專區：顏色設計器 + 開發進度 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 shadow-soft">
-              <h3 className="font-semibold dual-text mb-4">顏色搭配器</h3>
-              <ColorDesigner />
-            </div>
+                {/* 右：開發紀錄 */}
+                <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft right-col-spacing">
+                  <h3 className="font-semibold dual-text mb-3 sm:mb-4">開發紀錄</h3>
 
-            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 shadow-soft">
-              <h3 className="font-semibold dual-text mb-4">開發進度紀錄</h3>
-              {progressLoading ? (
-                <div className="py-8 text-center text-fg">載入中...</div>
-              ) : progressData?.error ? (
-                <div className="text-center py-8 text-rose-600">載入失敗：{progressData.error}</div>
-              ) : (
-                <div className="flex flex-col h-96">
-                  {/* 進度項目 - 上半部 */}
-                  <div className="flex-1 min-h-0 mb-4">
-                    <h4 className="font-medium dual-text mb-3">項目進度</h4>
-                    <div className="space-y-3 h-full overflow-y-auto">
-                      {progressData?.progress_items?.map((item, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface shadow-soft">
-                          <div>
-                            <h5 className="font-medium dual-text">{item.name}</h5>
-                            {item.description && <p className="text-xs text-fg">{item.description}</p>}
+                  {/* 項目進度（可拖拉） */}
+                  <ResizableSection
+                    title="項目進度"
+                    min={200}
+                    max={720}
+                    initial={200}
+                    storageKey="fk-progress-height-mobile"
+                  >
+                    {progressLoading ? (
+                      <div className="py-8 text-center text-fg">載入中...</div>
+                    ) : progressData?.error ? (
+                      <div className="text-center py-8 text-rose-600">載入失敗：{progressData.error}</div>
+                    ) : (
+                      <div className="space-y-2 sm:space-y-3">
+                        {progressData?.progress_items?.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between p-2 sm:p-3 rounded-xl border border-border bg-surface">
+                            <div className="flex-1 min-w-0 pr-2">
+                              <h5 className="font-medium dual-text text-sm sm:text-base truncate">{item.name}</h5>
+                              {item.description && <p className="text-xs text-muted line-clamp-2 sm:line-clamp-none">{item.description}</p>}
+                            </div>
+                            <span className="px-2 py-1 text-xs rounded-lg bg-neutral-100 text-neutral-700 dark:bg-neutral-900/30 dark:text-neutral-300 whitespace-nowrap">
+                              {item.status === 'completed' ? '完成' : item.status === 'in_progress' ? '開發中' : '規劃中'}
+                            </span>
                           </div>
-                          <span className="px-2 py-1 text-xs rounded-lg bg-neutral-100 text-neutral-700 dark:bg-neutral-900/30 dark:text-neutral-300">
-                            {item.status === 'completed' ? '完成' : item.status === 'in_progress' ? '開發中' : '規劃中'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
+                  </ResizableSection>
+
+                  {/* 更新紀錄（每條獨立顯示日期） */}
+                  <ResizableSection
+                    title="更新紀錄"
+                    min={200}
+                    max={720}
+                    initial={200}
+                    storageKey="fk-updates-height-mobile"
+                    className="mt-3 sm:mt-4"
+                  >
+                    {progressLoading ? (
+                      <div className="py-8 text-center text-fg">載入中...</div>
+                    ) : progressData?.recent_updates && progressData.recent_updates.length > 0 ? (
+                      <div className="space-y-1.5 sm:space-y-2">
+                        {progressData.recent_updates.map((update, i) => {
+                          const { date, text } = parseUpdate(update)
+                          return (
+                            <div key={i} className="p-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-border">
+                              <div className="flex items-start gap-2">
+                                <span className="px-2 py-0.5 rounded-md bg-neutral-200/70 dark:bg-neutral-700 text-xs text-neutral-700 dark:text-neutral-200 shrink-0 whitespace-nowrap">
+                                  {date || '未標記日期'}
+                                </span>
+                                <span className="text-xs text-fg leading-relaxed min-w-0 break-words">{text}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-muted text-sm">暫無更新記錄</div>
+                    )}
+                  </ResizableSection>
+                </div>
+              </div>
+            ) : (
+              // 桌機
+              <div className="flex h-[740px] md:h-[780px] lg:h-[820px] bg-surface border border-border rounded-2xl overflow-hidden shadow-soft relative isolate">
+                {/* 左：顏色搭配器 */}
+                <div className="w-[400px] flex-shrink-0">
+                  <div className="h-full min-h-[740px] p-4 md:p-6 overflow-y-auto">
+                    <h3 className="font-semibold dual-text mb-4">顏色搭配器</h3>
+                    <ColorDesigner />
                   </div>
-                  
-                  {/* 分隔線 */}
-                  <div className="border-t border-border"></div>
-                  
-                  {/* 最新更新日誌 - 下半部 */}
-                  <div className="flex-1 min-h-0 pt-4">
-                    <h4 className="font-medium dual-text mb-3">最新更新</h4>
-                    <div className="space-y-2 h-full overflow-y-auto">
-                      {progressData?.recent_updates && progressData.recent_updates.length > 0 ? (
-                        progressData.recent_updates.map((update, i) => (
-                          <div key={i} className="p-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-border">
-                            <p className="text-xs text-fg">{update}</p>
-                          </div>
-                        ))
+                </div>
+
+                {/* 右：開發紀錄區域 */}
+                <div className="flex-1 h-full p-4 md:p-6 overflow-hidden flex flex-col right-col-spacing min-h-0">
+                  <h3 className="font-semibold dual-text mb-4">開發紀錄</h3>
+                  <div className="flex-1 flex flex-col space-y-4 min-h-0">
+                    {/* 上：項目進度（可拖拉） */}
+                    <ResizableSection
+                      title="項目進度"
+                      min={350}
+                      max={700}
+                      initial={350}
+                      storageKey="fk-progress-height-desktop"
+                    >
+                      {progressLoading ? (
+                        <div className="py-8 text-center text-fg">載入中...</div>
+                      ) : progressData?.error ? (
+                        <div className="text-center py-8 text-rose-600">載入失敗：{progressData.error}</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {progressData?.progress_items?.map((item, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface/50 shadow-sm">
+                              <div className="min-w-0">
+                                <h5 className="font-medium dual-text">{item.name}</h5>
+                                {item.description && <p className="text-xs text-muted">{item.description}</p>}
+                              </div>
+                              <span className="px-2 py-1 text-xs rounded-lg bg-neutral-100 text-neutral-700 dark:bg-neutral-900/30 dark:text-neutral-300 whitespace-nowrap">
+                                {item.status === 'completed' ? '完成' : item.status === 'in_progress' ? '開發中' : '規劃中'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </ResizableSection>
+
+                    {/* 下：更新紀錄（每條獨立顯示日期） */}
+                    <ResizableSection
+                      title="更新紀錄"
+                      min={350}
+                      max={700}
+                      initial={350}
+                      storageKey="fk-updates-height-desktop"
+                    >
+                      {progressLoading ? (
+                        <div className="py-8 text-center text-fg">載入中...</div>
+                      ) : progressData?.recent_updates && progressData.recent_updates.length > 0 ? (
+                        <div className="space-y-2">
+                          {progressData.recent_updates.map((update, i) => {
+                            const { date, text } = parseUpdate(update)
+                            return (
+                              <div key={i} className="p-2 rounded-lg bg-surface/30 border border-border/50">
+                                <div className="flex items-start gap-2">
+                                  <span className="px-2 py-0.5 rounded-md bg-neutral-200/70 dark:bg-neutral-700 text-xs text-neutral-700 dark:text-neutral-200 shrink-0 whitespace-nowrap">
+                                    {date || '未標記日期'}
+                                  </span>
+                                  <span className="text-xs text-fg min-w-0 break-words leading-relaxed">{text}</span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
                       ) : (
                         <div className="p-4 text-center text-muted text-sm">暫無更新記錄</div>
                       )}
-                    </div>
+                    </ResizableSection>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
+
+            {/* 意見回饋 */}
+            <div id="feedback" className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft relative z-[5]">
+              <h3 className="font-semibold dual-text mb-3 sm:mb-4">意見回饋</h3>
+              <ReportForm compact />
             </div>
           </div>
 
-          {/* 回報表單 */}
-          <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 shadow-soft">
-            <h3 className="font-semibold dual-text mb-4">意見回饋</h3>
-            <ReportForm compact />
-          </div>
-          </div>
           <RealtimeToastPanel />
         </div>
       </div>
     )
   }
 
-  // ---- 正常主頁（與開發模式共用）----
+  // 正常主頁
   return (
     <div className="min-h-screen">
-      <NavBar role={role} pathname={pathname} />
-      <MobileFabNav role={role} />
-      <main className="mx-auto max-w-5xl px-4 pt-24 md:pt-28">
-        <section className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-semibold dual-text">ForumKit</h1>
+      <NavBar pathname={pathname} />
+      <MobileFabNav />
+      <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28">
+        <section className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 sm:mb-6">
+          <div className="flex items-center justify-between gap-3 sm:gap-4 mb-4">
+            <h1 className="text-xl sm:text-2xl font-semibold dual-text">ForumKit</h1>
             <SocketBadge />
           </div>
-          <p className="text-muted mt-2">主題套用為自動判斷深/淺，無需手動切換。</p>
-          <div className="mt-6 flex gap-2 flex-wrap">
-            {(['guest','user','moderator','admin'] as Role[]).map(r => (
-              <button key={r} onClick={() => setRole(r)} className={`px-3 py-1.5 rounded-xl border dual-btn ${role===r? 'ring-2 ring-primary/50':''}`}>{r}</button>
-            ))}
-          </div>
+          <PostForm onCreated={(p)=> setInjected(p)} />
+        </section>
+        <section className="bg-surface/90 border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft">
+          <h2 className="font-semibold dual-text mb-3">最新貼文</h2>
+          <PostList injected={injected} />
         </section>
       </main>
       <RealtimeToastPanel />
@@ -287,7 +429,10 @@ function ReportForm({ compact }: { compact?: boolean }) {
   const [category, setCategory] = useState('一般回報')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<null | { ok: boolean; via?: string }>(null)
+  const [ticket, setTicket] = useState('')
+  const [tone, setTone] = useState<'success'|'warn'|'error'>('success')
+  const [title, setTitle] = useState('已送出')
+  const [desc, setDesc] = useState('已傳送至開發團隊')
   const minRows = compact ? 3 : 5
 
   const submit = async () => {
@@ -295,7 +440,7 @@ function ReportForm({ compact }: { compact?: boolean }) {
       alert('請至少填寫 5 個字的說明，謝謝！')
       return
     }
-    setBusy(true); setResult(null)
+    setBusy(true); setTicket('')
     try {
       const r = await fetch('/api/report', {
         method: 'POST',
@@ -303,13 +448,32 @@ function ReportForm({ compact }: { compact?: boolean }) {
         body: JSON.stringify({ contact: email, category, message }),
       })
       const data = await r.json().catch(() => ({}))
-      setResult({ ok: r.ok, via: data?.delivery })
-      if (r.ok) {
-        // ★ 清空內容，但保留 email 與類別，方便連續回報
-        setMessage('')
+      const id = r.headers.get("X-ForumKit-Ticket") || data?.ticket_id || r.headers.get("X-Request-ID") || ""
+      const ok = Boolean(data?.ok) && r.ok
+      const delivery = data?.delivery
+      
+      if (ok && delivery === "discord") {
+        setTone("success"); setTitle("已送出"); setDesc("已傳送至開發團隊")
+      } else if (ok) {
+        setTone("warn"); setTitle("已暫存"); setDesc("尚未確認傳送，請保留單號")
+      } else {
+        setTone("error"); setTitle("送出失敗"); setDesc("請稍後重試或回報")
       }
+      
+      setTicket(id)
+      if (id) {
+        const key = "forumkit_recent_tickets"
+        const now = Date.now()
+        const list = JSON.parse(localStorage.getItem(key) || "[]")
+        list.unshift({ id, kind: "report", ts: now, note: category })
+        localStorage.setItem(key, JSON.stringify(list.slice(0, 10)))
+      }
+      if (ok) setMessage('')
     } catch {
-      setResult({ ok: false })
+      setTicket('')
+      setTone("error")
+      setTitle("送出失敗")
+      setDesc("請檢查網路後再試")
     } finally {
       setBusy(false)
     }
@@ -318,18 +482,18 @@ function ReportForm({ compact }: { compact?: boolean }) {
   return (
     <div className="text-left">
       <div className="grid gap-3">
-        <div className="grid gap-2 grid-cols-1 md:grid-cols-2">
+        <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
           <input
             type="text"
             placeholder="你的聯絡方式（DC ID 或 Email，可留空）"
             value={email}
             onChange={e=>setEmail(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg"
+            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg text-sm sm:text-base"
           />
           <select
             value={category}
             onChange={e=>setCategory(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg"
+            className="w-full px-3 py-2 rounded-2xl border border-border bg-surface/70 text-fg text-sm sm:text-base"
           >
             <option>一般回報</option>
             <option>無法載入</option>
@@ -343,24 +507,47 @@ function ReportForm({ compact }: { compact?: boolean }) {
           value={message}
           onChange={e=>setMessage(e.target.value)}
           rows={minRows}
-          className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg"
+          className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg text-sm sm:text-base"
         />
-        <div className="flex items-center gap-3">
-          <button onClick={submit} disabled={busy} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <button onClick={submit} disabled={busy} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50 text-sm sm:text-base">
             {busy ? '送出中...' : '送出回報'}
           </button>
-          {result && (
-            <span className={`text-sm ${result.ok ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {result.ok ? (result.via === 'discord' ? '已寄出（Discord）' : '已送出（本機記錄）') : '送出失敗'}
-            </span>
-          )}
         </div>
+        {ticket && (
+          <div className={`mt-3 rounded-xl border px-4 py-3 ${
+            tone === "success" ? "bg-green-50 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-100"
+            : tone === "warn" ? "bg-yellow-50 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-100"
+            : "bg-red-50 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-100"
+          }`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold">{title}</div>
+                <div className="text-sm opacity-90">{desc}</div>
+                <div className="mt-1 text-sm">
+                  <span className="opacity-70">處理單號：</span>
+                  <code className="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10">{ticket}</code>
+                </div>
+                <div className="mt-1 text-xs opacity-70">
+                  請保留此單號以便後續查詢或接收通知。
+                </div>
+              </div>
+              <button
+                onClick={() => { navigator.clipboard.writeText(ticket); }}
+                className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                aria-label="複製單號"
+              >
+                複製
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-/* ---------- 元件：顏色設計器（多次可提交） ---------- */
+/* ---------- 元件：顏色設計器 ---------- */
 function ColorDesigner() {
   const [primaryColor, setPrimaryColor] = useState('#F8F5EE')
   const [secondaryColor, setSecondaryColor] = useState('#DCCFBD')
@@ -389,12 +576,28 @@ function ColorDesigner() {
       }
       const r = await fetch('/api/color_vote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
       const data = await r.json().catch(()=> ({}))
-      if (r.ok) {
-        setNotice(data?.delivery === 'discord' ? '感謝！已送至 Discord。' : '已送出（本機記錄）。')
-        // ★ 清空名稱/描述，顏色保留方便連續調整
-        setThemeName(''); setDescription('')
+      const id = r.headers.get("X-ForumKit-Ticket") || data?.ticket_id || r.headers.get("X-Request-ID") || ""
+      const ok = Boolean(data?.ok) && r.ok
+      const delivery = data?.delivery
+      
+      if (ok && delivery === "discord") {
+        setNotice(`感謝！已送至 Discord。處理單號：${id}`)
+      } else if (ok) {
+        setNotice(`已送出（本機記錄）。處理單號：${id}`)
       } else {
         setNotice('提交失敗，請稍後重試')
+      }
+      
+      if (id) {
+        const key = "forumkit_recent_tickets"
+        const now = Date.now()
+        const list = JSON.parse(localStorage.getItem(key) || "[]")
+        list.unshift({ id, kind: "color", ts: now, note: themeName })
+        localStorage.setItem(key, JSON.stringify(list.slice(0, 10)))
+      }
+      
+      if (r.ok) {
+        setThemeName(''); setDescription('')
       }
     } catch {
       setNotice('提交失敗，請稍後重試')
@@ -453,26 +656,24 @@ function ColorDesigner() {
       <div className="space-y-3">
         <div>
           <label className="block text-sm font-medium text-fg mb-2">主題名稱</label>
-          <input 
-            type="text" 
-            value={themeName} 
-            onChange={e => setThemeName(e.target.value)} 
-            placeholder="為您的主題命名..." 
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg" 
+          <input
+            type="text"
+            value={themeName}
+            onChange={e => setThemeName(e.target.value)}
+            placeholder="為您的主題命名..."
+            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg"
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-fg mb-2">主題描述 (可選)</label>
-          <textarea 
-            value={description} 
-            onChange={e => setDescription(e.target.value)} 
-            placeholder="描述您的主題設計理念..." 
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[80px]" 
+          <textarea
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="描述您的主題設計理念..."
+            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[80px]"
           />
         </div>
       </div>
-
-      {/* 快速方案略（可保留你先前的陣列） */}
 
       <div className="flex items-center gap-3">
         <button onClick={submitTheme} disabled={busy || !themeName.trim()} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50">
@@ -484,7 +685,7 @@ function ColorDesigner() {
   )
 }
 
-/* ---------- /mode 管理面板：儲存成功後強制導回首頁 ---------- */
+/* ---------- /mode 管理面板 ---------- */
 function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode; onUpdated: (p: PlatformMode)=> void; full?: boolean }) {
   const [mode, setMode] = useState(platform.mode)
   const [msg, setMsg] = useState(platform.maintenance_message || '')
@@ -497,9 +698,7 @@ function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode;
       const r = await fetch('/api/mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode, maintenance_message: msg, maintenance_until: until }) })
       const data = await r.json().catch(()=> ({}))
       if (r.ok) onUpdated(data)
-      // ★ 立即導回首頁（避免 SPA history 攔截）
       location.assign('/')
-      // 保底：若環境有延遲，再次嘗試
       setTimeout(() => { if (location.pathname !== '/') location.assign('/') }, 800)
     } finally {
       setSaving(false)
@@ -507,25 +706,25 @@ function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode;
   }
 
   const inner = (
-    <div className="max-w-xl w-full bg-surface/80 border border-border rounded-2xl p-6 shadow backdrop-blur mt-10">
-      <h2 className="font-semibold text-xl mb-4">平台模式管理</h2>
-      <div className="flex gap-4 flex-wrap mb-4">
+    <div className="max-w-xl w-full bg-surface/80 border border-border rounded-2xl p-4 sm:p-6 shadow backdrop-blur mt-8 sm:mt-10">
+      <h2 className="font-semibold text-lg sm:text-xl mb-4">平台模式管理</h2>
+      <div className="flex gap-2 sm:gap-4 flex-wrap mb-4">
         {(['normal','maintenance','development'] as PlatformMode['mode'][]).map(m => (
-          <label key={m} className={`px-3 py-2 rounded-xl border cursor-pointer ${mode===m? 'dual-btn ring-2 ring-primary/50':'bg-surface/60 hover:bg-surface/80 border-border'}`}>
+          <label key={m} className={`px-3 py-2 rounded-xl border cursor-pointer text-sm sm:text-base ${mode===m? 'dual-btn ring-2 ring-primary/50':'bg-surface/60 hover:bg-surface/80 border-border'}`}>
             <input type="radio" name="mode" value={m} className="hidden" checked={mode===m} onChange={()=> setMode(m)} />{m}
           </label>
         ))}
       </div>
       {mode==='maintenance' && (
         <div className="space-y-3 mb-4">
-          <textarea value={msg} onChange={e=> setMsg(e.target.value)} placeholder="維護訊息" className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[80px]" />
-          <input value={until} onChange={e=> setUntil(e.target.value)} placeholder="預計完成時間 (ISO 或描述)" className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg" />
+          <textarea value={msg} onChange={e=> setMsg(e.target.value)} placeholder="維護訊息" className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[80px] text-sm sm:text-base" />
+          <input value={until} onChange={e=> setUntil(e.target.value)} placeholder="預計完成時間 (ISO 或描述)" className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg text-sm sm:text-base" />
         </div>
       )}
-      <button onClick={save} disabled={saving} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50">{saving? '儲存中...' : '儲存'}</button>
+      <button onClick={save} disabled={saving} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50 text-sm sm:text-base">{saving? '儲存中...' : '儲存'}</button>
       <p className="text-xs text-muted mt-4">尚未加入權限驗證（後續需登入才可操作）。</p>
     </div>
   )
-  if (full) return <div className="min-h-screen flex flex-col items-center pt-24 md:pt-32 px-4">{inner}</div>
+  if (full) return <div className="min-h-screen flex flex-col items-center pt-20 sm:pt-24 md:pt-32 px-3 sm:px-4">{inner}</div>
   return <div className="mt-10">{inner}</div>
 }

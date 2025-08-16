@@ -9,6 +9,25 @@
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
 }
 
+/* 小裝置優化 */
+@media (max-width: 640px) {
+  /* 確保點擊目標足夠大 */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* 改善觸控滾動體驗 */
+  .overflow-auto, .overflow-y-auto, .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* 避免文字過小 */
+  input, textarea, select {
+    font-size: 16px; /* 防止 iOS 縮放 */
+  }
+}
+
 /* 背景圖 + 單層遮罩（亮/暗） */
 body { background: var(--bg); color: var(--fg); min-height:100dvh; }
 
@@ -25,9 +44,9 @@ body { background: var(--bg); color: var(--fg); min-height:100dvh; }
 :root[data-theme='mist'] body {background-image:linear-gradient(to bottom,rgba(238,240,242,0.66),rgba(226,229,232,0.66)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
 :root[data-theme='dark'] body {background-image:linear-gradient(to bottom,rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url(/images/bg-dark.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
 
-/* 初始淡入避免 FOUC */
-html { opacity:0; transition:opacity .4s ease; }
-html.theme-ready { opacity:1; }
+/* 初始淡入避免 FOUC - 暫時停用以測試白畫面問題 */
+/* html { opacity:0; transition:opacity .4s ease; } */
+/* html.theme-ready { opacity:1; } */
 
 /* 自訂滾動條 */
 ::-webkit-scrollbar {
@@ -65,3 +84,31 @@ html.theme-ready { opacity:1; }
 
 /* text-fg utility */
 .text-fg { color: var(--fg); }
+
+/* 多行文字截斷 */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* 安全區域內邊距（適用於有瀏海的手機） */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-left { padding-left: env(safe-area-inset-left); }
+.safe-right { padding-right: env(safe-area-inset-right); }
