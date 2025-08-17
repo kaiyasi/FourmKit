@@ -88,41 +88,104 @@ def list_posts():
 @bp.post("/posts")
 def create_post():
     try:
-        data: dict[str, Any] = request.get_json(force=True, silent=True) or {}
-    except Exception:
-        data = {}
+        from flask import current_app
+        current_app.logger.debug(f"create_post started, content_type: {request.content_type}")
+        
+        # 檢查 Content-Type 是否為 JSON
+        if not request.content_type or not request.content_type.startswith('application/json'):
+            return fail("INVALID_CONTENT_TYPE", "請使用 application/json 格式", http=400)
+        
+        try:
+            data: dict[str, Any] = request.get_json(force=True, silent=True) or {}
+        except Exception as e:
+            current_app.logger.warning(f"JSON parse failed: {e}")
+            return fail("INVALID_JSON", "無效的 JSON 格式", http=400)
 
-    raw_content = (data.get("content") or "").strip()
-    if len(raw_content) < 15:
-        return fail("CONTENT_TOO_SHORT", "內容太短（需 ≥ 15 字）", http=400)
-    if len(raw_content) > 2000:
-        return fail("CONTENT_TOO_LONG", "內容過長（≤ 2000 字）", http=400)
+        raw_content = (data.get("content") or "").strip()
+        if not raw_content:
+            return fail("MISSING_CONTENT", "缺少 content 欄位", http=422)
+        if len(raw_content) < 15:
+            return fail("CONTENT_TOO_SHORT", "內容太短（需 ≥ 15 字）", http=400)
+        if len(raw_content) > 2000:
+            return fail("CONTENT_TOO_LONG", "內容過長（≤ 2000 字）", http=400)
 
-    fp = _author_hash()
-    ok_rate, wait = _rate_limit_ok(fp, window=30)
-    if not ok_rate:
-        return fail("RATE_LIMIT", f"發文太頻繁，請 {wait} 秒後再試", http=429)
+        fp = _author_hash()
+        ok_rate, wait = _rate_limit_ok(fp, window=30)
+        if not ok_rate:
+            return fail("RATE_LIMIT", f"發文太頻繁，請 {wait} 秒後再試", http=429)
 
-    content = clean_html(raw_content)
+        content = clean_html(raw_content)
 
-    try:
         with next(get_db()) as db:  # type: ignore
             db: Session
-            p = Post(author_hash=fp, content=content)
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            p = Post(
+                author_hash=fp, 
+                content=content,
+                created_at=now,
+                updated_at=now,
+                deleted=False
+            )
             db.add(p)
             db.commit()
             db.refresh(p)
 
-        return ok(
-            {
-                "id": p.id,
-                "content": p.content,
-                "author_hash": (p.author_hash or "")[:8],
-                "created_at": p.created_at.isoformat(),
-            },
-            http=201,
-        )
+        result = {
+            "id": p.id,
+            "content": p.content,
+            "author_hash": (p.author_hash or "")[:8],
+            "created_at": p.created_at.isoformat(),
+        }
+        
+        # 廣播新貼文事件，包含來源追蹤
+        try:
+            from app import socketio
+            import time, uuid
+            if socketio:
+                origin = request.headers.get("X-Client-Id") or "-"
+                client_tx_id = request.headers.get("X-Tx-Id") or data.get("client_tx_id")
+                
+                # 產生唯一事件 ID
+                event_id = f"post:{int(time.time()*1000)}:{uuid.uuid4().hex[:8]}"
+                
+                # 確保 payload 100% JSON-safe，避免任何 generator/SQLAlchemy 物件
+                def _post_to_public_dict(row):
+                    return {
+                        "id": int(row.id),
+                        "content": str(row.content or ""),
+                        "author_hash": str(row.author_hash or "")[:8],
+                        "created_at": row.created_at.astimezone(timezone.utc).isoformat() if getattr(row, "created_at", None) else None,
+                    }
+                
+                safe_post = _post_to_public_dict(p)
+                broadcast_payload = {
+                    "post": safe_post,
+                    "origin": str(origin),
+                    "client_tx_id": str(client_tx_id) if client_tx_id else None,
+                    "event_id": event_id,
+                }
+                
+                # 詳細廣播日誌
+                current_app.logger.info(f"[SocketIO] emit post_created: event_id={event_id} post_id={safe_post['id']} origin={origin} tx_id={client_tx_id} content_preview='{safe_post['content'][:30]}...'")
+                
+                # 安全地檢查當前連線的客戶端數量（避免 len(generator) 錯誤）
+                try:
+                    participants_iter = socketio.server.manager.get_participants(namespace="/", room=None)
+                    connected_clients = sum(1 for _ in participants_iter)  # 安全地計數 generator
+                    current_app.logger.info(f"[SocketIO] broadcasting to {connected_clients} connected clients")
+                except Exception as count_err:
+                    current_app.logger.warning(f"[SocketIO] failed to count clients: {count_err}, proceeding with broadcast")
+                
+                socketio.emit("post_created", broadcast_payload, namespace="/")
+                current_app.logger.info(f"[SocketIO] post_created broadcast completed: event_id={event_id} post_id={safe_post['id']}")
+        except Exception as e:
+            current_app.logger.exception(f"[SocketIO] Failed to broadcast post_created: {e}")
+        
+        return ok(result, http=201)
     except Exception as e:
+        from flask import current_app
+        current_app.logger.exception("create_post failed")
         return fail("INTERNAL_CREATE_POST", "建立貼文失敗", details=str(e))
 
 @bp.get("/posts/<int:post_id>")

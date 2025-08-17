@@ -44,14 +44,22 @@ def set_mode(mode: str, maintenance_message: str | None = None, maintenance_unti
     
     # 處理維護訊息，確保不會是空白字串
     if maintenance_message is not None:
-        data["maintenance_message"] = maintenance_message if maintenance_message.strip() else ""
+        # 確保 maintenance_message 是字串類型
+        if isinstance(maintenance_message, str):
+            data["maintenance_message"] = maintenance_message.strip() if maintenance_message.strip() else ""
+        else:
+            data["maintenance_message"] = ""
     elif mode == "maintenance" and not data.get("maintenance_message"):
         # 如果切換到維護模式但沒有訊息，設定空字串避免顯示 None
         data["maintenance_message"] = ""
     
     # 處理維護時間
     if maintenance_until is not None:
-        data["maintenance_until"] = maintenance_until if maintenance_until.strip() else ""
+        # 確保 maintenance_until 是字串類型
+        if isinstance(maintenance_until, str):
+            data["maintenance_until"] = maintenance_until.strip() if maintenance_until.strip() else ""
+        else:
+            data["maintenance_until"] = ""
     elif mode == "maintenance" and not data.get("maintenance_until"):
         # 如果切換到維護模式但沒有時間，設定空字串避免顯示 None
         data["maintenance_until"] = ""

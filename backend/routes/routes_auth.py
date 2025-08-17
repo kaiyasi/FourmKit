@@ -67,21 +67,30 @@ def login():
         return jsonify({"msg": "無效的資料格式"}), 400
     
     username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
     password = data.get('password', '')
     
-    if not username or not password:
-        return jsonify({"msg": "用戶名和密碼都是必填項"}), 400
+    if not password:
+        return jsonify({"msg": "密碼是必填項"}), 400
+    
+    if not username and not email:
+        return jsonify({"msg": "用戶名或 Email 是必填項"}), 400
     
     db = next(get_db())
     try:
-        # 查找用戶
-        user = db.query(User).filter_by(username=username).first()
+        # 查找用戶（支援 username 或 email）
+        user = None
+        if username:
+            user = db.query(User).filter_by(username=username).first()
+        elif email:
+            user = db.query(User).filter_by(email=email).first()
+            
         if not user or not check_password(password, user.password_hash):
-            return jsonify({"msg": "用戶名或密碼錯誤"}), 401
+            return jsonify({"msg": "用戶名/Email 或密碼錯誤"}), 401
         
-        # 生成 JWT Token
-        access_token = create_access_token(identity=username)
-        refresh_token = create_refresh_token(identity=username)
+        # 生成 JWT Token（使用 str(user.id) 作為 identity 以符合 JWT 規範）
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         
         return jsonify({
             "access_token": access_token,
@@ -99,11 +108,13 @@ def login():
 @jwt_required()
 def get_user_info():
     """獲取當前用戶資訊"""
-    username = get_jwt_identity()
+    user_id_str = get_jwt_identity()
     
     db = next(get_db())
     try:
-        user = db.query(User).filter_by(username=username).first()
+        # 將字串形式的 user_id 轉換回整數
+        user_id = int(user_id_str)
+        user = db.query(User).filter_by(id=user_id).first()
         if not user:
             return jsonify({"msg": "用戶不存在"}), 404
         

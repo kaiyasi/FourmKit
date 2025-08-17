@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import socket from '../../lib/socket'
+import { getSocket } from '../../services/socket'
 
 export default function SocketBadge() {
   const [status, setStatus] = useState<'connecting'|'connected'|'disconnected'>('connecting')
@@ -7,6 +7,7 @@ export default function SocketBadge() {
   const [lastPong, setLastPong] = useState<string>('—')
 
   useEffect(() => {
+    const socket = getSocket()
     const onConnect = () => { setStatus('connected') }
     const onDisconnect = () => { setStatus('disconnected') }
     const onHello = (data: any) => { setLastMsg(`hello: ${data?.message || ''}`) }
@@ -28,7 +29,7 @@ export default function SocketBadge() {
     }
   }, [])
 
-  const ping = () => socket.emit('ping', { at: Date.now() })
+  const ping = () => getSocket().emit('ping', { at: Date.now() })
 
   const dot = status === 'connected' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-500' : 'bg-rose-500'
 

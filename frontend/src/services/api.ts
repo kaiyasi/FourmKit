@@ -37,3 +37,17 @@ export const ModeAPI = {
       }),
     }),
 };
+
+export async function createPost(token: string, payload: {title: string; content: string; files: File[]}) {
+  const fd = new FormData();
+  fd.set("title", payload.title);
+  fd.set("content", payload.content);
+  payload.files.forEach(f => fd.append("files", f));
+  const r = await fetch("/api/posts/with-media", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}

@@ -1,5 +1,11 @@
-// frontend/src/socket.ts
+// frontend/src/services/socket.ts
 import io from "socket.io-client";
+
+declare global { 
+  interface Window { 
+    __SOCKET_NEW_COUNT?: number 
+  }
+}
 
 type ClientSocket = ReturnType<typeof io>;
 let socket: ClientSocket | null = null;
@@ -18,11 +24,17 @@ export function getSocket(): ClientSocket {
     timeout: 20000,
   });
 
+  // 追蹤連線建立次數與詳細資訊
+  window.__SOCKET_NEW_COUNT = (window.__SOCKET_NEW_COUNT ?? 0) + 1
+  const timestamp = new Date().toISOString()
+  console.info(`[socket] created instance #${window.__SOCKET_NEW_COUNT} at ${timestamp}`)
+  console.info('[socket] stack trace:', new Error().stack)
+
   // 基本日誌
   socket.on("connect", () => console.log("[WS] connected", socket?.id));
-socket.on("disconnect", (reason: any) => console.log("[WS] disconnect", reason));
-socket.on("connect_error", (e: Error) => console.warn("[WS] connect_error", e));
-socket.on("reconnect_attempt", (n: number) => console.log("[WS] reconnect_attempt", n));
+  socket.on("disconnect", (reason: any) => console.log("[WS] disconnect", reason));
+  socket.on("connect_error", (e: Error) => console.warn("[WS] connect_error", e));
+  socket.on("reconnect_attempt", (n: number) => console.log("[WS] reconnect_attempt", n));
 
   return socket;
 }

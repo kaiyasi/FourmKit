@@ -11,6 +11,8 @@ RUN apt-get update && \
         tzdata \
         libpq-dev \
         build-essential \
+        libmagic1 \
+        ffmpeg \
         && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
@@ -25,6 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 複製應用代碼和配置文件
 COPY . .
+
+# 創建上傳目錄
+RUN mkdir -p /app/uploads/images /app/uploads/videos
 
 # 立即設置所有檔案的權限
 RUN chmod -R 644 /app/*.py 2>/dev/null || echo "Warning: Could not set permissions on Python files"

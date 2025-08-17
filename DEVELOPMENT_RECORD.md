@@ -117,3 +117,21 @@
 - Token 儲存於 localStorage，後續 API 請求帶入認證
 - 模式切換與公告 API 已加上角色驗證（需管理員身分）
 - 修正前端白畫面問題（Nginx 靜態資源配置缺失）
+
+---
+
+## Day 8 — 多媒體上傳
+日期：2025-08-17
+時數：約 N 小時
+狀態：已完成
+
+### 目標
+- 發文/留言支援圖片與影片
+- 圖片縮圖自動產生
+- 前端附件選擇、拖拉、預覽、刪除
+
+### 達成情況
+- 後端 /api/posts 支援 multipart 多檔上傳
+- Pillow + libmagic 實作縮圖與 MIME 雙檢查
+- Nginx 公開 /uploads，限制 client_max_body_size
+- 前端完成 UploadArea + PostComposer 串接與驗證

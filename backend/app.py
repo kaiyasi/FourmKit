@@ -12,18 +12,28 @@ from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit  # type: ignore[import]
 
-from utils.config_handler import load_config, set_mode
+from utils.config_handler import load_config
 from utils.db import init_engine_session
 from routes.routes_posts import bp as posts_bp
 from routes.routes_auth import bp as auth_bp
 from routes.routes_admin import bp as admin_bp
 from routes.routes_mode import bp as mode_bp
+from routes.routes_media import bp as media_bp
 from flask_jwt_extended import JWTManager
 
 APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-d6")
 
-# SocketIO will be initialized inside create_app()
-socketio: SocketIO | None = None
+# 先建立未綁 app 的全域 socketio，在 create_app() 裡再 init_app
+socketio = SocketIO(
+    cors_allowed_origins=[],  # 實際 origins 稍後在 init_app 指定
+    async_mode="eventlet",
+    logger=False,
+    engineio_logger=False,
+    ping_interval=25,
+    ping_timeout=60,
+)
+
+_events_registered = False  # 防重註冊旗標
 
 
 # -------- 通用工具：ticket 產生 --------
@@ -390,6 +400,15 @@ def _parse_changelog() -> dict[str, Any]:
 # -------- Flask 應用 --------
 def create_app() -> Flask:
     app = Flask(__name__)
+    
+    # 把 Flask log 對齊 Gunicorn
+    import logging
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.DEBUG)
+    app.config["PROPAGATE_EXCEPTIONS"] = False  # 交給 errorhandler
+    
     # 強制設定強密鑰，生產環境不使用預設值
     secret_key = os.getenv("SECRET_KEY")
     if not secret_key or secret_key == "dev":
@@ -412,22 +431,18 @@ def create_app() -> Flask:
     allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else ["http://localhost:3000"]
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
-    global socketio
-    # Socket.IO 也要限制來源
-    socketio = SocketIO(
-        app,
-        cors_allowed_origins=os.getenv("SOCKETIO_ORIGINS", "").split(",") if os.getenv("SOCKETIO_ORIGINS") else allowed_origins,
-        async_mode="eventlet",
-        logger=False,
-        engineio_logger=False,
-        ping_interval=25,
-        ping_timeout=60,
-    )
+    # 初始化 SocketIO（只在這裡做一次）
+    socketio_origins = os.getenv("SOCKETIO_ORIGINS", "").split(",") if os.getenv("SOCKETIO_ORIGINS") else allowed_origins
+    socketio.init_app(app, cors_allowed_origins=socketio_origins)
+
+    @app.before_request
+    def add_req_id():
+        g.req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        g.request_id = g.req_id  # 保持向後相容
+        g.request_ts = datetime.now(timezone.utc).isoformat()
 
     def _ctx() -> Any:
-        # 確保每個請求都有 request_id 和 request_ts
-        g.request_id = str(uuid.uuid4())
-        g.request_ts = datetime.now(timezone.utc).isoformat()
+        # request_id 和 request_ts 已在 add_req_id 中設定
 
         if request.path.startswith("/api"):
             cfg = load_config() or {}
@@ -445,7 +460,7 @@ def create_app() -> Flask:
                         maintenance_until = None
                     
                     return jsonify({
-                        "success": False,
+                        "ok": False,
                         "error": {
                             "code": "FK-MAINT-001",
                             "message": maintenance_msg,
@@ -462,8 +477,9 @@ def create_app() -> Flask:
 
     app.before_request(_ctx)
 
-    def _headers(resp: Response) -> Response:
-        resp.headers["X-Request-ID"] = g.request_id
+    @app.after_request
+    def add_resp_id(resp: Response) -> Response:
+        resp.headers["X-Request-ID"] = getattr(g, "req_id", "-")
         resp.headers["X-ForumKit-App"] = "backend"
         resp.headers["X-ForumKit-Build"] = APP_BUILD_VERSION
         resp.headers["Access-Control-Expose-Headers"] = "X-ForumKit-Ticket, X-Request-ID, X-ForumKit-Build"
@@ -471,7 +487,7 @@ def create_app() -> Flask:
             resp.headers["X-ForumKit-Ticket"] = g.ticket_id
         return resp
 
-    app.after_request(_headers)
+
 
     # ---- REST ----
     @app.route("/api/healthz")
@@ -630,12 +646,43 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(mode_bp)
+    app.register_blueprint(media_bp)
 
+    from werkzeug.exceptions import HTTPException
+    
     @app.errorhandler(Exception)
-    def _err(e: Exception):  # noqa: F841
-        if os.getenv("FORUMKIT_DEBUG") == "1":
-            return error("FK-SYS-000", 500, f"系統忙碌: {e.__class__.__name__}: {e}")
-        return error("FK-SYS-000", 500, "系統忙碌，請稍後再試")
+    def handle_any(e: Exception):  # noqa: F841
+        if isinstance(e, HTTPException):
+            code = e.code
+            msg = e.description
+        else:
+            code = 500
+            msg = str(e)
+        app.logger.exception("Unhandled exception")  # 這行輸出完整 traceback 到容器 log
+        return jsonify({
+            "ok": False,
+            "error": {
+                "code": code,
+                "message": msg,
+                "hint": "check backend logs",
+                "details": None
+            },
+            "trace": {"request_id": g.get("request_id"), "ts": g.get("request_ts")}
+        }), code
+    
+    @app.errorhandler(HTTPException)
+    def handle_http_error(e: HTTPException):
+        app.logger.info(f"HTTP {e.code}: {e.description}")  # HTTP 錯誤記錄但不需要 traceback
+        return jsonify({
+            "ok": False,
+            "error": {
+                "code": f"HTTP-{e.code}",
+                "message": e.description or "HTTP錯誤",
+                "hint": "檢查請求參數與權限",
+                "details": None
+            },
+            "trace": {"request_id": g.get("request_id"), "ts": g.get("request_ts")}
+        }), e.code
 
     try:
         routes_after = sorted(str(r) for r in app.url_map.iter_rules())  # type: ignore[attr-defined]
@@ -643,40 +690,66 @@ def create_app() -> Flask:
     except Exception as ie:  # noqa: BLE001
         print(f"[ForumKit][routes] FAIL: {ie}")
 
-    socketio.init_app(app)
-    register_socketio_events(socketio)
+    register_socketio_events()  # 僅首次生效
     
-    # 啟動原生 socket 心跳服務
-    from infra.heartbeat_server import start_heartbeat_server
-    start_heartbeat_server()
+    # 啟動原生心跳服務：避免重複啟動
+    if not getattr(app, "_heartbeat_started", False):
+        from infra.heartbeat_server import start_heartbeat_server
+        try:
+            start_heartbeat_server()
+            setattr(app, "_heartbeat_started", True)
+        except OSError:
+            # 已被另一個實例占用時忽略
+            pass
     
     return app
 
 
 def error(code: str, http: int, message: str, hint: str | None = None) -> Tuple[Response, int]:
     return jsonify({
-        "success": False,
+        "ok": False,
         "error": {"code": code, "message": message, "hint": hint, "details": None},
         "trace": {"request_id": g.get("request_id"), "ts": g.get("request_ts")}
     }), http
 
 
-def register_socketio_events(socketio: SocketIO):
+def register_socketio_events():
+    global _events_registered
+    if _events_registered:
+        return
+    _events_registered = True
+
     @socketio.on("connect")
     def on_connect():  # noqa: F841
+        from flask import current_app
         request_id = str(uuid.uuid4())
         request_ts = datetime.now(timezone.utc).isoformat()
-        emit("hello", {"message": "connected", "request_id": request_id, "ts": request_ts})
+        
+        # 詳細連線日誌
+        client_info = {
+            "sid": request.sid,
+            "remote_addr": request.remote_addr,
+            "user_agent": request.headers.get("User-Agent", ""),
+            "origin": request.headers.get("Origin", ""),
+        }
+        current_app.logger.info(f"[SocketIO] client connected: sid={request.sid} addr={request.remote_addr} ua='{request.headers.get('User-Agent', '')[:50]}...'")
+        
+        emit("hello", {"message": "connected", "request_id": request_id, "ts": request_ts, "sid": request.sid})
+
+    @socketio.on("disconnect")
+    def on_disconnect():  # noqa: F841
+        from flask import current_app
+        current_app.logger.info(f"[SocketIO] client disconnected: sid={request.sid}")
 
     @socketio.on("ping")
     def on_ping(data: Any):  # noqa: F841
-        emit("pong", {"echo": data, "ts": datetime.now(timezone.utc).isoformat()})
+        from flask import current_app
+        current_app.logger.debug(f"[SocketIO] ping from sid={request.sid}: {data}")
+        emit("pong", {"echo": data, "ts": datetime.now(timezone.utc).isoformat(), "sid": request.sid})
 
 
-app = create_app()
-
+# 別在模組層級呼叫 create_app()
+# 留給 gunicorn --factory app:create_app
 if __name__ == "__main__":
-    if socketio is not None:
-        socketio.run(app, host="0.0.0.0", port=8000)
-    else:
-        raise RuntimeError("SocketIO is not initialized. Please check create_app().")
+    app = create_app()
+    socketio.run(app, host="0.0.0.0", port=8000)

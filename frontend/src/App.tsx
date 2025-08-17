@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { getSocket, on as wsOn, off as wsOff } from './services/socket'
+import { getSocket } from './services/socket'
+import { ensurePostListener, ensureCommentListener, ensureAnnounceListener } from './services/realtime'
+import { getClientId, upsertByIdOrTemp, upsertSocketPayload } from './utils/client'
 import { NavBar } from './components/layout/NavBar'
 import { MobileFabNav } from './components/layout/MobileFabNav'
 import { ThemeToggle } from './components/ui/ThemeToggle'
@@ -47,7 +49,7 @@ export default function App() {
     return { isSmallScreen, isTinyScreen }
   }
 
-  function useRealtimeToasts() {
+  function useRealtimeToasts(onNewPost?: (payload: any) => void) {
     const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
     useEffect(() => {
       let idSeq = 1
@@ -56,24 +58,42 @@ export default function App() {
         setToasts(cur => [...cur, { id, text }])
         setTimeout(() => setToasts(cur => cur.filter(t => t.id !== id)), 5000)
       }
-      const onPost = (p: any) => push(`新貼文：${p?.title ?? '(無標題)'}`)
+      
+      const myClientId = getClientId()
+      
+      // 統一的 post 處理器：顯示 toast 並調用回調
+      const combinedPostHandler = (payload: any) => {
+        const { post, origin, client_tx_id } = payload
+        
+        console.info(`[App] processing socket payload: post_id=${post?.id} origin=${origin} tx_id=${client_tx_id}`)
+        
+        // 顯示 toast
+        if (origin === myClientId) {
+          push(`您的貼文已發布：${(post?.content ?? '').slice(0, 30)}…`)
+        } else {
+          push(`新貼文：${(post?.content ?? '').slice(0, 30)}…`)
+        }
+        
+        // 呼叫外部回調，用於更新 injected 狀態
+        onNewPost?.(payload)
+      }
+      
       const onCmt = (c: any) => push(`新留言：${(c?.content ?? '').slice(0, 20)}…`)
       const onAnn = (a: any) => push(`公告：${(a?.message ?? '').slice(0, 30)}…`)
-      wsOn('post.created', onPost)
-      wsOn('comment.created', onCmt)
-      wsOn('announce', onAnn)
-      getSocket()
-      return () => {
-        wsOff('post.created', onPost)
-        wsOff('comment.created', onCmt)
-        wsOff('announce', onAnn)
-      }
-    }, [])
+      
+      // 只註冊一次 post listener，合併 toast 和狀態更新功能
+      ensurePostListener(combinedPostHandler)
+      ensureCommentListener(onCmt)
+      ensureAnnounceListener(onAnn)
+      getSocket()  // 確保 Socket 連線
+      
+      // 清理函數由 ensureXXXListener 內部處理，這裡不需要手動 off
+    }, [onNewPost])
     return toasts
   }
 
-  function RealtimeToastPanel() {
-    const toasts = useRealtimeToasts()
+  function RealtimeToastPanel({ onNewPost }: { onNewPost?: (post: any) => void }) {
+    const toasts = useRealtimeToasts(onNewPost)
     return (
       <div className="fixed bottom-3 sm:bottom-4 right-3 sm:right-4 left-3 sm:left-auto z-50 space-y-2">
         {toasts.map(t => (
@@ -94,7 +114,39 @@ export default function App() {
   const [progressLoading, setProgressLoading] = useState(true)
 
   const { isSmallScreen } = useScreenSize()
-  const [injected, setInjected] = useState<any|null>(null)
+  const [injectedItems, setInjectedItems] = useState<any[]>([])
+  
+  // 用於 upsert 邏輯的 injected 處理
+  const handleNewPost = (postOrPayload: any) => {
+    const timestamp = new Date().toISOString()
+    
+    // 如果是來自 Socket.IO 的 payload 格式
+    if (postOrPayload?.post) {
+      console.info(`[handleNewPost] socket payload at ${timestamp}:`, {
+        post_id: postOrPayload.post?.id,
+        origin: postOrPayload.origin,
+        tx_id: postOrPayload.client_tx_id,
+        event_id: postOrPayload.event_id
+      })
+      
+      // 使用專門的 socket payload 處理函數
+      setInjectedItems(prev => {
+        const result = upsertSocketPayload(prev, postOrPayload)
+        console.info(`[handleNewPost] socket upsert: ${prev.length} -> ${result.length} items`)
+        return result
+      })
+    } else {
+      // 直接的 post 對象（來自 PostForm 的樂觀插入或 API 回應）
+      const isOptimistic = !postOrPayload?.id
+      console.info(`[handleNewPost] direct post at ${timestamp}: ${isOptimistic ? 'optimistic' : 'confirmed'} id=${postOrPayload?.id} tx_id=${postOrPayload?.client_tx_id}`)
+      
+      setInjectedItems(prev => {
+        const result = upsertByIdOrTemp(prev, postOrPayload)
+        console.info(`[handleNewPost] direct upsert: ${prev.length} -> ${result.length} items`)
+        return result
+      })
+    }
+  }
 
   // 初始化主題
   useEffect(() => {
@@ -394,7 +446,7 @@ export default function App() {
             </div>
           </div>
 
-          <RealtimeToastPanel />
+          <RealtimeToastPanel onNewPost={handleNewPost} />
         </div>
       </div>
     )
@@ -411,14 +463,14 @@ export default function App() {
             <h1 className="text-xl sm:text-2xl font-semibold dual-text">ForumKit</h1>
             <SocketBadge />
           </div>
-          <PostForm onCreated={(p)=> setInjected(p)} />
+          <PostForm onCreated={handleNewPost} />
         </section>
         <section className="bg-surface/90 border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft">
           <h2 className="font-semibold dual-text mb-3">最新貼文</h2>
-          <PostList injected={injected} />
+          <PostList injectedItems={injectedItems} />
         </section>
       </main>
-      <RealtimeToastPanel />
+      <RealtimeToastPanel onNewPost={handleNewPost} />
     </div>
   )
 }
@@ -695,7 +747,11 @@ function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode;
   const save = async () => {
     try {
       setSaving(true)
-      const r = await fetch('/api/mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode, maintenance_message: msg, maintenance_until: until }) })
+      const r = await fetch('/api/mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ 
+        mode, 
+        ...(msg && msg.trim() ? { notice: msg.trim() } : {}), 
+        ...(until && until.trim() ? { eta: until.trim() } : {}) 
+      }) })
       const data = await r.json().catch(()=> ({}))
       if (r.ok) onUpdated(data)
       location.assign('/')

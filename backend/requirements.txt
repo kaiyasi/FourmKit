@@ -11,6 +11,8 @@ psycopg[binary]==3.2.1
 python-dotenv>=1.0
 psycopg2-binary>=2.9
 alembic>=1.13
+Pillow==10.4.0
+python-magic==0.4.27
 
 
 # Using Python standard library urllib for Discord Webhook, no additional dependencies

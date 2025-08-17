@@ -1,8 +1,13 @@
 // frontend/src/components/PostForm.tsx
 import { useState } from 'react'
+import UploadArea from '../UploadArea'
+import { postJSON, postFormData, HttpError } from '../../lib/http'
+import { validatePost } from '../../schemas/post'
+import { getClientId, newTxId, makeTempKey } from '../../utils/client'
 
 export default function PostForm({ onCreated }: { onCreated: (post: any) => void }) {
   const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -10,21 +15,64 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     const body = content.trim()
     if (body.length < 15) { setErr('內容太短（需 ≥ 15 字）'); return }
     setBusy(true); setErr(null)
+    
+    const clientId = getClientId()
+    const txId = newTxId()
+    const now = new Date().toISOString()
+    
+    // 樂觀插入：立即顯示暫時貼文
+    const optimisticPost = {
+      tempKey: makeTempKey(body, now, '', txId),
+      client_tx_id: txId,
+      content: body,
+      author_hash: '您',
+      created_at: now,
+    }
+    onCreated?.(optimisticPost)
+    
     try {
-      const r = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: body })
-      })
-      const data = await r.json().catch(()=> ({}))
-      if (!r.ok || !data?.ok) {
-        setErr(data?.error || `發文失敗（HTTP ${r.status})`); return
+      let result
+      
+      if (files.length > 0) {
+        // 有檔案時使用 FormData
+        const fd = new FormData()
+        fd.set('content', body)
+        fd.set('client_tx_id', txId)
+        files.forEach(f => fd.append('files', f))
+        
+        const headers = { 
+          'X-Client-Id': clientId, 
+          'X-Tx-Id': txId 
+        }
+        result = await postFormData('/api/posts/with-media', fd, { headers })
+      } else {
+        // 沒有檔案時使用 JSON
+        const headers = { 
+          'Content-Type': 'application/json',
+          'X-Client-Id': clientId, 
+          'X-Tx-Id': txId 
+        }
+        result = await postJSON('/api/posts', { content: body, client_tx_id: txId }, { headers })
       }
-      onCreated?.(data.post)
-      setContent('')              // ✅ 可重複提交
-    } catch (e:any) {
-      setErr(String(e))
-    } finally { setBusy(false) }
+      
+      // 驗證返回的貼文資料，添加 client_tx_id 用於替換樂觀項目
+      const validatedPost = validatePost(result)
+      validatedPost.client_tx_id = txId
+      onCreated?.(validatedPost)  // 這會觸發替換
+      
+      setContent('')
+      setFiles([])
+    } catch (e) {
+      if (e instanceof HttpError) {
+        setErr(e.message)
+      } else if (e instanceof Error) {
+        setErr(e.message)
+      } else {
+        setErr("發文時發生未知錯誤")
+      }
+    } finally { 
+      setBusy(false) 
+    }
   }
 
   return (
@@ -36,8 +84,17 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         value={content}
         onChange={e=> setContent(e.target.value)}
       />
+      
+      {/* 媒體上傳區域 */}
+      <div className="mt-3">
+        <UploadArea value={files} onChange={setFiles} maxCount={6} />
+      </div>
+      
       {err && <p className="text-sm text-rose-600 mt-2">{err}</p>}
-      <div className="mt-3 flex gap-2 justify-end">
+      <div className="mt-3 flex gap-2 justify-between items-center">
+        <div className="text-sm text-muted">
+          {files.length > 0 && `${files.length} 個檔案`}
+        </div>
         <button
           onClick={submit}
           disabled={busy}

@@ -1,8 +1,12 @@
 // frontend/src/components/PostList.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { getJSON, HttpError } from '../lib/http'
+import { validatePostList, type PostList as PostListType, type Post } from '../schemas/post'
+import { dedup } from '../utils/client'
+import ErrorBox from './ui/ErrorBox'
 
-export default function PostList({ injected }: { injected?: any | null }) {
-  const [items, setItems] = useState<any[]>([])
+export default function PostList({ injectedItems = [] }: { injectedItems?: any[] }) {
+  const [data, setData] = useState<PostListType | null>(null)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -12,21 +16,33 @@ export default function PostList({ injected }: { injected?: any | null }) {
   const fetchPage = async (p = 1) => {
     if (loading) return
     setLoading(true)
+    setError(null)
+    
     try {
-      const r = await fetch(`/api/posts?page=${p}&per_page=${perPage}`, { credentials: 'include' })
-      const j = await r.json()
-      if (!r.ok || !j?.ok) {
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`)
+      const raw = await getJSON<any>(`/api/posts?page=${p}&per_page=${perPage}`)
+      const validated = validatePostList(raw)
+      
+      if (p === 1) {
+        setData(validated)
+      } else {
+        // 加載更多：合併資料並去重
+        setData(prev => prev ? {
+          ...validated,
+          items: dedup([...prev.items, ...validated.items])
+        } : validated)
       }
-      const list = Array.isArray(j.data.items) ? j.data.items : []
-      setItems(prev => p === 1 ? list : [...prev, ...list])
-      const total = j.data.total ?? 0
+      
       const loaded = p * perPage
-      setHasMore(loaded < total)
+      setHasMore(loaded < validated.total)
       setPage(p)
-      setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (e) {
+      if (e instanceof HttpError) {
+        setError(e.message)
+      } else if (e instanceof Error) {
+        setError(e.message)
+      } else {
+        setError("載入貼文時發生未知錯誤")
+      }
     } finally {
       setLoading(false)
     }
@@ -34,33 +50,45 @@ export default function PostList({ injected }: { injected?: any | null }) {
 
   useEffect(() => { fetchPage(1) }, [])
 
-  // 即時插入新貼文（從父層 onCreated 傳入）
-  useEffect(() => {
-    if (injected) {
-      setItems(prev => [injected, ...prev])
-    }
-  }, [injected])
+  // 合併 injected items 與已載入的資料
+  const allItems = data ? dedup([...injectedItems, ...data.items]) : injectedItems;
+
+  if (loading && !data) {
+    return <div className="text-center py-8 text-muted">載入中...</div>
+  }
 
   if (error) {
-    return <div className="text-red-500 text-sm">載入失敗：{error}</div>
+    return <ErrorBox message={error} title="載入貼文失敗" />
+  }
+
+  if (!Array.isArray(allItems)) {
+    return <ErrorBox message="資料格式錯誤：items 非陣列" />
   }
 
   return (
     <div className="space-y-3">
-      {items.map(p => (
-        <article key={p.id} className="rounded-xl border border-border bg-surface p-4">
-          <div className="text-xs text-muted mb-2">
-            #{p.id} • {new Date(p.created_at).toLocaleString()} • 匿名 {p.author_hash}
-          </div>
-          <div
-            className="prose prose-sm max-w-none text-fg"
-            dangerouslySetInnerHTML={{ __html: p.content }}
-          />
-          <div className="mt-3 text-right">
-            <a className="text-sm underline text-muted" href={`/delete/${p.id}`}>刪文請求</a>
-          </div>
-        </article>
-      ))}
+      {allItems.length === 0 ? (
+        <div className="text-center py-8 text-muted">目前沒有貼文。</div>
+      ) : (
+        allItems.map((p: any) => (
+          <article key={p.id ?? p.tempKey ?? `fallback-${allItems.indexOf(p)}`} className="rounded-xl border border-border bg-surface p-4">
+            <div className="text-xs text-muted mb-2">
+              #{p.id || p.tempKey || '待確認'} • {p.created_at ? new Date(p.created_at).toLocaleString() : '時間未知'} • 匿名 {p.author_hash || '未知'}
+            </div>
+            <div
+              className="prose prose-sm max-w-none text-fg"
+              dangerouslySetInnerHTML={{ __html: p.content }}
+            />
+            <div className="mt-3 text-right">
+              {p.id ? (
+                <a className="text-sm underline text-muted" href={`/delete/${p.id}`}>刪文請求</a>
+              ) : (
+                <span className="text-sm text-muted opacity-50">發布中...</span>
+              )}
+            </div>
+          </article>
+        ))
+      )}
       <div className="pt-2">
         {hasMore ? (
           <button
@@ -70,9 +98,9 @@ export default function PostList({ injected }: { injected?: any | null }) {
           >
             {loading ? '載入中…' : '載入更多'}
           </button>
-        ) : (
+        ) : allItems.length > 0 ? (
           <div className="text-center text-muted text-sm py-2">沒有更多了</div>
-        )}
+        ) : null}
       </div>
     </div>
   )

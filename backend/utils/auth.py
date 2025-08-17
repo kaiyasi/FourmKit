@@ -13,6 +13,11 @@ def get_current_user() -> User | None:
         return None
     db = next(get_db())
     try:
+        # ident 現在是字串形式的 user.id，需要轉換回整數
+        user_id = int(ident)
+        return db.query(User).filter_by(id=user_id).first()
+    except (ValueError, TypeError):
+        # 如果轉換失敗，可能是舊的 username 格式，嘗試用 username 查找
         return db.query(User).filter_by(username=ident).first()
     finally:
         db.close()
