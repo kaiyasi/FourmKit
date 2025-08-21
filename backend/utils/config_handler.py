@@ -8,7 +8,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = DATA_DIR / "config.json"
 
 DEFAULT_DATA: Dict[str, Any] = {
-    # 允許以 APP_MODE 指定預設（normal | maintenance | development）
+    # 允許以 APP_MODE 指定預設（normal | maintenance | development | test）
     "mode": os.getenv("APP_MODE", "normal"),
     "maintenance_message": "",
     "maintenance_until": "",
@@ -17,14 +17,29 @@ DEFAULT_DATA: Dict[str, Any] = {
 
 def load_config() -> Dict[str, Any]:
     if not CONFIG_PATH.exists():
-        save_config(DEFAULT_DATA)
-        return DEFAULT_DATA.copy()
+        # 初始建立檔案，同步執行舊值修正
+        data = DEFAULT_DATA.copy()
+        try:
+            if str(data.get("mode", "normal") or "normal") == "dev":
+                data["mode"] = "test"
+        except Exception:
+            pass
+        save_config(data)
+        return data
     try:
         data: Dict[str, Any] = json.loads(CONFIG_PATH.read_text("utf-8"))
     except Exception:
         data = DEFAULT_DATA.copy()
-    # ensure keys
+    # 修正舊值並確保鍵存在
     changed = False
+    # 移除舊模式值 'dev'（一律轉成 'test' 並保存回檔案）
+    try:
+        raw_mode = str(data.get("mode", "normal") or "normal")
+        if raw_mode == "dev":
+            data["mode"] = "test"
+            changed = True
+    except Exception:
+        pass
     for k, v in DEFAULT_DATA.items():
         if k not in data:
             data[k] = v

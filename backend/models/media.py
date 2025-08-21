@@ -1,18 +1,17 @@
-from datetime import datetime, timezone as dt_timezone
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum, DateTime
-from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Integer, String, ForeignKey, DateTime, Text, func
 from utils.db import Base
 
 class Media(Base):
     __tablename__ = "media"
-    id = Column(Integer, primary_key=True)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
-    # comment_id = Column(Integer, ForeignKey("comments.id"), nullable=True)  # 暫時註解，因為 comments 表不存在
-    kind = Column(Enum("image","video", name="media_kind"), nullable=False)
-    url = Column(String(512), nullable=False)       # /uploads/images/2025/08/uuid.jpg
-    thumb_url = Column(String(512), nullable=True)  # /uploads/images/2025/08/uuid.thumb.webp
-    mime = Column(String(128), nullable=False)
-    status = Column(Enum("pending","approved","rejected", name="review_status"), default="pending")
-    created_at = Column(DateTime, default=lambda: datetime.now(dt_timezone.utc))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)  # 相對於 uploads 根
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    rejected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    post = relationship("Post", back_populates="media", lazy="joined")
+    post = relationship("Post", back_populates="media")

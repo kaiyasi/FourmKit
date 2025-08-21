@@ -48,7 +48,7 @@ export default function ReportForm() {
       <div className="grid gap-2">
         <label className="text-sm opacity-80">分類</label>
         <select value={category} onChange={e=>setCategory(e.target.value)}
-                className="rounded-xl border px-3 py-2 bg-transparent">
+                className="form-control">
           <option>一般回報</option>
           <option>UI 問題</option>
           <option>功能錯誤</option>
@@ -58,13 +58,13 @@ export default function ReportForm() {
       <div className="grid gap-2">
         <label className="text-sm opacity-80">內容</label>
         <textarea value={message} onChange={e=>setMessage(e.target.value)}
-                  rows={4} className="rounded-xl border px-3 py-2 bg-transparent"
+                  rows={4} className="form-control"
                   placeholder="請描述問題細節（至少 5 個字）" />
       </div>
       <div className="grid gap-2">
         <label className="text-sm opacity-80">聯絡方式（選填）</label>
         <input value={contact} onChange={e=>setContact(e.target.value)}
-               className="rounded-xl border px-3 py-2 bg-transparent"
+               className="form-control"
                placeholder="Email / Discord ID" />
       </div>
       <button disabled={loading}

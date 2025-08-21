@@ -52,10 +52,8 @@ export default function PostComposer({ token }: { token: string }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 max-w-2xl mx-auto">
-      <input className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-4 py-3 text-white"
-             placeholder="標題" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80}/>
-      <textarea className="w-full min-h-[140px] rounded-xl bg-neutral-900 border border-neutral-700 px-4 py-3 text-white"
-                placeholder="內容（可留空）" value={content} onChange={(e) => setContent(e.target.value)}/>
+      <input className="form-control" placeholder="標題" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80}/>
+      <textarea className="form-control min-h-[140px]" placeholder="內容（可留空）" value={content} onChange={(e) => setContent(e.target.value)}/>
       <UploadArea value={files} onChange={setFiles} maxCount={6} />
       <div className="flex items-center justify-between">
         <div className="text-sm text-neutral-400">{files.length} 個附件</div>

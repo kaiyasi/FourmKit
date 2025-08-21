@@ -4,6 +4,8 @@ export interface Post {
   content: string;
   author_hash?: string;
   created_at?: string;
+  // 用於對應樂觀更新的暫時貼文（非後端主鍵）
+  client_tx_id?: string;
 }
 
 export interface PostList {
@@ -31,7 +33,8 @@ export function validatePost(obj: any): Post {
     id: obj.id,
     content: obj.content,
     author_hash: typeof obj.author_hash === 'string' ? obj.author_hash : undefined,
-    created_at: typeof obj.created_at === 'string' ? obj.created_at : undefined
+    created_at: typeof obj.created_at === 'string' ? obj.created_at : undefined,
+    client_tx_id: typeof obj.client_tx_id === 'string' ? obj.client_tx_id : undefined,
   };
 }
 

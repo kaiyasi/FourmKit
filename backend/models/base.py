@@ -11,39 +11,33 @@ if TYPE_CHECKING:
     from .media import Media
 
 class UserRole(str, enum.Enum):
-    guest = "guest"
     user = "user"
+    moderator = "moderator"
+    admin = "admin"
     dev_admin = "dev_admin"
     campus_admin = "campus_admin"
-    campus_moder = "campus_moder"
     cross_admin = "cross_admin"
-    cross_moder = "cross_moder"
 
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False, default=UserRole.user)
-    school_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("schools.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-class School(Base):
-    __tablename__ = "schools"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    __table_args__ = (UniqueConstraint("slug", name="uq_school_slug"),)
+
 
 class Post(Base):
     __tablename__ = "posts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    author_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # 匿名雜湊而非 user ID
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    deleted: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    rejected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     delete_requests: Mapped[list["DeleteRequest"]] = relationship(
         back_populates="post", cascade="all, delete-orphan"

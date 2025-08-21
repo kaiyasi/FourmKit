@@ -2,95 +2,66 @@ services:
   postgres:
     image: postgres:15
     environment:
+      POSTGRES_DB: forumkit
       POSTGRES_USER: forumkit
       POSTGRES_PASSWORD: forumkit
-      POSTGRES_DB: forumkit
-      PGDATA: /var/lib/postgresql/data/pgdata
+    command: postgres -p 80
+    ports: ["12007:80"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U forumkit -d forumkit"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      test: ["CMD-SHELL","pg_isready -U forumkit -p 80"]
+      interval: 5s
+      retries: 10
     networks: [ core ]
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server","--appendonly","yes"]
-    volumes:
-      - redisdata:/data
+    command: redis-server --port 80
+    ports: ["12008:80"]
     networks: [ core ]
 
   backend:
     build: ./backend
     environment:
-      FLASK_ENV: production
-      PYTHONUNBUFFERED: 1           # 取消 stdout 緩衝
-      LOG_LEVEL: DEBUG              # Flask app 可讀這個
-      SECRET_KEY: ${SECRET_KEY}
-      APP_BUILD_VERSION: ${APP_BUILD_VERSION}
+      DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
+      REDIS_URL: redis://redis:80/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      PASSWORD_SALT_ROUNDS: ${PASSWORD_SALT_ROUNDS}
       APP_MODE: ${APP_MODE}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://forumkit:forumkit@postgres:5432/forumkit}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-key-change-in-production}
-      PASSWORD_SALT_ROUNDS: ${PASSWORD_SALT_ROUNDS:-12}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      REDIS_URL: ${REDIS_URL}
-      MAINT_ALLOWLIST: ${MAINT_ALLOWLIST}
+      UPLOAD_ROOT: /data/uploads
       DISCORD_THEME_WEBHOOK: ${DISCORD_THEME_WEBHOOK}
       DISCORD_REPORT_WEBHOOK: ${DISCORD_REPORT_WEBHOOK}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://forum.serelix.xyz}
-      SOCKETIO_ORIGINS: ${SOCKETIO_ORIGINS:-https://forum.serelix.xyz}
-      UPLOAD_ROOT: ${UPLOAD_ROOT:-/app/uploads}
-      MAX_IMAGE_MB: ${MAX_IMAGE_MB:-8}
-      MAX_VIDEO_MB: ${MAX_VIDEO_MB:-50}
-    command: >
-      gunicorn -k eventlet -w 1 "app:create_app()"
-      --bind 0.0.0.0:8000
-      --log-level debug
-      --capture-output
-      --error-logfile -
-      --access-logfile -
-      --access-logformat '%(h)s %(l)s %(u)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(L)s'
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      SOCKETIO_ORIGINS: ${SOCKETIO_ORIGINS}
     volumes:
-      - backenddata:/data
-      - uploads:${UPLOAD_ROOT:-/app/uploads}
-      - ./backend/CHANGELOG.txt:/app/CHANGELOG.txt:ro
+      - ./uploads:/data/uploads
+    expose: ["80"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks: [ core ]
-    depends_on: [ postgres, redis ]
-    # 安全性設定
-    read_only: false  # 需要寫入 /data
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
 
   nginx:
-    build: ./frontend
+    build: ./docker/nginx
     ports: ["12005:80"]
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
-      - uploads:/var/www/uploads:ro
-    depends_on: [ backend ]
+    depends_on: [backend]
     networks: [ core ]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+
+  cdn:
+    build: ./docker/cdn
+    ports: ["${CDN_PORT:-12002}:80"]
+    volumes:
+      - ./uploads/public:/usr/share/nginx/html:ro
+    networks: [ core ]
 
 volumes:
   pgdata:
-  redisdata:
-  backenddata:
-  uploads:
 
 networks:
   core:

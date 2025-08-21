@@ -19,6 +19,20 @@
 
 # 開發紀錄
 
+-2025-08-21 新增 CDN 服務（Nginx）提供 uploads/public；安全標頭、阻擋危險副檔名、快取 1 週；compose 支援 CDN_PORT 覆寫
+-2025-08-21 Alembic 初始遷移以 SAVEPOINT 包裹 create_table，避免 InFailedSqlTransaction；強化重複建表容忍
+-2025-08-21 新增遷移：posts/media 加入 client_id/ip 欄位，支援來源追蹤；後台佇列顯示來源
+-2025-08-21 解析進度：/api/progress 接受「# 開發進度 / # 開發紀錄」（允許 # 後空白）；DEV_RECORD 作備援解析
+-2025-08-21 抽離 ticket 產生器至 utils.ticket，修復 routes_abuse 與 app 的循環匯入
+-2025-08-21 擴權：審核佇列允許 admin/dev_admin/campus_admin/cross_admin/moderator 類型；核准/退件/日誌限各類 admin
+-2025-08-21 HTTP 錯誤整合：前端 http 包裝支援 data/直傳兩種回傳；避免 queue 讀取 undefined 導致崩潰
+-2025-08-21 前端導覽：Navbar 統一圖標＋文字；ModePage 加返回鈕；全域輸入框樣式隨主題變化
+-2025-08-21 運維腳本：dev_full_rebuild/prod_maintenance_restart 等候就緒＋遷移 fallback；新增 scripts/diagnose_502.sh
+-2025-08-21 環境變數映射：compose 將 DISCORD_THEME_WEBHOOK、DISCORD_REPORT_WEBHOOK、ALLOWED_ORIGINS、SOCKETIO_ORIGINS 傳入 backend
+-2025-08-21 修正 Alembic 初始遷移在已建表情境的容忍邏輯（避免 pg_type 型別重複）；補上 posts/media 的 client_id、ip 欄位遷移；
+           抽離 ticket 產生器至 utils.ticket 避免循環匯入；擴充後台審核 API 角色；
+           前端 http 包裝支援直傳/包裹 data 兩種風格；Navbar 統一圖標+文字；ModePage 加返回鍵；新增 502 診斷腳本；
+           強化 dev rebuild 腳本（等待就緒 + 遷移 fallback）。
 -2025-08-17 重新組織專案資料夾結構，提升程式碼可維護性
 -2025-08-17 整理前端組件分類（layout/ui/forms 資料夾）
 -2025-08-17 重構後端路由結構（routes/config/scripts 資料夾）

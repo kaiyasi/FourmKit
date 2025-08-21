@@ -10,6 +10,7 @@ declare global {
 let postListenerInstalled = false
 let commentListenerInstalled = false
 let announceListenerInstalled = false
+let moderationListenerInstalled = false
 let postEventCount = 0
 
 // 全域唯一的 post listener 管理器
@@ -115,4 +116,13 @@ export function ensureAnnounceListener(onIncoming: (payload: any) => void) {
   
   s.off('announce')
   s.on('announce', handler)
+}
+
+export function ensureModerationListeners(onApproved: (payload: any) => void, onRejected: (payload: any) => void) {
+  if (moderationListenerInstalled) return
+  const s = getSocket()
+  s.off('post.approved'); s.off('post.rejected')
+  s.on('post.approved', onApproved)
+  s.on('post.rejected', onRejected)
+  moderationListenerInstalled = true
 }

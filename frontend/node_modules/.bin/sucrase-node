@@ -1,16 +1,18 @@
-#!/bin/sh
-basedir=$(dirname "$(echo "$0" | sed -e 's,\\,/,g')")
+#!/usr/bin/env node
+const Module = require("module");
+const {resolve} = require("path");
 
-case `uname` in
-    *CYGWIN*|*MINGW*|*MSYS*)
-        if command -v cygpath > /dev/null 2>&1; then
-            basedir=`cygpath -w "$basedir"`
-        fi
-    ;;
-esac
+/*
+ * Simple wrapper around node that first registers Sucrase with default settings.
+ *
+ * This is meant for simple use cases, and doesn't support custom Node/V8 args,
+ * executing a code snippet, a REPL, or other things that you might find in
+ * node, babel-node, or ts-node. For more advanced use cases, you can use
+ * `node -r sucrase/register` or register a require hook programmatically from
+ * your own code.
+ */
+require("../register");
 
-if [ -x "$basedir/node" ]; then
-  exec "$basedir/node"  "$basedir/../sucrase/bin/sucrase-node" "$@"
-else 
-  exec node  "$basedir/../sucrase/bin/sucrase-node" "$@"
-fi
+process.argv.splice(1, 1);
+process.argv[1] = resolve(process.argv[1]);
+Module.runMain();

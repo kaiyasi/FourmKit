@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { CheckCircle, Zap, AlertTriangle, Wrench } from 'lucide-react';
 import { ModeAPI } from '@/services/api';
 
-type ModeType = "normal" | "dev" | "maintenance" | "development";
+type ModeType = "normal" | "test" | "maintenance" | "development";
 
 interface ModeConfig {
   name: string;
@@ -34,9 +34,9 @@ const MODE_CONFIGS: Record<ModeType, ModeConfig> = {
     color: "text-amber-600 dark:text-amber-400",
     bgColor: "bg-amber-50 dark:bg-amber-900/20"
   },
-  dev: {
-    name: "開發者模式",
-    shortName: "Dev",
+  test: {
+    name: "測試模式",
+    shortName: "Test",
     icon: Wrench,
     color: "text-purple-600 dark:text-purple-400",
     bgColor: "bg-purple-50 dark:bg-purple-900/20"

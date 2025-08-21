@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { ModeAPI } from "@/services/api";
 import { canSetMode, isLoggedIn, getRole } from "@/utils/auth";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { Server, Wrench, AlertTriangle, Zap, CheckCircle } from "lucide-react";
+import { Server, Wrench, AlertTriangle, Zap, CheckCircle, Database, Activity, RefreshCw, Cloud, CloudOff, ArrowLeft } from "lucide-react";
 
-type ModeType = "normal" | "dev" | "maintenance" | "development";
+type ModeType = "normal" | "test" | "maintenance" | "development";
 
 interface ModeConfig {
   name: string;
@@ -40,9 +40,9 @@ const MODE_CONFIGS: Record<ModeType, ModeConfig> = {
     bgColor: "bg-amber-50 dark:bg-amber-900/20",
     textColor: "text-amber-800 dark:text-amber-100"
   },
-  dev: {
-    name: "開發者模式",
-    description: "內部開發測試環境",
+  test: {
+    name: "測試模式",
+    description: "對外測試：管理員看正常頁，其他人看開發頁",
     icon: Wrench,
     color: "text-purple-600 dark:text-purple-400",
     bgColor: "bg-purple-50 dark:bg-purple-900/20", 
@@ -57,6 +57,8 @@ export default function ModePage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [health, setHealth] = useState<any | null>(null);
 
   // 初始化主題
   useEffect(() => {
@@ -68,7 +70,14 @@ export default function ModePage() {
 
   useEffect(() => { 
     loadCurrentMode();
+    loadHealth();
   }, []);
+
+  // 每 30 秒自動刷新健康狀態
+  useEffect(() => {
+    const id = setInterval(loadHealth, 30000)
+    return () => clearInterval(id)
+  }, [])
 
   async function loadCurrentMode() {
     try {
@@ -127,6 +136,19 @@ export default function ModePage() {
     }
   }
 
+  async function loadHealth() {
+    try {
+      setHealthLoading(true)
+      const r = await fetch('/api/healthz', { cache: 'no-store' })
+      const j = await r.json().catch(()=> ({}))
+      setHealth(j)
+    } catch (e) {
+      setHealth({ ok: false, error: String(e) })
+    } finally {
+      setHealthLoading(false)
+    }
+  }
+
   function showMessage(text: string, type: "success" | "error") {
     setMessage(text);
     setMessageType(type);
@@ -137,6 +159,17 @@ export default function ModePage() {
 
   return (
     <div className="min-h-screen">
+      {/* 左上角返回按鈕 */}
+      <div className="fixed top-4 left-4 z-50">
+        <button
+          onClick={() => { try { history.length > 1 ? history.back() : (window.location.href = '/'); } catch { window.location.href = '/'; } }}
+          className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm hover:bg-surface/90"
+          title="返回"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="text-sm">返回</span>
+        </button>
+      </div>
       {/* 右上角主題切換器 */}
       <div className="fixed top-4 right-4 z-50">
         <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm">
@@ -230,6 +263,60 @@ export default function ModePage() {
           })}
         </div>
 
+        {/* 健康檢查區塊 */}
+        <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-fg">系統健康檢查</h3>
+            <button onClick={loadHealth} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80 flex items-center gap-2">
+              <RefreshCw className="w-4 h-4" /> 重新整理
+            </button>
+          </div>
+          {healthLoading ? (
+            <div className="py-6 text-center text-muted">檢查中...</div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* 總狀態 */}
+              <div className={`rounded-xl border p-4 ${health?.ok ? 'bg-green-50 dark:bg-green-900/20 border-green-300/60' : 'bg-rose-50 dark:bg-rose-900/20 border-rose-300/60'}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <Activity className={`w-5 h-5 ${health?.ok ? 'text-green-600 dark:text-green-400' : 'text-rose-600 dark:text-rose-400'}`} />
+                  <div className="min-w-0">
+                    <div className="font-medium text-fg">整體狀態：{health?.ok ? '正常' : '異常'}</div>
+                    <div className="text-xs text-muted break-all font-mono">mode: {health?.mode || '-'} · build: {health?.build || '-'}</div>
+                    <div className="text-xs text-muted break-all font-mono">request_id: {health?.request_id || '-'}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* DB 狀態 */}
+              <div className="rounded-xl border border-border p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <Database className="w-5 h-5 text-fg" />
+                  <div className="font-medium text-fg">資料庫</div>
+                  <span className={`ml-auto text-xs px-2 py-0.5 rounded ${health?.db?.ok ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'}`}>{health?.db?.ok ? 'OK' : 'FAIL'}</span>
+                </div>
+                <div className="text-xs text-muted space-y-1 break-all font-mono">
+                  <div>driver：{health?.db?.driver || '-'}</div>
+                  <div>url：{health?.db?.url || '-'}</div>
+                  {health?.db?.error && <div className="text-rose-600 dark:text-rose-400 break-all">{health.db.error}</div>}
+                </div>
+              </div>
+
+              {/* Redis 狀態 */}
+              <div className="rounded-xl border border-border p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  {health?.redis?.ok ? <Cloud className="w-5 h-5 text-fg" /> : <CloudOff className="w-5 h-5 text-fg" />}
+                  <div className="font-medium text-fg">Redis</div>
+                  <span className={`ml-auto text-xs px-2 py-0.5 rounded ${health?.redis?.ok ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'}`}>{health?.redis?.ok ? 'OK' : 'FAIL'}</span>
+                </div>
+                <div className="text-xs text-muted space-y-1 break-all font-mono">
+                  <div>url：{health?.redis?.url || '-'}</div>
+                  {health?.redis?.error && <div className="text-rose-600 dark:text-rose-400 break-all">{health.redis.error}</div>}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* 維護模式設定 */}
         <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
           <h3 className="font-semibold text-fg mb-4">維護模式設定</h3>
@@ -240,7 +327,7 @@ export default function ModePage() {
                 value={maintenanceMessage}
                 onChange={e => setMaintenanceMessage(e.target.value)}
                 placeholder="例：系統升級中，暫停服務約30分鐘，造成不便敬請見諒"
-                className="w-full px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50"
+                className="form-control w-full"
                 rows={3}
               />
               <p className="text-xs text-muted mt-1">如果留空，將顯示預設的維護訊息</p>
@@ -252,7 +339,7 @@ export default function ModePage() {
                 value={maintenanceUntil}
                 onChange={e => setMaintenanceUntil(e.target.value)}
                 placeholder="例：2025-08-17 12:00 或 約2小時後"
-                className="w-full px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50"
+                className="form-control w-full"
               />
               <p className="text-xs text-muted mt-1">可選填預計維護完成的時間</p>
             </div>

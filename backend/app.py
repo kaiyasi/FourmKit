@@ -13,12 +13,17 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit  # type: ignore[import]
 
 from utils.config_handler import load_config
-from utils.db import init_engine_session
+from utils.db import init_engine_session, get_db_health
+from utils.ticket import new_ticket_id
+from utils.redis_health import get_redis_health
+from utils.single_admin import ensure_single_admin
 from routes.routes_posts import bp as posts_bp
 from routes.routes_auth import bp as auth_bp
 from routes.routes_admin import bp as admin_bp
 from routes.routes_mode import bp as mode_bp
-from routes.routes_media import bp as media_bp
+from routes.routes_moderation import bp as moderation_bp
+from routes.routes_abuse import bp as abuse_bp
+from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 
 APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-d6")
@@ -36,23 +41,7 @@ socketio = SocketIO(
 _events_registered = False  # 防重註冊旗標
 
 
-# -------- 通用工具：ticket 產生 --------
-def _base36(n: int) -> str:
-    if n == 0:
-        return "0"
-    s = ""
-    alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    while n:
-        n, r = divmod(n, 36)
-        s = alphabet[r] + s
-    return s
-
-def new_ticket_id(prefix: str = "FK") -> str:
-    now = datetime.now(timezone.utc)
-    ymd = now.strftime("%Y%m%d")
-    rnd = uuid.uuid4().int & ((1 << 40) - 1)  # 40 bits
-    short = _base36(rnd).rjust(6, "0")[:8]
-    return f"{prefix}-{ymd}-{short}"
+"""Ticket utilities moved to utils.ticket to avoid circular imports."""
 
 
 # -------- Discord Webhook 工具 --------
@@ -185,6 +174,7 @@ def _load_changelog_content() -> tuple[str | None, dict[str, Any]]:
 
     # 4) 內建候選路徑
     candidate_paths = [
+        # 常見檔名
         "/app/CHANGELOG.txt",
         "CHANGELOG.txt",
         "./CHANGELOG.txt",
@@ -193,6 +183,16 @@ def _load_changelog_content() -> tuple[str | None, dict[str, Any]]:
         "../backend/CHANGELOG.txt",
         "backend/CHANGELOG.txt",
         os.path.join(os.path.dirname(__file__), "CHANGELOG.txt"),
+        # 專案內已存在的開發紀錄檔（擴充支援）
+        "DEVELOPMENT_RECORD.md",
+        "./DEVELOPMENT_RECORD.md",
+        "../DEVELOPMENT_RECORD.md",
+        os.path.join(os.path.dirname(__file__), "..", "DEVELOPMENT_RECORD.md"),
+        # 其他說明文件（最後備援）
+        "Codex.md",
+        "./Codex.md",
+        "Code.md",
+        "./Code.md",
     ]
     for p in candidate_paths:
         content, info = _try_read_file(p)
@@ -278,10 +278,11 @@ def _parse_changelog_text(content: str) -> tuple[list[dict[str, Any]], Dict[str,
         if not t:
             continue
 
-        if t == "#開發進度":
+        # 接受「#開發進度」或「# 開發進度」（允許 # 後空白）
+        if re.match(r"^#+\s*開發進度$", t):
             section = "progress"
             continue
-        if t == "#開發紀錄":
+        if re.match(r"^#+\s*開發紀錄$", t):
             section = "records"
             current_date_key = None
             continue
@@ -371,12 +372,82 @@ def _parse_changelog() -> dict[str, Any]:
             "debug_info": dbg,
         }
 
+    def _fallback_parse_dev_record(md: str) -> list[str]:
+        """解析 DEVELOPMENT_RECORD.md 類型文件，抽出日期與達成項目作為更新。
+        規則：
+        - 掃描 "## Day" 開頭段落，段落內尋找 "日期：" 及 "### 達成情況" 區塊下的 "- " 項。
+        - 若無達成項目，退而用 Day 標題生成一條摘要。
+        - 產出格式："YYYY-MM-DD 內容"，供前端 parseUpdate 處理。
+        """
+        lines = md.splitlines()
+        updates: list[str] = []
+        cur_title: str | None = None
+        cur_date: str | None = None
+        in_achievements = False
+        cur_bullets: list[str] = []
+
+        def flush():
+            nonlocal cur_title, cur_date, cur_bullets
+            if not cur_title and not cur_bullets:
+                return
+            date_norm, _ = _normalize_date_token(cur_date or "")
+            prefix = (date_norm or "").strip()
+            if cur_bullets:
+                for b in cur_bullets:
+                    text = b.strip("- ")
+                    label = f"{prefix} {text}".strip()
+                    updates.append(label)
+            else:
+                # 以標題作為摘要
+                label = f"{prefix} {cur_title or ''}".strip()
+                if label:
+                    updates.append(label)
+            # reset
+            cur_title, cur_date, cur_bullets[:] = None, None, []
+
+        for raw in lines:
+            t = raw.strip()
+            if t.startswith("## "):
+                # 新段落
+                if cur_title or cur_bullets:
+                    flush()
+                cur_title = t.lstrip('# ').strip()
+                cur_date = None
+                in_achievements = False
+                cur_bullets = []
+                continue
+            if t.startswith("日期：") or t.startswith("日期:"):
+                cur_date = t.split("：", 1)[-1] if "：" in t else t.split(":", 1)[-1]
+                cur_date = (cur_date or "").strip()
+                continue
+            if t.startswith("### ") and ("達成" in t or "完成" in t):
+                in_achievements = True
+                continue
+            if t.startswith("### "):
+                in_achievements = False
+                continue
+            if in_achievements and t.startswith("-"):
+                cur_bullets.append(t)
+                continue
+
+        # 最後一段
+        flush()
+
+        # 只取最近 N 條
+        limit2 = int(os.getenv("CHANGELOG_RECENT_LIMIT", "30"))
+        return updates[:limit2]
+
     try:
         progress_items, groups, extra = _parse_changelog_text(content)
         dbg.update(extra)
 
         limit = int(os.getenv("CHANGELOG_RECENT_LIMIT", "30"))
         updates = _flatten_recent_items(groups, limit)
+
+        # 若主解析無結果，嘗試以 DEVELOPMENT_RECORD.md 風格解析
+        if not progress_items and (not updates):
+            updates = _fallback_parse_dev_record(content)
+            dbg["fallback"] = "dev_record_md"
 
         return {
             "progress_items": progress_items,
@@ -400,6 +471,9 @@ def _parse_changelog() -> dict[str, Any]:
 # -------- Flask 應用 --------
 def create_app() -> Flask:
     app = Flask(__name__)
+    # 讓 jsonify 直接輸出 UTF-8，而非 \uXXXX 逃脫序列，
+    # 避免前端在某些備援路徑顯示不可讀的 Unicode 轉義。
+    app.config["JSON_AS_ASCII"] = False
     
     # 把 Flask log 對齊 Gunicorn
     import logging
@@ -417,22 +491,76 @@ def create_app() -> Flask:
         secret_key = "dev-only-key-not-for-production"
     app.config["SECRET_KEY"] = secret_key
 
+    # 請求體大小限制（預設 16MB，可用 MAX_CONTENT_MB 覆寫）
+    try:
+        max_mb = int(os.getenv('MAX_CONTENT_MB', '16'))
+        app.config['MAX_CONTENT_LENGTH'] = max_mb * 1024 * 1024
+    except Exception:
+        app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
     # 初始化資料庫和 JWT
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "devkey")
-    JWTManager(app)
+    jwt = JWTManager(app)
+
+    # 全域 JWT 錯誤回應，統一格式便於前端處理/除錯
+    @jwt.unauthorized_loader  # 缺少 Authorization header 或 Bearer 錯誤
+    def _jwt_missing(reason: str):  # type: ignore[override]
+        return jsonify({"ok": False, "error": {"code": "JWT_MISSING", "message": "缺少授權資訊", "hint": reason}}), 401
+
+    @jwt.invalid_token_loader  # token 解析失敗
+    def _jwt_invalid(reason: str):  # type: ignore[override]
+        return jsonify({"ok": False, "error": {"code": "JWT_INVALID", "message": "無效的憑證", "hint": reason}}), 401
+
+    @jwt.expired_token_loader  # token 過期
+    def _jwt_expired(h, p):  # type: ignore[override]
+        return jsonify({"ok": False, "error": {"code": "JWT_EXPIRED", "message": "憑證已過期", "hint": None}}), 401
+
+    @jwt.needs_fresh_token_loader  # 需要 fresh token
+    def _jwt_not_fresh(h, p):  # type: ignore[override]
+        return jsonify({"ok": False, "error": {"code": "JWT_NOT_FRESH", "message": "需要新的授權憑證", "hint": None}}), 401
+
+    @jwt.revoked_token_loader  # 已撤銷 token（若有實作 blacklist）
+    def _jwt_revoked(h, p):  # type: ignore[override]
+        return jsonify({"ok": False, "error": {"code": "JWT_REVOKED", "message": "憑證已撤銷", "hint": None}}), 401
     
     try:
         init_engine_session()
         print("[ForumKit] DB init ok")
     except Exception as e:
         print("[ForumKit] DB init fail:", e)
+    
+    # 強制單一管理者模式：清空其他帳號，確保唯一的開發者帳號存在
+    try:
+        ensure_single_admin()
+        print("[ForumKit] Single admin enforcement applied")
+    except Exception as e:
+        print("[ForumKit] Single admin enforcement failed:", e)
 
     # 限制 CORS 來源
-    allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else ["http://localhost:3000"]
+    # CORS 允許來源：預設涵蓋常見本機與 Docker 映射連入
+    default_http_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:12005",
+        "http://127.0.0.1:12005",
+        # Vite 預設開發埠
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    allowed_origins = (
+        [o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+        if os.getenv("ALLOWED_ORIGINS") else default_http_origins
+    )
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
     # 初始化 SocketIO（只在這裡做一次）
-    socketio_origins = os.getenv("SOCKETIO_ORIGINS", "").split(",") if os.getenv("SOCKETIO_ORIGINS") else allowed_origins
+    socketio_env = os.getenv("SOCKETIO_ORIGINS")
+    if socketio_env:
+        socketio_origins = [o for o in socketio_env.split(",") if o.strip()]
+    else:
+        # 預設放寬為 *，避免反代同網域（含 https/wss）握手被擋。
+        # 若需嚴格限制，請在環境變數設定 SOCKETIO_ORIGINS="https://你的網域"
+        socketio_origins = "*"
     socketio.init_app(app, cors_allowed_origins=socketio_origins)
 
     @app.before_request
@@ -445,6 +573,16 @@ def create_app() -> Flask:
         # request_id 和 request_ts 已在 add_req_id 中設定
 
         if request.path.startswith("/api"):
+            # IP 封鎖檢查（允許提交稽核報告來解封）
+            if request.path != '/api/audit_report' and is_ip_blocked():
+                return jsonify({
+                    'ok': False,
+                    'error': {
+                        'code': 'IP_BLOCKED',
+                        'message': '此 IP 已受限制，請提交稽核報告以解除',
+                        'hint': 'POST /api/audit_report { contact?, reason?, message }'
+                    }
+                }), 451
             cfg = load_config() or {}
             mode = cfg.get("mode", "normal")
             if mode == "maintenance":
@@ -485,6 +623,21 @@ def create_app() -> Flask:
         resp.headers["Access-Control-Expose-Headers"] = "X-ForumKit-Ticket, X-Request-ID, X-ForumKit-Build"
         if getattr(g, "ticket_id", None):
             resp.headers["X-ForumKit-Ticket"] = g.ticket_id
+        # 安全標頭（可用環境變數關閉）
+        if os.getenv('SECURITY_HEADERS_DISABLED', '0') not in {'1','true','yes','on'}:
+            resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+            resp.headers.setdefault('X-Frame-Options', 'DENY')
+            resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+            resp.headers.setdefault('Permissions-Policy', "geolocation=(), microphone=(), camera=()")
+            # CSP（簡化版，允許 self 資源與 data/blob 圖片、ws 連線）
+            csp = os.getenv('CONTENT_SECURITY_POLICY') or \
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " \
+                "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss:; " \
+                "base-uri 'none'; frame-ancestors 'none'"
+            resp.headers.setdefault('Content-Security-Policy', csp)
+            # 可選 HSTS（僅 https）
+            if os.getenv('ENABLE_HSTS', '0') in {'1','true','yes','on'} and request.scheme == 'https':
+                resp.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
         return resp
 
 
@@ -492,7 +645,34 @@ def create_app() -> Flask:
     # ---- REST ----
     @app.route("/api/healthz")
     def healthz() -> Response:  # noqa: F841
-        return jsonify({"ok": True, "ts": g.request_ts, "request_id": g.request_id})
+        db = get_db_health()
+        redis = get_redis_health()
+        ok = bool(db.get("ok")) and bool(redis.get("ok"))
+        # 附帶平台模式與 build info，便於監控與判版
+        try:
+            cfg = load_config() or {}
+            mode = str(cfg.get("mode", "normal") or "normal")
+        except Exception:
+            mode = "unknown"
+        return jsonify({
+            "ok": ok,
+            "ts": g.request_ts,
+            "request_id": g.request_id,
+            "build": APP_BUILD_VERSION,
+            "mode": mode,
+            "db": db,
+            "redis": redis,
+        })
+
+
+    @app.route("/api/progress")
+    def progress() -> Response:  # noqa: F841
+        """回傳前端開發頁所需的進度與更新資料。
+        結構：{ progress_items: [], recent_updates: [], last_updated: str, source?: str, error?: str, debug_info?: any }
+        內容來源優先序：環境變數 → 變更檔 → 其他文件備援。
+        """
+        data = _parse_changelog()
+        return jsonify(data)
 
 
 
@@ -646,7 +826,10 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(mode_bp)
-    app.register_blueprint(media_bp)
+    # routes_media blueprint removed: it conflicted with current models
+    # and moderation flow (pending/public). Use /api/posts/upload instead.
+    app.register_blueprint(moderation_bp)
+    app.register_blueprint(abuse_bp)
 
     from werkzeug.exceptions import HTTPException
     
@@ -692,15 +875,8 @@ def create_app() -> Flask:
 
     register_socketio_events()  # 僅首次生效
     
-    # 啟動原生心跳服務：避免重複啟動
-    if not getattr(app, "_heartbeat_started", False):
-        from infra.heartbeat_server import start_heartbeat_server
-        try:
-            start_heartbeat_server()
-            setattr(app, "_heartbeat_started", True)
-        except OSError:
-            # 已被另一個實例占用時忽略
-            pass
+    # SocketIO 事件已在 register_socketio_events() 中註冊
+    # 心跳服務將通過 Dockerfile CMD 在另一個進程中啟動
     
     return app
 

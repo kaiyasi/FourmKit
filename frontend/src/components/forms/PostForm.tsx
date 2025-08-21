@@ -3,13 +3,14 @@ import { useState } from 'react'
 import UploadArea from '../UploadArea'
 import { postJSON, postFormData, HttpError } from '../../lib/http'
 import { validatePost } from '../../schemas/post'
-import { getClientId, newTxId, makeTempKey } from '../../utils/client'
+import { getClientId, newTxId } from '../../utils/client'
 
 export default function PostForm({ onCreated }: { onCreated: (post: any) => void }) {
   const [content, setContent] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const submit = async () => {
     const body = content.trim()
@@ -19,16 +20,22 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     const clientId = getClientId()
     const txId = newTxId()
     const now = new Date().toISOString()
-    
-    // 樂觀插入：立即顯示暫時貼文
-    const optimisticPost = {
-      tempKey: makeTempKey(body, now, '', txId),
+
+    // 私有占位：只在本機顯示的待審貼文卡，方便看到「送審中」
+    const escapeHtml = (s: string) => s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+    onCreated?.({
+      tempKey: `tmp_${txId}`,
       client_tx_id: txId,
-      content: body,
+      content: `<p>${escapeHtml(body)}</p>`,
       author_hash: '您',
       created_at: now,
-    }
-    onCreated?.(optimisticPost)
+      pending_private: true,
+    })
     
     try {
       let result
@@ -55,13 +62,11 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         result = await postJSON('/api/posts', { content: body, client_tx_id: txId }, { headers })
       }
       
-      // 驗證返回的貼文資料，添加 client_tx_id 用於替換樂觀項目
-      const validatedPost = validatePost(result)
-      validatedPost.client_tx_id = txId
-      onCreated?.(validatedPost)  // 這會觸發替換
-      
+      // 後端已建立為 pending，前端不插入公開清單（保留私有占位即可），僅提示成功送審
+      validatePost(result) // 校驗結構
       setContent('')
       setFiles([])
+      setNotice('貼文已提交審核，通過後會在清單中顯示。')
     } catch (e) {
       if (e instanceof HttpError) {
         setErr(e.message)
@@ -79,7 +84,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4 shadow-soft">
       <h3 className="font-semibold dual-text mb-2 text-base sm:text-lg">發表新貼文</h3>
       <textarea
-        className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[100px] sm:min-h-[120px] text-sm sm:text-base"
+        className="form-control min-h-[100px] sm:min-h-[120px] text-sm sm:text-base"
         placeholder="想說點什麼？支援少量粗體/斜體/段落。"
         value={content}
         onChange={e=> setContent(e.target.value)}
@@ -90,6 +95,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         <UploadArea value={files} onChange={setFiles} maxCount={6} />
       </div>
       
+      {notice && <p className="text-sm text-green-700 dark:text-green-300 mt-2">{notice}</p>}
       {err && <p className="text-sm text-rose-600 mt-2">{err}</p>}
       <div className="mt-3 flex gap-2 justify-between items-center">
         <div className="text-sm text-muted">

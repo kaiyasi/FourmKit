@@ -23,15 +23,46 @@ export default function AuthPage() {
     setLoading(true); 
     setErr("");
     const f = new FormData(e.target as HTMLFormElement);
+    const toMessage = (x: any): string => {
+      // 統一抽取字串（包含 Error.message）
+      const raw = (x && typeof x === 'object' && typeof x.message === 'string')
+        ? x.message
+        : (typeof x === 'string' ? x : (x?.toString?.() ?? '登入失敗'));
+      const s = String(raw);
+      // 1) 嘗試整串 JSON 解析
+      try {
+        const j = s ? JSON.parse(s) : {};
+        const msg = j?.msg || j?.error?.message || j?.error || s;
+        if (typeof msg === 'string') {
+          try { return JSON.parse(`"${msg.replace(/"/g, '\\"')}"`); } catch { return msg; }
+        }
+        return String(msg);
+      } catch {}
+      // 2) 從字串抽取常見欄位
+      try {
+        const m = s.match(/"msg"\s*:\s*"([\s\S]*?)"/);
+        if (m && m[1]) {
+          try { return JSON.parse(`"${m[1].replace(/"/g, '\\"')}"`); } catch { return m[1]; }
+        }
+      } catch {}
+      try {
+        const m2 = s.match(/"message"\s*:\s*"([\s\S]*?)"/);
+        if (m2 && m2[1]) {
+          try { return JSON.parse(`"${m2[1].replace(/"/g, '\\"')}"`); } catch { return m2[1]; }
+        }
+      } catch {}
+      // 3) 最後備援
+      return s || '登入失敗';
+    }
     try {
       const r = await AuthAPI.login({ 
         username: String(f.get("username")||""), 
         password: String(f.get("password")||"") 
       });
-      saveSession(r.access_token, r.role as any, r.school_id);
+      saveSession(r.access_token, r.role as any, r.school_id, r.refresh_token);
       nav("/"); // 登入後回首頁，由 Navbar 顯示後台入口
     } catch (e:any) { 
-      setErr(e.message || "登入失敗"); 
+      setErr(toMessage(e)); 
     } finally { 
       setLoading(false); 
     }
@@ -51,7 +82,35 @@ export default function AuthPage() {
       });
       setTab("login");
     } catch (e:any) { 
-      setErr(e.message || "註冊失敗"); 
+      // 與登入相同的錯誤解碼策略
+      const toMessage = (x: any): string => {
+        const raw = (x && typeof x === 'object' && typeof x.message === 'string')
+          ? x.message
+          : (typeof x === 'string' ? x : (x?.toString?.() ?? '註冊失敗'));
+        const s = String(raw);
+        try {
+          const j = s ? JSON.parse(s) : {};
+          const msg = j?.msg || j?.error?.message || j?.error || s;
+          if (typeof msg === 'string') {
+            try { return JSON.parse(`"${msg.replace(/"/g, '\\"')}"`); } catch { return msg; }
+          }
+          return String(msg);
+        } catch {}
+        try {
+          const m = s.match(/"msg"\s*:\s*"([\s\S]*?)"/);
+          if (m && m[1]) {
+            try { return JSON.parse(`"${m[1].replace(/"/g, '\\"')}"`); } catch { return m[1]; }
+          }
+        } catch {}
+        try {
+          const m2 = s.match(/"message"\s*:\s*"([\s\S]*?)"/);
+          if (m2 && m2[1]) {
+            try { return JSON.parse(`"${m2[1].replace(/"/g, '\\"')}"`); } catch { return m2[1]; }
+          }
+        } catch {}
+        return s || '註冊失敗';
+      }
+      setErr(toMessage(e)); 
     } finally { 
       setLoading(false); 
     }
@@ -88,19 +147,8 @@ export default function AuthPage() {
 
         {tab === "login" ? (
           <form onSubmit={onLogin} className="grid gap-4">
-            <input 
-              name="username" 
-              placeholder="使用者名稱" 
-              className="px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50" 
-              required 
-            />
-            <input 
-              name="password" 
-              placeholder="密碼" 
-              type="password" 
-              className="px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50" 
-              required 
-            />
+            <input name="username" placeholder="使用者名稱" className="form-control" required />
+            <input name="password" placeholder="密碼" type="password" className="form-control" required />
             <button 
               disabled={loading} 
               className="px-4 py-3 rounded-xl dual-btn font-semibold disabled:opacity-60 transition-all"
@@ -110,31 +158,10 @@ export default function AuthPage() {
           </form>
         ) : (
           <form onSubmit={onRegister} className="grid gap-4">
-            <input 
-              name="username" 
-              placeholder="使用者名稱" 
-              className="px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50" 
-              required 
-            />
-            <input 
-              name="email" 
-              placeholder="Email" 
-              type="email" 
-              className="px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50" 
-              required 
-            />
-            <input 
-              name="password" 
-              placeholder="密碼" 
-              type="password" 
-              className="px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50" 
-              required 
-            />
-            <input 
-              name="school_slug" 
-              placeholder="校內綁定用 school slug（校外留空）" 
-              className="px-4 py-3 rounded-xl bg-surface border border-border text-fg placeholder:text-muted outline-none focus:ring-2 focus:ring-primary/50" 
-            />
+            <input name="username" placeholder="使用者名稱" className="form-control" required />
+            <input name="email" placeholder="Email" type="email" className="form-control" required />
+            <input name="password" placeholder="密碼" type="password" className="form-control" required />
+            <input name="school_slug" placeholder="校內綁定用 school slug（校外留空）" className="form-control" />
             <button 
               disabled={loading} 
               className="px-4 py-3 rounded-xl dual-btn font-semibold disabled:opacity-60 transition-all"

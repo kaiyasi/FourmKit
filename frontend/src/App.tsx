@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { getSocket } from './services/socket'
-import { ensurePostListener, ensureCommentListener, ensureAnnounceListener } from './services/realtime'
+import { ensurePostListener, ensureCommentListener, ensureAnnounceListener, ensureModerationListeners } from './services/realtime'
 import { getClientId, upsertByIdOrTemp, upsertSocketPayload } from './utils/client'
 import { NavBar } from './components/layout/NavBar'
 import { MobileFabNav } from './components/layout/MobileFabNav'
 import { ThemeToggle } from './components/ui/ThemeToggle'
-import SocketBadge from './components/ui/SocketBadge'
 import PostForm from './components/forms/PostForm'
 import PostList from './components/PostList'
 import ResizableSection from './components/ResizableSection'
+import { canSetMode } from '@/utils/auth'
 
 type PlatformMode = {
-  mode: 'normal' | 'maintenance' | 'development'
+  mode: 'normal' | 'maintenance' | 'development' | 'test'
   maintenance_message?: string
   maintenance_until?: string
 }
@@ -61,21 +61,27 @@ export default function App() {
       
       const myClientId = getClientId()
       
-      // 統一的 post 處理器：顯示 toast 並調用回調
+      // 統一的 post 處理器：僅對本人顯示「已提交審核」提示；不再注入清單
       const combinedPostHandler = (payload: any) => {
         const { post, origin, client_tx_id } = payload
         
         console.info(`[App] processing socket payload: post_id=${post?.id} origin=${origin} tx_id=${client_tx_id}`)
         
-        // 顯示 toast
+        // 僅通知發文者：改為「已提交審核」並記錄我的貼文 id（供列表顯示私有標記）
         if (origin === myClientId) {
-          push(`您的貼文已發布：${(post?.content ?? '').slice(0, 30)}…`)
-        } else {
-          push(`新貼文：${(post?.content ?? '').slice(0, 30)}…`)
+          push(`您的貼文已提交審核：${(post?.content ?? '').slice(0, 30)}…`)
+          // 將正式 id 回寫到本地占位，並保留 pending 標記
+          try { onNewPost?.({ ...payload, post: { ...post, pending_private: true } }) } catch {}
+          try {
+            const key = 'forumkit_my_posts'
+            const arr = JSON.parse(localStorage.getItem(key) || '[]') as number[]
+            if (typeof post?.id === 'number' && !arr.includes(post.id)) {
+              arr.unshift(post.id)
+              localStorage.setItem(key, JSON.stringify(arr.slice(0, 500)))
+            }
+          } catch {}
         }
-        
-        // 呼叫外部回調，用於更新 injected 狀態
-        onNewPost?.(payload)
+        // 不再注入 pending 貼文到清單（等待審核通過才出現在後端清單中）
       }
       
       const onCmt = (c: any) => push(`新留言：${(c?.content ?? '').slice(0, 20)}…`)
@@ -85,6 +91,34 @@ export default function App() {
       ensurePostListener(combinedPostHandler)
       ensureCommentListener(onCmt)
       ensureAnnounceListener(onAnn)
+      // 審核結果：只對自己看得懂（我的貼文 ID）
+      ensureModerationListeners(
+        (payload:any)=>{
+          const id = Number(payload?.id)
+          if (!id) return
+          try{
+            const key = 'forumkit_my_posts'
+            const arr = JSON.parse(localStorage.getItem(key) || '[]') as number[]
+            if (arr.includes(id)) {
+              push(`您的貼文 #${id} 已通過審核`)
+              // 記錄到已審清單
+              const k2 = 'forumkit_approved_posts'
+              const ap = JSON.parse(localStorage.getItem(k2) || '[]') as number[]
+              if (!ap.includes(id)) localStorage.setItem(k2, JSON.stringify([id, ...ap].slice(0,500)))
+            }
+          }catch{}
+        },
+        (payload:any)=>{
+          const id = Number(payload?.id)
+          const reason = String(payload?.reason || '不符合規範')
+          if (!id) return
+          try{
+            const key = 'forumkit_my_posts'
+            const arr = JSON.parse(localStorage.getItem(key) || '[]') as number[]
+            if (arr.includes(id)) push(`您的貼文 #${id} 已被退件（${reason}）`)
+          }catch{}
+        }
+      )
       getSocket()  // 確保 Socket 連線
       
       // 清理函數由 ensureXXXListener 內部處理，這裡不需要手動 off
@@ -115,6 +149,24 @@ export default function App() {
 
   const { isSmallScreen } = useScreenSize()
   const [injectedItems, setInjectedItems] = useState<any[]>([])
+  
+  function MySubmissions() {
+    const [my, setMy] = useState<number[]>([])
+    const [approved, setApproved] = useState<number[]>([])
+    useEffect(()=>{
+      try{ setMy(JSON.parse(localStorage.getItem('forumkit_my_posts')||'[]')||[]) }catch{}
+      try{ setApproved(JSON.parse(localStorage.getItem('forumkit_approved_posts')||'[]')||[]) }catch{}
+    },[])
+    return (
+      <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 shadow-soft">
+        <h3 className="font-semibold dual-text mb-2 text-base">我的送審 / 已審</h3>
+        <div className="text-sm text-muted">送審：{my.length} 筆 · 已審：{approved.length} 筆</div>
+        {approved.length>0 && (
+          <div className="mt-2 text-xs text-fg">最近通過：#{approved.slice(0,5).join(', #')}</div>
+        )}
+      </div>
+    )
+  }
   
   // 用於 upsert 邏輯的 injected 處理
   const handleNewPost = (postOrPayload: any) => {
@@ -175,9 +227,13 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  // 只在開發模式首頁載入進度（後端已合併 CHANGELOG）
+  // 在 development 模式，以及 test 模式(非管理員)的首頁載入進度（後端已合併 CHANGELOG）
   useEffect(() => {
-    if (platform?.mode === 'development' && pathname === '/') {
+    const shouldFetchProgress = (
+      (platform?.mode === 'development' && pathname === '/') ||
+      (platform?.mode === 'test' && pathname === '/' && !canSetMode())
+    )
+    if (shouldFetchProgress) {
       (async () => {
         try {
           setProgressLoading(true)
@@ -256,8 +312,10 @@ export default function App() {
     return { date: badge, text: s.trim() }
   }
 
-  // 開發模式首頁
-  if (platform.mode === 'development' && pathname === '/') {
+  // 顯示「開發頁」：
+  // - development 模式任何人
+  // - test 模式的非管理員
+  if (((platform.mode === 'development') || (platform.mode === 'test' && !canSetMode())) && pathname === '/') {
     return (
       <div className="min-h-screen">
         <MidWidthCSS />
@@ -272,7 +330,7 @@ export default function App() {
 
         <div className="flex flex-col items-center pt-12 sm:pt-16 md:pt-20 px-3 sm:px-4 pb-6 sm:pb-8">
           <div className="max-w-4xl w-full space-y-4 sm:space-y-6 md:space-y-8">
-            <div className="flex justify-center"><SocketBadge /></div>
+            {/* Socket 連線測試徽章已移除 */}
 
             {/* 頂部介紹卡 */}
             <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 md:p-8 shadow-soft">
@@ -461,7 +519,7 @@ export default function App() {
         <section className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 sm:mb-6">
           <div className="flex items-center justify-between gap-3 sm:gap-4 mb-4">
             <h1 className="text-xl sm:text-2xl font-semibold dual-text">ForumKit</h1>
-            <SocketBadge />
+            {/* Socket 連線測試徽章已移除 */}
           </div>
           <PostForm onCreated={handleNewPost} />
         </section>
@@ -469,6 +527,9 @@ export default function App() {
           <h2 className="font-semibold dual-text mb-3">最新貼文</h2>
           <PostList injectedItems={injectedItems} />
         </section>
+        <div className="mt-4">
+          <MySubmissions />
+        </div>
       </main>
       <RealtimeToastPanel onNewPost={handleNewPost} />
     </div>
@@ -540,12 +601,12 @@ function ReportForm({ compact }: { compact?: boolean }) {
             placeholder="你的聯絡方式（DC ID 或 Email，可留空）"
             value={email}
             onChange={e=>setEmail(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg text-sm sm:text-base"
+            className="form-control text-sm sm:text-base"
           />
           <select
             value={category}
             onChange={e=>setCategory(e.target.value)}
-            className="w-full px-3 py-2 rounded-2xl border border-border bg-surface/70 text-fg text-sm sm:text-base"
+            className="form-control text-sm sm:text-base"
           >
             <option>一般回報</option>
             <option>無法載入</option>
@@ -559,7 +620,7 @@ function ReportForm({ compact }: { compact?: boolean }) {
           value={message}
           onChange={e=>setMessage(e.target.value)}
           rows={minRows}
-          className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg text-sm sm:text-base"
+          className="form-control text-sm sm:text-base"
         />
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <button onClick={submit} disabled={busy} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50 text-sm sm:text-base">
@@ -686,14 +747,14 @@ function ColorDesigner() {
           <label className="block text-sm font-medium text-fg mb-2">主色調 (背景顏色)</label>
           <div className="flex gap-3 items-center">
             <input type="color" value={primaryColor} onChange={e=>setPrimaryColor(e.target.value)} className="w-10 h-10 rounded-lg border border-border cursor-pointer" />
-            <input type="text" value={primaryColor} onChange={e=>setPrimaryColor(e.target.value)} className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg" />
+            <input type="text" value={primaryColor} onChange={e=>setPrimaryColor(e.target.value)} className="flex-1 form-control" />
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-fg mb-2">輔助色 (框線顏色)</label>
           <div className="flex gap-3 items-center">
             <input type="color" value={secondaryColor} onChange={e=>setSecondaryColor(e.target.value)} className="w-10 h-10 rounded-lg border border-border cursor-pointer" />
-            <input type="text" value={secondaryColor} onChange={e=>setSecondaryColor(e.target.value)} className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg" />
+            <input type="text" value={secondaryColor} onChange={e=>setSecondaryColor(e.target.value)} className="flex-1 form-control" />
           </div>
         </div>
         <div>
@@ -713,7 +774,7 @@ function ColorDesigner() {
             value={themeName}
             onChange={e => setThemeName(e.target.value)}
             placeholder="為您的主題命名..."
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg"
+            className="form-control"
           />
         </div>
         <div>
@@ -722,7 +783,7 @@ function ColorDesigner() {
             value={description}
             onChange={e => setDescription(e.target.value)}
             placeholder="描述您的主題設計理念..."
-            className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[80px]"
+            className="form-control min-h-[80px]"
           />
         </div>
       </div>
@@ -765,7 +826,7 @@ function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode;
     <div className="max-w-xl w-full bg-surface/80 border border-border rounded-2xl p-4 sm:p-6 shadow backdrop-blur mt-8 sm:mt-10">
       <h2 className="font-semibold text-lg sm:text-xl mb-4">平台模式管理</h2>
       <div className="flex gap-2 sm:gap-4 flex-wrap mb-4">
-        {(['normal','maintenance','development'] as PlatformMode['mode'][]).map(m => (
+        {(['normal','maintenance','development','test'] as PlatformMode['mode'][]).map(m => (
           <label key={m} className={`px-3 py-2 rounded-xl border cursor-pointer text-sm sm:text-base ${mode===m? 'dual-btn ring-2 ring-primary/50':'bg-surface/60 hover:bg-surface/80 border-border'}`}>
             <input type="radio" name="mode" value={m} className="hidden" checked={mode===m} onChange={()=> setMode(m)} />{m}
           </label>
@@ -773,8 +834,8 @@ function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode;
       </div>
       {mode==='maintenance' && (
         <div className="space-y-3 mb-4">
-          <textarea value={msg} onChange={e=> setMsg(e.target.value)} placeholder="維護訊息" className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg min-h-[80px] text-sm sm:text-base" />
-          <input value={until} onChange={e=> setUntil(e.target.value)} placeholder="預計完成時間 (ISO 或描述)" className="w-full px-3 py-2 rounded-xl border border-border bg-surface/70 text-fg text-sm sm:text-base" />
+          <textarea value={msg} onChange={e=> setMsg(e.target.value)} placeholder="維護訊息" className="form-control min-h-[80px] text-sm sm:text-base" />
+          <input value={until} onChange={e=> setUntil(e.target.value)} placeholder="預計完成時間 (ISO 或描述)" className="form-control text-sm sm:text-base" />
         </div>
       )}
       <button onClick={save} disabled={saving} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50 text-sm sm:text-base">{saving? '儲存中...' : '儲存'}</button>

@@ -12,7 +12,7 @@ def get_mode():
     try:
         config = load_config() or {}
         return jsonify({
-            "mode": config.get("mode", "normal"),
+            "mode": str(config.get("mode", "normal") or "normal"),
             "maintenance_message": config.get("maintenance_message"),
             "maintenance_until": config.get("maintenance_until")
         })
@@ -26,7 +26,7 @@ def set_mode_endpoint():
     data = request.get_json(silent=True) or {}
     mode = data.get("mode")
     
-    if mode not in ("normal", "dev", "maintenance", "development"):
+    if mode not in ("normal", "test", "maintenance", "development"):
         return jsonify({"msg": "無效的模式參數"}), 400
     
     try:
@@ -50,6 +50,6 @@ def set_mode_endpoint():
             maintenance_message=notice,
             maintenance_until=eta,
         )
-        return jsonify({"ok": True, "mode": mode, "config": updated})
+        return jsonify({"ok": True, "mode": updated.get("mode"), "config": updated})
     except Exception as e:
         return jsonify({"msg": f"更新模式失敗: {str(e)}"}), 500

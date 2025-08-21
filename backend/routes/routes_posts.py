@@ -1,235 +1,263 @@
-# backend/routes_posts.py
-from __future__ import annotations
-from typing import Any
-import hashlib
-from time import time
-
-from flask import Blueprint, jsonify, request
-from sqlalchemy import select, desc, func
+from flask import Blueprint, request, jsonify, abort
+from flask_jwt_extended import get_jwt_identity
 from sqlalchemy.orm import Session
-
-from utils.db import get_db
+from sqlalchemy import func
+from utils.db import get_session
+from utils.auth import get_effective_user_id
+from utils.ratelimit import get_client_ip
+from models import Post, Media
+from utils.upload_validation import is_allowed, sniff_kind
 from utils.sanitize import clean_html
-from models import Post, DeleteRequest
+from utils.ratelimit import rate_limit
+import uuid, os, datetime
 
-bp = Blueprint("posts", __name__, url_prefix="/api")
+bp = Blueprint("posts", __name__, url_prefix="/api/posts")
 
-# -------- 統一回傳格式 --------
-def ok(data: Any, http: int = 200):
+def _wrap_ok(data, http: int = 200):
     return jsonify({"ok": True, "data": data}), http
 
-def fail(code: str, message: str, *, hint: str | None = None, details: str | None = None, http: int = 500):
-    return jsonify({"ok": False, "error": {"code": code, "message": message, "hint": hint, "details": details}}), http
+def _wrap_err(code: str, message: str, http: int = 400):
+    return jsonify({"ok": False, "error": {"code": code, "message": message}}), http
 
-# -------- 匿名作者雜湊（IP + UA + 伺服器鹽）--------
-def _author_hash() -> str:
-    salt = "forumkit-salt-v1"
-    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
-    ua = request.headers.get("User-Agent", "")
-    raw = f"{ip}|{ua}|{salt}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
-
-# -------- 簡易節流：每 IP/UA 30 秒 1 次 --------
-_last_post_by_fingerprint: dict[str, float] = {}
-
-def _rate_limit_ok(fp: str, window: int = 30) -> tuple[bool, int]:
-    now = time()
-    last = _last_post_by_fingerprint.get(fp, 0.0)
-    if now - last < window:
-        return False, int(window - (now - last))
-    _last_post_by_fingerprint[fp] = now
-    return True, 0
-
-@bp.get("/posts")
+@bp.get("/list")
 def list_posts():
-    try:
-        page = max(int(request.args.get("page", 1) or 1), 1)
-        per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 30)
-        offset = (page - 1) * per_page
+    limit = max(min(int(request.args.get("limit", 20)), 100), 1)
+    with get_session() as s:
+        q = s.query(Post).filter(Post.status=="approved").order_by(Post.id.desc()).limit(limit)
+        items = [{"id":p.id,"content":p.content} for p in q.all()]
+        return jsonify({"items": items})
 
-        # 這裡假設 get_db() 是 contextmanager，回傳 SQLAlchemy Session
-        with next(get_db()) as db:  # type: ignore
-            db: Session
-            base_filter = Post.deleted.is_(False)
-
-            total = db.scalar(
-                select(func.count()).select_from(Post).where(base_filter)
-            ) or 0
-
-            q = (
-                select(Post)
-                .where(base_filter)
-                .order_by(desc(Post.created_at))
-                .offset(offset)
+@bp.get("")
+def list_posts_compat():
+    """Compatibility: GET /api/posts?page=&per_page=
+    Returns wrapper { ok, data: { items, page, per_page, total } }
+    """
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 100)
+    with get_session() as s:
+        base = s.query(Post).filter(Post.status == "approved")
+        total = base.count()
+        rows = (
+            base.order_by(Post.created_at.desc(), Post.id.desc())
+                .offset((page - 1) * per_page)
                 .limit(per_page)
-            )
-            items = db.execute(q).scalars().all()
-
-        payload = {
-            "items": [
-                {
-                    "id": p.id,
-                    "content": p.content,
-                    "author_hash": (p.author_hash or "")[:8],
-                    "created_at": p.created_at.isoformat(),
-                }
-                for p in items
-            ],
-            "page": page,
-            "per_page": per_page,
-            "total": int(total),
-        }
-        return ok(payload)
-
-    except Exception as e:
-        # 真正的 traceback 請看容器日誌；對外只給標準錯誤格式
-        return fail("INTERNAL_LIST_POSTS", "讀取貼文失敗", hint="檢查資料庫遷移與序列化", details=str(e))
-
-@bp.post("/posts")
-def create_post():
-    try:
-        from flask import current_app
-        current_app.logger.debug(f"create_post started, content_type: {request.content_type}")
-        
-        # 檢查 Content-Type 是否為 JSON
-        if not request.content_type or not request.content_type.startswith('application/json'):
-            return fail("INVALID_CONTENT_TYPE", "請使用 application/json 格式", http=400)
-        
-        try:
-            data: dict[str, Any] = request.get_json(force=True, silent=True) or {}
-        except Exception as e:
-            current_app.logger.warning(f"JSON parse failed: {e}")
-            return fail("INVALID_JSON", "無效的 JSON 格式", http=400)
-
-        raw_content = (data.get("content") or "").strip()
-        if not raw_content:
-            return fail("MISSING_CONTENT", "缺少 content 欄位", http=422)
-        if len(raw_content) < 15:
-            return fail("CONTENT_TOO_SHORT", "內容太短（需 ≥ 15 字）", http=400)
-        if len(raw_content) > 2000:
-            return fail("CONTENT_TOO_LONG", "內容過長（≤ 2000 字）", http=400)
-
-        fp = _author_hash()
-        ok_rate, wait = _rate_limit_ok(fp, window=30)
-        if not ok_rate:
-            return fail("RATE_LIMIT", f"發文太頻繁，請 {wait} 秒後再試", http=429)
-
-        content = clean_html(raw_content)
-
-        with next(get_db()) as db:  # type: ignore
-            db: Session
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc)
-            p = Post(
-                author_hash=fp, 
-                content=content,
-                created_at=now,
-                updated_at=now,
-                deleted=False
-            )
-            db.add(p)
-            db.commit()
-            db.refresh(p)
-
-        result = {
-            "id": p.id,
-            "content": p.content,
-            "author_hash": (p.author_hash or "")[:8],
-            "created_at": p.created_at.isoformat(),
-        }
-        
-        # 廣播新貼文事件，包含來源追蹤
-        try:
-            from app import socketio
-            import time, uuid
-            if socketio:
-                origin = request.headers.get("X-Client-Id") or "-"
-                client_tx_id = request.headers.get("X-Tx-Id") or data.get("client_tx_id")
-                
-                # 產生唯一事件 ID
-                event_id = f"post:{int(time.time()*1000)}:{uuid.uuid4().hex[:8]}"
-                
-                # 確保 payload 100% JSON-safe，避免任何 generator/SQLAlchemy 物件
-                def _post_to_public_dict(row):
-                    return {
-                        "id": int(row.id),
-                        "content": str(row.content or ""),
-                        "author_hash": str(row.author_hash or "")[:8],
-                        "created_at": row.created_at.astimezone(timezone.utc).isoformat() if getattr(row, "created_at", None) else None,
-                    }
-                
-                safe_post = _post_to_public_dict(p)
-                broadcast_payload = {
-                    "post": safe_post,
-                    "origin": str(origin),
-                    "client_tx_id": str(client_tx_id) if client_tx_id else None,
-                    "event_id": event_id,
-                }
-                
-                # 詳細廣播日誌
-                current_app.logger.info(f"[SocketIO] emit post_created: event_id={event_id} post_id={safe_post['id']} origin={origin} tx_id={client_tx_id} content_preview='{safe_post['content'][:30]}...'")
-                
-                # 安全地檢查當前連線的客戶端數量（避免 len(generator) 錯誤）
-                try:
-                    participants_iter = socketio.server.manager.get_participants(namespace="/", room=None)
-                    connected_clients = sum(1 for _ in participants_iter)  # 安全地計數 generator
-                    current_app.logger.info(f"[SocketIO] broadcasting to {connected_clients} connected clients")
-                except Exception as count_err:
-                    current_app.logger.warning(f"[SocketIO] failed to count clients: {count_err}, proceeding with broadcast")
-                
-                socketio.emit("post_created", broadcast_payload, namespace="/")
-                current_app.logger.info(f"[SocketIO] post_created broadcast completed: event_id={event_id} post_id={safe_post['id']}")
-        except Exception as e:
-            current_app.logger.exception(f"[SocketIO] Failed to broadcast post_created: {e}")
-        
-        return ok(result, http=201)
-    except Exception as e:
-        from flask import current_app
-        current_app.logger.exception("create_post failed")
-        return fail("INTERNAL_CREATE_POST", "建立貼文失敗", details=str(e))
-
-@bp.get("/posts/<int:post_id>")
-def get_post(post_id: int):
-    try:
-        with next(get_db()) as db:  # type: ignore
-            db: Session
-            p = db.get(Post, post_id)
-            if not p or p.deleted:
-                return fail("NOT_FOUND", "貼文不存在", http=404)
-
-        return ok(
+                .all()
+        )
+        items = [
             {
                 "id": p.id,
                 "content": p.content,
-                "author_hash": (p.author_hash or "")[:8],
-                "created_at": p.created_at.isoformat(),
+                "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
             }
-        )
-    except Exception as e:
-        return fail("INTERNAL_GET_POST", "讀取貼文失敗", details=str(e))
+            for p in rows
+        ]
+        return _wrap_ok({
+            "items": items,
+            "page": page,
+            "per_page": per_page,
+            "total": int(total),
+        })
 
-@bp.post("/posts/<int:post_id>/delete_request")
-def request_delete(post_id: int):
+@bp.post("/create")
+@rate_limit(calls=5, per_seconds=60, by='client')
+def create_post():
+    uid = get_effective_user_id()
+    if uid is None:
+        abort(401)
+    data = request.get_json() or {}
+    content = (data.get("content") or "").strip()
+    if not content:
+        abort(422)
+    max_len = int(os.getenv("POST_MAX_CHARS", "5000"))
+    if len(content) > max_len:
+        return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
+    with get_session() as s:
+        p = Post(author_id=uid, content=content, status="pending")
+        try:
+            p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
+            p.ip = get_client_ip()
+        except Exception:
+            pass
+        s.add(p); s.flush(); s.refresh(p)
+        s.commit()
+        return jsonify({"id": p.id, "status": p.status})
+
+@bp.post("/upload")
+@rate_limit(calls=10, per_seconds=300, by='client')
+def upload_media():
+    uid = get_effective_user_id()
+    if uid is None:
+        abort(401)
+    # 接 multipart/form-data: file, post_id
+    f = request.files.get("file")
+    post_id = int(request.form.get("post_id", "0"))
+    if not f or not is_allowed(f.filename): abort(422)
+    # 大小與嗅探
+    max_size_mb = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
+    max_bytes = max_size_mb * 1024 * 1024
     try:
-        data = request.get_json(force=True, silent=True) or {}
+        f.stream.seek(0, os.SEEK_END)
+        size = f.stream.tell(); f.stream.seek(0)
     except Exception:
-        data = {}
-
-    reason = (data.get("reason") or "").strip()
-    if len(reason) < 10:
-        return fail("REASON_TOO_SHORT", "請描述刪文理由（≥ 10 字）", http=400)
-
+        size = None
+    if size is not None and size > max_bytes:
+        return _wrap_err("FILE_TOO_LARGE", f"檔案過大（上限 {max_size_mb} MB）", 413)
     try:
-        with next(get_db()) as db:  # type: ignore
-            db: Session
-            p = db.get(Post, post_id)
-            if not p or p.deleted:
-                return fail("NOT_FOUND", "貼文不存在", http=404)
+        head = f.stream.read(64); f.stream.seek(0)
+        if sniff_kind(head) == 'unknown':
+            return _wrap_err("SUSPECT_FILE", "檔案內容與格式不符或未知", 400)
+    except Exception:
+        return _wrap_err("SUSPECT_FILE", "檔案檢查失敗", 400)
+    ext = os.path.splitext(f.filename)[1].lower()
+    gid = f"{uuid.uuid4().hex}{ext}"
+    rel = f"{post_id}/{gid}"  # 子資料夾以 post_id 分流
+    pending_path = os.path.join(os.getenv("UPLOAD_ROOT","uploads"), "pending", rel)
+    os.makedirs(os.path.dirname(pending_path), exist_ok=True)
+    f.save(pending_path)
 
-            dr = DeleteRequest(post_id=post_id, reason=reason)
-            db.add(dr)
-            db.commit()
+    with get_session() as s:
+        m = Media(post_id=post_id, path=f"pending/{rel}", status="pending")
+        try:
+            m.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
+            m.ip = get_client_ip()
+        except Exception:
+            pass
+        s.add(m); s.flush(); s.commit()
+        return jsonify({"media_id": m.id, "path": m.path, "status": m.status})
 
-        return ok({"post_id": post_id})
-    except Exception as e:
-        return fail("INTERNAL_DELETE_REQUEST", "建立刪文申請失敗", details=str(e))
+@bp.post("")
+@rate_limit(calls=5, per_seconds=60, by='client')
+def create_post_compat():
+    """Compatibility: POST /api/posts
+    Accepts JSON { content, client_tx_id? } and returns wrapper with post object.
+    """
+    uid = get_effective_user_id()
+    if uid is None:
+        abort(401)
+    data = request.get_json() or {}
+    content = clean_html((data.get("content") or "").strip())
+    if len(content) < 1:
+        return _wrap_err("CONTENT_REQUIRED", "內容不可為空", 422)
+    max_len = int(os.getenv("POST_MAX_CHARS", "5000"))
+    if len(content) > max_len:
+        return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
+    with get_session() as s:
+        p = Post(author_id=uid, content=content, status="pending")
+        try:
+            p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
+            p.ip = get_client_ip()
+        except Exception:
+            pass
+        s.add(p); s.flush(); s.refresh(p)
+        s.commit()
+        payload = {
+            "id": p.id,
+            "content": p.content,
+            "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
+        }
+    # best-effort broadcast (optional)
+    try:
+        from app import socketio
+        socketio.emit("post_created", {"post": payload, "origin": request.headers.get("X-Client-Id") or "-", "client_tx_id": data.get("client_tx_id")})
+    except Exception:
+        pass
+    return _wrap_ok(payload, 201)
+
+@bp.post("/with-media")
+@rate_limit(calls=3, per_seconds=60, by='client')
+def create_post_with_media_compat():
+    """Compatibility: POST /api/posts/with-media (multipart)
+    Creates a pending post and attach multiple files as pending media under uploads/pending/.
+    Returns wrapper with basic post object.
+    """
+    uid = get_effective_user_id()
+    if uid is None:
+        return _wrap_err("UNAUTHORIZED", "缺少授權資訊", 401)
+    # Must be multipart/form-data
+    if not request.content_type or not request.content_type.startswith("multipart/form-data"):
+        return _wrap_err("INVALID_CONTENT_TYPE", "請使用 multipart/form-data", 400)
+
+    content = clean_html((request.form.get("content", "") or "").strip())
+    if len(content) < 1:
+        return _wrap_err("CONTENT_REQUIRED", "內容不可為空", 422)
+
+    files = request.files.getlist("files")
+    if not files:
+        return _wrap_err("NO_FILES", "未上傳任何檔案", 422)
+
+    # 與 /api/posts/upload 對齊：預設使用專案內 uploads 目錄，避免容器外 /data 權限問題
+    upload_root = os.getenv("UPLOAD_ROOT", "uploads")
+    max_size_mb = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
+    max_bytes = max_size_mb * 1024 * 1024
+
+    saved_any = False
+    with get_session() as s:
+        p = Post(author_id=uid, content=content, status="pending")
+        try:
+            p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
+            p.ip = get_client_ip()
+        except Exception:
+            pass
+        s.add(p); s.flush(); s.refresh(p)
+
+        for fs in files:
+            fname = (fs.filename or "").strip()
+            if not fname:
+                continue
+            if not is_allowed(fname):
+                return _wrap_err("UNSUPPORTED_FILE", f"不支援的檔案格式: {fname}", 400)
+            # 大小限制（單檔）
+            try:
+                fs.stream.seek(0, os.SEEK_END)
+                size = fs.stream.tell()
+                fs.stream.seek(0)
+            except Exception:
+                size = None
+            if size is not None and size > max_bytes:
+                return _wrap_err("FILE_TOO_LARGE", f"檔案過大（上限 {max_size_mb} MB）: {fname}", 413)
+            # 內容嗅探
+            try:
+                head = fs.stream.read(64)
+                fs.stream.seek(0)
+                kind = sniff_kind(head)
+                if kind == 'unknown':
+                    return _wrap_err("SUSPECT_FILE", f"檔案內容與格式不符或未知: {fname}", 400)
+            except Exception:
+                return _wrap_err("SUSPECT_FILE", f"檔案檢查失敗: {fname}", 400)
+            ext = os.path.splitext(fname)[1].lower()
+            gid = f"{uuid.uuid4().hex}{ext}"
+            rel = os.path.join(str(p.id), gid)  # by post id
+            pending_path = os.path.join(upload_root, "pending", rel)
+            try:
+                os.makedirs(os.path.dirname(pending_path), exist_ok=True)
+                fs.save(pending_path)
+            except Exception as e:
+                return _wrap_err("FS_WRITE_FAILED", f"無法儲存檔案：{e}", 500)
+            m = Media(post_id=p.id, path=f"pending/{rel}", status="pending")
+            try:
+                m.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
+                m.ip = get_client_ip()
+            except Exception:
+                pass
+            s.add(m)
+            saved_any = True
+
+        if not saved_any:
+            return _wrap_err("NO_VALID_FILES", "沒有有效的檔案", 422)
+
+        s.commit()
+
+        payload = {
+            "id": p.id,
+            "content": p.content,
+            "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
+        }
+
+    # best-effort broadcast (optional)
+    try:
+        from app import socketio
+        socketio.emit("post_created", {"post": payload, "origin": request.headers.get("X-Client-Id") or "-", "client_tx_id": request.form.get("client_tx_id")})
+    except Exception:
+        pass
+
+    return _wrap_ok(payload, 201)

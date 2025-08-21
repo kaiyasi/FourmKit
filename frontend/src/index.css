@@ -4,9 +4,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 全域過渡效果 */
+/* 全域過渡效果（尊重使用者「減少動態」偏好） */
 *, *::before, *::after {
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* 小裝置優化 */
@@ -30,6 +37,33 @@
 
 /* 背景圖 + 單層遮罩（亮/暗） */
 body { background: var(--bg); color: var(--fg); min-height:100dvh; }
+
+/* 統一表單欄位樣式（隨主題變換） */
+.form-control {
+  width: 100%;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem; /* ~ rounded-xl */
+  padding: 0.5rem 0.75rem; /* px-3 py-2 */
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.form-control::placeholder { color: var(--muted); opacity: 0.9; }
+.form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-100); }
+.form-control:disabled { background: var(--surface-hover); color: var(--muted); cursor: not-allowed; }
+
+/* 全域輸入框樣式（未特別標記也跟隨主題） */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']):not([type='reset']),
+textarea,
+select {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.9; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-100); }
 
 /* 背景：依主題覆寫（可換成對應圖檔） */
  :root[data-theme='beige'] body {background-image:

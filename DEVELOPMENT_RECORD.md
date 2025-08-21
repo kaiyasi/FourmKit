@@ -135,3 +135,79 @@
 - Pillow + libmagic 實作縮圖與 MIME 雙檢查
 - Nginx 公開 /uploads，限制 client_max_body_size
 - 前端完成 UploadArea + PostComposer 串接與驗證
+
+---
+
+## Day 9 — 上線整備（CDN、遷移穩定性、權限與體驗）
+日期：2025-08-21  
+時數：約 5 小時  
+狀態：已完成（結算至 Day 9）
+
+### 需求
+- 為上線做整備：提供公開媒體服務（CDN）、穩定資料庫遷移流程、前後端權限與體驗對齊、強化運維腳本，並補齊文件與開發紀錄。
+
+### 範圍
+- DevOps：docker compose 服務、CDN Nginx、健康檢查與診斷腳本、環境變數映射。
+- 後端：Alembic 遷移穩定化（SAVEPOINT）、新增 posts/media 欄位遷移、角色權限放寬、Discord Webhook 設定、進度 API 解析韌性。
+- 前端：Navbar 統一樣式、ModePage 返回鍵、HTTP 包裝相容兩種 API 回傳、表單輸入統一主題樣式、後台守衛放寬。
+
+### 設計決策
+- CDN：以獨立容器（Nginx）掛載 `uploads/public/`，預設對外埠 `12002`；安全標頭 + 危險副檔名阻擋；Cache-Control 1 週。
+- 遷移穩定性：`create_table` 包 SAVEPOINT（begin_nested），即使重複/型別衝突也不會毒化外層交易，後續 `has_table/has_index` 仍可運行。
+- 欄位擴充：為 `posts` 與 `media` 新增 `client_id`/`ip`，支援來源追蹤與後台展示。
+- 權限對齊：審核佇列允許 admin/dev_admin/campus_admin/cross_admin/moderator 類型查看；核准/退件/日誌限 admin/各類 admin。
+- 體驗一致：
+  - Navbar 一律「圖標＋文字」。
+  - ModePage 左上加入返回鈕（history.back；無前頁則回首頁）。
+  - 全域 input/textarea/select 與 `.form-control` 統一主題樣式。
+  - 前端 HTTP 包裝支援「直接物件」與「包在 data」兩種回傳，避免 undefined。
+- 進度頁：後端 `/api/progress` 解析接受「# 開發進度」與「# 開發紀錄」（允許 `#` 後空白），並以 DEVELOPMENT_RECORD.md 備援抽取更新。
+
+### 影響面
+- 上線拓撲：新增 `cdn` 服務；README 加入 Port 表與 CDN 驗證步驟；CDN 埠可自 `.env` 覆寫 `CDN_PORT`。
+- 安全：CDN 預設阻擋可執行副檔名；主站 Nginx 維持嚴格 CSP/CORS；後端安全標頭預設開啟。
+- 相依：docker-compose 需載入 `.env` 中的 `DISCORD_*`、`ALLOWED_ORIGINS`、`SOCKETIO_ORIGINS`；Alembic 在既有資料表亦可安全執行。
+
+### 變更檔案（主要）
+- DevOps / 文件：
+  - `docker-compose.yml`：新增 `cdn` 服務；`CDN_PORT` 可覆寫；擴充 backend 環境變數映射（DISCORD_*、ALLOWED_ORIGINS、SOCKETIO_ORIGINS）。
+  - `docker/cdn/`：新增 `Dockerfile`、`default.conf`（安全標頭 + 快取 + 阻擋危險副檔名）。
+  - `README.md`：補 Port 表、CDN 驗證步驟與埠衝突說明。
+  - `scripts/dev_full_rebuild.sh`：等待 backend 就緒、遷移 fallback（`exec`→`run --rm`）。
+  - `scripts/prod_maintenance_restart.sh`：等候就緒、遷移 fallback。
+  - `scripts/diagnose_502.sh`：新增 502 診斷（compose 狀態、Nginx↔backend 連通、/healthz、backend 日誌）。
+- 後端：
+  - `backend/migrations/2025_08_19_add_moderation.py`：以 SAVEPOINT 包裹 create_table；失敗不毒化外層交易。
+  - `backend/migrations/2025_08_21_add_client_ip_fields.py`：新增 `posts.media` 的 `client_id`/`ip` 欄位（存在檢查）。
+  - `backend/app.py`：
+    - `new_ticket_id` 抽至 `utils/ticket.py`（避免循環匯入）。
+    - `/api/progress` 標題解析支援「# 開發進度 / # 開發紀錄」與空白。
+    - `/api/report`、`/api/color_vote` Discord 回傳結果標示 delivery（discord/local_only）。
+  - `backend/routes/routes_moderation.py`、`routes_admin.py`：放寬角色。
+- 前端：
+  - `frontend/src/components/layout/NavBar.tsx`：統一圖標＋文字。
+  - `frontend/src/pages/ModePage.tsx`：加入返回鍵；維護欄位使用 `.form-control`。
+  - `frontend/src/lib/http.ts`：回傳相容（有 data 用 data；否則回整體 body）。
+  - `frontend/src/pages/GeneralAdminPage.tsx`：後台篩選輸入統一樣式。
+  - `frontend/src/index.css`：新增全域 input/textarea/select 與 `.form-control` 主題樣式。
+
+### 風險與回滾
+- 風險：
+  - 舊實例曾以 `create_all` 建表，可能與 Alembic 初始化重疊；現以 SAVEPOINT 容忍，風險已大幅降低。
+  - CDN 埠衝突：`12002` 被占用時 compose 啟動失敗。
+- 回滾：
+  - 遷移：本次僅新增欄位（可逆性高）；必要時以 `alembic downgrade -1` 回退欄位，或以備份還原。
+  - CDN：移除 `cdn` 服務或改 `.env` 內 `CDN_PORT`。
+
+### 驗證步驟
+1. 重建：`docker compose up -d --build`（或 `bash scripts/dev_full_rebuild.sh`）。
+2. 遷移：`docker compose exec -T backend alembic upgrade head || docker compose run --rm backend alembic upgrade head`。
+3. 健康：`curl -fsS http://localhost:12005/api/healthz | jq .`（DB/Redis/模式）。
+4. CDN：`echo hello > uploads/public/hello.txt && curl -fsS http://localhost:${CDN_PORT:-12002}/hello.txt`。
+5. 報表：`/api/report` 回傳 `delivery=discord`（需正確設定 `DISCORD_REPORT_WEBHOOK`）。
+6. 後台：以最高權限登入 `/auth` → `/admin` 可見待審佇列；審核操作可成功。
+
+### 已知限制與後續（Day 10）
+- 來源篩選尚未加到後台 UI/查詢參數（僅資料有欄位）：Day 10 補 UI 與 API。
+- `/api/progress` 的「項目進度」需維護 `# 開發進度` 清單：已於 Codex.md 補模板。
+- WebSocket 房間化與連線監控待 Day 10 展開。

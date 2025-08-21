@@ -1,258 +1,423 @@
-# ForumKit 開發文檔
+# ForumKit Day 9 - 審核系統
 
-## 專案概述
+> **完整的內容審核平台，符合企業級安全標準**
 
-ForumKit 是一個現代化的論壇平台，採用 React + TypeScript + Tailwind CSS 前端技術棧，搭配 Flask 後端 API 和 Docker 容器化部署。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![PostgreSQL](https://img.shields.io/badge/postgres-%23316192.svg?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org/)
 
-## 快速開始
+---
 
-### 環境需求
-- Docker 和 Docker Compose
-- Node.js 18+ (僅開發時需要)
+## 🌟 特色功能
 
-### 啟動專案
-```bash
-# 複製專案
-git clone <repository-url>
-cd ForumKit
+### 📋 審核模型
+- **物件管理**：支援 `Post`、`Media` 審核（未來可擴展 `Comment`）
+- **狀態流轉**：`pending`（預設）→ `approved`／`rejected`（含退件理由）
+- **可見性控制**：前台只顯示已核准內容；後台可操作所有狀態
+- **完整稽核**：`moderation_logs` 記錄所有審核活動（誰、何時、舊→新、理由）
 
-# 啟動所有服務
-docker-compose up -d
+### 🔐 權限系統
+- **角色分級**：`admin`、`moderator`、`user`
+- **JWT 認證**：token 包含 `role` claim + `@require_role()` 裝飾器保護
+- **API 保護**：只有管理員和審核員可執行審核操作
 
-# 訪問應用
-http://localhost:12005
-```
+### 🛡️ 媒體安全
+- **分階段存儲**：上傳先落 `uploads/pending/`；核准後移至 `uploads/public/`
+- **CDN 整合**：現有 CDN 服務只掛載 `public` 目錄
+- **檔案限制**：阻擋可執行副檔名（`.php`、`.py`、`.sh` 等）和路徑遍歷
 
-### 開發模式
-```bash
-# 訪問管理模式頁面
-http://localhost:12005/mode
+### ⚡ 即時通知
+- **Flask-SocketIO**：廣播審核事件（`post.approved|rejected`、`media.approved|rejected`）
+- **擴展性**：Day 10 可串接 Redis 進行分散式部署
+- **心跳監控**：TCP 9101 提供 Python socket 原生心跳服務
 
-# 選擇 "development" 模式並保存
-```
+---
 
-## 功能特色
+## 🏗️ 系統架構
 
-### 🎨 主題系統
-- **5 種預設主題**：米白、海霧、森雨、霧朦、暗夜
-- **動態切換**：支援亮色/暗色模式
-- **自定義配色**：顏色搭配器讓用戶提交配色方案
-- **CSS 變數**：統一的主題管理系統
+### 🌐 Port 配置
 
-### 📱 響應式設計
-- **桌面版**：傳統導覽列設計
-- **手機版**：右下角浮動按鈕 (FAB) 導覽
-- **適配性**：支援各種螢幕尺寸
+| 服務        | 對外 Port | 容器內 Port | 說明                         |
+|-------------|-----------|------------|------------------------------|
+| Web/Nginx   | 12005     | 80         | 前端 + API 反代                |
+| CDN         | 12002     | 80         | 上傳公開檔案 `uploads/public/` |
+| Postgres    | 12007     | 80         | 資料庫，內部通訊                 |
+| Redis       | 12008     | 80         | Pub/Sub, cache              |
+| 心跳服務     | 9101      | 9101       | Python socket ping/pong      |
 
-### 🔧 開發工具
-- **顏色搭配器**：即時預覽和提交配色方案
-- **意見回饋**：多種回報類型的表單系統
-- **開發進度**：動態顯示專案開發狀態
-- **Discord 整合**：自動發送回饋到 Discord 頻道
+> CDN 服務已內建於 docker compose（可選用）。生產環境亦可替換為既有外部 CDN，只需指向主機的 `uploads/public/` 目錄。
 
-### 🛡️ 平台模式
-- **正常模式**：標準運行狀態
-- **維護模式**：系統維護期間的友好提示
-- **開發模式**：測試和預覽新功能
-
-## 技術架構
-
-### 前端技術棧
-- **React 18**：現代化前端框架
-- **TypeScript**：型別安全的 JavaScript
-- **Tailwind CSS**：實用優先的 CSS 框架
-- **Vite**：快速的建構工具
-
-### 後端技術棧
-- **Flask**：輕量級 Python Web 框架
-- **SQLite**：嵌入式資料庫
-- **Redis**：快取和會話存儲
-- **PostgreSQL**：主要資料庫 (可選)
-
-### 部署架構
-- **Docker**：容器化部署
-- **Nginx**：反向代理和靜態文件服務
-- **Docker Compose**：多服務編排
-
-## 開發進度
-
-### ✅ 已完成
-- 前端介面：React + TypeScript + Tailwind CSS
-- 主題系統：5 種預設主題 + 動態切換
-- 後端 API：Flask + Discord Webhook
-- Docker 部署：容器化部署 + Nginx 反向代理
-- Discord 整合：意見回饋和主題建議
-
-### 🔄 開發中
-- 用戶系統：註冊、登入、權限管理
-
-### 📋 規劃中
-- 討論功能：發文、回覆、投票系統
-- 管理後台：內容管理、用戶管理
-
-## 配置設定
-
-### 環境變數
-
-在 `docker-compose.yml` 中設定：
-
-```yaml
-backend:
-  environment:
-    # 基本設定
-    FLASK_ENV: production
-    SECRET_KEY: your-secret-key
-    APP_MODE: normal  # normal/maintenance/development
-    
-    # 資料庫設定
-    FORUMKIT_DB: sqlite:////data/forumkit.db
-    REDIS_URL: redis://redis:6379/0
-    
-    # Discord Webhook (用於回饋通知)
-    DISCORD_REPORT_WEBHOOK: https://discord.com/api/webhooks/your-webhook-url
-    
-    # SMTP 郵件設定 (可選)
-    SMTP_HOST: smtp.gmail.com
-    SMTP_PORT: 587
-    SMTP_USER: your-email@gmail.com
-    SMTP_PASSWORD: your-app-password
-    SMTP_FROM: your-email@gmail.com
-    REPORT_TO: admin@example.com
-```
-
-### Discord Webhook 設定
-
-1. 在 Discord 伺服器中建立 Webhook
-2. 複製 Webhook URL
-3. 設定 `DISCORD_REPORT_WEBHOOK` 環境變數
-
-### SMTP 郵件設定 (可選)
-
-如果沒有設定 SMTP，系統會進入 "dry-run" 模式，只記錄內容而不實際發送郵件。
-
-#### Gmail 設定範例：
-```yaml
-SMTP_HOST: smtp.gmail.com
-SMTP_PORT: 587
-SMTP_USER: your-email@gmail.com
-SMTP_PASSWORD: your-16-digit-app-password
-SMTP_FROM: your-email@gmail.com
-REPORT_TO: admin@example.com
-```
-
-## 開發指南
-
-### 本地開發
-```bash
-# 前端開發
-cd frontend
-npm install
-npm run dev
-
-# 後端開發
-cd backend
-pip install -r requirements.txt
-python app.py
-```
-
-### 測試功能
-
-#### 開發模式測試
-1. 啟動開發模式：訪問 `/mode` 頁面
-2. 測試顏色搭配器：調整顏色並提交
-3. 測試意見回饋：填寫表單並送出
-4. 查看開發進度：確認狀態顯示正確
-
-#### Discord Webhook 測試
-1. 提交意見回饋或顏色搭配方案
-2. 檢查 Discord 頻道是否收到訊息
-3. 查看後端日誌：`docker-compose logs backend`
-
-### 除錯
-
-#### 常見問題
-1. **Discord 訊息未發送**：
-   - 檢查 Webhook URL 是否正確（使用 `discord.com` 而非 `discordapp.com`）
-   - 確認 Discord 伺服器權限設定
-   - 檢查 Webhook 是否已過期或被刪除
-   - 查看後端日誌中的錯誤訊息
-   - 如果 Webhook 無效，系統會顯示「已記錄（未設定 Discord）」訊息
-
-2. **手機版介面問題**：
-   - 檢查 CSS 類別設定
-   - 確認響應式設計規則
-   - 測試不同螢幕尺寸
-
-3. **權限問題**：
-   - 在 Windows 上可能需要手動設定權限
-   - 使用 Docker 構建而非 volume 掛載
-
-#### 查看日誌
-```bash
-# 查看所有服務日誌
-docker-compose logs
-
-# 查看特定服務日誌
-docker-compose logs backend
-docker-compose logs frontend
-docker-compose logs nginx
-```
-
-## 檔案結構
+### 📁 目錄結構
 
 ```
 ForumKit/
-├── backend/                 # Flask 後端
-│   ├── app.py              # 主要應用程式
-│   ├── requirements.txt    # Python 依賴
-│   └── utils/              # 工具模組
-├── frontend/               # React 前端
-│   ├── src/
-│   │   ├── App.tsx         # 主要組件
-│   │   ├── components/     # 可重用組件
-│   │   └── styles/         # 樣式檔案
-│   └── package.json        # Node.js 依賴
-├── nginx/                  # Nginx 配置
-├── docker-compose.yml      # Docker 編排
-└── README.md              # 專案文檔
+├─ docker/
+│  └─ nginx/                 # Nginx 配置和 Dockerfile
+├─ backend/                  # Flask 後端應用
+│  ├─ models/               # 資料庫模型
+│  ├─ routes/               # API 路由
+│  ├─ utils/                # 工具模組
+│  ├─ migrations/           # Alembic 遷移
+│  ├─ app.py               # 主應用檔案
+│  ├─ heartbeat.py         # 心跳服務
+│  └─ manage.py            # 用戶管理腳本
+├─ frontend/                # React 前端
+│  └─ src/
+│     ├─ api/              # API 呼叫模組
+│     ├─ pages/admin/      # 管理頁面
+│     └─ components/       # 可重用元件
+├─ uploads/                 # 媒體檔案存儲
+│  ├─ pending/             # 待審核檔案
+│  └─ public/              # 已核准檔案
+├─ tests/                  # 測試檔案
+├─ docker-compose.yml      # Docker 編排
+└─ scripts/
+   ├─ dev/demo.sh         # 端到端測試腳本（示範流程）
+   └─ ops/
+      ├─ deploy.sh        # 一鍵部署（compose + alembic + 健康檢查）
+      └─ fix-permissions.sh # 修復前端 dist 權限的小工具
 ```
 
-## 貢獻指南
+---
 
-1. Fork 專案
-2. 建立功能分支
-3. 提交變更
-4. 發起 Pull Request
+## 🚀 快速開始
 
-## 授權
+### 📋 前置要求
 
-本專案採用 MIT 授權條款。詳見 [LICENSE](LICENSE) 檔案。
+- Docker & Docker Compose
+- 現有的 CDN 服務（用於提供 `uploads/public/` 內容）
 
-## 更新日誌
+### 🛠️ 部署步驟
 
-### 2024-08-14
-- **文檔整合**：合併重複的 MD 文件，統一為 README.md
-- **Discord Webhook 修正**：移除硬編碼的 Webhook URL，改為環境變數設定
-- **手機版介面優化**：修正響應式設計，改善手機版的使用體驗
-  - 顏色選擇器在手機版改為垂直排列
-  - 意見回饋表單優化手機版佈局
-  - 調整間距和字體大小以適應小螢幕
-  - 快速配色方案在手機版改為 2 列顯示
-- **深淺色模式自動化**：移除手動切換，改為根據背景顏色自動判斷
-- **介面優化**：修正深色模式下的文字顏色顯示問題
-- **管理模式改進**：儲存後自動跳轉回主畫面
-- **錯誤處理改進**：增強 Discord Webhook 錯誤日誌，提供更詳細的除錯資訊
-- **狀態管理修正**：修正配色方案提交後狀態重置問題
-- **文字顏色修正**：確保回報表單在深色模式下文字可見
-- **Socket 基礎通訊**：建立 Flask-SocketIO 與 React 的 WebSocket 連接
-  - 後端導入 Flask-SocketIO 和 eventlet
-  - Nginx 新增 WebSocket 代理支援
-  - 前端新增 SocketBadge 組件顯示連線狀態
-  - 支援 connect、ping/pong 等基本事件
+1. **複製專案並進入目錄**
+   ```bash
+   git clone <repository>
+   cd ForumKit
+   ```
 
-### 2024-08-13
-- 完成開發模式介面設計
-- 實現顏色搭配器功能
-- 修復 Docker 權限問題
-- 優化主題切換體驗
-- 修復開發進度資料讀取問題
+2. **配置環境變數**
+   ```bash
+   cp .env.sample .env
+   # 編輯 .env 設定 JWT_SECRET_KEY 等
+   ```
+
+3. **啟動所有服務**
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. **初始化資料庫**
+   ```bash
+   docker compose exec backend alembic upgrade head
+   ```
+
+5. **建立管理帳號**
+   ```bash
+   docker compose exec backend python manage.py
+   ```
+
+6. **健康檢查**
+   ```bash
+   curl -i http://localhost:12005/api/healthz
+   ```
+
+7. **驗證 CDN**（可選）
+   ```bash
+   # 放一個測試檔到 uploads/public
+   echo hello > uploads/public/hello.txt
+   # 透過 CDN 取檔
+   curl -fsS http://localhost:12002/hello.txt
+   ```
+
+> 若 12002 已被占用，可在 `.env` 設定 `CDN_PORT=12012`（或其他可用埠），
+> 之後 `docker compose up -d --build` 會使用該埠對外提供 CDN。
+> 查占用程式：`lsof -i :12002 -nP` 或 `ss -lntp | grep 12002`。
+
+### 🧪 執行測試
+
+```bash
+# 端到端測試
+bash ./scripts/dev/demo.sh
+
+# 單元測試
+docker compose exec backend pytest -q
+```
+
+---
+
+## 🧰 運維腳本（精簡）
+
+- 開發用全平台重建：`bash scripts/dev_full_rebuild.sh`
+  - 停止與清空 docker 資料卷 → 重建前端 → 重新 build/up → 套用遷移 → 健康檢查。
+  - 可用環境變數：
+    - `ENFORCE_SINGLE_ADMIN=0` 可在開發時播種帳號（避免單一管理模式擋住）。
+    - `ADMIN_USER`、`ADMIN_PASS` 自訂建立/提升的總管理員帳密。
+
+- 上架後維護重啟：`bash scripts/prod_maintenance_restart.sh`
+  - 保留資料卷，重建映像與前端資產 → 啟動 → 套用遷移 → 健康檢查。
+
+- 服務狀態檢查（含 API）：`bash scripts/health_check.sh`
+  - 顯示 compose 狀態並呼叫 `GET /api/healthz`；可用 `API_ENDPOINT` 覆寫預設位址。
+
+---
+
+## 📎 檔案整理說明
+
+- `scripts/dev_full_rebuild.sh`: 開發環境的一鍵重建。
+- `scripts/prod_maintenance_restart.sh`: 正式環境維護重啟。
+- `scripts/health_check.sh`: 服務狀態檢查（含 API）。
+- `docs/samples/cf403/`: 403 樣本（Cloudflare/Nginx）留存備查；純參考用，非執行檔。
+
+
+## 📚 API 文檔
+
+### 🔐 認證
+```bash
+# 登入
+POST /api/auth/login
+Content-Type: application/json
+{
+  "username": "admin",
+  "password": "admin123"
+}
+```
+
+### 📝 貼文管理
+```bash
+# 建立貼文（需登入）
+POST /api/posts/create
+Authorization: Bearer <JWT>
+{
+  "content": "待審核的貼文內容"
+}
+
+# 列出已核准貼文
+GET /api/posts/list?limit=20
+```
+
+### 📎 媒體上傳
+```bash
+# 上傳媒體檔案（需登入）
+POST /api/posts/upload
+Authorization: Bearer <JWT>
+Content-Type: multipart/form-data
+{
+  "file": <檔案>,
+  "post_id": 123
+}
+```
+
+### 🛡️ 審核管理（僅一般管理員）
+```bash
+# 取得待審核佇列（需一般管理員 admin）
+GET /api/moderation/queue
+Authorization: Bearer <ADMIN_JWT>
+
+# 核准貼文（僅 admin）
+POST /api/moderation/post/{id}/approve
+Authorization: Bearer <ADMIN_JWT>
+
+# 退件貼文（僅 admin）
+POST /api/moderation/post/{id}/reject
+Authorization: Bearer <ADMIN_JWT>
+{
+  "reason": "不符合社群規範"
+}
+
+# 核准媒體檔案（僅 admin）
+POST /api/moderation/media/{id}/approve
+Authorization: Bearer <ADMIN_JWT>
+
+# 退件媒體檔案（僅 admin）
+POST /api/moderation/media/{id}/reject
+Authorization: Bearer <ADMIN_JWT>
+{
+  "reason": "內容不當"
+}
+```
+
+---
+
+## 🔒 安全設計
+
+### 📁 檔案安全
+- 兩階段存儲：`pending` → `public`
+- 路徑驗證：防止 `../` 攻擊
+- 副檔名過濾 + 內容嗅探：阻擋可執行檔案，對 JPEG/PNG/WebP/MP4/WebM 做快速檢查
+- 檔案大小限制：預設單檔 ≤ `UPLOAD_MAX_SIZE_MB`（預設 10MB）
+- 權限控制：檔案權限設為 `644`
+
+### 🛡️ Web/API 安全
+- 安全標頭：`X-Content-Type-Options=nosniff`、`X-Frame-Options=DENY`、`Referrer-Policy=no-referrer`、`Permissions-Policy`
+- CSP：預設 `default-src 'self'`，開放最小必要來源（可用 `CONTENT_SECURITY_POLICY` 覆寫）
+- CORS：限制允許的來源（`ALLOWED_ORIGINS`），Socket.IO 亦可設定 `SOCKETIO_ORIGINS`
+- 速率限制：對發文與上傳 API 做 Token Bucket 限流（每裝置/每 IP）
+  - 若設定 `REDIS_URL`：改用 Redis 計數（多機一致）；未設定時使用單機記憶體方案
+- 自動封鎖：同一 IP 在短時間內被限流阻擋達 2 次（可調）→ 自動封鎖（預設 1 天）
+  - 封鎖期間，所有 `/api/*`（除 `/api/audit_report`）回傳 451，要求提交稽核報告以解除
+  - 稽核報告：`POST /api/audit_report { contact?, reason?, message }`（成功即解除封鎖）
+- 請求體大小：全域 `MAX_CONTENT_LENGTH`（預設 16MB，可調整）
+- 內容清洗：貼文內容使用 Bleach 允許清單清理
+
+### 👤 匿名與半匿名
+- 完整匿名：未登入時以 `X-Client-Id` 建立/辨識匿名使用者（`anon_<clientId>`）
+- 半匿名：可透過學校信箱註冊後綁定匿名 ID（未來擴充），不影響未登入發文
+
+### 📊 稽核追蹤
+- **操作記錄**：所有審核動作都記錄在 `moderation_logs`
+- **狀態追蹤**：記錄狀態變更的前後對比
+- **責任歸屬**：記錄操作人員和時間戳
+
+---
+
+## 🧪 測試指南
+
+### 🔍 基本功能測試
+
+1. **登入測試**
+   ```bash
+   curl -s -X POST http://localhost:12005/api/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"admin123"}'
+   ```
+
+2. **建立貼文**
+   ```bash
+   curl -s -X POST http://localhost:12005/api/posts/create \
+     -H "Authorization: Bearer <JWT>" \
+     -H 'Content-Type: application/json' \
+     -d '{"content":"Hello pending"}'
+   ```
+
+3. **審核流程**
+   ```bash
+   # 查看待審核項目
+   curl -s http://localhost:12005/api/moderation/queue \
+     -H "Authorization: Bearer <ADMIN_JWT>"
+   
+   # 核准貼文
+   curl -s -X POST http://localhost:12005/api/moderation/post/1/approve \
+     -H "Authorization: Bearer <ADMIN_JWT>"
+   ```
+
+4. **心跳測試**
+   ```bash
+   echo "ping" | nc 127.0.0.1 9101
+   # 應該回傳: pong
+   ```
+
+### 🎯 檔案上傳測試
+
+```bash
+# 上傳圖片到 pending
+curl -s -X POST http://localhost:12005/api/posts/upload \
+  -H "Authorization: Bearer <USER_JWT>" \
+  -F file=@demo.jpg -F post_id=1
+
+# 核准後檔案移動到 public
+curl -s -X POST http://localhost:12005/api/moderation/media/1/approve \
+  -H "Authorization: Bearer <ADMIN_JWT>"
+
+# 確認可透過 CDN 訪問
+# curl -I http://your-cdn-url/1/<uuid>.jpg
+```
+
+---
+
+## 🚨 常見問題排查
+
+### ❌ 403 權限拒絕
+- **檢查項目**：確認登入帳號是否為 `admin` 或 `moderator` 角色
+- **解決方案**：使用 `manage.py` 建立管理帳號
+
+### 📁 媒體檔案無法存取
+- **檢查項目**：檔案是否還在 `pending/` 目錄
+- **解決方案**：必須先通過審核才能公開存取
+
+### 🔌 Socket.IO 連線問題
+- **檢查項目**：CSP 標頭是否允許 `ws:`/`wss:` 連線
+- **解決方案**：確認 Nginx 配置正確
+
+### 🗄️ 資料庫連線失敗
+- **檢查項目**：確認 Docker Compose 是否使用 `:80` 而不是 `:5432`
+- **解決方案**：檢查 `DATABASE_URL` 環境變數
+
+---
+
+## 🛠️ 進階配置
+
+### 🌍 生產環境部署
+
+1. **環境變數設定**
+   ```env
+   JWT_SECRET_KEY=your-super-secure-key-here
+   APP_MODE=production
+   DATABASE_URL=postgresql+psycopg2://user:pass@db:80/forumkit
+   UPLOAD_ROOT=/data/uploads
+   ```
+
+2. **外部 Nginx 反代理**
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name your-domain.com;
+       
+       location / {
+           proxy_pass http://localhost:12005;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   ```
+
+3. **CDN 整合**
+   - 將現有 CDN 指向 `uploads/public/` 目錄
+   - 確保 CDN 配置阻擋可執行檔案副檔名
+
+### 📊 監控與維護
+
+- **日誌查看**：`docker compose logs -f backend`
+- **資料庫備份**：定期備份 PostgreSQL 資料
+- **檔案清理**：定期清理被退件的 `pending` 檔案
+
+---
+
+## 📄 授權條款
+
+MIT License - 詳見 [LICENSE](LICENSE) 檔案
+
+---
+
+## 🤝 貢獻指南
+
+1. Fork 此專案
+2. 建立功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交變更 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 開啟 Pull Request
+
+---
+
+## 📞 支援與聯繫
+
+- 🐛 **問題回報**：請使用 GitHub Issues
+- 💬 **討論交流**：請使用 GitHub Discussions
+- 📧 **安全問題**：請發送私訊而非公開 issue
+
+---
+
+*ForumKit Day 9 - 讓內容審核變得簡單而安全* 🛡️
+### 🔧 安全相關環境變數
+
+- `ALLOWED_ORIGINS`: 允許 CORS 的前端來源（逗號分隔）
+- `SOCKETIO_ORIGINS`: 允許的 Socket.IO 來源（逗號分隔）
+- `MAX_CONTENT_MB`: 全域請求體大小上限（預設 16）
+- `UPLOAD_MAX_SIZE_MB`: 單檔上傳大小上限（預設 10）
+- `POST_MAX_CHARS`: 貼文內容字數上限（預設 5000）
+- `CONTENT_SECURITY_POLICY`: 自訂 CSP 字串（預設為嚴格的 self 政策）
+- `SECURITY_HEADERS_DISABLED`: 設為 `1` 可停用安全標頭（不建議）
+- `ENABLE_HSTS`: 設為 `1` 啟用 HSTS（僅 https）
+- `REDIS_URL`: 啟用 Redis 限流（如 `redis://redis:6379/0`）
+- `IP_BLOCK_STRIKES_THRESHOLD`: 觸發自動封鎖的次數（預設 2）
+- `IP_STRIKE_TTL_SECONDS`: 計算「短時間內」的視窗秒數（預設 1800）
+- `IP_BLOCK_TTL_SECONDS`: 自動封鎖持續秒數（預設 86400）

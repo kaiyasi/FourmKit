@@ -10,26 +10,26 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/boards', label: '貼文', icon: Newspaper },
     { to: '/about', label: '關於我們', icon: Info },
     { to: '/rules', label: '版規', icon: ScrollText },
-    { to: '/auth', label: '登入', icon: LogIn, iconOnly: true },
+    { to: '/auth', label: '登入', icon: LogIn },
   ],
   user: [
     { to: '/', label: '首頁', icon: Home },
     { to: '/boards', label: '貼文', icon: Newspaper },
     { to: '/about', label: '關於我們', icon: Info },
     { to: '/rules', label: '版規', icon: ScrollText },
-    { to: '/settings/profile', label: '設定', icon: Settings, iconOnly: true },
+    { to: '/settings/profile', label: '設定', icon: Settings },
   ],
   dev_admin: [
     { to: '/', label: '首頁', icon: Home },
     { to: '/boards', label: '貼文', icon: Newspaper },
     { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/settings/admin', label: '設定', icon: Settings, iconOnly: true },
+    { to: '/settings/admin', label: '設定', icon: Settings },
   ],
   campus_admin: [
     { to: '/', label: '首頁', icon: Home },
     { to: '/boards', label: '貼文', icon: Newspaper },
     { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/settings/admin', label: '設定', icon: Settings, iconOnly: true },
+    { to: '/settings/admin', label: '設定', icon: Settings },
   ],
   cross_admin: [
     { to: '/', label: '首頁', icon: Home },
@@ -49,19 +49,31 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/admin', label: '後台', icon: LayoutDashboard },
     { to: '/settings/admin', label: '設定', icon: Settings, iconOnly: true },
   ],
+  admin: [
+    { to: '/', label: '首頁', icon: Home },
+    { to: '/boards', label: '貼文', icon: Newspaper },
+    { to: '/admin', label: '後台', icon: LayoutDashboard },
+    { to: '/settings/admin', label: '設定', icon: Settings },
+  ],
+  moderator: [
+    { to: '/', label: '首頁', icon: Home },
+    { to: '/boards', label: '貼文', icon: Newspaper },
+    { to: '/admin', label: '後台', icon: LayoutDashboard },
+    { to: '/settings/admin', label: '設定', icon: Settings },
+  ],
 }
 
 export function NavBar({ pathname }: { pathname: string }) {
   const role = isLoggedIn() ? getRole() : 'guest'
   const items = sets[role] || sets.guest
   const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to))
-  const canManageMode = ['dev_admin', 'campus_admin', 'cross_admin'].includes(role)
+  const canManageMode = ['admin', 'dev_admin', 'campus_admin', 'cross_admin'].includes(role)
 
   // 為有權限的用戶在後台後面插入模式指示器
   const renderNavItems = () => {
-    const navItems = []
+    const navItems: JSX.Element[] = []
     
-    items.forEach(({ to, label, icon: Icon, iconOnly }, index) => {
+    items.forEach(({ to, label, icon: Icon }, index) => {
       // 渲染正常的導航項目
       navItems.push(
         <li key={to}>
@@ -73,11 +85,9 @@ export function NavBar({ pathname }: { pathname: string }) {
                 ? 'font-semibold ring-1 ring-primary-100 dark:ring-primary-600/40 bg-primary-100/60 dark:bg-primary-600/20 text-fg'
                 : 'text-muted hover:text-fg hover:bg-surface/70'
             ].join(' ')}
-            aria-label={iconOnly ? label : undefined}
-            title={iconOnly ? label : undefined}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
-            {!iconOnly && <span>{label}</span>}
+            <span>{label}</span>
             {isActive(to) && (
               <span className="pointer-events-none absolute left-2 right-2 -bottom-1 h-0.5 rounded bg-fg/80 dark:bg-fg/90" />
             )}
