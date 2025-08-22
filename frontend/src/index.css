@@ -46,6 +46,7 @@ body { background: var(--bg); color: var(--fg); min-height:100dvh; }
   border: 1px solid var(--border);
   border-radius: 0.75rem; /* ~ rounded-xl */
   padding: 0.5rem 0.75rem; /* px-3 py-2 */
+  background-clip: padding-box; /* 防止 autofill 內層陰影外溢 */
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 .form-control::placeholder { color: var(--muted); opacity: 0.9; }
@@ -61,9 +62,26 @@ select {
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   padding: 0.5rem 0.75rem;
+  background-clip: padding-box;
 }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.9; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-100); }
+
+/* 覆蓋瀏覽器自動填入的底色，維持與主題一致（Chrome/Safari） */
+input:-webkit-autofill,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--fg) !important;
+  box-shadow: 0 0 0px 1000px var(--surface) inset !important; /* 與主題表面一致 */
+  transition: background-color 9999s ease 0s !important; /* 避免閃爍 */
+  caret-color: var(--fg) !important;
+}
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-100), 0 0 0px 1000px var(--surface) inset !important;
+}
 
 /* 背景：依主題覆寫（可換成對應圖檔） */
  :root[data-theme='beige'] body {background-image:

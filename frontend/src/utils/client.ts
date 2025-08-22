@@ -1,12 +1,18 @@
 // frontend/src/utils/client.ts
 export function getClientId() {
+  // 匿名臨時帳號：使用 sessionStorage，刷新即更新
   const k = 'forumkit_client_id'
-  let v = localStorage.getItem(k)
-  if (!v) { 
-    v = crypto.randomUUID()
-    localStorage.setItem(k, v)
+  try {
+    const store = window.sessionStorage
+    let v = store.getItem(k)
+    if (!v) { v = crypto.randomUUID(); store.setItem(k, v) }
+    return v
+  } catch {
+    // 退回 localStorage（極少數環境 sessionStorage 受限）
+    let v = localStorage.getItem(k)
+    if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v) }
+    return v
   }
-  return v
 }
 
 export function newTxId() { 

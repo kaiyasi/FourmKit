@@ -12,6 +12,9 @@ DEFAULT_DATA: Dict[str, Any] = {
     "mode": os.getenv("APP_MODE", "normal"),
     "maintenance_message": "",
     "maintenance_until": "",
+    # 內容字數審核（最小字數與開關）
+    "enforce_min_post_chars": True,
+    "min_post_chars": int(os.getenv("MIN_POST_CHARS", "15")),
 }
 
 

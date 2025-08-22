@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from utils.auth import role_required
 from models import UserRole
-from utils.config_handler import load_config, set_mode
+from utils.config_handler import load_config, set_mode, save_config
 
 bp = Blueprint("mode", __name__, url_prefix="/api/mode")
 
@@ -14,7 +14,10 @@ def get_mode():
         return jsonify({
             "mode": str(config.get("mode", "normal") or "normal"),
             "maintenance_message": config.get("maintenance_message"),
-            "maintenance_until": config.get("maintenance_until")
+            "maintenance_until": config.get("maintenance_until"),
+            # 內容規則（提供給後台設定使用）
+            "enforce_min_post_chars": bool(config.get("enforce_min_post_chars", True)),
+            "min_post_chars": int(config.get("min_post_chars", 15)),
         })
     except Exception as e:
         return jsonify({"msg": f"讀取模式失敗: {str(e)}"}), 500
@@ -50,6 +53,21 @@ def set_mode_endpoint():
             maintenance_message=notice,
             maintenance_until=eta,
         )
+        # 允許同時更新內容規則
+        if "enforce_min_post_chars" in data or "min_post_chars" in data:
+            try:
+                cfg = load_config()
+                if "enforce_min_post_chars" in data:
+                    cfg["enforce_min_post_chars"] = bool(data.get("enforce_min_post_chars"))
+                if "min_post_chars" in data:
+                    try:
+                        cfg["min_post_chars"] = max(0, int(data.get("min_post_chars") or 0))
+                    except Exception:
+                        pass
+                save_config(cfg)
+                updated = cfg
+            except Exception:
+                pass
         return jsonify({"ok": True, "mode": updated.get("mode"), "config": updated})
     except Exception as e:
         return jsonify({"msg": f"更新模式失敗: {str(e)}"}), 500

@@ -211,3 +211,42 @@
 - 來源篩選尚未加到後台 UI/查詢參數（僅資料有欄位）：Day 10 補 UI 與 API。
 - `/api/progress` 的「項目進度」需維護 `# 開發進度` 清單：已於 Codex.md 補模板。
 - WebSocket 房間化與連線監控待 Day 10 展開。
+
+---
+
+## Day 10 — 審核體驗強化與即時監看
+日期：2025-08-22  
+時數：約 6 小時  
+狀態：已完成
+
+### 需求
+- 審核流程不要分開操作媒體與文章，統一「一起審」。
+- 待審媒體（pending）在後台可直接預覽（圖片/影片）。
+- 增加聊天室監看與管控能力（清空、匯出、搜尋）。
+- 全站錯誤視圖設計化，改善失敗時體驗。
+- 發文最小字數規則移至後台設定（with‑media 可略過）。
+
+### 達成情況
+- 一起審：
+  - 核准文章 → 同步核准該文所有媒體並移至 `public/`，寫入審核日誌。
+  - 退件文章 → 同步退件所有媒體，嘗試刪除已公開檔案，避免遺留。
+- 後台媒體預覽：
+  - 新增管理端保護預覽 API：`GET /api/moderation/media/:id/file`，支援 `pending/` 與 `public/` 檔案回傳。
+  - 後台列表與詳情滑出面板可直接預覽（pending 走帶授權的 blob，public 走 `/uploads/public/...`）。
+- 聊天室監看（/admin/rooms）：
+  - 房間搜尋、清空訊息（`POST /api/rooms/:room/clear`）、匯出 CSV（room/client_id/ts/message）、可選每 5 秒自動刷新。
+- 設計化錯誤頁：
+  - 新增 `ErrorPage` 元件，統一套用於路由錯誤、貼文詳情、後台頁面、未登入發文頁。
+- 規則設定：
+  - /mode 新增「發文內容規則」區塊：`enforce_min_post_chars`、`min_post_chars` 可保存。
+  - 純文字發文依規則檢查；with‑media 路由可略過最小字數（但仍走 sanitize 與安全檢查）。
+
+### 影響面
+- 後端：moderation 路由（文章核准/退件同步處理媒體）、新增媒體預覽與清空房間 API、mode 讀寫增加內容規則欄位。
+- 前端：GeneralAdminPage 增加預覽與詳情導覽；AdminRoomsPage 新增搜尋/清空/匯出；ErrorPage 套用多處；PostForm 有附件時不再前端卡字數（交由後端統一）。
+- Nginx：主站反代 `/uploads/` → `cdn`，public 媒體以同網域服務；避免 pending 被直接公開。
+
+### 驗收
+- 後台可直接預覽待審媒體；核准文章即公開媒體；退件文章清理已公開檔案。
+- /admin/rooms 可搜尋、清空並匯出訊息；錯誤頁面顯示一致、可讀性佳。
+- /mode 可保存最小字數規則；純文字短於閥值會被阻擋，有附件可送出。

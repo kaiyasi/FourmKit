@@ -59,6 +59,9 @@ export default function ModePage() {
   const [messageType, setMessageType] = useState<"success" | "error">("success");
   const [healthLoading, setHealthLoading] = useState(true);
   const [health, setHealth] = useState<any | null>(null);
+  // 發文內容規則
+  const [enforceMinChars, setEnforceMinChars] = useState(true)
+  const [minChars, setMinChars] = useState(15)
 
   // 初始化主題
   useEffect(() => {
@@ -85,6 +88,8 @@ export default function ModePage() {
       setMode(r.mode);
       setMaintenanceMessage(r.maintenance_message || "");
       setMaintenanceUntil(r.maintenance_until || "");
+      if (typeof r.enforce_min_post_chars === 'boolean') setEnforceMinChars(r.enforce_min_post_chars)
+      if (typeof r.min_post_chars === 'number') setMinChars(r.min_post_chars)
     } catch (e: any) {
       showMessage(e.message || "載入模式失敗", "error");
     }
@@ -112,7 +117,8 @@ export default function ModePage() {
       const r = await ModeAPI.set(
         newMode, 
         newMode === "maintenance" ? maintenanceMessage : undefined,
-        newMode === "maintenance" ? maintenanceUntil : undefined
+        newMode === "maintenance" ? maintenanceUntil : undefined,
+        { enforce_min_post_chars: enforceMinChars, min_post_chars: minChars }
       );
       setMode(r.mode); 
       showMessage(`已切換至${MODE_CONFIGS[newMode].name}`, "success");
@@ -377,6 +383,31 @@ export default function ModePage() {
                   緊急維護
         </button>
       </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 發文內容規則 */}
+        <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
+          <h3 className="font-semibold text-fg mb-4">發文內容規則</h3>
+          <div className="grid gap-4">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={enforceMinChars} onChange={e=>setEnforceMinChars(e.target.checked)} />
+              啟用最小字數審核
+            </label>
+            <div className="grid gap-2 max-w-xs">
+              <label className="text-sm">最小字數</label>
+              <input type="number" min={0} value={minChars} onChange={e=> setMinChars(Math.max(0, Number(e.target.value||0)))} className="form-control" />
+              <p className="text-xs text-muted">若附有媒體檔案，將略過最小字數限制。</p>
+            </div>
+            <div>
+              <button
+                onClick={() => switchMode(mode)}
+                className="px-4 py-2 rounded-xl border dual-btn"
+                disabled={!canSetMode()}
+              >
+                保存設定
+              </button>
             </div>
           </div>
         </div>

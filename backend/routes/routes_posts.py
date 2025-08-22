@@ -5,9 +5,10 @@ from sqlalchemy import func
 from utils.db import get_session
 from utils.auth import get_effective_user_id
 from utils.ratelimit import get_client_ip
-from models import Post, Media
+from models import Post, Media, User
 from utils.upload_validation import is_allowed, sniff_kind
 from utils.sanitize import clean_html
+from utils.config_handler import load_config
 from utils.ratelimit import rate_limit
 import uuid, os, datetime
 
@@ -24,7 +25,22 @@ def list_posts():
     limit = max(min(int(request.args.get("limit", 20)), 100), 1)
     with get_session() as s:
         q = s.query(Post).filter(Post.status=="approved").order_by(Post.id.desc()).limit(limit)
-        items = [{"id":p.id,"content":p.content} for p in q.all()]
+        rows = q.all()
+        items = []
+        for p in rows:
+            # 不暴露真實帳號；若非 anon_ 使用者，標示為「帳號」；匿名則留空字串
+            label = ""
+            try:
+                u = s.query(User).get(p.author_id)
+                if u and not (u.username or "").startswith("anon_"):
+                    label = "帳號"
+            except Exception:
+                pass
+            items.append({
+                "id": p.id,
+                "content": p.content,
+                "author_hash": label,
+            })
         return jsonify({"items": items})
 
 @bp.get("")
@@ -43,19 +59,47 @@ def list_posts_compat():
                 .limit(per_page)
                 .all()
         )
-        items = [
-            {
+        items = []
+        for p in rows:
+            label = ""
+            try:
+                u = s.query(User).get(p.author_id)
+                if u and not (u.username or "").startswith("anon_"):
+                    label = "帳號"
+            except Exception:
+                pass
+            items.append({
                 "id": p.id,
                 "content": p.content,
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
-            }
-            for p in rows
-        ]
+                "author_hash": label,
+            })
         return _wrap_ok({
             "items": items,
             "page": page,
             "per_page": per_page,
             "total": int(total),
+        })
+
+@bp.get("/<int:pid>")
+def get_post(pid: int):
+    """Fetch a single approved post by id (public)."""
+    with get_session() as s:
+        p = s.query(Post).filter(Post.id == pid, Post.status == "approved").first()
+        if not p:
+            return _wrap_err("NOT_FOUND", "貼文不存在或尚未公開", 404)
+        label = ""
+        try:
+            u = s.query(User).get(p.author_id)
+            if u and not (u.username or "").startswith("anon_"):
+                label = "帳號"
+        except Exception:
+            pass
+        return _wrap_ok({
+            "id": p.id,
+            "content": p.content,
+            "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
+            "author_hash": label,
         })
 
 @bp.post("/create")
@@ -136,8 +180,18 @@ def create_post_compat():
         abort(401)
     data = request.get_json() or {}
     content = clean_html((data.get("content") or "").strip())
-    if len(content) < 1:
-        return _wrap_err("CONTENT_REQUIRED", "內容不可為空", 422)
+    # 內容最小字數審核（僅限純文字發文；附檔案另一路由）
+    cfg = load_config() or {}
+    if bool(cfg.get("enforce_min_post_chars", True)):
+        try:
+            min_chars = int(cfg.get("min_post_chars", 15))
+        except Exception:
+            min_chars = 15
+        if len(content) < max(1, min_chars):
+            return _wrap_err("CONTENT_TOO_SHORT", f"內容太短（需 ≥ {max(1, min_chars)} 字）", 422)
+    else:
+        if len(content) < 1:
+            return _wrap_err("CONTENT_REQUIRED", "內容不可為空", 422)
     max_len = int(os.getenv("POST_MAX_CHARS", "5000"))
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
@@ -150,15 +204,33 @@ def create_post_compat():
             pass
         s.add(p); s.flush(); s.refresh(p)
         s.commit()
+        # 標示作者（不洩露身分）：若非匿名帳號則以「帳號」表示
+        author_label = ""
+        try:
+            u = s.query(User).get(p.author_id)
+            if u and not (u.username or "").startswith("anon_"):
+                author_label = "帳號"
+        except Exception:
+            pass
         payload = {
             "id": p.id,
             "content": p.content,
             "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
+            "author_hash": author_label,
         }
     # best-effort broadcast (optional)
     try:
         from app import socketio
-        socketio.emit("post_created", {"post": payload, "origin": request.headers.get("X-Client-Id") or "-", "client_tx_id": data.get("client_tx_id")})
+        origin = None
+        try:
+            uid_sub = get_jwt_identity()
+            if uid_sub is not None:
+                origin = f"user:{uid_sub}"
+        except Exception:
+            origin = None
+        if not origin:
+            origin = f"client:{(request.headers.get('X-Client-Id') or '-').strip()}"
+        socketio.emit("post_created", {"post": payload, "origin": origin, "client_tx_id": data.get("client_tx_id")})
     except Exception:
         pass
     return _wrap_ok(payload, 201)
@@ -178,12 +250,12 @@ def create_post_with_media_compat():
         return _wrap_err("INVALID_CONTENT_TYPE", "請使用 multipart/form-data", 400)
 
     content = clean_html((request.form.get("content", "") or "").strip())
-    if len(content) < 1:
-        return _wrap_err("CONTENT_REQUIRED", "內容不可為空", 422)
+    # 若有附件上傳，允許空內容（略過最小字數審核）
 
     files = request.files.getlist("files")
     if not files:
         return _wrap_err("NO_FILES", "未上傳任何檔案", 422)
+    # 若沒有內容且有附件，直接允許；若有內容仍可沿用（不再做最小字數檢查）
 
     # 與 /api/posts/upload 對齊：預設使用專案內 uploads 目錄，避免容器外 /data 權限問題
     upload_root = os.getenv("UPLOAD_ROOT", "uploads")
@@ -192,7 +264,7 @@ def create_post_with_media_compat():
 
     saved_any = False
     with get_session() as s:
-        p = Post(author_id=uid, content=content, status="pending")
+        p = Post(author_id=uid, content=(content or ""), status="pending")
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
@@ -247,16 +319,34 @@ def create_post_with_media_compat():
 
         s.commit()
 
+        # 標示作者（不洩露身分）：若非匿名帳號則以「帳號」表示
+        author_label = ""
+        try:
+            u = s.query(User).get(p.author_id)
+            if u and not (u.username or "").startswith("anon_"):
+                author_label = "帳號"
+        except Exception:
+            pass
         payload = {
             "id": p.id,
             "content": p.content,
             "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
+            "author_hash": author_label,
         }
 
     # best-effort broadcast (optional)
     try:
         from app import socketio
-        socketio.emit("post_created", {"post": payload, "origin": request.headers.get("X-Client-Id") or "-", "client_tx_id": request.form.get("client_tx_id")})
+        origin = None
+        try:
+            uid_sub = get_jwt_identity()
+            if uid_sub is not None:
+                origin = f"user:{uid_sub}"
+        except Exception:
+            origin = None
+        if not origin:
+            origin = f"client:{(request.headers.get('X-Client-Id') or '-').strip()}"
+        socketio.emit("post_created", {"post": payload, "origin": origin, "client_tx_id": request.form.get("client_tx_id")})
     except Exception:
         pass
 

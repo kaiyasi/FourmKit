@@ -5,10 +5,14 @@ import { getClientId, upsertByIdOrTemp, upsertSocketPayload } from './utils/clie
 import { NavBar } from './components/layout/NavBar'
 import { MobileFabNav } from './components/layout/MobileFabNav'
 import { ThemeToggle } from './components/ui/ThemeToggle'
-import PostForm from './components/forms/PostForm'
 import PostList from './components/PostList'
+import PostForm from './components/forms/PostForm'
+import ChatPanel from './components/ChatPanel'
+import ChatPage from './pages/ChatPage'
+import PostDetailPage from './pages/PostDetailPage'
+import AdminRoomsPage from './pages/AdminRoomsPage'
 import ResizableSection from './components/ResizableSection'
-import { canSetMode } from '@/utils/auth'
+import { canSetMode, isLoggedIn, getUserId } from '@/utils/auth'
 
 type PlatformMode = {
   mode: 'normal' | 'maintenance' | 'development' | 'test'
@@ -60,6 +64,7 @@ export default function App() {
       }
       
       const myClientId = getClientId()
+      const myUserId = isLoggedIn() ? getUserId() : null
       
       // 統一的 post 處理器：僅對本人顯示「已提交審核」提示；不再注入清單
       const combinedPostHandler = (payload: any) => {
@@ -68,7 +73,7 @@ export default function App() {
         console.info(`[App] processing socket payload: post_id=${post?.id} origin=${origin} tx_id=${client_tx_id}`)
         
         // 僅通知發文者：改為「已提交審核」並記錄我的貼文 id（供列表顯示私有標記）
-        if (origin === myClientId) {
+        if (origin === `client:${myClientId}` || (myUserId && origin === `user:${myUserId}`)) {
           push(`您的貼文已提交審核：${(post?.content ?? '').slice(0, 30)}…`)
           // 將正式 id 回寫到本地占位，並保留 pending 標記
           try { onNewPost?.({ ...payload, post: { ...post, pending_private: true } }) } catch {}
@@ -78,6 +83,7 @@ export default function App() {
             if (typeof post?.id === 'number' && !arr.includes(post.id)) {
               arr.unshift(post.id)
               localStorage.setItem(key, JSON.stringify(arr.slice(0, 500)))
+              try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
             }
           } catch {}
         }
@@ -104,7 +110,14 @@ export default function App() {
               // 記錄到已審清單
               const k2 = 'forumkit_approved_posts'
               const ap = JSON.parse(localStorage.getItem(k2) || '[]') as number[]
-              if (!ap.includes(id)) localStorage.setItem(k2, JSON.stringify([id, ...ap].slice(0,500)))
+              if (!ap.includes(id)) {
+                localStorage.setItem(k2, JSON.stringify([id, ...ap].slice(0,500)))
+                try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key: k2 } })) } catch {}
+              }
+              // 從送審清單移除，避免「送審」數持續累加
+              const next = arr.filter(x => x !== id)
+              localStorage.setItem(key, JSON.stringify(next))
+              try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
             }
           }catch{}
         },
@@ -115,7 +128,12 @@ export default function App() {
           try{
             const key = 'forumkit_my_posts'
             const arr = JSON.parse(localStorage.getItem(key) || '[]') as number[]
-            if (arr.includes(id)) push(`您的貼文 #${id} 已被退件（${reason}）`)
+            if (arr.includes(id)) {
+              push(`您的貼文 #${id} 已被退件（${reason}）`)
+              const next = arr.filter(x => x !== id)
+              localStorage.setItem(key, JSON.stringify(next))
+              try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
+            }
           }catch{}
         }
       )
@@ -149,18 +167,37 @@ export default function App() {
 
   const { isSmallScreen } = useScreenSize()
   const [injectedItems, setInjectedItems] = useState<any[]>([])
+
+  // 未登入時：刷新後清掉本地送審/已審紀錄（匿名臨時帳號刷新即重置）
+  useEffect(() => {
+    if (!isLoggedIn()) {
+      try { localStorage.removeItem('forumkit_my_posts') } catch {}
+      try { localStorage.removeItem('forumkit_approved_posts') } catch {}
+    }
+  }, [])
   
   function MySubmissions() {
     const [my, setMy] = useState<number[]>([])
     const [approved, setApproved] = useState<number[]>([])
     useEffect(()=>{
-      try{ setMy(JSON.parse(localStorage.getItem('forumkit_my_posts')||'[]')||[]) }catch{}
-      try{ setApproved(JSON.parse(localStorage.getItem('forumkit_approved_posts')||'[]')||[]) }catch{}
+      const readAll = () => {
+        try{ setMy(JSON.parse(localStorage.getItem('forumkit_my_posts')||'[]')||[]) }catch{}
+        try{ setApproved(JSON.parse(localStorage.getItem('forumkit_approved_posts')||'[]')||[]) }catch{}
+      }
+      readAll()
+      const onStorage = (e: StorageEvent) => {
+        if (!e.key || e.key === 'forumkit_my_posts' || e.key === 'forumkit_approved_posts') readAll()
+      }
+      const onLocal = () => readAll()
+      window.addEventListener('storage', onStorage)
+      window.addEventListener('forumkit_local_change', onLocal as any)
+      return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('forumkit_local_change', onLocal as any) }
     },[])
+    const pendingCount = Math.max(0, my.filter(id => !approved.includes(id)).length)
     return (
       <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 shadow-soft">
         <h3 className="font-semibold dual-text mb-2 text-base">我的送審 / 已審</h3>
-        <div className="text-sm text-muted">送審：{my.length} 筆 · 已審：{approved.length} 筆</div>
+        <div className="text-sm text-muted">送審：{pendingCount} 筆 · 已審：{approved.length} 筆</div>
         {approved.length>0 && (
           <div className="mt-2 text-xs text-fg">最近通過：#{approved.slice(0,5).join(', #')}</div>
         )}
@@ -266,6 +303,25 @@ export default function App() {
     return <AdminModePanel platform={platform} onUpdated={setPlatform} full />
   }
 
+  // /chat 示範頁
+  if (pathname === '/chat') {
+    return <ChatPage />
+  }
+
+  // /posts/:id 詳情頁（public approved）
+  if (pathname.startsWith('/posts/')) {
+    const idStr = pathname.split('/')[2]
+    const id = Number(idStr)
+    if (!Number.isNaN(id) && id > 0) {
+      return <PostDetailPage id={id} />
+    }
+  }
+
+  // /admin/rooms 監看頁（需權限，後端保護）
+  if (pathname === '/admin/rooms') {
+    return <AdminRoomsPage />
+  }
+
   // 維護模式
   if (platform.mode === 'maintenance') {
     return (
@@ -352,6 +408,9 @@ export default function App() {
                   <ColorDesigner />
                 </div>
 
+                {/* Realtime 聊天室示範 */}
+                <ChatPanel room="lobby" title="聊天室（示範：lobby）" />
+
                 {/* 右：開發紀錄 */}
                 <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft right-col-spacing">
                   <h3 className="font-semibold dual-text mb-3 sm:mb-4">開發紀錄</h3>
@@ -426,6 +485,9 @@ export default function App() {
                   <div className="h-full min-h-[740px] p-4 md:p-6 overflow-y-auto">
                     <h3 className="font-semibold dual-text mb-4">顏色搭配器</h3>
                     <ColorDesigner />
+                    <div className="mt-4">
+                      <ChatPanel room="lobby" title="聊天室（示範：lobby）" />
+                    </div>
                   </div>
                 </div>
 

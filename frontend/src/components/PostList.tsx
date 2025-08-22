@@ -130,7 +130,10 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
                   <Clock className="w-3.5 h-3.5" /> {new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               ) : p.id ? (
-                <a className="text-sm underline text-muted" href={`/delete/${p.id}`}>刪文請求</a>
+                <div className="flex items-center gap-2">
+                  <a className="text-sm underline text-muted" href={`/delete/${p.id}`}>刪文請求</a>
+                  <a className="text-xs px-2 py-1 rounded-md border border-border hover:bg-surface/70" href={`/posts/${p.id}`}>詳情</a>
+                </div>
               ) : null}
 
               {/* 桌機：複製連結按鈕（所有人可見） */}

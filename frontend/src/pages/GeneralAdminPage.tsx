@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HttpError, getJSON } from '@/lib/http'
+import ErrorPage from '@/components/ui/ErrorPage'
 
 type QueueResp = {
   posts: { id: number; excerpt: string }[]
@@ -17,6 +18,8 @@ export default function GeneralAdminPage() {
   const [cursor, setCursor] = useState<number>(-1)
   // 篩選
   const [keyword, setKeyword] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [ip, setIp] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   // 稽核整合
@@ -24,11 +27,53 @@ export default function GeneralAdminPage() {
   const [reports, setReports] = useState<any[]>([])
   // 紀錄
   const [logs, setLogs] = useState<any[]>([])
+  // 內嵌元件：帶授權的媒體縮圖（支援 pending/public）
+  function MediaThumb({ m, maxH = 192 }: { m: any; maxH?: number }) {
+    const [src, setSrc] = useState<string>('')
+    const isImg = /\.(jpg|jpeg|png|webp)$/i.test(String(m.path || ''))
+    const isVid = /\.(mp4|webm)$/i.test(String(m.path || ''))
+    useEffect(() => {
+      let revoked: string | null = null
+      const run = async () => {
+        try {
+          if (String(m.path || '').startsWith('pending/')) {
+            const r = await fetch(`/api/moderation/media/${m.id}/file`, {
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` },
+            })
+            if (!r.ok) throw new Error('預覽下載失敗')
+            const b = await r.blob()
+            const url = URL.createObjectURL(b)
+            revoked = url
+            setSrc(url)
+          } else {
+            setSrc(`/uploads/${m.path}`)
+          }
+        } catch {
+          setSrc('')
+        }
+      }
+      run()
+      return () => { if (revoked) { try { URL.revokeObjectURL(revoked) } catch {} } }
+    }, [m?.id, m?.path])
+    if (!src) return <div className="text-xs text-muted">media</div>
+    if (isImg) return <img src={src} alt="media" style={{ maxHeight: maxH }} className="w-full object-contain rounded" />
+    if (isVid) return <video src={src} controls style={{ maxHeight: maxH }} className="w-full object-contain rounded" />
+    return <div className="text-xs text-muted break-all">{m.path}</div>
+  }
+  // 詳情面板
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detail, setDetail] = useState<any | null>(null)
+  const [detailIndex, setDetailIndex] = useState<number>(-1)
 
   async function load() {
     try {
       setLoading(true); setError(null)
-      const data = await getJSON<QueueResp>('/api/moderation/queue')
+      const qs = new URLSearchParams()
+      if (clientId.trim()) qs.set('client_id', clientId.trim())
+      if (ip.trim()) qs.set('ip', ip.trim())
+      const url = `/api/moderation/queue${qs.toString() ? `?${qs.toString()}` : ''}`
+      const data = await getJSON<QueueResp>(url)
       setPosts(data.posts || [])
       setMedia(data.media || [])
       try {
@@ -73,6 +118,8 @@ export default function GeneralAdminPage() {
       if (!r.ok) throw new Error(await r.text())
       setPosts(p => p.filter(x => x.id !== id))
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
+      // 文章核准時一併核准其媒體，重新載入一次以同步狀態
+      load()
     } catch (e) {
       alert(`核准失敗: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -88,10 +135,28 @@ export default function GeneralAdminPage() {
       if (!r.ok) throw new Error(await r.text())
       setPosts(p => p.filter(x => x.id !== id))
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
+      // 退件時媒體也一併退件，重新載入狀態
+      load()
     } catch (e) {
       alert(`退件失敗: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setBusy(null)
+    }
+  }
+
+  async function openDetail(id: number, idx?: number) {
+    try {
+      setDetailOpen(true); setDetailLoading(true); setDetail(null)
+      const r = await fetch(`/api/moderation/post/${id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } })
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setDetail(data)
+      if (typeof idx === 'number') setDetailIndex(idx)
+    } catch (e) {
+      alert(`載入詳情失敗：${e instanceof Error ? e.message : String(e)}`)
+      setDetailOpen(false)
+    } finally {
+      setDetailLoading(false)
     }
   }
 
@@ -151,7 +216,7 @@ export default function GeneralAdminPage() {
   const fposts = posts.filter(p => inFilter(p.created_at, p.excerpt))
 
   if (loading) return <div className="min-h-screen grid place-items-center"><div className="text-muted">載入中...</div></div>
-  if (error) return <div className="min-h-screen grid place-items-center"><div className="text-rose-600">{error}</div></div>
+  if (error) return <ErrorPage title="載入待審清單失敗" message={error} />
 
   return (
     <div className="min-h-screen">
@@ -159,17 +224,22 @@ export default function GeneralAdminPage() {
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
             <div className="flex items-center justify-between">
               <h1 className="text-xl sm:text-2xl font-semibold dual-text">一般管理（暫時版）</h1>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap justify-end">
               <input value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder="關鍵字" className="form-control text-sm w-40" />
+              <input value={clientId} onChange={e=>setClientId(e.target.value)} placeholder="client_id" className="form-control text-sm w-40" />
+              <input value={ip} onChange={e=>setIp(e.target.value)} placeholder="IP" className="form-control text-sm w-36" />
               <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} className="form-control text-sm w-40" />
               <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} className="form-control text-sm w-40" />
               <button onClick={load} className="px-3 py-1.5 text-sm rounded-xl border hover:bg-surface/70">重新整理</button>
             </div>
           </div>
-          <p className="text-sm text-muted mt-1">僅提供基本審核功能；詳細頁與批次工具將於後續開發。</p>
+          <div className="flex items-center justify-between text-sm text-muted mt-1">
+            <p>僅提供基本審核功能；詳細頁與批次工具將於後續開發。</p>
+            <p>快捷鍵：<span className="font-mono">j/k</span> 移動、<span className="font-mono">a</span> 核准、<span className="font-mono">r</span> 退件</p>
+          </div>
         </div>
 
-        <section className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-4 md:grid-cols-1">
           <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold dual-text">待審貼文（{fposts.length}）</h2>
@@ -194,8 +264,9 @@ export default function GeneralAdminPage() {
                     {(p.client_id || p.ip) && (
                       <div className="text-xs text-muted mb-1">來源：{p.client_id || '-'} · {p.ip || '-'}</div>
                     )}
-                    <div className="text-sm text-fg mb-2 break-words">{p.excerpt}</div>
+                    <div className="text-sm text-fg mb-3 break-words leading-relaxed">{p.excerpt}</div>
                     <div className="flex gap-2 justify-end">
+                      <button onClick={()=>openDetail(p.id, idx)} className="px-3 py-1.5 text-xs rounded-lg border hover:bg-surface/70">詳情</button>
                       <button disabled={busy===p.id} onClick={()=>rejectPost(p.id)} className="px-3 py-1.5 text-xs rounded-lg border hover:bg-surface/70">退件</button>
                       <button disabled={busy===p.id} onClick={()=>approvePost(p.id)} className="px-3 py-1.5 text-xs rounded-lg border dual-btn">核准</button>
                     </div>
@@ -205,38 +276,7 @@ export default function GeneralAdminPage() {
             )}
           </div>
 
-          <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-            <h2 className="font-semibold dual-text mb-3">待審媒體（{media.length}）</h2>
-            {media.length === 0 ? (
-              <div className="text-sm text-muted">目前沒有待審媒體</div>
-            ) : (
-              <div className="space-y-2">
-                {media.map(m => (
-                  <div key={m.id} className="p-3 rounded-xl border border-border bg-surface/60">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-xs text-muted">#{m.id}</div>
-                      <div className="text-xs text-muted">{m.created_at ? new Date(m.created_at).toLocaleString():''}</div>
-                    </div>
-                    <div className="text-xs text-fg break-all mb-2">{m.path}</div>
-                    {(m.client_id || m.ip) && (
-                      <div className="text-xs text-muted mb-1">來源：{m.client_id || '-'} · {m.ip || '-'}</div>
-                    )}
-                    <div className="mb-2">
-                      {m.path.match(/\.(jpg|jpeg|png|webp)$/i) ? (
-                        <img src={`/uploads/${m.path}`} alt="pending" className="max-h-48 rounded" />
-                      ) : m.path.match(/\.(mp4|webm)$/i) ? (
-                        <video src={`/uploads/${m.path}`} controls className="max-h-48 rounded" />
-                      ) : null}
-                    </div>
-                    <div className="flex gap-2 justify-end">
-                      <button disabled={busy===m.id} onClick={()=>rejectMedia(m.id)} className="px-3 py-1.5 text-xs rounded-lg border hover:bg-surface/70">退件</button>
-                      <button disabled={busy===m.id} onClick={()=>approveMedia(m.id)} className="px-3 py-1.5 text-xs rounded-lg border dual-btn">核准</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Day10 決策：不再分媒體與文章顯示，媒體跟隨文章一起審核，故隱藏此區塊 */}
         </section>
 
         {/* 稽核 / 封鎖資訊 */}
@@ -297,6 +337,53 @@ export default function GeneralAdminPage() {
           )}
         </section>
       </main>
+      {/* 詳情滑出面板 */}
+      {detailOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/30" onClick={()=>setDetailOpen(false)}></div>
+          <div className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-surface border-l border-border shadow-2xl p-4 sm:p-5 overflow-y-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold dual-text">貼文詳情</h3>
+              <button onClick={()=>setDetailOpen(false)} className="px-3 py-1.5 text-sm rounded-xl border">關閉</button>
+            </div>
+            {detailLoading ? (
+              <div className="text-muted">載入中…</div>
+            ) : !detail ? (
+              <div className="text-rose-600">載入失敗</div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-xs text-muted">#{detail.id} · {detail.created_at ? new Date(detail.created_at).toLocaleString() : ''}</div>
+                {(detail.client_id || detail.ip) && (
+                  <div className="text-xs text-muted">來源：{detail.client_id || '-'} · {detail.ip || '-'}</div>
+                )}
+                <div className="prose prose-sm max-w-none text-fg" dangerouslySetInnerHTML={{ __html: detail.content }} />
+                {Array.isArray(detail.media) && detail.media.length > 0 && (
+                  <div>
+                    <div className="text-sm font-medium mb-2">媒體（{detail.media.length}）</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {detail.media.map((m:any)=> (
+                        <div key={m.id} className="border border-border rounded-lg p-2">
+                          <MediaThumb m={m} maxH={160} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-2 pt-2 sticky bottom-0 bg-surface py-2">
+                  <div className="flex items-center gap-2">
+                    <button disabled={detailIndex<=0} onClick={()=>{ const idx = Math.max(0, detailIndex-1); const id = fposts[idx]?.id; if (id) openDetail(id, idx) }} className="px-3 py-1.5 text-sm rounded-xl border">上一筆</button>
+                    <button disabled={detailIndex<0 || detailIndex>=fposts.length-1} onClick={()=>{ const idx = Math.min(fposts.length-1, detailIndex+1); const id = fposts[idx]?.id; if (id) openDetail(id, idx) }} className="px-3 py-1.5 text-sm rounded-xl border">下一筆</button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>{ setDetailOpen(false); rejectPost(detail.id) }} className="px-3 py-1.5 text-sm rounded-xl border">退件</button>
+                    <button onClick={()=>{ setDetailOpen(false); approvePost(detail.id) }} className="px-3 py-1.5 text-sm rounded-xl border dual-btn">核准</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

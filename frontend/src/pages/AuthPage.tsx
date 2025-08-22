@@ -147,8 +147,14 @@ export default function AuthPage() {
 
         {tab === "login" ? (
           <form onSubmit={onLogin} className="grid gap-4">
-            <input name="username" placeholder="使用者名稱" className="form-control" required />
-            <input name="password" placeholder="密碼" type="password" className="form-control" required />
+            <div className="grid gap-2">
+              <label className="text-sm text-muted">使用者名稱</label>
+              <input name="username" placeholder="例如：Kaiyasi" className="form-control" autoComplete="username" required />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm text-muted">密碼</label>
+              <input name="password" placeholder="請輸入密碼" type="password" className="form-control" autoComplete="current-password" required />
+            </div>
             <button 
               disabled={loading} 
               className="px-4 py-3 rounded-xl dual-btn font-semibold disabled:opacity-60 transition-all"
@@ -158,10 +164,22 @@ export default function AuthPage() {
           </form>
         ) : (
           <form onSubmit={onRegister} className="grid gap-4">
-            <input name="username" placeholder="使用者名稱" className="form-control" required />
-            <input name="email" placeholder="Email" type="email" className="form-control" required />
-            <input name="password" placeholder="密碼" type="password" className="form-control" required />
-            <input name="school_slug" placeholder="校內綁定用 school slug（校外留空）" className="form-control" />
+            <div className="grid gap-2">
+              <label className="text-sm text-muted">使用者名稱</label>
+              <input name="username" placeholder="用於登入與顯示" className="form-control" autoComplete="username" required />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm text-muted">Email</label>
+              <input name="email" placeholder="example@school.edu" type="email" className="form-control" autoComplete="email" required />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm text-muted">密碼</label>
+              <input name="password" placeholder="至少 8 碼" type="password" className="form-control" autoComplete="new-password" required />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm text-muted">校內綁定（選填）</label>
+              <input name="school_slug" placeholder="school-slug（校外留空）" className="form-control" />
+            </div>
             <button 
               disabled={loading} 
               className="px-4 py-3 rounded-xl dual-btn font-semibold disabled:opacity-60 transition-all"

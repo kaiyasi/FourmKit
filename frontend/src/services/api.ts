@@ -97,14 +97,26 @@ export const AuthAPI = {
 };
 
 export const ModeAPI = {
-  get: () => api<{ mode: "normal" | "test" | "maintenance" | "development"; maintenance_message?: string; maintenance_until?: string }>("/api/mode"),
-  set: (mode: "normal" | "test" | "maintenance" | "development", maintenanceMessage?: string, maintenanceUntil?: string) =>
+  get: () => api<{ 
+    mode: "normal" | "test" | "maintenance" | "development"; 
+    maintenance_message?: string; 
+    maintenance_until?: string;
+    enforce_min_post_chars?: boolean;
+    min_post_chars?: number;
+  }>("/api/mode"),
+  set: (
+    mode: "normal" | "test" | "maintenance" | "development",
+    maintenanceMessage?: string,
+    maintenanceUntil?: string,
+    extra?: { enforce_min_post_chars?: boolean; min_post_chars?: number }
+  ) =>
     api<{ ok: boolean; mode: "normal" | "test" | "maintenance" | "development"; config: any }>("/api/mode", {
       method: "POST",
       body: JSON.stringify({ 
         mode, 
         ...(maintenanceMessage && maintenanceMessage.trim() ? { notice: maintenanceMessage.trim() } : {}), 
-        ...(maintenanceUntil && maintenanceUntil.trim() ? { eta: maintenanceUntil.trim() } : {}) 
+        ...(maintenanceUntil && maintenanceUntil.trim() ? { eta: maintenanceUntil.trim() } : {}),
+        ...(extra || {})
       }),
     }),
 };

@@ -14,7 +14,8 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
 
   const submit = async () => {
     const body = content.trim()
-    if (body.length < 15) { setErr('內容太短（需 ≥ 15 字）'); return }
+    // 若有附件，略過最小字數檢查（由後端設定統一控管）
+    if (files.length === 0 && body.length < 15) { setErr('內容太短（需 ≥ 15 字）'); return }
     setBusy(true); setErr(null)
     
     const clientId = getClientId()

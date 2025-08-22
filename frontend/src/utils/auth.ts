@@ -35,3 +35,14 @@ export function canSetMode(): boolean {
   const r = getRole();
   return ["admin","dev_admin","campus_admin","cross_admin"].includes(r);
 }
+
+/** 解析 JWT 並回傳 sub（使用者 ID） */
+export function getUserId(): string | null {
+  try {
+    const t = localStorage.getItem('token') || ''
+    if (!t || t.split('.').length < 2) return null
+    const payload = JSON.parse(atob(t.split('.')[1]))
+    const sub = payload?.sub
+    return (typeof sub === 'string' || typeof sub === 'number') ? String(sub) : null
+  } catch { return null }
+}
