@@ -19,6 +19,13 @@
 
 # 開發紀錄
 
+-2025-08-22 審核體驗強化：文章核准→媒體自動核准並移至 public；退件→媒體同步退件並嘗試刪除已公開檔案；新增管理端媒體預覽 API（支援 pending/public）
+-2025-08-22 後台媒體預覽：GeneralAdminPage 改為帶授權 blob 預覽 pending 檔，public 走 /uploads；詳情滑出面板加入上一筆/下一筆與固定操作列
+-2025-08-22 聊天室監看：/admin/rooms 新增房間搜尋、清空訊息（POST /api/rooms/:room/clear）、匯出 CSV；每 5 秒自動刷新選項
+-2025-08-22 統一錯誤頁：新增 ErrorPage，套用於 Router 錯誤、貼文詳情與後台頁；CreatePost 未登入顯示 401 友善提示
+-2025-08-22 發文規則：/mode 新增 enforce_min_post_chars 與 min_post_chars 設定；純文字受最小字數限制；with-media 可略過字數，但仍需通過型別/魔數/sanitize
+-2025-08-22 Nginx 主站反代 /uploads → cdn，public 媒體以同網域提供；pending 媒體僅供管理端 API 預覽
+
 -2025-08-21 新增 CDN 服務（Nginx）提供 uploads/public；安全標頭、阻擋危險副檔名、快取 1 週；compose 支援 CDN_PORT 覆寫
 -2025-08-21 Alembic 初始遷移以 SAVEPOINT 包裹 create_table，避免 InFailedSqlTransaction；強化重複建表容忍
 -2025-08-21 新增遷移：posts/media 加入 client_id/ip 欄位，支援來源追蹤；後台佇列顯示來源

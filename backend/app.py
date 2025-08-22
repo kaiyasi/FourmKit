@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, sys, uuid, json, ssl, re
+import os, sys, uuid, json, ssl, re, time
 from datetime import datetime, timezone
 from typing import Any, Tuple, cast, Dict, List, Optional
 from urllib import request as urlrequest
@@ -10,7 +10,7 @@ eventlet.monkey_patch()  # type: ignore
 
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit  # type: ignore[import]
+from flask_socketio import SocketIO, emit, join_room, leave_room  # type: ignore[import]
 
 from utils.config_handler import load_config
 from utils.db import init_engine_session, get_db_health
@@ -39,6 +39,43 @@ socketio = SocketIO(
 )
 
 _events_registered = False  # 防重註冊旗標
+
+# --------- Realtime rooms state (in-memory, single-process) ---------
+from collections import deque
+from typing import Deque, DefaultDict, Set
+
+# 最近訊息：每個房間保留最多 N 則，以供新加入者獲得離線期間訊息
+_ROOM_MAX_BACKLOG = int(os.getenv("WS_ROOM_BACKLOG", "50"))
+_room_msgs: DefaultDict[str, Deque[dict]] = DefaultDict(lambda: deque(maxlen=_ROOM_MAX_BACKLOG))  # type: ignore[var-annotated]
+
+# 連線與房間對應，用於離線清理與在房間內廣播線上名單
+_sid_rooms: DefaultDict[str, Set[str]] = DefaultDict(set)  # type: ignore[var-annotated]
+_room_clients: DefaultDict[str, Set[str]] = DefaultDict(set)  # client_id 集合，非 sid  # type: ignore[var-annotated]
+_sid_client: DefaultDict[str, str] = DefaultDict(str)  # sid -> client_id  # type: ignore[var-annotated]
+
+# 房間總量限制（避免被大量建房間耗盡記憶體）
+_WS_ROOMS_MAX = int(os.getenv("WS_ROOMS_MAX", "1000"))
+
+# WebSocket 速率限制（單進程）
+_ws_hits: DefaultDict[str, Deque[float]] = DefaultDict(deque)  # type: ignore[var-annotated]
+
+def _ws_allow(key: str, calls: int, per_seconds: int) -> bool:
+    now = time.time()
+    dq = _ws_hits.get(key)
+    if dq is None:
+        dq = deque()
+        _ws_hits[key] = dq
+    # 清掉視窗外的
+    while dq and now - dq[0] > per_seconds:
+        dq.popleft()
+    if len(dq) >= calls:
+        return False
+    dq.append(now)
+    return True
+
+_ROOM_NAME_RE = re.compile(r"^[a-z0-9:_-]{1,64}$")
+def _valid_room_name(name: str) -> bool:
+    return bool(_ROOM_NAME_RE.match(name))
 
 
 """Ticket utilities moved to utils.ticket to avoid circular imports."""
@@ -831,6 +868,53 @@ def create_app() -> Flask:
     app.register_blueprint(moderation_bp)
     app.register_blueprint(abuse_bp)
 
+    # ---- Realtime rooms debug APIs (for Day10 validation) ----
+    from flask_jwt_extended import jwt_required
+    from utils.authz import require_role
+
+    @app.get("/api/rooms/summary")
+    @jwt_required()
+    @require_role("admin", "dev_admin", "campus_admin", "cross_admin", "moderator", "campus_moder", "cross_moder")
+    def rooms_summary():  # noqa: F841
+        try:
+            rooms = set(list(_room_msgs.keys()) + list(_room_clients.keys()))
+            items = []
+            for r in rooms:
+                items.append({
+                    "room": r,
+                    "clients": len(_room_clients.get(r, set())),
+                    "backlog": len(_room_msgs.get(r, [])),
+                })
+            return jsonify({"ok": True, "items": items, "total": len(items)})
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": {"message": str(e)}}), 500
+
+    @app.get("/api/rooms/<string:room>/messages")
+    @jwt_required()
+    @require_role("admin", "dev_admin", "campus_admin", "cross_admin", "moderator", "campus_moder", "cross_moder")
+    def rooms_messages(room: str):  # noqa: F841
+        try:
+            msgs = list(_room_msgs.get(room, []))
+            return jsonify({"ok": True, "items": msgs, "total": len(msgs)})
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": {"message": str(e)}}), 500
+
+    @app.post("/api/rooms/<string:room>/clear")
+    @jwt_required()
+    @require_role("admin", "dev_admin", "campus_admin", "cross_admin", "moderator", "campus_moder", "cross_moder")
+    def rooms_clear(room: str):  # noqa: F841
+        try:
+            if room in _room_msgs:
+                _room_msgs[room].clear()
+            # 廣播空消息（可選，不影響客戶端）
+            try:
+                emit("room.backlog", {"room": room, "messages": list(_room_msgs.get(room, []))}, to=room)
+            except Exception:
+                pass
+            return jsonify({"ok": True, "room": room, "cleared": True})
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": {"message": str(e)}}), 500
+
     from werkzeug.exceptions import HTTPException
     
     @app.errorhandler(Exception)
@@ -916,12 +1000,120 @@ def register_socketio_events():
     def on_disconnect():  # noqa: F841
         from flask import current_app
         current_app.logger.info(f"[SocketIO] client disconnected: sid={request.sid}")
+        # 清理該 sid 加入的所有房間的 presence
+        sid = request.sid
+        rooms = list(_sid_rooms.get(sid, set()))
+        client_id = _sid_client.get(sid, f"sid:{sid}")
+        for r in rooms:
+            try:
+                _sid_rooms[sid].discard(r)
+                # 無法從 join_room/leave_room 移除（連線已斷），但我們維護自己的 presence 列表
+            except Exception:
+                pass
+            try:
+                if client_id in _room_clients.get(r, set()):
+                    _room_clients[r].discard(client_id)
+                    emit("room.presence", {"room": r, "count": len(_room_clients[r])}, to=r)
+            except Exception:
+                pass
+        _sid_rooms.pop(sid, None)
+        _sid_client.pop(sid, None)
 
     @socketio.on("ping")
     def on_ping(data: Any):  # noqa: F841
         from flask import current_app
         current_app.logger.debug(f"[SocketIO] ping from sid={request.sid}: {data}")
         emit("pong", {"echo": data, "ts": datetime.now(timezone.utc).isoformat(), "sid": request.sid})
+
+    @socketio.on("room.join")
+    def on_room_join(payload: dict):  # noqa: F841
+        """加入聊天室房間，並回傳最近訊息（backlog）。
+        payload: { room: str, client_id?: str }
+        """
+        try:
+            room = str(payload.get("room") or "").strip()
+            client_id = str(payload.get("client_id") or "").strip() or f"sid:{request.sid}"
+            if not room:
+                return emit("room.error", {"room": room, "error": "ROOM_REQUIRED"})
+            if not _valid_room_name(room):
+                return emit("room.error", {"room": room, "error": "INVALID_ROOM_NAME"})
+            # 速率限制：每 sid 每 10s 最多 5 次 join
+            if not _ws_allow(f"join:{request.sid}", calls=5, per_seconds=10):
+                return emit("room.error", {"room": room, "error": "RATE_LIMIT"})
+            # 房間數量上限：若是新房間且超額則拒絕
+            is_new_room = room not in _room_msgs
+            if is_new_room and (len(_room_msgs) >= _WS_ROOMS_MAX):
+                return emit("room.error", {"room": room, "error": "ROOMS_LIMIT"})
+            join_room(room)
+            _sid_rooms[request.sid].add(room)
+            _sid_client[request.sid] = client_id
+            _room_clients[room].add(client_id)
+
+            # 回傳 backlog 給加入者
+            msgs = list(_room_msgs[room])
+            emit("room.backlog", {"room": room, "messages": msgs})
+            # 廣播線上名單/計數
+            emit("room.presence", {"room": room, "count": len(_room_clients[room])}, to=room)
+        except Exception as e:  # noqa: BLE001
+            emit("room.error", {"error": str(e)})
+
+    @socketio.on("room.leave")
+    def on_room_leave(payload: dict):  # noqa: F841
+        room = str(payload.get("room") or "").strip()
+        client_id = str(payload.get("client_id") or "").strip() or f"sid:{request.sid}"
+        if not room:
+            return emit("room.error", {"room": room, "error": "ROOM_REQUIRED"})
+        try:
+            leave_room(room)
+        except Exception:
+            pass
+        try:
+            _sid_rooms[request.sid].discard(room)
+            if client_id in _room_clients.get(room, set()):
+                _room_clients[room].discard(client_id)
+        except Exception:
+            pass
+        emit("room.presence", {"room": room, "count": len(_room_clients[room])}, to=room)
+
+    @socketio.on("chat.send")
+    def on_chat_send(payload: dict):  # noqa: F841
+        """接收聊天訊息並廣播到房間，同時保存到 backlog。
+        payload: { room: str, message: str, client_id?: str, ts?: str }
+        """
+        room = str(payload.get("room") or "").strip()
+        msg = str(payload.get("message") or "").strip()
+        client_id = str(payload.get("client_id") or "").strip() or f"sid:{request.sid}"
+        if not room:
+            return emit("room.error", {"room": room, "error": "ROOM_REQUIRED"})
+        if not _valid_room_name(room):
+            return emit("room.error", {"room": room, "error": "INVALID_ROOM_NAME"})
+        if not msg:
+            return emit("room.error", {"room": room, "error": "EMPTY_MESSAGE"})
+        if len(msg) > 2000:
+            return emit("room.error", {"room": room, "error": "MESSAGE_TOO_LONG"})
+        # 資安/濫用保護
+        try:
+            from utils.ratelimit import is_ip_blocked, add_ip_strike
+            if is_ip_blocked():
+                return emit("room.error", {"room": room, "error": "IP_BLOCKED"})
+            # 速率限制：每 client_id 每 10s 最多 8 則；每 sid 每 10s 最多 10 則
+            if not _ws_allow(f"chat:{client_id}", calls=8, per_seconds=10) or not _ws_allow(f"sid:{request.sid}", calls=10, per_seconds=10):
+                try: add_ip_strike()
+                except Exception: pass
+                return emit("room.error", {"room": room, "error": "RATE_LIMIT"})
+        except Exception:
+            pass
+
+        payload_out = {
+            "room": room,
+            "message": msg,
+            "client_id": client_id,
+            "ts": payload.get("ts") or datetime.now(timezone.utc).isoformat(),
+        }
+        # 存入 backlog
+        _room_msgs[room].append(payload_out)
+        # 廣播到該房間
+        emit("chat.message", payload_out, to=room)
 
 
 # 別在模組層級呼叫 create_app()
