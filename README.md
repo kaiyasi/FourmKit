@@ -43,7 +43,7 @@
 | CDN         | 12002     | 80         | 上傳公開檔案 `uploads/public/` |
 | Postgres    | 12007     | 80         | 資料庫，內部通訊                 |
 | Redis       | 12008     | 80         | Pub/Sub, cache              |
-| 心跳服務     | 9101      | 9101       | Python socket ping/pong      |
+| Health      | 9101      | 9101       | Python socket ping/pong      |
 
 > CDN 服務已內建於 docker compose（可選用）。生產環境亦可替換為既有外部 CDN，只需指向主機的 `uploads/public/` 目錄。
 
