@@ -1,4 +1,9 @@
 {
+  "name": "forumkit-backend",
+  "version": "1.0.0",
+  "description": "Serelix Studio ForumKit - Campus Anonymous Discussion Platform Backend Socket Dependencies",
+  "author": "Serelix Studio",
+  "private": true,
   "dependencies": {
     "socket.io-client": "^4.8.1"
   },

@@ -1,5 +1,14 @@
 import { messageFrom } from '@/utils/errors';
 
+// 允許以環境變數設定 API 基底 URL；若未設定則使用相對路徑交由開發代理或反向代理處理
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
+
+function join(url: string): string {
+  if (!API_BASE) return url; // 相對路徑
+  // 確保不重複斜線
+  return API_BASE.replace(/\/?$/, '') + (url.startsWith('/') ? url : `/${url}`);
+}
+
 export class HttpError extends Error {
   status: number;
   body: any;
@@ -18,7 +27,7 @@ async function tryRefresh(): Promise<string | null> {
   const refresh = localStorage.getItem("refresh_token");
   if (!refresh) return null;
   try {
-    const r = await fetch("/api/auth/refresh", {
+  const r = await fetch(join("/api/auth/refresh"), {
       method: "POST",
       headers: { Authorization: `Bearer ${refresh}` },
     });
@@ -42,13 +51,31 @@ export async function safeJson(res: Response) {
   }
 }
 
+function getClientId(): string {
+  let id = localStorage.getItem('client_id');
+  if (!id) {
+    id = 'c_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+    try { localStorage.setItem('client_id', id); } catch {}
+  }
+  return id;
+}
+
+function getSelectedSchoolSlug(): string | null {
+  try {
+    const v = localStorage.getItem('selected_school_slug');
+    return v && v.trim() ? v.trim() : null;
+  } catch { return null; }
+}
+
 export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   let token = getStoredToken();
-  let res = await fetch(url, { 
+  let res = await fetch(join(url), { 
     ...init, 
     headers: { 
       "Content-Type": "application/json", 
       ...(init?.headers || {}),
+      'X-Client-Id': getClientId(),
+      ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     } 
   });
@@ -56,14 +83,16 @@ export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
     const at = await tryRefresh();
     if (at) {
       token = at;
-      res = await fetch(url, {
+  res = await fetch(join(url), {
         ...init,
-        headers: {
-          "Content-Type": "application/json",
-          ...(init?.headers || {}),
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+        'X-Client-Id': getClientId(),
+        ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
+        Authorization: `Bearer ${token}`,
+      },
+    });
     }
   }
   
@@ -84,12 +113,14 @@ export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function postJSON<T>(url: string, payload: any, init?: RequestInit): Promise<T> {
   let token = getStoredToken();
-  let res = await fetch(url, {
+  let res = await fetch(join(url), {
     method: 'POST',
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers || {}),
+      'X-Client-Id': getClientId(),
+      ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(payload)
@@ -98,16 +129,18 @@ export async function postJSON<T>(url: string, payload: any, init?: RequestInit)
     const at = await tryRefresh();
     if (at) {
       token = at;
-      res = await fetch(url, {
+  res = await fetch(join(url), {
         method: 'POST',
         ...init,
-        headers: {
-          "Content-Type": "application/json",
-          ...(init?.headers || {}),
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload)
-      });
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+        'X-Client-Id': getClientId(),
+        ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload)
+    });
     }
   }
   
@@ -124,11 +157,13 @@ export async function postJSON<T>(url: string, payload: any, init?: RequestInit)
 
 export async function postFormData<T>(url: string, formData: FormData, init?: RequestInit): Promise<T> {
   let token = getStoredToken();
-  let res = await fetch(url, {
+  let res = await fetch(join(url), {
     method: 'POST',
     ...init,
     headers: {
       ...(init?.headers || {}),
+      'X-Client-Id': getClientId(),
+      ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {})
       // 不設置 Content-Type，讓瀏覽器自動設置 multipart/form-data boundary
     },
@@ -138,15 +173,17 @@ export async function postFormData<T>(url: string, formData: FormData, init?: Re
     const at = await tryRefresh();
     if (at) {
       token = at;
-      res = await fetch(url, {
+  res = await fetch(join(url), {
         method: 'POST',
         ...init,
-        headers: {
-          ...(init?.headers || {}),
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData
-      });
+      headers: {
+        ...(init?.headers || {}),
+        'X-Client-Id': getClientId(),
+        ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData
+    });
     }
   }
   

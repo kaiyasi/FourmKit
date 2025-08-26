@@ -1,190 +1,259 @@
-from flask import Blueprint, request, jsonify
-from utils.db import get_db
-from models import Media, Post
-from utils.upload_utils import save_image, save_video
-from utils.sanitize import clean_html
-import os, hashlib
-from time import time
+from flask import Blueprint, request, jsonify, abort, send_file
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy.orm import Session
+from models import Media, Post, User, School
+from utils.db import get_session
+from utils.authz import require_role
+from utils.fsops import UPLOAD_ROOT, ensure_within
+from utils.upload_utils import validate_file_type, validate_file_size
+from utils.upload_utils import generate_unique_filename, save_upload_chunk, merge_chunks
+from utils.upload_utils import resolve_or_publish_public_media
+import os
+import mimetypes
+from pathlib import Path
+from datetime import datetime
+import hashlib
+import json
 
-bp = Blueprint("media", __name__, url_prefix="/api")
+bp = Blueprint("media", __name__, url_prefix="/api/media")
 
-# -------- 統一回傳格式 --------
-def ok(data: any, http: int = 200):
-    return jsonify({"ok": True, "data": data}), http
+# 支援的檔案類型
+SUPPORTED_TYPES = {
+    'image': ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+    'video': ['.mp4', '.webm', '.mov', '.avi'],
+    'document': ['.pdf', '.doc', '.docx', '.txt']
+}
 
-def fail(code: str, message: str, *, hint: str | None = None, details: str | None = None, http: int = 500):
-    return jsonify({"ok": False, "error": {"code": code, "message": message, "hint": hint, "details": details}}), http
+# 檔案大小限制（MB）
+SIZE_LIMITS = {
+    'image': 10,
+    'video': 100,
+    'document': 5
+}
 
-# -------- 匿名作者雜湊 --------
-def _author_hash() -> str:
-    salt = "forumkit-salt-v1"
-    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
-    ua = request.headers.get("User-Agent", "")
-    raw = f"{ip}|{ua}|{salt}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
-
-# -------- 簡易節流 --------
-_last_post_by_fingerprint: dict[str, float] = {}
-
-def _rate_limit_ok(fp: str, window: int = 30) -> tuple[bool, int]:
-    now = time()
-    last = _last_post_by_fingerprint.get(fp, 0.0)
-    if now - last < window:
-        return False, int(window - (now - last))
-    _last_post_by_fingerprint[fp] = now
-    return True, 0
-
-def _limit_bytes(max_mb: int) -> int:
-    return max_mb * 1024 * 1024
-
-@bp.route("/posts/with-media", methods=["POST"])
-def create_post_with_media():
+@bp.post("/upload")
+@jwt_required()
+def upload_media():
+    """分塊上傳媒體檔案"""
     try:
-        from flask import current_app
-        current_app.logger.debug(f"create_post_with_media started, content_type: {request.content_type}")
+        user_id = get_jwt_identity()
+        post_id = request.form.get('post_id', type=int)
+        chunk_index = request.form.get('chunk', type=int, default=0)
+        total_chunks = request.form.get('chunks', type=int, default=1)
+        file_hash = request.form.get('hash', '').strip()
+        file_name = request.form.get('name', '').strip()
         
-        # 檢查是否為 multipart/form-data
-        if not request.content_type or not request.content_type.startswith('multipart/form-data'):
-            return fail("INVALID_CONTENT_TYPE", "請使用 multipart/form-data 格式上傳", http=400)
-        
-        content = (request.form.get("content", "") or "").strip()
-        if len(content) < 15:
-            return fail("CONTENT_TOO_SHORT", "內容太短（需 ≥ 15 字）", http=400)
-        if len(content) > 2000:
-            return fail("CONTENT_TOO_LONG", "內容過長（≤ 2000 字）", http=400)
-
-        # 檢查是否有檔案
-        files = request.files.getlist("files")
-        if not files or len(files) == 0:
-            return fail("NO_FILES", "未上傳任何檔案", http=422)
-
-        fp = _author_hash()
-        ok_rate, wait = _rate_limit_ok(fp, window=30)
-        if not ok_rate:
-            return fail("RATE_LIMIT", f"發文太頻繁，請 {wait} 秒後再試", http=429)
-
-        content = clean_html(content)
-
-        with next(get_db()) as db:  # type: ignore
-            db: Session
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc)
-            post = Post(
-                author_hash=fp, 
-                content=content,
-                created_at=now,
-                updated_at=now,
-                deleted=False
-            )
-            db.add(post)
-            db.flush()  # 取得 post.id
-
-            upload_root = os.getenv("UPLOAD_ROOT", "/app/uploads")
-            max_img = int(os.getenv("MAX_IMAGE_MB", "8"))
-            max_vid = int(os.getenv("MAX_VIDEO_MB", "50"))
-
-            media_rows = []
-            for fs in files:
-                if not fs.filename:
-                    continue  # 跳過空檔案
-                    
-                fname = fs.filename.lower()
-                current_app.logger.debug(f"Processing file: {fname}")
+        if not file_name or not file_hash:
+            return jsonify({"ok": False, "error": "缺少檔案資訊"}), 400
+            
+        # 驗證檔案類型
+        file_ext = Path(file_name).suffix.lower()
+        file_type = None
+        for media_type, extensions in SUPPORTED_TYPES.items():
+            if file_ext in extensions:
+                file_type = media_type
+                break
                 
-                if fname.endswith((".jpg", ".jpeg", ".png", ".webp")):
-                    if request.content_length and request.content_length > _limit_bytes(max_img):
-                        return fail("IMAGE_TOO_LARGE", f"圖片過大（≤ {max_img}MB）", http=413)
-                    r = save_image(fs, upload_root)
-                    m = Media(post_id=post.id, kind="image", url=r["orig_rel"], 
-                             thumb_url=r["thumb_rel"], mime=r["mime"], status="pending")
-                    media_rows.append(m)
-                elif fname.endswith((".mp4", ".webm")):
-                    if request.content_length and request.content_length > _limit_bytes(max_vid):
-                        return fail("VIDEO_TOO_LARGE", f"影片過大（≤ {max_vid}MB）", http=413)
-                    r = save_video(fs, upload_root)
-                    m = Media(post_id=post.id, kind="video", url=r["orig_rel"], 
-                             thumb_url=None, mime=r["mime"], status="pending")
-                    media_rows.append(m)
-                else:
-                    return fail("UNSUPPORTED_FILE", f"不支援的檔案格式: {fname}", 
-                               hint="只支援 JPG/PNG/WebP/MP4/WebM", http=400)
-
-            if not media_rows:
-                return fail("NO_VALID_FILES", "沒有有效的檔案", http=422)
-
-            for m in media_rows:
-                db.add(m)
-            db.commit()
-            db.refresh(post)
-
-            def pub(u: str | None) -> str | None:
-                if not u: return None
-                return u if u.startswith("/uploads/") else f"/uploads{u}"
-
-            result = {
-                "id": post.id,
-                "content": post.content,
-                "author_hash": (post.author_hash or "")[:8],
-                "created_at": post.created_at.isoformat(),
-                "media": [{
-                    "id": m.id,
-                    "kind": m.kind,
-                    "url": pub(m.url),
-                    "thumb_url": pub(m.thumb_url),
-                    "mime": m.mime,
-                    "status": m.status
-                } for m in media_rows]
-            }
+        if not file_type:
+            return jsonify({"ok": False, "error": f"不支援的檔案類型: {file_ext}"}), 400
             
-            # 廣播新貼文事件，包含來源追蹤
-            try:
-                from app import socketio
-                from datetime import timezone
-                import time, uuid
-                if socketio:
-                    origin = request.headers.get("X-Client-Id") or "-"
-                    client_tx_id = request.headers.get("X-Tx-Id") or request.form.get("client_tx_id")
-                    
-                    # 產生唯一事件 ID
-                    event_id = f"post:{int(time.time()*1000)}:{uuid.uuid4().hex[:8]}"
-                    
-                    # 確保 payload 100% JSON-safe，避免任何 generator/SQLAlchemy 物件
-                    def _post_to_public_dict(row):
-                        return {
-                            "id": int(row.id),
-                            "content": str(row.content or ""),
-                            "author_hash": str(row.author_hash or "")[:8],
-                            "created_at": row.created_at.astimezone(timezone.utc).isoformat() if getattr(row, "created_at", None) else None,
-                        }
-                    
-                    safe_post = _post_to_public_dict(post)
-                    broadcast_payload = {
-                        "post": safe_post,
-                        "origin": str(origin),
-                        "client_tx_id": str(client_tx_id) if client_tx_id else None,
-                        "event_id": event_id,
-                    }
-                    
-                    # 詳細廣播日誌 (帶媒體)
-                    current_app.logger.info(f"[SocketIO] emit post_created (media): event_id={event_id} post_id={safe_post['id']} origin={origin} tx_id={client_tx_id} content_preview='{safe_post['content'][:30]}...' media_count={len(media_rows)}")
-                    
-                    # 安全地檢查當前連線的客戶端數量（避免 len(generator) 錯誤）
-                    try:
-                        participants_iter = socketio.server.manager.get_participants(namespace="/", room=None)
-                        connected_clients = sum(1 for _ in participants_iter)  # 安全地計數 generator
-                        current_app.logger.info(f"[SocketIO] broadcasting media post to {connected_clients} connected clients")
-                    except Exception as count_err:
-                        current_app.logger.warning(f"[SocketIO] failed to count clients: {count_err}, proceeding with broadcast")
-                    
-                    socketio.emit("post_created", broadcast_payload, namespace="/")
-                    current_app.logger.info(f"[SocketIO] post_created media broadcast completed: event_id={event_id} post_id={safe_post['id']}")
-            except Exception as e:
-                current_app.logger.exception(f"[SocketIO] Failed to broadcast post_created for media post: {e}")
+        # 驗證檔案大小
+        if 'file' not in request.files:
+            return jsonify({"ok": False, "error": "沒有檔案"}), 400
             
-            return ok(result, http=201)
-
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"ok": False, "error": "沒有選擇檔案"}), 400
+            
+        # 檢查檔案大小限制
+        file.seek(0, 2)  # 移到檔案末尾
+        file_size = file.tell()
+        file.seek(0)  # 回到開頭
+        
+        if file_size > SIZE_LIMITS[file_type] * 1024 * 1024:
+            return jsonify({"ok": False, "error": f"檔案太大，最大 {SIZE_LIMITS[file_type]}MB"}), 400
+            
+        with get_session() as s:
+            # 檢查用戶權限
+            user = s.query(User).get(user_id)
+            if not user:
+                return jsonify({"ok": False, "error": "用戶不存在"}), 401
+                
+            # 生成唯一檔案名
+            unique_name = generate_unique_filename(file_name, file_hash)
+            
+            # 保存分塊
+            chunk_path = save_upload_chunk(file, unique_name, chunk_index, user_id)
+            
+            # 如果是最後一個分塊，合併所有分塊
+            if chunk_index == total_chunks - 1:
+                final_path = merge_chunks(unique_name, total_chunks, user_id)
+                
+                # 創建媒體記錄
+                media = Media(
+                    post_id=post_id,
+                    path=final_path,
+                    file_name=file_name,
+                    file_size=file_size,
+                    file_type=file_type,
+                    mime_type=mimetypes.guess_type(file_name)[0] or 'application/octet-stream',
+                    status='pending',
+                    author_id=user_id,
+                    school_id=getattr(user, 'school_id', None),
+                    client_id=request.headers.get('X-Client-ID'),
+                    ip=request.remote_addr
+                )
+                
+                s.add(media)
+                s.commit()
+                
+                return jsonify({
+                    "ok": True,
+                    "media_id": media.id,
+                    "path": final_path,
+                    "message": "檔案上傳完成"
+                })
+            else:
+                return jsonify({
+                    "ok": True,
+                    "chunk": chunk_index,
+                    "message": f"分塊 {chunk_index + 1}/{total_chunks} 上傳成功"
+                })
+                
     except Exception as e:
-        from flask import current_app
-        current_app.logger.exception("create_post_with_media failed")
-        return fail("INTERNAL_CREATE_POST_MEDIA", "建立含媒體貼文失敗", details=str(e))
+        return jsonify({"ok": False, "error": f"上傳失敗: {str(e)}"}), 500
+
+@bp.get("/<int:media_id>")
+@jwt_required()
+def get_media_info(media_id):
+    """獲取媒體資訊"""
+    with get_session() as s:
+        media = s.query(Media).get(media_id)
+        if not media:
+            abort(404)
+            
+        # 檢查權限
+        user_id = get_jwt_identity()
+        user = s.query(User).get(user_id)
+        
+        # 只有作者、管理員或同校用戶可以查看
+        if (media.author_id != user_id and 
+            not hasattr(user, 'role') or 
+            user.role not in ['dev_admin', 'campus_admin', 'cross_admin']):
+            abort(403)
+            
+        return jsonify({
+            "id": media.id,
+            "post_id": media.post_id,
+            "file_name": media.file_name,
+            "file_size": media.file_size,
+            "file_type": media.file_type,
+            "mime_type": media.mime_type,
+            "status": media.status,
+            "created_at": media.created_at.isoformat() if media.created_at else None,
+            "path": media.path
+        })
+
+@bp.get("/<int:media_id>/url")
+def get_media_public_url(media_id: int):
+    """回傳媒體的公開 URL（自動發布/尋找）。對 approved 不需登入。"""
+    with get_session() as s:
+        media = s.query(Media).get(media_id)
+        if not media:
+            abort(404)
+        # 僅對已核准提供公開 URL
+        if (media.status or '').lower() != 'approved':
+            abort(403)
+        rel = resolve_or_publish_public_media(media.path or '', int(media.id), getattr(media,'mime_type',None))
+        if not rel or not rel.startswith('public/'):
+            abort(404)
+        return jsonify({"url": f"/uploads/{rel}"})
+
+@bp.get("/<int:media_id>/file")
+def serve_media_file(media_id):
+    """提供媒體檔案下載"""
+    from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+    with get_session() as s:
+        media = s.query(Media).get(media_id)
+        if not media:
+            abort(404)
+            
+        # 權限：approved → 公開；pending → 審核員或作者
+        if (media.status or '').lower() != 'approved':
+            try:
+                verify_jwt_in_request(optional=False)
+                uid = get_jwt_identity()
+                user = s.query(User).get(uid)
+                role = getattr(user, 'role', None) if user else None
+                if not (user and (role in ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'] or media.author_id == uid)):
+                    abort(403)
+            except Exception:
+                abort(401)
+            
+        # 檢查檔案是否存在（支援新的簡化結構）
+        file_path = Path(UPLOAD_ROOT) / media.path
+        
+        # 如果檔案不存在，嘗試從 public 目錄讀取（新結構）或 public/media（相容舊結構）
+        if not file_path.exists():
+            media_filename = f"{media.id}.{(media.file_type or 'jpg').strip('.')}"
+            cand_new = Path(UPLOAD_ROOT) / "public" / media_filename
+            cand_old = Path(UPLOAD_ROOT) / "public" / "media" / media_filename
+            if cand_old.exists():
+                file_path = cand_old
+            elif cand_new.exists():
+                file_path = cand_new
+            else:
+                # 廣義搜尋 id.* 兩個目錄
+                found = None
+                try:
+                    for p in list((Path(UPLOAD_ROOT)/'public'/'media').glob(f"{media.id}.*")) + list((Path(UPLOAD_ROOT)/'public').glob(f"{media.id}.*")):
+                        if p.is_file():
+                            found = p
+                            break
+                except Exception:
+                    pass
+                if found is not None:
+                    file_path = found
+
+        if not file_path.exists():
+            abort(404)
+            
+        return send_file(
+            str(file_path),
+            mimetype=media.mime_type or (mimetypes.guess_type(str(file_path))[0] or 'application/octet-stream'),
+            as_attachment=True,
+            download_name=media.file_name
+        )
+
+@bp.delete("/<int:media_id>")
+@jwt_required()
+def delete_media(media_id):
+    """刪除媒體檔案"""
+    with get_session() as s:
+        media = s.query(Media).get(media_id)
+        if not media:
+            abort(404)
+            
+        # 檢查權限
+        user_id = get_jwt_identity()
+        user = s.query(User).get(user_id)
+        
+        # 只有作者或管理員可以刪除
+        if (media.author_id != user_id and 
+            not hasattr(user, 'role') or 
+            user.role not in ['dev_admin', 'campus_admin', 'cross_admin']):
+            abort(403)
+            
+        # 刪除檔案
+        try:
+            file_path = Path(UPLOAD_ROOT) / media.path
+            if file_path.exists():
+                file_path.unlink()
+        except Exception:
+            pass  # 檔案刪除失敗不影響資料庫記錄
+            
+        # 刪除資料庫記錄
+        s.delete(media)
+        s.commit()
+        
+        return jsonify({"ok": True, "message": "檔案已刪除"})

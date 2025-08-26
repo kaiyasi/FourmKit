@@ -1,7 +1,7 @@
 import { api } from '@/services/api';
 
-export const getQueue = () => api<{posts:any[]; media:any[]}>(
-  '/api/moderation/queue',
+export const getQueue = (schoolSlug?: string) => api<{posts:any[]; media:any[]}>(
+  `/api/moderation/queue${schoolSlug ? `?school=${encodeURIComponent(schoolSlug)}` : `?scope=cross`}`,
   { method: 'GET' }
 );
 

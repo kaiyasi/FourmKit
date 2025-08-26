@@ -1,6 +1,6 @@
-# ForumKit Day 9 - 審核系統
+# ForumKit - 校園匿名討論平台
 
-> **完整的內容審核平台，符合企業級安全標準**
+> **由 Serelix Studio 開發的企業級校園匿名論壇系統，具備完整內容審核功能**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
@@ -97,7 +97,7 @@ ForumKit/
 
 2. **配置環境變數**
    ```bash
-   cp .env.sample .env
+   cp .env.example .env
    # 編輯 .env 設定 JWT_SECRET_KEY 等
    ```
 
@@ -144,6 +144,45 @@ docker compose exec backend pytest -q
 ```
 
 ---
+
+## Google OAuth（校園帳號）設定
+
+- 目的：允許使用者以 Google 校園信箱登入（僅允許 `.edu` 類網域，明確拒絕 `gmail.com`）。
+- 步驟：
+  - 於 Google Cloud Console 建立 OAuth 2.0 Client（Application type: Web application）。
+  - 授權重新導向 URI 新增：`http://localhost:12005/api/auth/google/callback`
+  - 於 `.env` 設定：
+    - `GOOGLE_OAUTH_CLIENT_ID=YOUR_CLIENT_ID`
+    - `GOOGLE_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET`
+    - `OAUTH_REDIRECT_URL=http://localhost:12005/api/auth/google/callback`
+- `ADMIN_NOTIFY_WEBHOOK=...`（可選；後台統一通知端口：回報/主題提案/學校入駐等）
+- 使用方式：
+  - 前往 `http://localhost:12005/auth` 點選「使用 Google 校園帳號登入」。
+  - 首次使用該校園網域登入時，系統會依網域推導 `school_slug`，若資料庫尚無該學校即自動建立暫存學校並（若設定 Webhook）發送入駐通知。
+
+小提醒：若遇到 403，請確認使用的帳號不是 `gmail.com`，且屬於 `.edu*` 網域。
+
+## 🔔 Webhook 整合（Morandi 版）
+
+- 環境變數：
+  - `ADMIN_NOTIFY_WEBHOOK`: Discord 相容的 Webhook URL（統一路徑）。
+  - 相容舊變數：`DISCORD_REPORT_WEBHOOK`、`DISCORD_THEME_WEBHOOK`（未設定統一路徑時作為後援）。
+- 訊息格式：
+  - 使用 Discord embed，色系採用「莫蘭迪」調色盤，依事件型別穩定配色。
+  - 標準欄位：`Event`、`Actor`、`Source`，頁尾自動附 `req`/`ticket`/`ts`。
+  - 端點：
+    - `POST /api/report` → kind=`issue_report`
+    - `POST /api/color_vote` → kind=`simple_choice` 或 `theme_proposal`
+  - 回傳包含 `delivery` 欄位（`discord` 或 `local_only`）。
+
+### 測試與診斷
+- 一鍵測試腳本：`bash scripts/test_admin_webhook.sh [api|direct|all] [--endpoint URL] [--webhook URL] [--dry-run]`
+  - 範例：`bash scripts/test_admin_webhook.sh all`
+  - 樣本檔位於 `scripts/webhooks/*.json`，涵蓋 issue/theme/moderation/system。
+- 狀態檢視：`GET /api/status/integrations`（不含敏感資訊，回報 webhook 是否設定、主機名與最近投遞結果摘要）。
+- 管理測試：`POST /api/admin/webhook/test`（需 admin/dev_admin）
+  - body: `{ "title"?: string, "description"?: string }`
+
 
 ## 🧰 運維腳本（精簡）
 
@@ -278,7 +317,7 @@ Authorization: Bearer <ADMIN_JWT>
    ```bash
    curl -s -X POST http://localhost:12005/api/auth/login \
      -H 'Content-Type: application/json' \
-     -d '{"username":"admin","password":"admin123"}'
+     -d '{"username":"帳號或Email","password":"密碼"}'
    ```
 
 2. **建立貼文**
@@ -380,6 +419,20 @@ curl -s -X POST http://localhost:12005/api/moderation/media/1/approve \
 - **資料庫備份**：定期備份 PostgreSQL 資料
 - **檔案清理**：定期清理被退件的 `pending` 檔案
 
+### 🔐 登入與帳號
+
+- 帳密登入支援「帳號或 Email」；登入頁輸入框標示「帳號/Email」。
+- Google 校園登入：非校園網域回傳 JSON `{"msg":"僅限校園網域登入"}`（HTTP 403）。
+- 重設密碼：
+  - `docker compose exec backend python manage.py set-password <username> <password>`
+  - 例：`docker compose exec backend python manage.py set-password Kaiyasi mabuchi_0315`
+
+### 🔔 Webhook 測試與狀態
+
+- 一鍵測試：`bash scripts/test_admin_webhook.sh [api|direct|all] [--dry-run]`
+- 狀態檢視：`GET /api/status/integrations`
+- 管理測試：`POST /api/admin/webhook/test`（需 admin/dev_admin）
+
 ---
 
 ## 📄 授權條款
@@ -406,7 +459,7 @@ MIT License - 詳見 [LICENSE](LICENSE) 檔案
 
 ---
 
-*ForumKit Day 9 - 讓內容審核變得簡單而安全* 🛡️
+*ForumKit by Serelix Studio - 安全可靠的校園匿名討論平台* 🛡️
 ### 🔧 安全相關環境變數
 
 - `ALLOWED_ORIGINS`: 允許 CORS 的前端來源（逗號分隔）

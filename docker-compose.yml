@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: forumkit
       POSTGRES_PASSWORD: forumkit
     command: postgres -p 80
-    ports: ["12007:80"]
+    ports: ["${POSTGRES_PORT:-12007}:80"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --port 80
-    ports: ["12008:80"]
+    ports: ["${REDIS_PORT:-12008}:80"]
     networks: [ core ]
 
   backend:
@@ -26,14 +26,27 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
       REDIS_URL: redis://redis:80/0
+      # 給健康檢查使用：在容器網路內直連 cdn 服務
+      CDN_HOST: cdn
+      CDN_PORT: "80"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       PASSWORD_SALT_ROUNDS: ${PASSWORD_SALT_ROUNDS}
       APP_MODE: ${APP_MODE}
       UPLOAD_ROOT: /data/uploads
+      # Developer single-admin enforcement (optional; use with care)
+      ENFORCE_SINGLE_ADMIN: ${ENFORCE_SINGLE_ADMIN}
+      SINGLE_ADMIN_USERNAME: ${SINGLE_ADMIN_USERNAME}
+      SINGLE_ADMIN_PASSWORD: ${SINGLE_ADMIN_PASSWORD}
+      # Unified admin notifications webhook (Discord-compatible)
+      ADMIN_NOTIFY_WEBHOOK: ${ADMIN_NOTIFY_WEBHOOK}
+      # Backward-compat environment variables (optional)
       DISCORD_THEME_WEBHOOK: ${DISCORD_THEME_WEBHOOK}
       DISCORD_REPORT_WEBHOOK: ${DISCORD_REPORT_WEBHOOK}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       SOCKETIO_ORIGINS: ${SOCKETIO_ORIGINS}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
+      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL}
     volumes:
       - ./uploads:/data/uploads
     expose: ["80"]
@@ -46,10 +59,11 @@ services:
 
   nginx:
     build: ./docker/nginx
-    ports: ["12005:80"]
+    ports: ["${HOST_PORT:-12005}:80"]
     volumes:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./uploads:/var/www/uploads:ro
     depends_on: [backend]
     networks: [ core ]
 

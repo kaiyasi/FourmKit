@@ -18,7 +18,9 @@ export function applyTheme(theme: ThemeName, isDark?: boolean){
     return
   }
   html.setAttribute('data-theme', theme)
-  html.classList.toggle('dark', !!isDark)
+  // 只有 dark 主題才被視為暗色模式
+  const shouldBeDark = !!isDark || theme === 'dark'
+  html.classList.toggle('dark', shouldBeDark)
 }
 
 export function saveTheme(theme: ThemeName, isDark: boolean){
@@ -38,9 +40,13 @@ export function loadTheme(): { theme: ThemeName; isDark: boolean }{
   try {
     if (theme === 'auto') {
       isDark = systemPrefersDark()
-    } else {
+    } else if (theme === 'dark') {
+      // 只有 dark 主題才設定為暗色模式
       const d = localStorage.getItem(DARK_KEY)
-      isDark = d ? d === '1' : systemPrefersDark()
+      isDark = d ? d === '1' : true
+    } else {
+      // 其他主題（包括 mist）都是淺色模式
+      isDark = false
     }
   } catch(_) { isDark = false }
   return { theme, isDark }
@@ -69,6 +75,8 @@ function startSystemThemeSync(){
 // Immediate apply to reduce flash
 try {
   const { theme, isDark } = loadTheme()
-  applyTheme(theme, isDark)
+  // 確保只有 dark 主題才被設定為暗色模式
+  const shouldBeDark = theme === 'dark' && isDark
+  applyTheme(theme, shouldBeDark)
   startSystemThemeSync()
 } catch(_) { /* no-op */ }

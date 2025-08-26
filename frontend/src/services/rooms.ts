@@ -58,9 +58,9 @@ export function leaveRoom(room: string, clientId: string) {
   joined.delete(room)
 }
 
-export function sendMessage(room: string, message: string, clientId: string) {
+export function sendMessage(room: string, message: string, clientId: string, ts?: string) {
   const s = getSocket()
-  s.emit('chat.send', { room, message, client_id: clientId })
+  s.emit('chat.send', { room, message, client_id: clientId, ...(ts ? { ts } : {}) })
 }
 
 export function onRoomMessage(handler: (msg: Message) => void) {

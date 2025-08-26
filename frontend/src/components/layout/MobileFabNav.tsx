@@ -1,156 +1,94 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Home, Newspaper, Info, ScrollText, LogIn, Settings, LayoutDashboard, MessageSquareDot, Menu, X, LogOut } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, Home, Newspaper, Info, ScrollText, LogIn, Settings, LayoutDashboard, MessageSquare, User, LogOut, Wrench, Activity, FileText, HelpCircle } from 'lucide-react'
 import { ThemeToggle } from '../ui/ThemeToggle'
-import { Link, useLocation } from 'react-router-dom'
-import { isLoggedIn, clearSession, getRole, Role } from '@/utils/auth'
-import useBadges from '@/hooks/useBadges'
+import { Link } from 'react-router-dom'
+import { getRole, Role } from '@/utils/auth'
+import { useAuth } from '@/contexts/AuthContext'
 
-const itemsByRole: Record<Role, { to: string; label: string; icon: any }[]> = {
-  guest: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/about', label: '關於我們', icon: Info },
-    { to: '/rules', label: '版規', icon: ScrollText },
-    { to: '/auth', label: '登入', icon: LogIn },
-  ],
-  user: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/about', label: '關於我們', icon: Info },
-    { to: '/rules', label: '版規', icon: ScrollText },
-    { to: '/settings/profile', label: '設定', icon: Settings },
-  ],
-  dev_admin: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/mode', label: '模式', icon: Settings },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-  campus_admin: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/mode', label: '模式', icon: Settings },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-  cross_admin: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/mode', label: '模式', icon: Settings },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-  campus_moder: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-  cross_moder: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-  admin: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-  moderator: [
-    { to: '/', label: '首頁', icon: Home },
-    { to: '/boards', label: '貼文', icon: Newspaper },
-    { to: '/admin', label: '後台', icon: LayoutDashboard },
-    { to: '/settings/admin', label: '設定', icon: Settings },
-  ],
-}
+type Action = { to: string; label: string; icon: any; require?: (role: Role) => boolean }
 
 export function MobileFabNav() {
   const [open, setOpen] = useState(false)
-  const role = isLoggedIn() ? getRole() : 'guest'
-  const items = itemsByRole[role] || itemsByRole.guest
-  const { pathname } = useLocation()
+  const { isLoggedIn, logout } = useAuth()
+  const role = isLoggedIn ? getRole() : 'guest'
 
-  const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to))
-  const badge = useBadges({ watched: items.map(i=>i.to) })
   const haptic = (ms = 10) => { try { if ('vibrate' in navigator) navigator.vibrate(ms) } catch {} }
 
-  // 主要導覽（4 個），第 5 格留給「更多」
-  const primary = useMemo(() => items.slice(0, 4), [items])
+  const common: Action[] = [
+    { to: '/', label: '首頁', icon: Home },
+    { to: '/boards', label: '貼文', icon: Newspaper },
+    { to: '/create', label: '發文', icon: FileText, require: r => r !== 'guest' },
+    { to: '/about', label: '關於', icon: Info },
+    { to: '/rules', label: '版規', icon: ScrollText },
+  ]
+
+  const adminOnly: Action[] = [
+    { to: '/admin', label: '後台', icon: LayoutDashboard, require: r => ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(r) },
+    { to: '/admin/comments', label: '留言監控', icon: MessageSquare, require: r => ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(r) },
+    { to: '/mode', label: '模式管理', icon: Wrench, require: r => r === 'dev_admin' },
+    { to: '/admin/events', label: '事件', icon: Activity, require: r => ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(r) },
+    { to: '/admin/support', label: '回報', icon: HelpCircle, require: r => ['dev_admin','campus_admin','cross_admin'].includes(r) },
+  ]
+
+  const userOnly: Action[] = [
+    { to: '/settings/profile', label: '個人設定', icon: Settings, require: r => r !== 'guest' },
+  ]
+
+  const authAction: Action[] = isLoggedIn
+    ? [{ to: '#logout', label: '登出', icon: LogOut }]
+    : [{ to: '/auth', label: '登入', icon: LogIn }]
+
+  const actions: Action[] = [
+    ...common,
+    ...adminOnly,
+    ...userOnly,
+    ...authAction,
+  ].filter(a => !a.require || a.require(role))
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 md:hidden pb-[env(safe-area-inset-bottom)]">
-      {/* 展開的延伸操作（登出 / 主題） */}
-      {open && <div className="fixed inset-0 bg-black/30" onClick={() => setOpen(false)} aria-hidden="true" />}
-      <div className={`absolute bottom-16 right-4 flex flex-col items-end space-y-2 transition-all duration-200 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} aria-label="更多動作">
-        {isLoggedIn() ? (
-          <button
-            onClick={() => { haptic(12); clearSession(); window.location.href = "/"; }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full dual-btn border border-border shadow-lg backdrop-blur min-h-[44px] min-w-[44px]"
-          >
-            <LogOut className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm whitespace-nowrap">登出</span>
-          </button>
-        ) : (
-          <Link
-            to="/auth"
-            onClick={() => { haptic(12); setOpen(false) }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full dual-btn border border-border shadow-lg backdrop-blur min-h-[44px] min-w-[44px]"
-          >
-            <LogIn className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm whitespace-nowrap">登入</span>
-          </Link>
-        )}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-full dual-btn border border-border shadow-lg backdrop-blur min-h-[44px]">
-          <ThemeToggle />
-          <span className="text-xs text-muted whitespace-nowrap">主題</span>
+    <div className="fixed inset-0 pointer-events-none md:hidden">
+      {/* 遮罩 */}
+      {open && (
+        <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={()=>setOpen(false)} />
+      )}
+
+      {/* 底部抽屜 */}
+      <div className={`absolute inset-x-0 bottom-0 pb-[env(safe-area-inset-bottom)] transition-transform duration-200 ${open ? 'translate-y-0 pointer-events-auto' : 'translate-y-full pointer-events-none'}`}>
+        <div className="mx-auto max-w-5xl rounded-t-2xl border border-border border-b-0 bg-surface/95 backdrop-blur shadow-2xl">
+          <div className="p-4 flex items-center justify-between">
+            <div className="text-sm text-muted">快速操作</div>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              {isLoggedIn && (
+                <Link to="/settings/profile" className="px-2 py-1 text-xs rounded border border-border">設定</Link>
+              )}
+            </div>
+          </div>
+          <div className="px-3 pb-3 grid grid-cols-4 gap-2">
+            {actions.map((a, i) => (
+              a.to === '#logout' ? (
+                <button key={i} onClick={()=>{ haptic(12); logout() }} className="flex flex-col items-center gap-1 p-3 rounded-xl border border-border bg-surface hover:bg-surface/80">
+                  <a.icon className="w-5 h-5" />
+                  <span className="text-xs">{a.label}</span>
+                </button>
+              ) : (
+                <Link key={i} to={a.to} onClick={()=>{ haptic(8); setOpen(false) }} className="flex flex-col items-center gap-1 p-3 rounded-xl border border-border bg-surface hover:bg-surface/80">
+                  <a.icon className="w-5 h-5" />
+                  <span className="text-xs">{a.label}</span>
+                </Link>
+              )
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* 底部導覽列 */}
-      <nav role="navigation" aria-label="行動底部導覽" className="mx-auto max-w-5xl">
-        <div className="mx-3 mb-3 rounded-2xl border border-border bg-surface/80 backdrop-blur shadow-soft">
-          <ul className="grid grid-cols-5 divide-x divide-border">
-            {primary.map(({ to, icon: Icon, label }) => (
-              <li key={to}>
-                <Link
-                  to={to}
-                  onClick={() => haptic(8)}
-                  aria-current={isActive(to) ? 'page' : undefined}
-                  className={[
-                    'flex flex-col items-center justify-center gap-1 py-2 min-h-[52px] focus:outline-none',
-                    isActive(to)
-                      ? 'font-semibold ring-1 ring-primary-100 dark:ring-primary-600/40 bg-primary-100/50 dark:bg-primary-600/20 text-fg'
-                      : 'text-muted hover:text-fg'
-                  ].join(' ')}
-                >
-                  <span className="relative">
-                    <Icon className="w-5 h-5" aria-hidden="true" />
-                    {badge.get(to) > 0 && (
-                      <span className="absolute -top-1.5 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] leading-[18px] text-center shadow">{badge.get(to)}</span>
-                    )}
-                  </span>
-                  <span className="text-xs leading-none">{label}</span>
-                </Link>
-              </li>
-            ))}
-            {/* 更多 */}
-            <li>
-              <button
-                onClick={() => { haptic(8); setOpen(v => !v) }}
-                aria-expanded={open}
-                aria-label="更多選單"
-                className="w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[52px] text-muted hover:text-fg"
-              >
-                {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                <span className="text-xs leading-none">更多</span>
-              </button>
-            </li>
-          </ul>
-        </div>
-      </nav>
+      {/* 右下角 FAB */}
+      <div className="absolute right-4 bottom-4 pb-[env(safe-area-inset-bottom)] pointer-events-auto">
+        <button onClick={()=>{ haptic(8); setOpen(v=>!v) }} aria-expanded={open} aria-label="開啟操作選單"
+          className="w-14 h-14 rounded-full dual-btn shadow-xl border border-border grid place-items-center">
+          <Plus className={`w-6 h-6 transition-transform ${open ? 'rotate-45' : ''}`} />
+        </button>
+      </div>
     </div>
   )
 }

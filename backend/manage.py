@@ -36,6 +36,7 @@ def main(argv: list[str]) -> int:
     #   python manage.py                          -> 建立預設三個帳號
     #   python manage.py create-admin USER PASS   -> 建立管理員帳號
     #   python manage.py create-superadmin USER PASS -> 建立/確保總管理（dev_admin）
+    #   python manage.py set-password USER PASS   -> 設定/重設指定使用者密碼（若不存在則建立 user）
     if len(argv) >= 2 and argv[1] == "create-admin":
         if len(argv) < 4:
             print("usage: python manage.py create-admin <username> <password>")
@@ -63,6 +64,27 @@ def main(argv: list[str]) -> int:
                     print(f"exists: {username} (dev_admin)")
             else:
                 create_user(username, password, role="dev_admin")
+        return 0
+
+    if len(argv) >= 2 and argv[1] == "set-password":
+        if len(argv) < 4:
+            print("usage: python manage.py set-password <username> <password>")
+            return 2
+        username, password = argv[2], argv[3]
+        from utils.db import get_session
+        with get_session() as s:
+            u = s.query(User).filter_by(username=username).first()
+            if not u:
+                # 若不存在則以一般使用者建立
+                u = User(username=username, password_hash=generate_password_hash(password), role="user")
+                s.add(u)
+                s.commit()
+                print(f"created: {username} (user)")
+            else:
+                u.password_hash = generate_password_hash(password)
+                s.add(u)
+                s.commit()
+                print(f"updated password: {username}")
         return 0
 
     # 預設：播種基本帳號（具冪等性）

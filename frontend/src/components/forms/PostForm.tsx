@@ -14,8 +14,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
 
   const submit = async () => {
     const body = content.trim()
-    // 若有附件，略過最小字數檢查（由後端設定統一控管）
-    if (files.length === 0 && body.length < 15) { setErr('內容太短（需 ≥ 15 字）'); return }
+    // 最小字數交由後端依設定檢查（前端不硬卡）
     setBusy(true); setErr(null)
     
     const clientId = getClientId()
@@ -23,16 +22,10 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     const now = new Date().toISOString()
 
     // 私有占位：只在本機顯示的待審貼文卡，方便看到「送審中」
-    const escapeHtml = (s: string) => s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;')
     onCreated?.({
       tempKey: `tmp_${txId}`,
       client_tx_id: txId,
-      content: `<p>${escapeHtml(body)}</p>`,
+      content: body, // 使用純文本，不轉換為HTML
       author_hash: '您',
       created_at: now,
       pending_private: true,
@@ -86,7 +79,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
       <h3 className="font-semibold dual-text mb-2 text-base sm:text-lg">發表新貼文</h3>
       <textarea
         className="form-control min-h-[100px] sm:min-h-[120px] text-sm sm:text-base"
-        placeholder="想說點什麼？支援少量粗體/斜體/段落。"
+        placeholder="想說點什麼？支援 Markdown 語法：**粗體**、*斜體*、`程式碼`、[連結](網址)、# 標題、- 清單"
         value={content}
         onChange={e=> setContent(e.target.value)}
       />

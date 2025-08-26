@@ -17,7 +17,8 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
 
   useEffect(() => { 
     // auto 模式由 applyTheme 自行判斷深淺色
-    applyTheme(theme, theme==='dark')
+    // 只有 dark 主題才設定為暗色模式
+    applyTheme(theme, theme === 'dark')
   }, [theme])
 
     const cycle = () => {
@@ -25,7 +26,15 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
     setTheme(next)
     // auto 模式不強制指定 isDark，讓系統決定
-    saveTheme(next, next==='dark')
+    // 只有 dark 主題才設定為暗色模式
+    saveTheme(next, next === 'dark')
+    
+    // 觸覺反饋
+    try {
+      if ('vibrate' in navigator) {
+        navigator.vibrate(10);
+      }
+    } catch {}
   }
 
   // 僅設定尺寸，顏色交給父層（避免變數色彩 + 透明度組合造成不可見）
@@ -44,13 +53,20 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
 
     useEffect(()=>{
       // 標記已就緒避免 FOUC
-      requestAnimationFrame(()=> document.documentElement.classList.add('theme-ready'));
+      requestAnimationFrame(()=> {
+        document.documentElement.classList.add('theme-ready');
+        // 添加主題切換動畫類
+        document.documentElement.classList.add('theme-transition');
+        setTimeout(() => {
+          document.documentElement.classList.remove('theme-transition');
+        }, 300);
+      });
     },[theme]);
 
   return (
       <button
         onClick={cycle}
-        className="p-2 rounded-full bg-surface hover:bg-surface-hover active:bg-surface-active border border-border shadow hover:scale-105 active:scale-95 transition flex items-center justify-center text-fg dark:text-white"
+        className="flex items-center justify-center w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-surface/70 hover:bg-surface border border-border transition text-fg touch-target mobile-btn-sm"
         aria-label={`切換主題，目前：${NAME_MAP[theme]}`}
         title={`切換主題，目前：${NAME_MAP[theme]}`}
         data-tip={`目前：${NAME_MAP[theme]} (點擊切換)`}

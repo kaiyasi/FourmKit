@@ -1,10 +1,16 @@
 import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import ChatPanel from '@/components/ChatPanel'
+import { NavBar } from '@/components/layout/NavBar'
+import { MobileFabNav } from '@/components/layout/MobileFabNav'
 
 export default function ChatPage() {
+  const { pathname } = useLocation()
   const [room, setRoom] = useState('lobby')
   return (
     <div className="min-h-screen">
+      <NavBar pathname={pathname} />
+      <MobileFabNav />
       <main className="mx-auto max-w-3xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28">
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft mb-4">
           <h1 className="text-xl sm:text-2xl font-semibold dual-text mb-2">聊天室示範</h1>
@@ -18,4 +24,3 @@ export default function ChatPage() {
     </div>
   )
 }
-

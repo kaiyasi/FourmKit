@@ -1,5 +1,32 @@
 # ForumKit 快速設定
 
+> **Serelix Studio 開發的校園匿名討論平台配置指南**
+
+## Google OAuth（校園帳號）
+
+1. 前往 Google Cloud Console 建立 OAuth 2.0 Client（Web application）。
+2. 在 OAuth 用戶端中新增 Authorized redirect URI：
+   - `http://localhost:12005/api/auth/google/callback`
+3. 於 `.env` 新增（或覆寫）下列變數並填入：
+```
+GOOGLE_OAUTH_CLIENT_ID=your_client_id
+GOOGLE_OAUTH_CLIENT_SECRET=your_client_secret
+OAUTH_REDIRECT_URL=http://localhost:12005/api/auth/google/callback
+```
+4. 重新啟動服務後，前往 `http://localhost:12005/auth` 點選「使用 Google 校園帳號登入」。
+   - 非校園帳號（如 gmail.com）會被拒絕（403）。
+   - 首次來自新校園網域登入時，系統會自動建立暫存學校，並（若設定 `ADMIN_NOTIFY_WEBHOOK`）發送「SchoolOnboarding」通知。
+
+### 後台通知 Webhook（統一端口）
+
+將後台所有通知（問題回報、主題提案、學校入駐等）統一送到一個 Webhook：
+
+```
+ADMIN_NOTIFY_WEBHOOK=https://discord.com/api/webhooks/xxx
+```
+
+系統會依事件類型套用不同作者/頁尾/顏色的 Discord embed。
+
 ## Discord Webhook 設定
 
 ### 1. 建立 Discord Webhook

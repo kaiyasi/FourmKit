@@ -4,19 +4,34 @@ import { getClientId } from '@/utils/client'
 
 type Msg = { room: string; message: string; client_id?: string; ts?: string }
 
-export default function ChatPanel({ room, title }: { room: string; title?: string }) {
+export default function ChatPanel({ room, title, subtitle }: { room: string; title?: string; subtitle?: string }) {
   const clientId = useMemo(() => getClientId(), [])
   const [messages, setMessages] = useState<Msg[]>([])
   const [presence, setPresence] = useState<number>(0)
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
+  const seenRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const dispose = joinRoom(room, clientId, {
-      onBacklog: (msgs) => setMessages(msgs as Msg[]),
+      onBacklog: (msgs) => {
+        const set = new Set<string>()
+        const list = (msgs as Msg[]).map(m => {
+          const k = `${m.client_id||''}|${m.ts||''}|${m.message}`
+          set.add(k)
+          return m
+        })
+        seenRef.current = set
+        setMessages(list)
+      },
       onPresence: (n) => setPresence(n),
-      onMessage: (msg) => setMessages((cur) => [...cur, msg]),
+      onMessage: (msg) => {
+        const k = `${msg.client_id||''}|${msg.ts||''}|${msg.message}`
+        if (seenRef.current.has(k)) return
+        seenRef.current.add(k)
+        setMessages((cur) => [...cur, msg])
+      },
       onError: (e) => setErr(e.error)
     })
     return () => {
@@ -26,21 +41,31 @@ export default function ChatPanel({ room, title }: { room: string; title?: strin
   }, [room, clientId])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    endRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
   }, [messages.length])
 
   const onSend = (e: React.FormEvent) => {
     e.preventDefault()
     const msg = text.trim()
     if (!msg) return
-    sendMessage(room, msg, clientId)
+    // 樂觀更新（避免等待伺服器回傳造成刷新感）
+    const optimisticTs = new Date().toISOString()
+    const optimistic: Msg = { room, message: msg, client_id: clientId, ts: optimisticTs }
+    const k = `${optimistic.client_id}|${optimistic.ts}|${optimistic.message}`
+    seenRef.current.add(k)
+    setMessages(cur => [...cur, optimistic])
+    // 送出給伺服器（收到回傳時因為 seenRef 有紀錄不會重複加入）
+    sendMessage(room, msg, clientId, optimisticTs)
     setText('')
   }
 
   return (
     <div className="rounded-2xl border border-border bg-surface shadow-soft flex flex-col min-h-[280px]">
       <div className="p-3 sm:p-4 border-b border-border flex items-center justify-between">
-        <h3 className="font-semibold dual-text text-base">{title || `聊天室：${room}`}</h3>
+        <div>
+          <h3 className="font-semibold dual-text text-base">{title || `聊天室：${room}`}</h3>
+          {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+        </div>
         <div className="text-xs text-muted">在線：{presence}</div>
       </div>
       {err && (
@@ -50,13 +75,15 @@ export default function ChatPanel({ room, title }: { room: string; title?: strin
         {messages.length === 0 ? (
           <div className="text-sm text-muted">暫無訊息</div>
         ) : (
-          messages.map((m, i) => (
-            <div key={i} className={`max-w-[85%] p-2 rounded-xl border border-border ${m.client_id === clientId ? 'ml-auto bg-primary/10' : 'bg-surface/70'}`}>
+          messages.map((m) => {
+            const key = `${m.client_id||''}|${m.ts||''}|${m.message}`
+            return (
+            <div key={key} className={`max-w-[85%] p-2 rounded-xl border border-border ${m.client_id === clientId ? 'ml-auto bg-primary/10' : 'bg-surface/70'}`}>
               <div className="text-xs text-muted mb-0.5">{m.client_id === clientId ? '我' : (m.client_id || '匿名')}</div>
               <div className="text-sm text-fg break-words whitespace-pre-wrap">{m.message}</div>
               <div className="text-[10px] text-muted mt-0.5">{m.ts ? new Date(m.ts).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : ''}</div>
             </div>
-          ))
+          )})
         )}
         <div ref={endRef} />
       </div>

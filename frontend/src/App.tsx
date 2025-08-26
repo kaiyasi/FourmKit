@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react'
+import MobileUnderConstruction from '@/components/MobileUnderConstruction'
 import { getSocket } from './services/socket'
 import { ensurePostListener, ensureCommentListener, ensureAnnounceListener, ensureModerationListeners } from './services/realtime'
 import { getClientId, upsertByIdOrTemp, upsertSocketPayload } from './utils/client'
 import { NavBar } from './components/layout/NavBar'
-import { MobileFabNav } from './components/layout/MobileFabNav'
+import ErrorPage from '@/components/ui/ErrorPage'
+import { MobileBottomNav } from './components/layout/MobileBottomNav'
+import { MobilePostList } from './components/mobile/MobilePostList'
 import { ThemeToggle } from './components/ui/ThemeToggle'
 import PostList from './components/PostList'
 import PostForm from './components/forms/PostForm'
 import ChatPanel from './components/ChatPanel'
 import ChatPage from './pages/ChatPage'
+import AdminChatPage from './pages/admin/ChatPage'
 import PostDetailPage from './pages/PostDetailPage'
-import AdminRoomsPage from './pages/AdminRoomsPage'
+import AdminCommentsMonitorPage from './pages/AdminCommentsMonitorPage'
+import EventStatusCard from '@/components/admin/EventStatusCard'
 import ResizableSection from './components/ResizableSection'
-import { canSetMode, isLoggedIn, getUserId } from '@/utils/auth'
+import { canSetMode, getUserId } from '@/utils/auth'
+import { useAuth } from '@/contexts/AuthContext'
 
 type PlatformMode = {
   mode: 'normal' | 'maintenance' | 'development' | 'test'
@@ -26,6 +32,7 @@ interface ProgressItem { name: string; status: 'completed'|'in_progress'|'planne
 interface ProgressData { progress_items: ProgressItem[]; recent_updates: string[]; last_updated: string; error?: string }
 
 export default function App() {
+  const { isLoggedIn } = useAuth()
   /* ---------- 局部 CSS：740–820px 調整右欄 ---------- */
   const MidWidthCSS = () => (
     <style>{`
@@ -64,7 +71,7 @@ export default function App() {
       }
       
       const myClientId = getClientId()
-      const myUserId = isLoggedIn() ? getUserId() : null
+      const myUserId = isLoggedIn ? getUserId() : null
       
       // 統一的 post 處理器：僅對本人顯示「已提交審核」提示；不再注入清單
       const combinedPostHandler = (payload: any) => {
@@ -112,31 +119,33 @@ export default function App() {
               const ap = JSON.parse(localStorage.getItem(k2) || '[]') as number[]
               if (!ap.includes(id)) {
                 localStorage.setItem(k2, JSON.stringify([id, ...ap].slice(0,500)))
-                try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key: k2 } })) } catch {}
-              }
-              // 從送審清單移除，避免「送審」數持續累加
-              const next = arr.filter(x => x !== id)
-              localStorage.setItem(key, JSON.stringify(next))
-              try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
+              try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key: k2 } })) } catch {}
             }
-          }catch{}
-        },
-        (payload:any)=>{
-          const id = Number(payload?.id)
-          const reason = String(payload?.reason || '不符合規範')
-          if (!id) return
-          try{
-            const key = 'forumkit_my_posts'
-            const arr = JSON.parse(localStorage.getItem(key) || '[]') as number[]
-            if (arr.includes(id)) {
-              push(`您的貼文 #${id} 已被退件（${reason}）`)
-              const next = arr.filter(x => x !== id)
-              localStorage.setItem(key, JSON.stringify(next))
-              try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
-            }
-          }catch{}
-        }
-      )
+            // 從送審清單移除，避免「送審」數持續累加
+            const next = arr.filter(x => x !== id)
+            localStorage.setItem(key, JSON.stringify(next))
+            try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
+            try { window.dispatchEvent(new CustomEvent('fk_reload_posts')) } catch {}
+          }
+        }catch{}
+      },
+      (payload:any)=>{
+        const id = Number(payload?.id)
+        const reason = String(payload?.reason || '不符合規範')
+        if (!id) return
+        try{
+          const key = 'forumkit_my_posts'
+          const arr = JSON.parse(localStorage.getItem(key) || '[]') as number[]
+          if (arr.includes(id)) {
+            push(`您的貼文 #${id} 已被退件（${reason}）`)
+            const next = arr.filter(x => x !== id)
+            localStorage.setItem(key, JSON.stringify(next))
+            try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
+            try { window.dispatchEvent(new CustomEvent('fk_reload_posts')) } catch {}
+          }
+        }catch{}
+      }
+    )
       getSocket()  // 確保 Socket 連線
       
       // 清理函數由 ensureXXXListener 內部處理，這裡不需要手動 off
@@ -157,24 +166,39 @@ export default function App() {
     )
   }
 
-  const [pathname, setPathname] = useState(window.location.pathname)
+  const [pathname, setPathname] = useState(() => {
+    // 安全地獲取 pathname，避免在 SSR 或某些環境中出現問題
+    try {
+      return window?.location?.pathname || '/'
+    } catch {
+      return '/'
+    }
+  })
   const [platform, setPlatform] = useState<PlatformMode | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [errorStatus, setErrorStatus] = useState<number | undefined>(undefined)
 
   const [progressData, setProgressData] = useState<ProgressData | null>(null)
   const [progressLoading, setProgressLoading] = useState(true)
 
   const { isSmallScreen } = useScreenSize()
+  const mobileGateEnabled = (import.meta as any).env?.VITE_MOBILE_UNDER_CONSTRUCTION === '1'
+  const bypassed = (()=>{ try{ return localStorage.getItem('fk_mobile_ok')==='1' }catch{return false} })()
   const [injectedItems, setInjectedItems] = useState<any[]>([])
 
   // 未登入時：刷新後清掉本地送審/已審紀錄（匿名臨時帳號刷新即重置）
   useEffect(() => {
-    if (!isLoggedIn()) {
+    if (!isLoggedIn) {
       try { localStorage.removeItem('forumkit_my_posts') } catch {}
       try { localStorage.removeItem('forumkit_approved_posts') } catch {}
     }
   }, [])
+
+  // 行動版施工中：在小螢幕且開關啟用時，顯示臨時頁（可手動略過）
+  if (mobileGateEnabled && isSmallScreen && !bypassed) {
+    return <MobileUnderConstruction />
+  }
   
   function MySubmissions() {
     const [my, setMy] = useState<number[]>([])
@@ -248,18 +272,38 @@ export default function App() {
   useEffect(() => {
     fetch('/api/mode')
       .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`)
+        if (!r.ok) {
+          setErrorStatus(r.status)
+          throw new Error(`HTTP ${r.status}: ${r.statusText}`)
+        }
         return r.json()
       })
       .then(setPlatform)
-      .catch(e => setError(String(e)))
+      .catch(e => {
+        // Network error 或 5xx 皆走自訂錯誤頁
+        const msg = (e && e.message) ? String(e.message) : String(e)
+        setError(msg)
+        if (!errorStatus) {
+          // 嘗試從字串擷取狀態碼
+          const m = msg.match(/HTTP\s+(\d{3})/)
+          if (m) setErrorStatus(Number(m[1]))
+        }
+      })
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(()=> { console.log('[ForumKit] build tag', (import.meta as any).env?.VITE_BUILD_TAG) },[])
 
   useEffect(() => {
-    const onPop = () => setPathname(window.location.pathname)
+    const onPop = () => {
+      try {
+        const pathname = window?.location?.pathname || '/'
+        setPathname(pathname)
+      } catch (error) {
+        console.warn('[App] Failed to get pathname:', error)
+        setPathname('/')
+      }
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -295,7 +339,10 @@ export default function App() {
     return <div className="min-h-screen grid place-items-center"><div className="text-muted">載入中...</div></div>
   }
   if (error || !platform) {
-    return <div className="min-h-screen grid place-items-center"><div className="text-rose-600">{error ? `載入失敗：${error}` : '無法取得平台模式'}</div></div>
+    const status = errorStatus || 502
+    const title = (status === 502 || status === 503 || status === 504) ? '服務暫時不可用' : undefined
+    const hint = '伺服器可能正在重啟或暫時不可用，稍候將自動恢復。'
+    return <ErrorPage status={status} title={title} message={error || '無法取得平台模式'} hint={hint} />
   }
 
   // /mode 管理頁
@@ -308,8 +355,13 @@ export default function App() {
     return <ChatPage />
   }
 
+  // /admin/chat 管理員聊天室
+  if (pathname === '/admin/chat') {
+    return <AdminChatPage />
+  }
+
   // /posts/:id 詳情頁（public approved）
-  if (pathname.startsWith('/posts/')) {
+  if (pathname && pathname.startsWith('/posts/')) {
     const idStr = pathname.split('/')[2]
     const id = Number(idStr)
     if (!Number.isNaN(id) && id > 0) {
@@ -317,10 +369,10 @@ export default function App() {
     }
   }
 
-  // /admin/rooms 監看頁（需權限，後端保護）
-  if (pathname === '/admin/rooms') {
-    return <AdminRoomsPage />
-  }
+      // /admin/comments 留言監控頁（需權限，後端保護）
+    if (pathname === '/admin/comments') {
+        return <AdminCommentsMonitorPage />
+    }
 
   // 維護模式
   if (platform.mode === 'maintenance') {
@@ -376,6 +428,9 @@ export default function App() {
       <div className="min-h-screen">
         <MidWidthCSS />
 
+        {/* dev_admin 平台狀態卡 */}
+        <EventStatusCard />
+
         {/* 右上角主題切換器 */}
         <div className="fixed top-4 right-4 z-50">
           <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm">
@@ -409,7 +464,7 @@ export default function App() {
                 </div>
 
                 {/* Realtime 聊天室示範 */}
-                <ChatPanel room="lobby" title="聊天室（示範：lobby）" />
+                <ChatPanel room="lobby" title="聊天室" subtitle="開發模式示範聊天室" />
 
                 {/* 右：開發紀錄 */}
                 <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft right-col-spacing">
@@ -485,9 +540,6 @@ export default function App() {
                   <div className="h-full min-h-[740px] p-4 md:p-6 overflow-y-auto">
                     <h3 className="font-semibold dual-text mb-4">顏色搭配器</h3>
                     <ColorDesigner />
-                    <div className="mt-4">
-                      <ChatPanel room="lobby" title="聊天室（示範：lobby）" />
-                    </div>
                   </div>
                 </div>
 
@@ -558,6 +610,12 @@ export default function App() {
                 </div>
               </div>
             )}
+            {/* 桌機：聊天室獨立區塊（不佔顏色搭配器區） */}
+            {!isSmallScreen && (
+              <div className="mt-4 bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
+                <ChatPanel room="lobby" title="聊天室" subtitle="開發模式示範聊天室" />
+              </div>
+            )}
 
             {/* 意見回饋 */}
             <div id="feedback" className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft relative z-[5]">
@@ -572,16 +630,37 @@ export default function App() {
     )
   }
 
-  // 正常主頁
+  // 手機版主頁
+  if (isSmallScreen) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        {/* 頂部標題欄 */}
+        <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border px-4 py-3">
+          <h1 className="font-semibold text-lg text-fg">ForumKit</h1>
+          <p className="text-sm text-muted">校園匿名討論平台</p>
+        </header>
+
+        {/* 貼文列表 */}
+        <div className="flex-1">
+          <MobilePostList injectedItems={injectedItems} />
+        </div>
+
+        {/* 底部導航 */}
+        <MobileBottomNav />
+        
+        <RealtimeToastPanel onNewPost={handleNewPost} />
+      </div>
+    )
+  }
+
+  // 桌面版主頁
   return (
     <div className="min-h-screen">
       <NavBar pathname={pathname} />
-      <MobileFabNav />
       <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28">
         <section className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 sm:mb-6">
           <div className="flex items-center justify-between gap-3 sm:gap-4 mb-4">
             <h1 className="text-xl sm:text-2xl font-semibold dual-text">ForumKit</h1>
-            {/* Socket 連線測試徽章已移除 */}
           </div>
           <PostForm onCreated={handleNewPost} />
         </section>
@@ -691,9 +770,9 @@ function ReportForm({ compact }: { compact?: boolean }) {
         </div>
         {ticket && (
           <div className={`mt-3 rounded-xl border px-4 py-3 ${
-            tone === "success" ? "bg-green-50 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-100"
-            : tone === "warn" ? "bg-yellow-50 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-100"
-            : "bg-red-50 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-100"
+            tone === "success" ? "bg-success-bg text-success-text border-success-border"
+            : tone === "warn" ? "bg-warning-bg text-warning-text border-warning-border"
+            : "bg-danger-bg text-danger-text border-danger-border"
           }`}>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -725,20 +804,13 @@ function ReportForm({ compact }: { compact?: boolean }) {
 /* ---------- 元件：顏色設計器 ---------- */
 function ColorDesigner() {
   const [primaryColor, setPrimaryColor] = useState('#F8F5EE')
-  const [secondaryColor, setSecondaryColor] = useState('#DCCFBD')
+  const [primaryErr, setPrimaryErr] = useState<string | null>(null)
   const [themeName, setThemeName] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const colorType = (() => {
-    const hex = primaryColor.replace('#','')
-    const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16)
-    const brightness = (r*299 + g*587 + b*114) / 1000
-    return brightness > 128 ? 'light' : 'dark'
-  })()
-  const btnColor = colorType === 'light' ? '#2E2F31' : '#F5F5F5'
-  const textColor = colorType === 'light' ? '#2E2F31' : '#F5F5F5'
+  // ...existing code...
 
   const submitTheme = async () => {
     if (!themeName.trim()) { alert('請為您的主題命名！'); return }
@@ -747,7 +819,7 @@ function ColorDesigner() {
       const payload = {
         name: themeName,
         description,
-        colors: { primary: primaryColor, secondary: secondaryColor, colorType, buttonColor: btnColor, textColor }
+        colors: { primary: primaryColor }
       }
       const r = await fetch('/api/color_vote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
       const data = await r.json().catch(()=> ({}))
@@ -781,12 +853,86 @@ function ColorDesigner() {
     }
   }
 
+  // ---- HEX 檢查與格式化 ----
+  const toHex = (n: number) => {
+    const s = Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0').toUpperCase()
+    return s
+  }
+  const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
+    const h = hex.replace(/[^0-9A-Fa-f]/g, '')
+    if (h.length === 3) {
+      const r = parseInt(h[0] + h[0], 16)
+      const g = parseInt(h[1] + h[1], 16)
+      const b = parseInt(h[2] + h[2], 16)
+      return { r, g, b }
+    }
+    if (h.length === 6) {
+      const r = parseInt(h.slice(0, 2), 16)
+      const g = parseInt(h.slice(2, 4), 16)
+      const b = parseInt(h.slice(4, 6), 16)
+      return { r, g, b }
+    }
+    return null
+  }
+  const rgbToHex = (r: number, g: number, b: number) => `#${toHex(r)}${toHex(g)}${toHex(b)}`
+  const lighten = (hex: string, amount = 0.75) => {
+    const rgb = hexToRgb(hex)
+    if (!rgb) return hex
+    const r = rgb.r + (255 - rgb.r) * amount
+    const g = rgb.g + (255 - rgb.g) * amount
+    const b = rgb.b + (255 - rgb.b) * amount
+    return rgbToHex(r, g, b)
+  }
+  const darken = (hex: string, amount = 0.20) => {
+    const rgb = hexToRgb(hex)
+    if (!rgb) return hex
+    const r = rgb.r * (1 - amount)
+    const g = rgb.g * (1 - amount)
+    const b = rgb.b * (1 - amount)
+    return rgbToHex(r, g, b)
+  }
+  const normalizeHex = (input: string): { ok: boolean; value?: string } => {
+    const raw = (input || '').trim()
+    const h = raw.replace(/[^0-9A-Fa-f]/g, '')
+    if (h.length === 3) {
+      return { ok: true, value: `#${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`.toUpperCase() }
+    }
+    if (h.length === 6) {
+      return { ok: true, value: `#${h.toUpperCase()}` }
+    }
+    return { ok: false }
+  }
+  const onPrimaryText = (v: string) => {
+    const norm = normalizeHex(v)
+    if (norm.ok) { setPrimaryErr(null); setPrimaryColor(norm.value!) } else { setPrimaryErr('請輸入 #RRGGBB 或 RRGGBB/ABC') }
+  }
+  const onSecondaryText = (v: string) => {
+    const norm = normalizeHex(v)
+    if (norm.ok) { setSecondaryErr(null); setSecondaryColor(norm.value!) } else { setSecondaryErr('請輸入 #RRGGBB 或 RRGGBB/ABC') }
+  }
+
+  const applyToTheme = () => {
+    if (primaryErr || secondaryErr) return
+    // 僅調整主色與邊框等關鍵 token，避免破壞現有主題對比
+    try {
+      const root = document.documentElement
+      root.style.setProperty('--primary', primaryColor)
+      root.style.setProperty('--primary-600', darken(primaryColor, 0.25))
+      root.style.setProperty('--primary-100', lighten(primaryColor, 0.78))
+      root.style.setProperty('--primary-hover', darken(primaryColor, 0.22))
+      root.style.setProperty('--border', secondaryColor)
+      // 可選：同步按鈕次要色調，降低突兀
+      root.style.setProperty('--button-secondary', lighten(primaryColor, 0.86))
+      root.style.setProperty('--button-secondary-hover', lighten(primaryColor, 0.80))
+    } catch { /* no-op */ }
+  }
+
   return (
     <div className="space-y-4">
       <div className="bg-surface/50 rounded-xl p-4 border border-border">
         <h4 className="font-semibold dual-text mb-3">主題預覽</h4>
         <div className="space-y-3">
-          <div className="h-20 rounded-xl flex items-center justify-center font-semibold border-2 shadow-sm"
+          <div className="h-20 rounded-xl flex items-center justify-center font-semibold border shadow-sm"
                style={{ backgroundColor: primaryColor, borderColor: secondaryColor, color: textColor }}>
             背景顏色 (主色)
           </div>
@@ -795,8 +941,8 @@ function ColorDesigner() {
                     style={{ backgroundColor: btnColor, color: colorType === 'light' ? '#FFFFFF' : '#1F1F1F' }}>
               按鈕樣式
             </button>
-            <div className="px-4 py-2 rounded-xl font-semibold shadow-sm border-2"
-                 style={{ backgroundColor: 'transparent', borderColor: secondaryColor, color: textColor }}>
+            <div className="px-4 py-2 rounded-xl font-semibold shadow-sm border"
+                 style={{ backgroundColor: primaryColor, borderColor: secondaryColor, color: textColor }}>
               框線樣式
             </div>
           </div>
@@ -808,15 +954,21 @@ function ColorDesigner() {
         <div>
           <label className="block text-sm font-medium text-fg mb-2">主色調 (背景顏色)</label>
           <div className="flex gap-3 items-center">
-            <input type="color" value={primaryColor} onChange={e=>setPrimaryColor(e.target.value)} className="w-10 h-10 rounded-lg border border-border cursor-pointer" />
-            <input type="text" value={primaryColor} onChange={e=>setPrimaryColor(e.target.value)} className="flex-1 form-control" />
+            <input type="color" value={primaryColor} onChange={e=>{ setPrimaryErr(null); setPrimaryColor(e.target.value) }} className="w-10 h-10 rounded-lg cursor-pointer" />
+            <div className="flex-1">
+              <input type="text" value={primaryColor} onChange={e=>onPrimaryText(e.target.value)} onBlur={e=>onPrimaryText(e.target.value)} className="form-control" />
+              {primaryErr && <div className="mt-1 text-xs text-rose-600">{primaryErr}</div>}
+            </div>
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-fg mb-2">輔助色 (框線顏色)</label>
           <div className="flex gap-3 items-center">
-            <input type="color" value={secondaryColor} onChange={e=>setSecondaryColor(e.target.value)} className="w-10 h-10 rounded-lg border border-border cursor-pointer" />
-            <input type="text" value={secondaryColor} onChange={e=>setSecondaryColor(e.target.value)} className="flex-1 form-control" />
+            <input type="color" value={secondaryColor} onChange={e=>{ setSecondaryErr(null); setSecondaryColor(e.target.value) }} className="w-10 h-10 rounded-lg cursor-pointer" />
+            <div className="flex-1">
+              <input type="text" value={secondaryColor} onChange={e=>onSecondaryText(e.target.value)} onBlur={e=>onSecondaryText(e.target.value)} className="form-control" />
+              {secondaryErr && <div className="mt-1 text-xs text-rose-600">{secondaryErr}</div>}
+            </div>
           </div>
         </div>
         <div>
@@ -850,9 +1002,12 @@ function ColorDesigner() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={submitTheme} disabled={busy || !themeName.trim()} className="px-4 py-2 rounded-xl border dual-btn disabled:opacity-50">
           {busy ? '提交中...' : '提交配色方案'}
+        </button>
+        <button type="button" onClick={applyToTheme} className="px-4 py-2 rounded-xl border hover:bg-surface/70">
+          一鍵套用到主題
         </button>
         {notice && <span className="text-sm text-muted">{notice}</span>}
       </div>
@@ -878,7 +1033,14 @@ function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode;
       const data = await r.json().catch(()=> ({}))
       if (r.ok) onUpdated(data)
       location.assign('/')
-      setTimeout(() => { if (location.pathname !== '/') location.assign('/') }, 800)
+      setTimeout(() => { 
+        try {
+          const pathname = location?.pathname
+          if (pathname && pathname !== '/') location.assign('/')
+        } catch (error) {
+          console.warn('[AdminModePanel] Failed to check pathname:', error)
+        }
+      }, 800)
     } finally {
       setSaving(false)
     }

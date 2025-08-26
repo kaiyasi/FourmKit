@@ -1,13 +1,33 @@
 import { clearSession } from "@/utils/auth";
 import { messageFrom } from "@/utils/errors";
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
+const j = (u: string) => API_BASE ? API_BASE.replace(/\/?$/, '') + (u.startsWith('/')?u:`/${u}`) : u;
+
+function getClientId(): string {
+  let id = localStorage.getItem('client_id');
+  if (!id) {
+    id = 'c_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+    try { localStorage.setItem('client_id', id); } catch {}
+  }
+  return id;
+}
+
+function getSelectedSchoolSlug(): string | null {
+  try {
+    const v = localStorage.getItem('selected_school_slug');
+    return v && v.trim() ? v.trim() : null;
+  } catch { return null; }
+}
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const doFetch = async (accessToken?: string) =>
-    fetch(path, {
+  fetch(j(path), {
       ...init,
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers || {}),
+        'X-Client-Id': getClientId(),
+        ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
     });
@@ -24,7 +44,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       const code = body?.error?.code || body?.code;
       const refreshToken = localStorage.getItem("refresh_token") || undefined;
       if (refreshToken && (code === "JWT_EXPIRED" || code === "JWT_INVALID" || code === "JWT_MISSING")) {
-        const r = await fetch("/api/auth/refresh", {
+  const r = await fetch(j("/api/auth/refresh"), {
           method: "POST",
           headers: { Authorization: `Bearer ${refreshToken}` },
         });
@@ -38,7 +58,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         } else {
           // refresh 也失敗 → 清 session 並導回登入
           try { clearSession(); } catch {}
-          if (!location.pathname.startsWith("/auth")) location.href = "/auth";
+          const pathname = location?.pathname;
+          if (pathname && !pathname.startsWith("/auth")) location.href = "/auth";
         }
       }
     } catch {
@@ -55,7 +76,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         const code = j?.error?.code || j?.code;
         if (code === "JWT_INVALID" || code === "JWT_MISSING") {
           try { clearSession(); } catch {}
-          if (!location.pathname.startsWith("/auth")) location.href = "/auth";
+          const pathname = location?.pathname;
+          if (pathname && !pathname.startsWith("/auth")) location.href = "/auth";
         }
       }
       const msg = messageFrom(res.status, j, txt || `HTTP ${res.status}`);
@@ -88,12 +110,12 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const AuthAPI = {
   login: (payload: { username: string; password: string }) =>
-    api<{ access_token: string; refresh_token: string; role: string; school_id: number | null }>("/api/auth/login", {
+  api<{ access_token: string; refresh_token: string; role: string; school_id: number | null }>(j("/api/auth/login"), {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   register: (payload: { username: string; email: string; password: string; school_slug?: string }) =>
-    api<{ msg: string }>("/api/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+  api<{ msg: string }>(j("/api/auth/register"), { method: "POST", body: JSON.stringify(payload) }),
 };
 
 export const ModeAPI = {
@@ -101,24 +123,46 @@ export const ModeAPI = {
     mode: "normal" | "test" | "maintenance" | "development"; 
     maintenance_message?: string; 
     maintenance_until?: string;
+    login_mode?: "single" | "admin_only" | "open";
     enforce_min_post_chars?: boolean;
     min_post_chars?: number;
-  }>("/api/mode"),
+  }>(j("/api/mode")),
   set: (
-    mode: "normal" | "test" | "maintenance" | "development",
+    mode?: "normal" | "test" | "maintenance" | "development",
     maintenanceMessage?: string,
     maintenanceUntil?: string,
+    loginMode?: "single" | "admin_only" | "open",
     extra?: { enforce_min_post_chars?: boolean; min_post_chars?: number }
   ) =>
-    api<{ ok: boolean; mode: "normal" | "test" | "maintenance" | "development"; config: any }>("/api/mode", {
+  api<{ ok: boolean; mode: "normal" | "test" | "maintenance" | "development"; config: any }>(j("/api/mode"), {
       method: "POST",
       body: JSON.stringify({ 
-        mode, 
+        ...(mode ? { mode } : {}),
         ...(maintenanceMessage && maintenanceMessage.trim() ? { notice: maintenanceMessage.trim() } : {}), 
         ...(maintenanceUntil && maintenanceUntil.trim() ? { eta: maintenanceUntil.trim() } : {}),
+        ...(loginMode ? { login_mode: loginMode } : {}),
         ...(extra || {})
       }),
     }),
+};
+
+export const ContentRulesAPI = {
+  get: () => api<{ enforce_min_post_chars: boolean; min_post_chars: number }>(j("/api/settings/content_rules")),
+  set: (payload: { enforce_min_post_chars?: boolean; min_post_chars?: number }) =>
+    api<{ ok: boolean; config: any }>(j("/api/settings/content_rules"), { method: 'POST', body: JSON.stringify(payload) }),
+};
+
+export const AccountAPI = {
+  changePassword: (payload: { current_password?: string; new_password: string }) =>
+    api<{ ok: boolean }>(j("/api/auth/change_password"), { method: "POST", body: JSON.stringify(payload) }),
+  profile: () => api<{ id:number; username:string; email:string; role:string; school?: {id:number;slug:string;name:string}|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean }>(j("/api/account/profile")),
+  updateProfile: (payload: { username: string }) => api<{ ok: boolean }>(j("/api/account/profile"), { method: 'PUT', body: JSON.stringify(payload) }),
+  uploadAvatar: async (file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+  const r = await fetch(j('/api/account/avatar'), { method:'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')||''}` }, body: fd })
+    if (!r.ok) throw new Error(await r.text())
+    return r.json() as Promise<{ ok: boolean; path: string }>
+  }
 };
 
 export async function createPost(token: string, payload: {title: string; content: string; files: File[]}) {
@@ -126,7 +170,7 @@ export async function createPost(token: string, payload: {title: string; content
   fd.set("title", payload.title);
   fd.set("content", payload.content);
   payload.files.forEach(f => fd.append("files", f));
-  const r = await fetch("/api/posts/with-media", {
+  const r = await fetch(j("/api/posts/with-media"), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: fd

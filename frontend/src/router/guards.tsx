@@ -1,14 +1,16 @@
 import { Navigate } from "react-router-dom";
-import { isLoggedIn, getRole, Role } from "@/utils/auth";
+import { useAuth } from "@/contexts/AuthContext";
+import { getRole, Role } from "@/utils/auth";
 
-export function RequireAuth({ children }: { children: JSX.Element }) {
-  if (!isLoggedIn()) return <Navigate to="/auth" replace />;
-  return children;
+export function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isLoggedIn } = useAuth();
+  if (!isLoggedIn) return <Navigate to="/auth" replace />;
+  return <>{children}</>;
 }
 
-export function RequireRoles({ allow, children }: { allow: Role[]; children: JSX.Element }) {
-  if (!isLoggedIn()) return <Navigate to="/auth" replace />;
-  const role = getRole(); 
-  if (!allow.includes(role)) return <Navigate to="/403" replace />;
-  return children;
+export function RequireRoles({ children, allow }: { children: React.ReactNode; allow: Role[] }) {
+  const { isLoggedIn, role } = useAuth();
+  if (!isLoggedIn) return <Navigate to="/auth" replace />;
+  if (!allow.includes(role as Role)) return <Navigate to="/403" replace />;
+  return <>{children}</>;
 }

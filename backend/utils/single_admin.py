@@ -38,17 +38,14 @@ def ensure_single_admin() -> None:
     override_pwd = configured_password()
 
     with get_session() as s:  # type: Session
-        # 刪除所有不是目標帳號的使用者
-        s.query(User).filter(User.username != username).delete(synchronize_session=False)
-
+        # 不再刪除其他使用者，避免觸發外鍵約束
+        # 僅確保指定帳號存在且為最高權限，並在提供密碼時同步更新
         u = s.query(User).filter_by(username=username).first()
         if not u:
-            # 建立帳號，若沒有密碼設定則使用臨時弱密碼（並提示在日誌中更改）
             temp_pwd = override_pwd or "admin123"
             u = User(username=username, password_hash=generate_password_hash(temp_pwd), role="dev_admin")
             s.add(u)
         else:
-            # 確保角色為最高權限
             u.role = "dev_admin"
             if override_pwd:
                 u.password_hash = generate_password_hash(override_pwd)

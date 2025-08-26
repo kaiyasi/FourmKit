@@ -1,16 +1,22 @@
 from flask import Blueprint, request, jsonify, abort
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, and_
+import sqlalchemy as sa
 from utils.db import get_session
 from utils.auth import get_effective_user_id
 from utils.ratelimit import get_client_ip
-from models import Post, Media, User
+from models import Post, Media, User, School, SchoolSetting
 from utils.upload_validation import is_allowed, sniff_kind
-from utils.sanitize import clean_html
+from utils.sanitize import sanitize_content
 from utils.config_handler import load_config
 from utils.ratelimit import rate_limit
-import uuid, os, datetime
+from utils.school_permissions import can_post_to_school, filter_posts_by_permissions
+from utils.admin_events import log_user_action
+import uuid, os
+from datetime import datetime, timezone
+import re
+import hashlib
 
 bp = Blueprint("posts", __name__, url_prefix="/api/posts")
 
@@ -20,38 +26,432 @@ def _wrap_ok(data, http: int = 200):
 def _wrap_err(code: str, message: str, http: int = 400):
     return jsonify({"ok": False, "error": {"code": code, "message": message}}), http
 
+def _get_author_display_name(user: User, client_id: str = None) -> str:
+    """根據用戶狀態返回顯示名稱
+    規則：
+    - 系統預設：系統訊息（username 以 demo_/system_ 開頭）
+    - 登入用戶：顯示帳號名稱（username）
+    - 未登入/匿名：用裝置碼產生 6 位編碼；若無 client_id，回傳 "匿名"
+    """
+    try:
+        username = (getattr(user, 'username', '') or '').strip()
+
+        # 系統訊息
+        if username.startswith('demo_') or username.startswith('system_') or username == 'system':
+            return '系統訊息'
+
+        # 正常登入帳號（非匿名）
+        if username and not username.startswith('anon_'):
+            return username
+
+        # 匿名/未登入 → 由 client_id 轉 6 碼
+        base = (client_id or '').strip()
+        if base:
+            h = hashlib.md5(base.encode('utf-8')).hexdigest().upper()
+            chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+            code = ''.join(chars[int(h[i*2:i*2+2], 16) % len(chars)] for i in range(6))
+            return code
+        return '匿名'
+    except Exception:
+        return '匿名'
+
+def _markdown_to_html(md: str) -> str:
+    """將Markdown轉換為HTML"""
+    if not md:
+        return ""
+    
+    # 檢測是否已經是HTML格式（包含HTML標籤）
+    if re.search(r'<[^>]+>', md):
+        # 如果已經是HTML，直接返回，但進行安全清理
+        from utils.sanitize import clean_html
+        return clean_html(md)
+    
+    # 先轉義HTML特殊字符
+    def escape_html(s: str) -> str:
+        return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+    
+    # 處理程式碼區塊（先保存）
+    code_blocks = []
+    def save_code_block(match):
+        code_blocks.append(match.group(1))
+        return f"__CODE_BLOCK_{len(code_blocks)-1}__"
+    
+    md = re.sub(r'```([\s\S]*?)```', save_code_block, md)
+    
+    # 轉義HTML
+    md = escape_html(md)
+    
+    # 處理標題（在段落處理之前）
+    md = re.sub(r'^#{6}\s*(.+)$', r'<h6>\1</h6>', md, flags=re.MULTILINE)
+    md = re.sub(r'^#{5}\s*(.+)$', r'<h5>\1</h5>', md, flags=re.MULTILINE)
+    md = re.sub(r'^#{4}\s*(.+)$', r'<h4>\1</h4>', md, flags=re.MULTILINE)
+    md = re.sub(r'^#{3}\s*(.+)$', r'<h3>\1</h3>', md, flags=re.MULTILINE)
+    md = re.sub(r'^#{2}\s*(.+)$', r'<h2>\1</h2>', md, flags=re.MULTILINE)
+    md = re.sub(r'^#{1}\s*(.+)$', r'<h1>\1</h1>', md, flags=re.MULTILINE)
+    
+    # 處理粗體和斜體
+    md = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', md)
+    md = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', md)
+    
+    # 處理行內程式碼
+    md = re.sub(r'`([^`]+)`', r'<code>\1</code>', md)
+    
+    # 處理連結
+    md = re.sub(r'\[([^\]]+)\]\((https?://[^)\s]+)\)', r'<a href="\2" target="_blank" rel="noreferrer">\1</a>', md)
+    
+    # 處理清單和段落
+    lines = md.split('\n')
+    result_lines = []
+    in_list = False
+    in_quote = False
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if in_list:
+                result_lines.append('</ul>')
+                in_list = False
+            if in_quote:
+                result_lines.append('</blockquote>')
+                in_quote = False
+            continue
+            
+        # 處理引用區段 (> 開頭)
+        if line.startswith('> '):
+            if not in_quote:
+                result_lines.append('<blockquote>')
+                in_quote = True
+            content = line[2:]  # 移除 '> '
+            result_lines.append(f'<p>{content}</p>')
+            continue
+        elif in_quote:
+            result_lines.append('</blockquote>')
+            in_quote = False
+            
+        # 處理橫隔線 (---)
+        if line == '---':
+            if in_list:
+                result_lines.append('</ul>')
+                in_list = False
+            result_lines.append('<hr>')
+            continue
+            
+        if re.match(r'^[-*]\s+', line):
+            if not in_list:
+                result_lines.append('<ul>')
+                in_list = True
+            # 移除列表標記並包裝內容
+            content = re.sub(r'^[-*]\s+', '', line)
+            result_lines.append(f'<li>{content}</li>')
+        else:
+            if in_list:
+                result_lines.append('</ul>')
+                in_list = False
+            # 檢查是否已經是標題
+            if line.startswith('<h'):
+                result_lines.append(line)
+            else:
+                result_lines.append(f'<p>{line}</p>')
+    
+    if in_list:
+        result_lines.append('</ul>')
+    if in_quote:
+        result_lines.append('</blockquote>')
+    
+    html = '\n'.join(result_lines)
+    
+    # 恢復程式碼區塊
+    def restore_code_block(match):
+        idx = int(match.group(1))
+        code = code_blocks[idx]
+        return f'<pre><code>{escape_html(code)}</code></pre>'
+    
+    html = re.sub(r'__CODE_BLOCK_(\d+)__', restore_code_block, html)
+    
+    return html
+
+def _extract_school_slug(default_slug: str | None = None) -> str | None:
+    """彈性取得 school_slug：JSON/form/header/query 多來源容錯。
+    順序：
+    1) 呼叫端傳入的預設值（JSON 或 form）
+    2) Header：X-School-Slug / X-Target-School / X-Act-As-School（前端切換器可用）
+    3) Query 參數：?school_slug= 或 ?school=
+    4) 最後再嘗試一次 form 讀取（multipart 情境）
+    """
+    slug = (default_slug or '').strip() if default_slug else ''
+    if not slug:
+        for h in ("X-School-Slug", "X-Target-School", "X-Act-As-School"):
+            v = (request.headers.get(h) or '').strip()
+            if v:
+                slug = v
+                break
+    if not slug:
+        for k in ("school_slug", "school"):
+            v = (request.args.get(k) or '').strip()
+            if v:
+                slug = v
+                break
+    if not slug:
+        try:
+            for k in ("school_slug", "school"):
+                v = (request.form.get(k) or '').strip()
+                if v:
+                    slug = v
+                    break
+        except Exception:
+            pass
+    return slug or None
+
+def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bool, int]:
+    """載入學校層級的內容規則（若無則用全域設定）。
+    規則鍵：enforce_min_post_chars(bool), min_post_chars(int)
+    支援 SchoolSetting.data 直掛鍵或 data.content_rules 內層。
+    """
+    cfg = load_config() or {}
+    enforce = bool(cfg.get("enforce_min_post_chars", True))
+    try:
+        min_chars = int(cfg.get("min_post_chars", 15))
+    except Exception:
+        min_chars = 15
+    if not school_slug:
+        # 跨校內容：優先 cross 學校設定，其次全域 cross 設定，再退回全域
+        try:
+            cross = db.query(School).filter(School.slug == 'cross').first()
+            if cross:
+                row = db.query(SchoolSetting).filter(SchoolSetting.school_id == cross.id).first()
+                if row and (row.data or '').strip():
+                    import json
+                    data = json.loads(row.data)
+                    cr = data.get('content_rules', data) if isinstance(data, dict) else {}
+                    if isinstance(cr, dict):
+                        if 'enforce_min_post_chars' in cr:
+                            enforce = bool(cr.get('enforce_min_post_chars'))
+                        if 'min_post_chars' in cr:
+                            try:
+                                v2 = int(cr.get('min_post_chars') or 0)
+                                min_chars = max(0, v2)
+                            except Exception:
+                                pass
+                    return enforce, min_chars
+        except Exception:
+            pass
+        # 全域 cross 設定（config）
+        try:
+            cr = cfg.get('cross_content_rules') if isinstance(cfg, dict) else None
+            if isinstance(cr, dict):
+                if 'enforce_min_post_chars' in cr:
+                    enforce = bool(cr.get('enforce_min_post_chars'))
+                if 'min_post_chars' in cr:
+                    try:
+                        v2 = int(cr.get('min_post_chars') or 0)
+                        min_chars = max(0, v2)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return enforce, min_chars
+    try:
+        sch = db.query(School).filter(School.slug == school_slug).first()
+        if not sch:
+            return enforce, min_chars
+        row = db.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
+        if not row or not (row.data or '').strip():
+            # 該校無設定 → 嘗試 cross 學校設定與全域 cross 設定
+            try:
+                cross = db.query(School).filter(School.slug == 'cross').first()
+                if cross:
+                    row2 = db.query(SchoolSetting).filter(SchoolSetting.school_id == cross.id).first()
+                    if row2 and (row2.data or '').strip():
+                        import json
+                        data2 = json.loads(row2.data)
+                        cr2 = data2.get('content_rules', data2) if isinstance(data2, dict) else {}
+                        if isinstance(cr2, dict):
+                            if 'enforce_min_post_chars' in cr2:
+                                enforce = bool(cr2.get('enforce_min_post_chars'))
+                            if 'min_post_chars' in cr2:
+                                try:
+                                    v3 = int(cr2.get('min_post_chars') or 0)
+                                    min_chars = max(0, v3)
+                                except Exception:
+                                    pass
+                            return enforce, min_chars
+            except Exception:
+                pass
+            try:
+                crg = cfg.get('cross_content_rules') if isinstance(cfg, dict) else None
+                if isinstance(crg, dict):
+                    if 'enforce_min_post_chars' in crg:
+                        enforce = bool(crg.get('enforce_min_post_chars'))
+                    if 'min_post_chars' in crg:
+                        try:
+                            v4 = int(crg.get('min_post_chars') or 0)
+                            min_chars = max(0, v4)
+                        except Exception:
+                            pass
+                    return enforce, min_chars
+            except Exception:
+                pass
+            return enforce, min_chars
+        import json
+        data = json.loads(row.data)
+        # 允許兩種路徑：直掛或內層 content_rules
+        cr = data
+        if isinstance(data, dict) and isinstance(data.get('content_rules'), dict):
+            cr = data.get('content_rules')
+        if isinstance(cr, dict):
+            if 'enforce_min_post_chars' in cr:
+                enforce = bool(cr.get('enforce_min_post_chars'))
+            if 'min_post_chars' in cr:
+                try:
+                    v2 = int(cr.get('min_post_chars') or 0)
+                    min_chars = max(0, v2)
+                except Exception:
+                    pass
+        return enforce, min_chars
+    except Exception:
+        return enforce, min_chars
+
 @bp.get("/list")
 def list_posts():
     limit = max(min(int(request.args.get("limit", 20)), 100), 1)
+    school_slug = (request.args.get("school") or "").strip() or None
+    show_all_schools = request.args.get("all_schools", "").strip().lower() in {'1', 'true', 'yes'}
+    
     with get_session() as s:
-        q = s.query(Post).filter(Post.status=="approved").order_by(Post.id.desc()).limit(limit)
+        # 基礎查詢
+        q = s.query(Post).filter(
+            and_(
+                Post.status=="approved",
+                Post.is_deleted==False  # 排除已刪除的貼文
+            )
+        )
+        
+        # 檢查用戶權限（如果已登入）
+        try:
+            from utils.auth import get_effective_user_id
+            uid = get_effective_user_id()
+            if uid:
+                user = s.query(User).get(uid)
+                if user:
+                    # 根據用戶權限過濾貼文
+                    q = filter_posts_by_permissions(s, user, q)
+        except Exception:
+            # 如果權限檢查失敗，繼續執行但不顯示任何內容
+            q = q.filter(sa.text("1=0"))
+        
+        # 如果指定了學校，則篩選該學校的貼文
+        if school_slug:
+            school = s.query(School).filter(School.slug==school_slug).first()
+            if school:
+                q = q.filter(Post.school_id==school.id)
+            else:
+                q = q.filter(sa.text("1=0"))  # no results for unknown school
+        
+        # 如果沒有指定學校且不是顯示所有學校，則只顯示跨校貼文（school_id 為 null）
+        elif not show_all_schools:
+            q = q.filter(Post.school_id.is_(None))
+        
+        q = q.order_by(Post.id.desc()).limit(limit)
         rows = q.all()
         items = []
-        for p in rows:
-            # 不暴露真實帳號；若非 anon_ 使用者，標示為「帳號」；匿名則留空字串
-            label = ""
+        post_ids = [p.id for p in rows]
+        cover_map: dict[int, str] = {}
+        count_map: dict[int, int] = {}
+        if post_ids:
             try:
-                u = s.query(User).get(p.author_id)
-                if u and not (u.username or "").startswith("anon_"):
-                    label = "帳號"
+                counts = (
+                    s.query(Media.post_id, func.count(Media.id))
+                     .filter(
+                         and_(
+                             Media.post_id.in_(post_ids), 
+                             Media.status=="approved",
+                             Media.is_deleted==False  # 排除已刪除的媒體
+                         )
+                     )
+                     .group_by(Media.post_id)
+                     .all()
+                )
+                count_map = {pid: int(c) for pid, c in counts}
+                medias = (
+                    s.query(Media)
+                     .filter(
+                         and_(
+                             Media.post_id.in_(post_ids), 
+                             Media.status=="approved",
+                             Media.is_deleted==False  # 排除已刪除的媒體
+                         )
+                     )
+                     .order_by(Media.post_id.asc(), Media.id.asc())
+                     .all()
+                )
+                seen: set[int] = set()
+                from utils.upload_utils import resolve_or_publish_public_media
+                for m in medias:
+                    if m.post_id in seen:
+                        continue
+                    seen.add(m.post_id)
+                    pth = resolve_or_publish_public_media(m.path or '', int(m.id), getattr(m,'mime_type',None))
+                    if pth and pth.startswith('public/'):
+                        cover_map[m.post_id] = pth
             except Exception:
                 pass
+        for p in rows:
+            # 顯示作者名稱：
+            # - 系統帳號 → 「系統訊息」
+            # - 登入用戶 → username
+            # - 匿名/未登入 → 依貼文的 client_id 產生 6 碼代號（與查看者無關）
+            try:
+                u = s.query(User).get(p.author_id)
+                label = _get_author_display_name(u, getattr(p, 'client_id', None))
+            except Exception:
+                label = "未知"
+            
+            # 獲取學校資訊
+            school_info = None
+            if p.school_id:
+                school = s.query(School).get(p.school_id)
+                if school:
+                    school_info = {
+                        'id': school.id,
+                        'slug': school.slug,
+                        'name': school.name
+                    }
+            
+            cov_path = (cover_map.get(p.id) or None)
+            cov_url = (f"/uploads/{cov_path}" if isinstance(cov_path, str) and cov_path else None)
             items.append({
                 "id": p.id,
-                "content": p.content,
+                "content": _markdown_to_html(p.content),
                 "author_hash": label,
+                "media_count": int(count_map.get(p.id, 0)),
+                "cover_path": cov_path,
+                "cover_url": cov_url,
+                "school_id": p.school_id,
+                "school": school_info,
             })
         return jsonify({"items": items})
 
 @bp.get("")
 def list_posts_compat():
-    """Compatibility: GET /api/posts?page=&per_page=
+    """
     Returns wrapper { ok, data: { items, page, per_page, total } }
     """
     page = max(int(request.args.get("page", 1) or 1), 1)
     per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 100)
+    school_slug = (request.args.get("school") or "").strip() or None
     with get_session() as s:
-        base = s.query(Post).filter(Post.status == "approved")
+        base = s.query(Post).filter(
+            and_(
+                Post.status == "approved",
+                Post.is_deleted == False  # 排除已刪除的貼文
+            )
+        )
+        if school_slug:
+            school = s.query(School).filter(School.slug==school_slug).first()
+            if school:
+                base = base.filter(Post.school_id==school.id)
+            else:
+                base = base.filter(sa.text("1=0"))
         total = base.count()
         rows = (
             base.order_by(Post.created_at.desc(), Post.id.desc())
@@ -60,19 +460,67 @@ def list_posts_compat():
                 .all()
         )
         items = []
-        for p in rows:
-            label = ""
+        # 依貼文批次查詢已核准媒體數與封面（以最早核准的媒體作為封面）
+        post_ids = [p.id for p in rows]
+        cover_map: dict[int, str] = {}
+        count_map: dict[int, int] = {}
+        if post_ids:
             try:
-                u = s.query(User).get(p.author_id)
-                if u and not (u.username or "").startswith("anon_"):
-                    label = "帳號"
+                # 計數
+                counts = (
+                    s.query(Media.post_id, func.count(Media.id))
+                     .filter(
+                         and_(
+                             Media.post_id.in_(post_ids), 
+                             Media.status=="approved",
+                             Media.is_deleted==False  # 排除已刪除的媒體
+                         )
+                     )
+                     .group_by(Media.post_id)
+                     .all()
+                )
+                count_map = {pid: int(c) for pid, c in counts}
+                # 封面：取每個 post_id 最小 id 的已核准媒體
+                medias = (
+                    s.query(Media)
+                     .filter(
+                         and_(
+                             Media.post_id.in_(post_ids), 
+                             Media.status=="approved",
+                             Media.is_deleted==False  # 排除已刪除的媒體
+                         )
+                     )
+                     .order_by(Media.post_id.asc(), Media.id.asc())
+                     .all()
+                )
+                seen: set[int] = set()
+                from utils.upload_utils import resolve_or_publish_public_media
+                for m in medias:
+                    if m.post_id in seen:
+                        continue
+                    seen.add(m.post_id)
+                    pth = resolve_or_publish_public_media(m.path or '', int(m.id), getattr(m,'mime_type',None))
+                    if pth and pth.startswith('public/'):
+                        cover_map[m.post_id] = pth
             except Exception:
                 pass
+        for p in rows:
+            # 舊相容路由也改為一致顯示規則
+            try:
+                u = s.query(User).get(p.author_id)
+                label = _get_author_display_name(u, getattr(p, 'client_id', None))
+            except Exception:
+                label = "未知"
+            cov_path = (cover_map.get(p.id) or None)
+            cov_url = (f"/uploads/{cov_path}" if isinstance(cov_path, str) and cov_path else None)
             items.append({
                 "id": p.id,
-                "content": p.content,
+                "content": _markdown_to_html(p.content),
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
+                "media_count": int(count_map.get(p.id, 0)),
+                "cover_path": cov_path,
+                "cover_url": cov_url,
             })
         return _wrap_ok({
             "items": items,
@@ -85,45 +533,137 @@ def list_posts_compat():
 def get_post(pid: int):
     """Fetch a single approved post by id (public)."""
     with get_session() as s:
-        p = s.query(Post).filter(Post.id == pid, Post.status == "approved").first()
+        p = s.query(Post).filter(
+            and_(
+                Post.id == pid, 
+                Post.status == "approved",
+                Post.is_deleted == False  # 排除已刪除的貼文
+            )
+        ).first()
         if not p:
             return _wrap_err("NOT_FOUND", "貼文不存在或尚未公開", 404)
-        label = ""
         try:
             u = s.query(User).get(p.author_id)
-            if u and not (u.username or "").startswith("anon_"):
-                label = "帳號"
+            label = _get_author_display_name(u, getattr(p, 'client_id', None))
         except Exception:
-            pass
+            label = "未知"
+        # 取已核准媒體（僅 public 路徑）
+        media_items = []
+        try:
+            medias = (
+                s.query(Media)
+                 .filter(
+                     and_(
+                         Media.post_id==p.id, 
+                         Media.status=="approved",
+                         Media.is_deleted==False  # 排除已刪除的媒體
+                     )
+                 )
+                 .order_by(Media.id.asc())
+                 .all()
+            )
+            from utils.upload_utils import resolve_or_publish_public_media
+            for m in medias:
+                path = resolve_or_publish_public_media(m.path or '', int(m.id), getattr(m,'mime_type',None)) or ''
+                if not path.startswith('public/'):
+                    continue
+                # 推測類型（前端可再判斷）
+                ext = (path.rsplit(".",1)[-1] or "").lower()
+                kind = "image" if ext in {"jpg","jpeg","png","webp","gif"} else ("video" if ext in {"mp4","webm","mov"} else "other")
+                media_items.append({
+                    "id": m.id,
+                    "path": path,
+                    "url": f"/uploads/{path}",
+                    "kind": kind,
+                })
+        except Exception:
+            media_items = []
         return _wrap_ok({
             "id": p.id,
-            "content": p.content,
+            "content": _markdown_to_html(p.content),
             "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
             "author_hash": label,
+            "school_id": (p.school_id or None),
+            "media": media_items,
         })
 
 @bp.post("/create")
 @rate_limit(calls=5, per_seconds=60, by='client')
 def create_post():
+    """建立發文（舊路由）。
+    與 /api/posts 相同規則：內容走 clean_html，套用 min_post_chars；有附件請改用 /api/posts/with-media。
+    """
     uid = get_effective_user_id()
     if uid is None:
         abort(401)
+    
     data = request.get_json() or {}
-    content = (data.get("content") or "").strip()
-    if not content:
-        abort(422)
+    content = sanitize_content((data.get("content") or "").strip(), "markdown")
+    school_slug = _extract_school_slug((data.get("school_slug") or "").strip())
+    
+    # 內容最小字數審核
+    # 依學校（若有）載入內容規則覆寫
+    from utils.db import get_session as _gs
+    with _gs() as _s:
+        enforce_min, min_chars = _load_school_content_rules(_s, school_slug)
+    if enforce_min:
+        if len(content) < max(1, min_chars):
+            return _wrap_err("CONTENT_TOO_SHORT", f"內容太短（需 ≥ {max(1, min_chars)} 字）", 422)
+    else:
+        if len(content) < 1:
+            return _wrap_err("CONTENT_REQUIRED", "內容不可為空", 422)
+    
     max_len = int(os.getenv("POST_MAX_CHARS", "5000"))
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
+    
     with get_session() as s:
-        p = Post(author_id=uid, content=content, status="pending")
+        # 獲取用戶信息
+        user = s.query(User).get(uid)
+        if not user:
+            return _wrap_err("USER_NOT_FOUND", "用戶不存在", 404)
+        
+        # 確定目標學校ID
+        target_school_id = None
+        if school_slug:
+            sch = s.query(School).filter(School.slug==school_slug).first()
+            if sch:
+                target_school_id = sch.id
+            else:
+                return _wrap_err("SCHOOL_NOT_FOUND", "指定的學校不存在", 404)
+        
+        # 檢查用戶是否有權限在該學校發文
+        if not can_post_to_school(user, target_school_id):
+            return _wrap_err("PERMISSION_DENIED", "您沒有權限在該學校發文", 403)
+        
+        p = Post(author_id=uid, content=content, status="pending", school_id=target_school_id)
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
         except Exception:
             pass
-        s.add(p); s.flush(); s.refresh(p)
+        
+        s.add(p)
+        s.flush()
+        s.refresh(p)
         s.commit()
+        
+        # 記錄貼文發布事件
+        try:
+            from utils.admin_events import log_user_action
+            u = s.query(User).filter(User.id == uid).first()
+            if u:
+                log_user_action(
+                    event_type="post_created",
+                    actor_id=u.id,
+                    actor_name=u.username,
+                    action="發布貼文",
+                    target_id=p.id,
+                    target_type="貼文"
+                )
+        except Exception:
+            pass  # 事件記錄失敗不影響貼文發布
+        
         return jsonify({"id": p.id, "status": p.status})
 
 @bp.post("/upload")
@@ -135,6 +675,7 @@ def upload_media():
     # 接 multipart/form-data: file, post_id
     f = request.files.get("file")
     post_id = int(request.form.get("post_id", "0"))
+    school_slug = _extract_school_slug((request.form.get("school_slug") or "").strip())
     if not f or not is_allowed(f.filename): abort(422)
     # 大小與嗅探
     max_size_mb = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
@@ -166,6 +707,13 @@ def upload_media():
             m.ip = get_client_ip()
         except Exception:
             pass
+        try:
+            if school_slug:
+                sch = s.query(School).filter(School.slug==school_slug).first()
+                if sch:
+                    m.school_id = sch.id
+        except Exception:
+            pass
         s.add(m); s.flush(); s.commit()
         return jsonify({"media_id": m.id, "path": m.path, "status": m.status})
 
@@ -179,14 +727,13 @@ def create_post_compat():
     if uid is None:
         abort(401)
     data = request.get_json() or {}
-    content = clean_html((data.get("content") or "").strip())
+    content = sanitize_content((data.get("content") or "").strip(), "markdown")
+    school_slug = _extract_school_slug((data.get("school_slug") or "").strip())
     # 內容最小字數審核（僅限純文字發文；附檔案另一路由）
-    cfg = load_config() or {}
-    if bool(cfg.get("enforce_min_post_chars", True)):
-        try:
-            min_chars = int(cfg.get("min_post_chars", 15))
-        except Exception:
-            min_chars = 15
+    from utils.db import get_session as _gs
+    with _gs() as _s:
+        enforce_min, min_chars = _load_school_content_rules(_s, school_slug)
+    if enforce_min:
         if len(content) < max(1, min_chars):
             return _wrap_err("CONTENT_TOO_SHORT", f"內容太短（需 ≥ {max(1, min_chars)} 字）", 422)
     else:
@@ -202,16 +749,36 @@ def create_post_compat():
             p.ip = get_client_ip()
         except Exception:
             pass
-        s.add(p); s.flush(); s.refresh(p)
-        s.commit()
-        # 標示作者（不洩露身分）：若非匿名帳號則以「帳號」表示
-        author_label = ""
         try:
-            u = s.query(User).get(p.author_id)
-            if u and not (u.username or "").startswith("anon_"):
-                author_label = "帳號"
+            if school_slug:
+                sch = s.query(School).filter(School.slug==school_slug).first()
+                if sch:
+                    p.school_id = sch.id
         except Exception:
             pass
+        s.add(p); s.flush(); s.refresh(p)
+        s.commit()
+        # 記錄事件
+        try:
+            u = s.query(User).get(uid)
+            if u:
+                log_user_action(
+                    event_type="post_created",
+                    actor_id=int(u.id),
+                    actor_name=u.username,
+                    action="提交貼文送審",
+                    target_id=int(p.id),
+                    target_type="post",
+                )
+        except Exception:
+            pass
+        # 使用新的匿名帳號顯示邏輯
+        client_id = request.headers.get("X-Client-Id", "").strip()
+        try:
+            u = s.query(User).get(p.author_id)
+            author_label = _get_author_display_name(u, client_id)
+        except Exception:
+            author_label = "未知"
         payload = {
             "id": p.id,
             "content": p.content,
@@ -231,9 +798,48 @@ def create_post_compat():
         if not origin:
             origin = f"client:{(request.headers.get('X-Client-Id') or '-').strip()}"
         socketio.emit("post_created", {"post": payload, "origin": origin, "client_tx_id": data.get("client_tx_id")})
+        
+        # 發送送審事件
+        socketio.emit("post.pending", {
+            "post_id": p.id,
+            "content": p.content[:100] + "..." if len(p.content) > 100 else p.content,
+            "author": author_label,
+            "client_id": p.client_id,
+            "ip": p.ip,
+            "school_id": p.school_id,
+            "media_count": 0,  # 純文字貼文
+            "ts": datetime.now(timezone.utc).isoformat()
+        })
     except Exception:
         pass
     return _wrap_ok(payload, 201)
+
+@bp.post("/<int:pid>/delete_request")
+def request_delete(pid: int):
+    """提交刪文請求（任何已知貼文皆可提交），需提供 reason。"""
+    from services.delete_service import DeleteService
+    
+    data = request.get_json(silent=True) or {}
+    reason = (data.get('reason') or '').strip()
+    if not reason:
+        return _wrap_err("REASON_REQUIRED", "請提供刪文理由", 400)
+    
+    # 獲取請求者ID（如果已登入）
+    requester_id = None
+    try:
+        requester_id = get_jwt_identity()
+        if requester_id:
+            requester_id = int(requester_id)
+    except Exception:
+        pass
+    
+    with get_session() as s:
+        result = DeleteService.create_delete_request(s, pid, reason, requester_id)
+        
+        if result["success"]:
+            return _wrap_ok({"ok": True, "message": result["message"]}, 201)
+        else:
+            return _wrap_err("CREATE_FAILED", result["error"], 400)
 
 @bp.post("/with-media")
 @rate_limit(calls=3, per_seconds=60, by='client')
@@ -249,7 +855,8 @@ def create_post_with_media_compat():
     if not request.content_type or not request.content_type.startswith("multipart/form-data"):
         return _wrap_err("INVALID_CONTENT_TYPE", "請使用 multipart/form-data", 400)
 
-    content = clean_html((request.form.get("content", "") or "").strip())
+    content = sanitize_content((request.form.get("content", "") or "").strip(), "markdown")
+    school_slug = _extract_school_slug((request.form.get("school_slug") or "").strip())
     # 若有附件上傳，允許空內容（略過最小字數審核）
 
     files = request.files.getlist("files")
@@ -263,76 +870,140 @@ def create_post_with_media_compat():
     max_bytes = max_size_mb * 1024 * 1024
 
     saved_any = False
-    with get_session() as s:
-        p = Post(author_id=uid, content=(content or ""), status="pending")
-        try:
-            p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
-            p.ip = get_client_ip()
-        except Exception:
-            pass
-        s.add(p); s.flush(); s.refresh(p)
-
-        for fs in files:
+    media_records = []  # 暫存媒體記錄
+    
+    # 先處理所有檔案，確保都有效
+    for fs in files:
             fname = (fs.filename or "").strip()
             if not fname:
                 continue
             if not is_allowed(fname):
                 return _wrap_err("UNSUPPORTED_FILE", f"不支援的檔案格式: {fname}", 400)
-            # 大小限制（單檔）
+            
+            # 先處理檔案，不創建資料庫記錄
             try:
-                fs.stream.seek(0, os.SEEK_END)
-                size = fs.stream.tell()
-                fs.stream.seek(0)
-            except Exception:
-                size = None
-            if size is not None and size > max_bytes:
-                return _wrap_err("FILE_TOO_LARGE", f"檔案過大（上限 {max_size_mb} MB）: {fname}", 413)
-            # 內容嗅探
-            try:
-                head = fs.stream.read(64)
-                fs.stream.seek(0)
-                kind = sniff_kind(head)
-                if kind == 'unknown':
-                    return _wrap_err("SUSPECT_FILE", f"檔案內容與格式不符或未知: {fname}", 400)
-            except Exception:
-                return _wrap_err("SUSPECT_FILE", f"檔案檢查失敗: {fname}", 400)
-            ext = os.path.splitext(fname)[1].lower()
-            gid = f"{uuid.uuid4().hex}{ext}"
-            rel = os.path.join(str(p.id), gid)  # by post id
-            pending_path = os.path.join(upload_root, "pending", rel)
-            try:
-                os.makedirs(os.path.dirname(pending_path), exist_ok=True)
-                fs.save(pending_path)
+                from utils.upload_utils import save_media_simple
+                # 先計算檔案大小，避免在 save_media_simple 中消耗檔案流
+                fs.seek(0, os.SEEK_END)
+                file_size = fs.tell()
+                fs.seek(0)
+                
+                # 使用臨時 ID 保存檔案
+                temp_id = len(media_records) + 1
+                upload_result = save_media_simple(fs, temp_id, upload_root)
+                
+                # 暫存媒體資訊
+                media_records.append({
+                    "file_name": fname,
+                    "path": upload_result["path"],
+                    "file_size": file_size,
+                    "file_type": upload_result["file_type"],
+                    "mime_type": upload_result["mime"]
+                })
+                
+                saved_any = True
             except Exception as e:
                 return _wrap_err("FS_WRITE_FAILED", f"無法儲存檔案：{e}", 500)
-            m = Media(post_id=p.id, path=f"pending/{rel}", status="pending")
+
+    if not saved_any:
+        return _wrap_err("NO_VALID_FILES", "沒有有效的檔案", 422)
+
+    # 所有檔案處理成功後，創建貼文和媒體記錄
+    post_id = None
+    post_content = content or ""
+    post_author_id = uid
+    post_client_id = (request.headers.get('X-Client-Id') or '').strip() or None
+    post_ip = get_client_ip()
+    post_school_id = None
+    
+    try:
+        if school_slug:
+            with get_session() as s:
+                sch = s.query(School).filter(School.slug==school_slug).first()
+                if sch:
+                    post_school_id = sch.id
+    except Exception:
+        pass
+    
+    try:
+        with get_session() as s:
+            p = Post(author_id=post_author_id, content=post_content, status="pending")
+            p.client_id = post_client_id
+            p.ip = post_ip
+            p.school_id = post_school_id
+            
+            s.add(p)
+            s.flush()
+            s.refresh(p)
+            post_id = p.id
+
+            # 記錄事件
             try:
-                m.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
-                m.ip = get_client_ip()
+                u = s.query(User).get(post_author_id)
+                if u:
+                    log_user_action(
+                        event_type="post_created",
+                        actor_id=int(u.id),
+                        actor_name=u.username,
+                        action="提交貼文送審（含媒體）",
+                        target_id=int(p.id),
+                        target_type="post",
+                        session=s
+                    )
             except Exception:
                 pass
-            s.add(m)
-            saved_any = True
 
-        if not saved_any:
-            return _wrap_err("NO_VALID_FILES", "沒有有效的檔案", 422)
+            # 創建媒體記錄
+            for i, media_info in enumerate(media_records):
+                m = Media(
+                    post_id=p.id,
+                    status="pending",  # 媒體狀態與貼文同步，當貼文被審核時會一起處理
+                    path=media_info["path"],
+                    file_name=media_info["file_name"],
+                    file_size=media_info["file_size"],
+                    file_type=media_info["file_type"],
+                    mime_type=media_info["mime_type"]
+                )
+                m.client_id = post_client_id
+                m.ip = post_ip
+                m.school_id = post_school_id
+                
+                s.add(m)
+                s.flush()  # 獲取媒體 ID
+                
+                # 移動檔案到正確的 ID
+                from utils.upload_utils import move_media_file
+                temp_id = i + 1
+                if move_media_file(temp_id, m.id, upload_root):
+                    # 更新路徑
+                    m.path = f"media/{m.id}.{media_info['path'].split('.')[-1]}"
 
-        s.commit()
-
-        # 標示作者（不洩露身分）：若非匿名帳號則以「帳號」表示
-        author_label = ""
+            s.commit()
+    except Exception as e:
+        # 如果資料庫操作失敗，清理已保存的檔案
         try:
-            u = s.query(User).get(p.author_id)
-            if u and not (u.username or "").startswith("anon_"):
-                author_label = "帳號"
+            from utils.upload_utils import cleanup_temp_files
+            for i in range(len(media_records)):
+                temp_id = i + 1
+                cleanup_temp_files(temp_id, upload_root)
         except Exception:
             pass
-        payload = {
-            "id": p.id,
-            "content": p.content,
-            "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
-            "author_hash": author_label,
-        }
+        return _wrap_err("DB_OPERATION_FAILED", f"資料庫操作失敗：{e}", 500)
+
+    # 使用新的匿名帳號顯示邏輯
+    client_id = request.headers.get("X-Client-Id", "").strip()
+    try:
+        with get_session() as s:
+            u = s.query(User).get(post_author_id)
+            author_label = _get_author_display_name(u, client_id)
+    except Exception:
+        author_label = "未知"
+    payload = {
+        "id": post_id,
+        "content": post_content,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "author_hash": author_label,
+    }
 
     # best-effort broadcast (optional)
     try:
@@ -347,6 +1018,18 @@ def create_post_with_media_compat():
         if not origin:
             origin = f"client:{(request.headers.get('X-Client-Id') or '-').strip()}"
         socketio.emit("post_created", {"post": payload, "origin": origin, "client_tx_id": request.form.get("client_tx_id")})
+        
+        # 發送送審事件
+        socketio.emit("post.pending", {
+            "post_id": post_id,
+            "content": post_content[:100] + "..." if len(post_content) > 100 else post_content,
+            "author": author_label,
+            "client_id": post_client_id,
+            "ip": post_ip,
+            "school_id": post_school_id,
+            "media_count": len(media_records),
+            "ts": datetime.now(timezone.utc).isoformat()
+        })
     except Exception:
         pass
 

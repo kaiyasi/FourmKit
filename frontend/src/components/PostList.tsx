@@ -5,6 +5,10 @@ import { validatePostList, type PostList as PostListType, type Post } from '../s
 import { dedup } from '../utils/client'
 import ErrorBox from './ui/ErrorBox'
 import { Clock, Loader2, Link as LinkIcon, Check } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import CommentSection from '@/components/CommentSection'
+import AnonymousAccountDisplay from './AnonymousAccountDisplay'
+import { getRole } from '@/utils/auth'
 
 export default function PostList({ injectedItems = [] }: { injectedItems?: any[] }) {
   const [data, setData] = useState<PostListType | null>(null)
@@ -22,8 +26,46 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
     setError(null)
     
     try {
-      const raw = await getJSON<any>(`/api/posts?page=${p}&per_page=${perPage}`)
-      const validated = validatePostList(raw)
+      const slug = localStorage.getItem('school_slug') || ''
+      let q = ''
+      
+      // 檢查用戶是否為總管理員
+      let isDevAdmin = false
+      try {
+        const profileResponse = await fetch('/api/auth/profile', { cache: 'no-store' })
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json()
+          isDevAdmin = profileData.role === 'dev_admin'
+        }
+      } catch (e) {
+        // 忽略錯誤，繼續執行
+      }
+      
+      if (slug) {
+        q = `&school=${encodeURIComponent(slug)}`
+      } else if (isDevAdmin) {
+        // 總管理員在沒有選擇學校時，顯示所有學校的貼文
+        q = '&all_schools=true'
+      }
+      
+      const raw = await getJSON<any>(`/api/posts?page=${p}&per_page=${perPage}${q}`)
+      let validated: PostListType
+      try {
+        validated = validatePostList(raw)
+      } catch (e) {
+        // 寬鬆相容：若後端回傳僅有 { items }，則推導分頁欄位
+        if (raw && Array.isArray(raw.items) && (raw.page === undefined || raw.per_page === undefined || raw.total === undefined)) {
+          const items = raw.items.map((it: any, idx: number) => {
+            // 若缺必填欄位，嘗試簡單修補（避免整批失敗）
+            if (typeof it?.id !== 'number') it.id = -1 * (idx + 1)
+            if (typeof it?.content !== 'string') it.content = ''
+            return it
+          })
+          validated = validatePostList({ items, page: p, per_page: perPage, total: items.length })
+        } else {
+          throw e
+        }
+      }
       
       if (p === 1) {
         setData(validated)
@@ -52,6 +94,12 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
   }
 
   useEffect(() => { fetchPage(1) }, [])
+  useEffect(() => {
+    const onChanged = () => fetchPage(1)
+    window.addEventListener('fk_school_changed', onChanged as any)
+    window.addEventListener('fk_reload_posts', onChanged as any)
+    return () => window.removeEventListener('fk_school_changed', onChanged as any)
+  }, [])
 
   // 私有貼文標記（只在本機判定）
   const myIds = (() => {
@@ -63,7 +111,7 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
 
   const copyLink = async (id?: number) => {
     if (!id) return
-    const url = `${location.origin}${location.pathname}#post-${id}`
+    const url = `${location.origin}/posts/${id}`
     try {
       await navigator.clipboard.writeText(url)
       setCopiedFor(id)
@@ -95,21 +143,94 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 mobile-list oppo-list-lg">
       {allItems.length === 0 ? (
-        <div className="text-center py-8 text-muted">目前沒有貼文。</div>
+        <div className="text-center py-8 text-muted mobile-text-base oppo-text-lg">目前沒有貼文。</div>
       ) : (
-        allItems.map((p: any) => (
-          <article id={p.id ? `post-${p.id}` : undefined} key={p.id ?? p.tempKey ?? `fallback-${allItems.indexOf(p)}`} className="rounded-xl border border-border bg-surface p-4 relative">
-            <div className="text-xs text-muted mb-2">
-              #{p.id || p.tempKey || '待確認'} • {p.created_at ? new Date(p.created_at).toLocaleString() : '時間未知'} • 匿名 {p.author_hash || '未知'}
+        allItems.map((p: any) => {
+          const cover = (typeof p.cover_path === 'string')
+            ? (
+              p.cover_path.startsWith('public/')
+                ? `https://cdn.serelix.xyz/${p.cover_path.replace(/^public\//, '')}`
+                : (p.cover_path.startsWith('media/')
+                    ? `https://cdn.serelix.xyz/${p.cover_path}`
+                    : null)
+            )
+            : null
+          // 支援 public/<id>.<ext>（新）與 public/media/<id>.<ext>（舊）
+          const m1 = typeof p.cover_path === 'string' ? p.cover_path.match(/public\/(?:media\/)?(\d+)\./) : null
+          const coverId = m1 ? Number(m1[1]) : null
+          const role = getRole()
+          const canUsePreviewApi = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(role || '')
+          const count = typeof p.media_count === 'number' ? p.media_count : 0
+          const Cover = () => {
+            const [loading, setLoading] = useState(!!cover)
+            const [error, setError] = useState(false)
+            const [url, setUrl] = useState<string | null>(cover)
+
+            // 移除管理員預覽API調用，直接使用靜態檔案路徑
+
+            if (!url) return null
+            const inner = (
+              <div className="mb-3 relative overflow-hidden rounded-lg border border-border bg-surface/50">
+                {!error && (
+                  <img
+                    src={url}
+                    alt="封面"
+                    className={`w-full h-48 object-cover transition-opacity ${loading ? 'opacity-0' : 'opacity-100'}`}
+                    loading="lazy"
+                    onLoad={() => setLoading(false)}
+                    onError={() => { setLoading(false); setError(true) }}
+                  />
+                )}
+                {loading && (
+                  <div className="absolute inset-0 animate-pulse bg-neutral-200 dark:bg-neutral-800" />
+                )}
+                {error && (
+                  <div className="w-full h-48 grid place-items-center text-xs text-muted">封面載入失敗</div>
+                )}
+                {count > 1 && (
+                  <span className="absolute bottom-2 right-2 text-xs px-2 py-0.5 rounded-md bg-neutral-900/70 text-white">
+                    {count} 張
+                  </span>
+                )}
+              </div>
+            )
+            return p.id ? <Link to={`/posts/${p.id}`}>{inner}</Link> : inner
+          }
+          return (
+          <article id={p.id ? `post-${p.id}` : undefined} key={p.id ?? p.tempKey ?? `fallback-${allItems.indexOf(p)}`} className="rounded-xl border border-border bg-surface p-4 relative mobile-card mobile-list-item oppo-post-lg oppo-list-item-lg">
+            <div className="text-xs text-muted mb-2 mobile-text-sm oppo-text-lg">
+              #{p.id || p.tempKey || '待確認'} <span className="mx-1">•</span> {p.created_at ? new Date(p.created_at).toLocaleString() : '時間未知'} <span className="mx-1">•</span>
+              {(() => {
+                const label = String(p.author_hash || '').trim()
+                const isAnonCode = /^[A-Z0-9]{6}$/.test(label)
+                if (label === '系統訊息') return <span className="text-fg">系統訊息</span>
+                if (isAnonCode) return <span className="text-muted">匿名 {label}</span>
+                if (label) return <span className="text-fg">{label}</span>
+                return <span className="text-muted">匿名</span>
+              })()}
             </div>
+            <Cover />
+            {p.id ? (
+              <Link to={`/posts/${p.id}`} className="block hover:opacity-90 transition-opacity">
+                <div
+                  className="prose prose-sm max-w-none text-fg mobile-text-base oppo-text-lg"
+                  dangerouslySetInnerHTML={{ __html: p.content }}
+                />
+              </Link>
+            ) : (
+              <div
+                className="prose prose-sm max-w-none text-fg mobile-text-base oppo-text-lg"
+                dangerouslySetInnerHTML={{ __html: p.content }}
+              />
+            )}
+            
+            {/* 留言與反應系統 */}
+            {p.id && <CommentSection postId={p.id} />}
+            
             <div
-              className="prose prose-sm max-w-none text-fg"
-              dangerouslySetInnerHTML={{ __html: p.content }}
-            />
-            <div
-              className="mt-3 flex items-center justify-end gap-2"
+              className="mt-3 flex items-center justify-end gap-2 mobile-gap-sm"
               onTouchStart={(e) => {
                 if (!p.id) return
                 // 僅在粗略指標（手機）時啟用長按
@@ -129,11 +250,6 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
                 <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-neutral-100 text-neutral-700 dark:bg-neutral-900/40 dark:text-neutral-200">
                   <Clock className="w-3.5 h-3.5" /> {new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
-              ) : p.id ? (
-                <div className="flex items-center gap-2">
-                  <a className="text-sm underline text-muted" href={`/delete/${p.id}`}>刪文請求</a>
-                  <a className="text-xs px-2 py-1 rounded-md border border-border hover:bg-surface/70" href={`/posts/${p.id}`}>詳情</a>
-                </div>
               ) : null}
 
               {/* 桌機：複製連結按鈕（所有人可見） */}
@@ -143,13 +259,13 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
                   className="hidden md:inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border hover:bg-surface/70"
                   title="複製貼文連結"
                 >
-                  {copiedFor === p.id ? <Check className="w-3.5 h-3.5 text-green-600" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                  {copiedFor === p.id ? <Check className="w-3.5 h-3.5 text-primary" /> : <LinkIcon className="w-3.5 h-3.5" />}
                   {copiedFor === p.id ? '已複製' : '複製連結'}
                 </button>
               )}
             </div>
           </article>
-        ))
+        )})
       )}
       <div className="pt-2">
         {hasMore ? (

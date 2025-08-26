@@ -4,6 +4,8 @@ export interface Post {
   content: string;
   author_hash?: string;
   created_at?: string;
+  media_count?: number;
+  cover_path?: string | null;
   // 用於對應樂觀更新的暫時貼文（非後端主鍵）
   client_tx_id?: string;
 }
@@ -34,6 +36,8 @@ export function validatePost(obj: any): Post {
     content: obj.content,
     author_hash: typeof obj.author_hash === 'string' ? obj.author_hash : undefined,
     created_at: typeof obj.created_at === 'string' ? obj.created_at : undefined,
+    media_count: typeof obj.media_count === 'number' ? obj.media_count : undefined,
+    cover_path: typeof obj.cover_path === 'string' ? obj.cover_path : (obj.cover_path === null ? null : undefined),
     client_tx_id: typeof obj.client_tx_id === 'string' ? obj.client_tx_id : undefined,
   };
 }

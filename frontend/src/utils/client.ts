@@ -19,6 +19,42 @@ export function newTxId() {
   return crypto.randomUUID() 
 }
 
+// 生成6碼唯一碼，用於匿名帳號顯示
+export function generateAnonymousCode(): string {
+  // 使用 clientId 的前6位作為基礎，確保同一裝置顯示相同代碼
+  const clientId = getClientId()
+  const hash = clientId.replace(/-/g, '').substring(0, 6)
+  
+  // 轉換為大寫字母和數字的組合，看起來更像隨機碼
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let result = ''
+  
+  for (let i = 0; i < 6; i++) {
+    const charCode = hash.charCodeAt(i) || 0
+    const index = charCode % chars.length
+    result += chars[index]
+  }
+  
+  return result
+}
+
+// 檢查是否為預填內容（系統展示）
+export function isSystemDemo(): boolean {
+  // 檢查是否為系統預設的展示內容
+  const demoPatterns = [
+    '歡迎來到 ForumKit',
+    '這是一個示例貼文',
+    '系統展示',
+    'demo',
+    'test'
+  ]
+  
+  // 可以從 localStorage 或其他地方檢查是否為預填模式
+  const isDemoMode = localStorage.getItem('forumkit_demo_mode') === 'true'
+  
+  return isDemoMode
+}
+
 // 工具函數：簡單哈希函數
 export const hash = (s: string) => {
   let h = 0; 

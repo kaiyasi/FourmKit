@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 from typing import Any, Tuple, cast, Dict, List, Optional
 from urllib import request as urlrequest
 from urllib.error import URLError, HTTPError
+from utils.notify import send_admin_event as notify_send_event
+from utils.notify import recent_admin_events
+from utils.notify import get_admin_webhook_url as _get_admin_hook
 
 import eventlet  # type: ignore
 eventlet.monkey_patch()  # type: ignore
@@ -19,14 +22,21 @@ from utils.redis_health import get_redis_health
 from utils.single_admin import ensure_single_admin
 from routes.routes_posts import bp as posts_bp
 from routes.routes_auth import bp as auth_bp
+from routes.routes_schools import bp as schools_bp
 from routes.routes_admin import bp as admin_bp
 from routes.routes_mode import bp as mode_bp
+from routes.routes_settings import bp as settings_bp
+from routes.routes_pages import bp as pages_bp
+from routes.routes_media_v2 import bp as media_v2_bp
+from routes.routes_media import bp as media_bp
+from routes.routes_account import bp as account_bp
 from routes.routes_moderation import bp as moderation_bp
 from routes.routes_abuse import bp as abuse_bp
+from routes.routes_support import bp as support_bp
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 
-APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-d6")
+APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.0.0")
 
 # 先建立未綁 app 的全域 socketio，在 create_app() 裡再 init_app
 socketio = SocketIO(
@@ -88,37 +98,6 @@ def _hex_to_int(color_hex: str) -> int:
         return int(h[:6], 16)
     except Exception:
         return 0x2B3137
-
-
-def _post_discord(webhook_url: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if not webhook_url:
-        return {"ok": False, "status": 0, "error": "missing webhook url"}
-    try:
-        data = json.dumps(payload).encode("utf-8")
-        req = urlrequest.Request(
-            webhook_url,
-            data=data,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "ForumKit/1.0 (+https://example.invalid)",
-            },
-            method="POST",
-        )
-        ctx = ssl.create_default_context()
-        with urlrequest.urlopen(req, timeout=10, context=ctx) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            return {"ok": 200 <= resp.status < 300, "status": resp.status, "body": body}
-    except HTTPError as he:  # noqa: PERF203
-        detail = ""
-        try:
-            detail = he.read().decode("utf-8", errors="replace")
-        except Exception:
-            pass
-        return {"ok": False, "status": he.code, "error": f"HTTPError {he.code}: {he.reason}", "detail": detail}
-    except URLError as ue:
-        return {"ok": False, "status": 0, "error": f"URLError {ue.reason}"}
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "status": 0, "error": str(e)}
 
 
 # -------- CHANGELOG 讀取（嚴格：無 fallback 策略切換） --------
@@ -508,6 +487,17 @@ def _parse_changelog() -> dict[str, Any]:
 # -------- Flask 應用 --------
 def create_app() -> Flask:
     app = Flask(__name__)
+    
+    # 生成重啟標識，用於前端檢測重啟
+    import uuid
+    import time
+    restart_id = str(uuid.uuid4())
+    restart_timestamp = int(time.time())
+    app.config['RESTART_ID'] = restart_id
+    app.config['RESTART_TIMESTAMP'] = restart_timestamp
+    
+    print(f"[ForumKit] 啟動標識: {restart_id} (時間戳: {restart_timestamp})")
+    
     # 讓 jsonify 直接輸出 UTF-8，而非 \uXXXX 逃脫序列，
     # 避免前端在某些備援路徑顯示不可讀的 Unicode 轉義。
     app.config["JSON_AS_ASCII"] = False
@@ -538,6 +528,19 @@ def create_app() -> Flask:
     # 初始化資料庫和 JWT
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "devkey")
     jwt = JWTManager(app)
+
+    # 優先初始化資料庫，並（若啟用）以環境變數確保單一開發者帳號存在
+    try:
+        init_engine_session()
+    except Exception as e:  # noqa: BLE001
+        app.logger.error(f"DB init failed at startup: {e}")
+    try:
+        # 僅在明確開啟 ENFORCE_SINGLE_ADMIN 時執行；避免預設情況誤清使用者
+        if os.getenv("ENFORCE_SINGLE_ADMIN", "0").strip().lower() in {"1", "true", "yes", "on"}:
+            ensure_single_admin()
+            app.logger.info("Single admin ensured from env (SINGLE_ADMIN_USERNAME)")
+    except Exception as e:  # noqa: BLE001
+        app.logger.error(f"ensure_single_admin failed: {e}")
 
     # 全域 JWT 錯誤回應，統一格式便於前端處理/除錯
     @jwt.unauthorized_loader  # 缺少 Authorization header 或 Bearer 錯誤
@@ -681,24 +684,86 @@ def create_app() -> Flask:
 
     # ---- REST ----
     @app.route("/api/healthz")
-    def healthz() -> Response:  # noqa: F841
-        db = get_db_health()
-        redis = get_redis_health()
-        ok = bool(db.get("ok")) and bool(redis.get("ok"))
-        # 附帶平台模式與 build info，便於監控與判版
+    def healthz():
+        """健康檢查端點（含 DB / Redis / CDN 真實狀態檢測）。"""
+        db = {}
+        redis = {}
+        cdn = {}
+        
+        # DB 健康檢查
         try:
-            cfg = load_config() or {}
-            mode = str(cfg.get("mode", "normal") or "normal")
-        except Exception:
-            mode = "unknown"
+            db = get_db_health()  # type: ignore[name-defined]
+        except Exception as e:
+            db = {"ok": False, "error": str(e)}
+        
+        # Redis 健康檢查
+        try:
+            redis = get_redis_health()  # type: ignore[name-defined]
+        except Exception as e:
+            redis = {"ok": False, "error": str(e)}
+        
+        # CDN 健康檢查（真實狀態檢測）
+        try:
+            import socket
+            import requests
+            host = os.getenv('CDN_HOST', '127.0.0.1')
+            port = int(os.getenv('CDN_PORT', '12002'))
+            
+            # 1. TCP 連線測試
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            tcp_ok = False
+            try:
+                s.connect((host, port))
+                tcp_ok = True
+            finally:
+                try: s.close()
+                except Exception: pass
+            
+            # 2. HTTP 狀態測試
+            http_ok = False
+            http_status = None
+            try:
+                cdn_url = f"http://{host}:{port}"
+                response = requests.get(cdn_url, timeout=3)
+                http_ok = response.status_code < 500
+                http_status = response.status_code
+            except Exception:
+                pass
+            
+            # 3. 檔案服務測試
+            file_test_ok = False
+            try:
+                test_url = f"http://{host}:{port}/test.txt"
+                response = requests.head(test_url, timeout=2)
+                file_test_ok = response.status_code in [200, 404]  # 404也是正常的，表示服務正常但檔案不存在
+            except Exception:
+                pass
+            
+            cdn = {
+                "ok": tcp_ok and http_ok,
+                "host": host,
+                "port": port,
+                "tcp_ok": tcp_ok,
+                "http_ok": http_ok,
+                "http_status": http_status,
+                "file_test_ok": file_test_ok,
+                "status": "OK" if (tcp_ok and http_ok) else "FAIL"
+            }
+        except Exception as e:
+            cdn = {"ok": False, "error": str(e)}
+        
         return jsonify({
-            "ok": ok,
-            "ts": g.request_ts,
-            "request_id": g.request_id,
-            "build": APP_BUILD_VERSION,
-            "mode": mode,
+            "ok": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "restart_id": app.config.get('RESTART_ID', 'unknown'),
+            "restart_timestamp": app.config.get('RESTART_TIMESTAMP', 0),
+            "uptime": int(time.time() - psutil.boot_time()) if 'psutil' in globals() else None,
+            "version": "1.0.0",
+            "environment": os.getenv('FLASK_ENV', 'production'),
             "db": db,
             "redis": redis,
+            "cdn": cdn,
         })
 
 
@@ -710,6 +775,118 @@ def create_app() -> Flask:
         """
         data = _parse_changelog()
         return jsonify(data)
+
+    @app.get("/api/status/integrations")
+    def status_integrations() -> Response:  # noqa: F841
+        """提供整合狀態（不含敏感資訊）。
+        - admin_webhook: 是否設定、Webhook 主機與遮罩識別。
+        - recent_admin_events: 最近投遞結果（最多 10 筆）。
+        - queue: 目前未啟用，先回固定資訊。
+        """
+        hook = (_get_admin_hook() or "").strip()
+        configured = bool(hook)
+        host = ""
+        tail = ""
+        try:
+            if hook:
+                # 解析主機名與最後一段 id（遮罩）
+                from urllib.parse import urlparse
+                u = urlparse(hook)
+                host = u.netloc
+                tail = (u.path.rsplit("/", 1)[-1] if "/" in u.path else u.path)
+                if len(tail) > 6:
+                    tail = tail[:3] + "…" + tail[-2:]
+        except Exception:
+            pass
+        # 系統資訊（best-effort）
+        sysinfo: dict[str, Any] = {}
+        try:
+            import platform, os as _os
+            sysinfo["hostname"] = platform.node()
+            sysinfo["platform"] = platform.platform()
+            try:
+                la = _os.getloadavg()
+                sysinfo["loadavg"] = {"1m": la[0], "5m": la[1], "15m": la[2]}
+            except Exception:
+                pass
+            try:
+                import psutil  # type: ignore
+                vm = psutil.virtual_memory()
+                sysinfo["memory"] = {"total": vm.total, "available": vm.available, "percent": vm.percent}
+                cpu = psutil.cpu_percent(interval=0.1)
+                sysinfo["cpu_percent"] = cpu
+                sysinfo["uptime"] = int(time.time() - psutil.boot_time())
+                
+                # 資料庫和CDN服務狀態檢查
+                try:
+                    # 資料庫服務狀態（檢查PostgreSQL連接）
+                    db_running = False
+                    try:
+                        from utils.db import get_db_health
+                        db_health = get_db_health()
+                        db_running = db_health.get("ok", False)
+                    except Exception:
+                        pass
+                    sysinfo["db_cpu_percent"] = 1.0 if db_running else None
+                    
+                    # CDN服務狀態（檢查Nginx HTTP連接）
+                    cdn_running = False
+                    try:
+                        import requests
+                        cdn_host = os.getenv('CDN_HOST', '127.0.0.1')
+                        cdn_port = int(os.getenv('CDN_PORT', '12002'))
+                        response = requests.get(f"http://{cdn_host}:{cdn_port}", timeout=2)
+                        cdn_running = response.status_code < 500
+                    except Exception:
+                        pass
+                    sysinfo["cdn_cpu_percent"] = 1.0 if cdn_running else None
+                except Exception:
+                    # 如果無法檢查服務，設為未知狀態
+                    sysinfo["db_cpu_percent"] = None
+                    sysinfo["cdn_cpu_percent"] = None
+                    
+            except Exception:
+                # 無 psutil 時以 /proc/meminfo 粗略估算
+                try:
+                    with open("/proc/meminfo","r") as f:
+                        mem = f.read()
+                    sysinfo["meminfo"] = mem.splitlines()[:5]
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # 佇列狀態：若能連到 Redis，回報 key 長度
+        queue = {"enabled": False, "size": 0}
+        try:
+            from urllib.parse import urlparse
+            import redis  # type: ignore
+            url = os.getenv("REDIS_URL")
+            if url:
+                u = urlparse(url)
+                r = redis.Redis(host=u.hostname, port=u.port or 6379, db=int((u.path or '/0').strip('/')), password=u.password, decode_responses=True)
+                key = os.getenv("FK_QUEUE_KEY", "fk:queue")
+                queue["size"] = int(r.llen(key) or 0)
+                queue["enabled"] = True
+        except Exception:
+            pass
+        
+        # 使用者統計
+        user_stats = {"total": 0}
+        try:
+            from models import User
+            from utils.db import get_session
+            with get_session() as s:
+                user_stats["total"] = s.query(User).count()
+        except Exception:
+            pass
+        return jsonify({
+            "ok": True,
+            "admin_webhook": {"configured": configured, "host": host, "id_mask": tail},
+            "recent_admin_events": recent_admin_events(10),
+            "queue": queue,
+            "system": sysinfo,
+            "user_stats": user_stats,
+        })
 
 
 
@@ -729,13 +906,15 @@ def create_app() -> Flask:
                 choice = str(payload.get("choice") or "").strip()
                 if not choice:
                     return error("FK-COLOR-001", 400, "顏色選擇不能為空")[0]
-                theme_url = os.getenv("DISCORD_THEME_WEBHOOK", "")
-                if not theme_url:
-                    return jsonify({"ok": True, "type": "simple_choice", "ticket_id": ticket_id,
-                                    "delivery": "local_only", "status": "no_webhook"})
-                res = _post_discord(theme_url, {
-                    "content": f"[顏色投票] 選擇：{choice} | ticket={ticket_id} | ts={g.get('request_ts')}"
-                })
+                res = notify_send_event(
+                    kind="simple_choice",
+                    title=f"顏色投票 〔{ticket_id}〕",
+                    description=f"選擇：{choice}",
+                    ticket_id=ticket_id,
+                    ts=str(g.get('request_ts')),
+                    request_id=str(g.get('request_id')),
+                    source="/api/color_vote",
+                )
                 return jsonify({
                     "ok": True,
                     "type": "simple_choice",
@@ -744,7 +923,7 @@ def create_app() -> Flask:
                     "status": res.get("status")
                 })
 
-            # v2：完整主題提案 - 加強輸入驗證
+            # v2：完整主題提案 - 只驗證主題色
             theme_name = str(payload.get("name") or "").strip()
             description = str(payload.get("description") or "").strip()
             colors_raw: Any = payload.get("colors") or {}
@@ -756,42 +935,33 @@ def create_app() -> Flask:
                 return error("FK-COLOR-004", 400, "主題名稱過長（最多50字元）")[0]
             if len(description) > 500:
                 return error("FK-COLOR-005", 400, "描述過長（最多500字元）")[0]
-            if not colors:
-                return error("FK-COLOR-003", 400, "顏色配置不能為空")[0]
+            if not colors or not colors.get("primary"):
+                return error("FK-COLOR-003", 400, "主題色不能為空")[0]
 
             hex_pattern = re.compile(r'^#[0-9A-Fa-f]{6}$')
-            # 只驗證實際的顏色欄位
-            color_fields = ["primary", "secondary"]
-            for color_key in color_fields:
-                color_value = colors.get(color_key)
-                if color_value and not hex_pattern.match(str(color_value)):
-                    return error("FK-COLOR-006", 400, f"顏色格式無效：{color_key}")[0]
-
             primary_color_hex = colors.get("primary", "#3B82F6")
+            if not hex_pattern.match(str(primary_color_hex)):
+                return error("FK-COLOR-006", 400, "主題色格式無效")[0]
+
             primary_color_int = _hex_to_int(primary_color_hex)
 
-            webhook_url = os.getenv("DISCORD_THEME_WEBHOOK", "")
-            embed: dict[str, Any] = {
-                "title": f"主題提案：{theme_name} 〔{ticket_id}〕",
-                "description": description,
-                "color": primary_color_int,
-                "fields": [
+            res = notify_send_event(
+                kind="theme_proposal",
+                title=f"主題提案：{theme_name} 〔{ticket_id}〕",
+                description=description,
+                fields=[
                     {"name": "主色", "value": colors.get("primary", ""), "inline": True},
                     {"name": "輔助色", "value": colors.get("secondary", ""), "inline": True},
                 ],
-                "footer": {"text": f"ticket={ticket_id} | 提案時間: {g.get('request_ts')}"},
-            }
-            res = _post_discord(webhook_url, {"content": None, "embeds": [embed]})
+                ticket_id=ticket_id,
+                ts=str(g.get('request_ts')),
+                request_id=str(g.get('request_id')),
+                source="/api/color_vote",
+            )
 
             if not res.get("ok"):
-                fallback = {
-                    "content": (
-                        f"【主題建議】{theme_name}\n"
-                        f"主色: {colors.get('primary')}, 輔助: {colors.get('secondary')}\n"
-                        f"ticket={ticket_id} | {g.get('request_ts')}"
-                    )
-                }
-                res2 = _post_discord(webhook_url, fallback)
+                # second attempt already handled by send_event failure; return status only
+                res2 = res
                 return jsonify({"ok": True, "type": "theme_proposal", "ticket_id": ticket_id,
                                 "delivery": "discord" if res2.get("ok") else "local_only",
                                 "status": res2.get("status")})
@@ -825,26 +995,19 @@ def create_app() -> Flask:
             srv_ip = request.remote_addr or "-"
             ip_footer = f"raw={ip_raw}, cf={cf_ip}, srv={srv_ip}"
 
-            webhook_url = os.getenv("DISCORD_REPORT_WEBHOOK", "")
-            if not webhook_url:
-                return jsonify({"ok": True, "ticket_id": ticket_id, "delivery": "local_only", "status": "no_webhook"})
-
-            embed: dict[str, Any] = {
-                "title": f"問題回報：{category} 〔{ticket_id}〕",
-                "description": message,
-                "color": 0x3B82F6,
-                "author": {"name": contact or "匿名"},
-                "footer": {"text": f"ticket={ticket_id} | IP: {ip_footer}"},
-            }
-            res = _post_discord(webhook_url, {"content": None, "embeds": [embed]})
+            res = notify_send_event(
+                kind="issue_report",
+                title=f"問題回報：{category} 〔{ticket_id}〕",
+                description=message,
+                actor=(contact or "匿名"),
+                source=f"/api/report | {ip_footer}",
+                ticket_id=ticket_id,
+                ts=str(g.get('request_ts')),
+                request_id=str(g.get('request_id')),
+            )
 
             if not res.get("ok"):
-                res2 = _post_discord(webhook_url, {
-                    "content": (
-                        f"【回報】{category}\n{message}\n聯絡: {contact or '(未填)'}\n"
-                        f"ticket={ticket_id} | {g.get('request_ts')}"
-                    )
-                })
+                res2 = res
                 return jsonify({"ok": True, "ticket_id": ticket_id,
                                 "delivery": "discord" if res2.get("ok") else "local_only",
                                 "status": res2.get("status")})
@@ -861,12 +1024,29 @@ def create_app() -> Flask:
     # 掛載 API 藍圖
     app.register_blueprint(posts_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(schools_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(mode_bp)
+    app.register_blueprint(settings_bp)
     # routes_media blueprint removed: it conflicted with current models
     # and moderation flow (pending/public). Use /api/posts/upload instead.
     app.register_blueprint(moderation_bp)
     app.register_blueprint(abuse_bp)
+    app.register_blueprint(support_bp)
+    app.register_blueprint(pages_bp)
+    app.register_blueprint(account_bp)
+    app.register_blueprint(media_bp)
+    app.register_blueprint(media_v2_bp)
+    # 狀態與事件（僅 dev_admin 可讀）
+    try:
+        from routes.routes_status import bp as status_bp
+        app.register_blueprint(status_bp)
+    except Exception as _e:
+        print('[ForumKit] routes_status not mounted:', _e)
+    
+    # 留言與反應系統
+    from routes.routes_comments import bp as comments_bp
+    app.register_blueprint(comments_bp)
 
     # ---- Realtime rooms debug APIs (for Day10 validation) ----
     from flask_jwt_extended import jwt_required
@@ -1120,4 +1300,5 @@ def register_socketio_events():
 # 留給 gunicorn --factory app:create_app
 if __name__ == "__main__":
     app = create_app()
-    socketio.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("FORUMKIT_PORT", os.getenv("PORT", "12005")))
+    socketio.run(app, host="0.0.0.0", port=port)

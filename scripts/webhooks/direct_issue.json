@@ -1,0 +1,16 @@
+{
+  "content": null,
+  "embeds": [
+    {
+      "title": "直接測試：問題回報",
+      "description": "這是直接發送到 webhook 的測試事件（不經 API）。",
+      "color": 12107970,
+      "fields": [
+        {"name": "Event", "value": "issue_report", "inline": true},
+        {"name": "Actor", "value": "qa@example.edu", "inline": true},
+        {"name": "Source", "value": "scripts/direct", "inline": true}
+      ],
+      "footer": {"text": "req=local | ticket=LOCAL-TEST | ts=now"}
+    }
+  ]
+}

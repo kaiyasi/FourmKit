@@ -17,29 +17,29 @@ const MODE_CONFIGS: Record<ModeType, ModeConfig> = {
     name: "正常模式",
     shortName: "正常",
     icon: CheckCircle,
-    color: "text-green-600 dark:text-green-400",
-    bgColor: "bg-green-50 dark:bg-green-900/20"
+    color: "text-success",
+    bgColor: "bg-success-bg"
   },
   development: {
     name: "開發模式",
     shortName: "開發",
     icon: Zap,
-    color: "text-blue-600 dark:text-blue-400",
-    bgColor: "bg-blue-50 dark:bg-blue-900/20"
+    color: "text-info",
+    bgColor: "bg-info-bg"
   },
   maintenance: {
     name: "維護模式",
     shortName: "維護",
     icon: AlertTriangle,
-    color: "text-amber-600 dark:text-amber-400",
-    bgColor: "bg-amber-50 dark:bg-amber-900/20"
+    color: "text-warning",
+    bgColor: "bg-warning-bg"
   },
   test: {
     name: "測試模式",
     shortName: "Test",
     icon: Wrench,
-    color: "text-purple-600 dark:text-purple-400",
-    bgColor: "bg-purple-50 dark:bg-purple-900/20"
+    color: "text-accent",
+    bgColor: "bg-accent/10"
   }
 };
 

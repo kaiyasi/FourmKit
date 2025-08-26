@@ -10,9 +10,9 @@ export function TicketNotice({ ticket, tone, title, desc }:{
   if (!ticket) return null;
   const [copied, setCopied] = useState(false);
   const base =
-    tone === "success" ? "bg-green-50 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-100"
-    : tone === "warn" ? "bg-yellow-50 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-100"
-    : "bg-red-50 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-100";
+    tone === "success" ? "bg-success-bg text-success-text border-success-border"
+    : tone === "warn" ? "bg-warning-bg text-warning-text border-warning-border"
+    : "bg-danger-bg text-danger-text border-danger-border";
   return (
     <div className={`mt-3 rounded-xl border px-4 py-3 ${base}`}>
       <div className="flex items-center justify-between gap-3">
