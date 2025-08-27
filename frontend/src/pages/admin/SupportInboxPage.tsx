@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { ArrowLeft, RefreshCw, MessageSquare, AlertTriangle } from 'lucide-react'
+import { formatLocalMinute } from '@/utils/time'
 
 export default function AdminSupportInboxPage() {
   const [items, setItems] = useState<any[]>([])
@@ -33,7 +34,7 @@ export default function AdminSupportInboxPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/support" />
-      <MobileFabNav />
+      <MobileBottomNav />
       <main className="mx-auto max-w-5xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
@@ -60,7 +61,7 @@ export default function AdminSupportInboxPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-sm">
                         <span className="font-semibold text-fg">{e.title || e.event_type_display || '回報'}</span>
-                        <span className="text-xs text-muted">{new Date(e.timestamp).toLocaleString()}</span>
+                        <span className="text-xs text-muted">{formatLocalMinute(e.timestamp)}</span>
                         {e.severity && <span className="text-xs text-muted">· {e.severity}</span>}
                       </div>
                       <div className="whitespace-pre-wrap text-sm text-fg mt-1 break-words">{e.description}</div>
@@ -76,4 +77,3 @@ export default function AdminSupportInboxPage() {
     </div>
   )
 }
-

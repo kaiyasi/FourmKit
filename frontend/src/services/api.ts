@@ -155,7 +155,7 @@ export const ContentRulesAPI = {
 export const AccountAPI = {
   changePassword: (payload: { current_password?: string; new_password: string }) =>
     api<{ ok: boolean }>(j("/api/auth/change_password"), { method: "POST", body: JSON.stringify(payload) }),
-  profile: () => api<{ id:number; username:string; email:string; role:string; school?: {id:number;slug:string;name:string}|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean }>(j("/api/account/profile")),
+  profile: () => api<{ id:number; username:string; email:string; role:string; school?: {id:number;slug:string;name:string}|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean; personal_id?: string }>(j("/api/account/profile")),
   updateProfile: (payload: { username: string }) => api<{ ok: boolean }>(j("/api/account/profile"), { method: 'PUT', body: JSON.stringify(payload) }),
   uploadAvatar: async (file: File) => {
     const fd = new FormData(); fd.append('file', file)
@@ -163,6 +163,10 @@ export const AccountAPI = {
     if (!r.ok) throw new Error(await r.text())
     return r.json() as Promise<{ ok: boolean; path: string }>
   }
+  ,
+  webhookGet: () => api<{ ok:boolean; config?: { url?: string; enabled?: boolean; school_slug?: string|null }; last_post_id?: number|null }>(j('/api/account/webhook')),
+  webhookSet: (payload: { url?: string; enabled?: boolean; school_slug?: string|null }) => api<{ ok:boolean; config:any }>(j('/api/account/webhook'), { method:'POST', body: JSON.stringify(payload) }),
+  webhookTest: (url?: string) => api<{ ok:boolean; status?: number; error?: string }>(j('/api/account/webhook/test'), { method:'POST', body: JSON.stringify({ url }) })
 };
 
 export async function createPost(token: string, payload: {title: string; content: string; files: File[]}) {

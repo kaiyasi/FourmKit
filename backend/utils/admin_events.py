@@ -121,44 +121,49 @@ def log_admin_event(
     # 添加到內存緩存
     _ADMIN_EVENTS_CACHE.appendleft(event_data)
     
-    # 保存到資料庫（如果有session）
+    # 保存到資料庫（如果有session）且僅對真正的「審核結果」事件落盤到 moderation_logs
     if session:
         try:
-            # 嘗試為內容事件補齊狀態欄位（moderation_logs.new_status 不能為 NULL）
-            norm_target = (target_type or "").strip().lower()
-            is_post = norm_target in {"post", "貼文"}
-            is_comment = norm_target in {"comment", "留言"}
+            # 僅記錄核准/拒絕類事件，避免把「送審」等一般事件混入審核紀錄
+            MOD_EVENTS_APPROVE = {"post_approved", "comment_approved", "media_approved"}
+            MOD_EVENTS_REJECT = {"post_rejected", "comment_rejected", "media_rejected"}
+            if event_type in MOD_EVENTS_APPROVE.union(MOD_EVENTS_REJECT):
+                norm_target = (target_type or "").strip().lower()
+                is_post = norm_target in {"post", "貼文"}
+                is_comment = norm_target in {"comment", "留言"}
 
-            resolved_old_status = None
-            resolved_new_status = ""  # 使用空字串以滿足 NOT NULL，且在前端為 falsy 不顯示狀態箭頭
+                resolved_old_status = None
+                resolved_new_status = ""
 
-            if is_post and target_id:
-                try:
-                    post_obj = session.get(Post, target_id)
-                    if post_obj is not None:
-                        # 例如 post_created → new_status = "pending"
-                        resolved_new_status = post_obj.status or "pending"
-                except Exception:
-                    pass
-            elif is_comment and target_id:
-                try:
-                    comment_obj = session.get(Comment, target_id)
-                    if comment_obj is not None:
-                        resolved_new_status = comment_obj.status or "pending"
-                except Exception:
-                    pass
+                if is_post and target_id:
+                    try:
+                        post_obj = session.get(Post, target_id)
+                        if post_obj is not None:
+                            resolved_new_status = post_obj.status or ("approved" if event_type in MOD_EVENTS_APPROVE else "rejected")
+                    except Exception:
+                        pass
+                elif is_comment and target_id:
+                    try:
+                        comment_obj = session.get(Comment, target_id)
+                        if comment_obj is not None:
+                            resolved_new_status = comment_obj.status or ("approved" if event_type in MOD_EVENTS_APPROVE else "rejected")
+                    except Exception:
+                        pass
 
-            log_entry = ModerationLog(
-                target_type=target_type or "system",
-                target_id=target_id,
-                action=event_type,
-                old_status=resolved_old_status,
-                new_status=resolved_new_status,
-                reason=description,
-                moderator_id=actor_id
-            )
-            session.add(log_entry)
-            session.commit()
+                # 映射為標準動作字串（資料表只應出現 approve/reject）
+                action_str = "approve" if event_type in MOD_EVENTS_APPROVE else "reject"
+
+                log_entry = ModerationLog(
+                    target_type=target_type or "system",
+                    target_id=target_id,
+                    action=action_str,
+                    old_status=resolved_old_status,
+                    new_status=resolved_new_status,
+                    reason=description,
+                    moderator_id=actor_id
+                )
+                session.add(log_entry)
+                session.commit()
         except Exception as e:
             print(f"Failed to save admin event to database: {e}")
     
@@ -260,6 +265,9 @@ def log_content_moderation(event_type: str, moderator_id: int, moderator_name: s
     if reason:
         description += f"，原因：{reason}"
     
+    # 注意：此處僅做「管理事件」記錄與通知，不再寫入 moderation_logs，
+    # 以避免與 routes_moderation.py 的 write_log() 重複落庫。
+    # 故強制 session=None 以跳過 DB 寫入。
     return log_admin_event(
         event_type=event_type,
         title=f"{content_type}審核",
@@ -270,7 +278,7 @@ def log_content_moderation(event_type: str, moderator_id: int, moderator_name: s
         target_type=content_type,
         severity="medium",
         metadata={"reason": reason} if reason else None,
-        session=session
+        session=None
     )
 
 def log_system_event(event_type: str, title: str, description: str, 

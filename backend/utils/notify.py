@@ -7,6 +7,14 @@ from collections import deque
 from datetime import datetime, timezone
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
+import os
+import json
+try:
+    from redis import Redis
+    import redis
+except Exception:  # pragma: no cover - redis optional in some envs
+    Redis = None  # type: ignore
+    redis = None  # type: ignore
 
 
 # Morandi palette (muted, non-overlapping)
@@ -56,6 +64,101 @@ def get_admin_webhook_url() -> str:
     return os.getenv("DISCORD_REPORT_WEBHOOK", os.getenv("DISCORD_THEME_WEBHOOK", "")).strip()
 
 
+def _get_delivery_mode() -> str:
+    """Return delivery mode: webhook | bot | both (default: webhook)."""
+    mode = (os.getenv("ADMIN_NOTIFY_DELIVERY", "webhook") or "webhook").strip().lower()
+    if mode in {"webhook", "bot", "both"}:
+        return mode
+    return "webhook"
+
+
+_redis_client: Optional[Redis] = None  # type: ignore
+
+def _get_redis() -> Optional[Redis]:  # type: ignore
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        url = os.getenv("REDIS_URL", "redis://redis:80/0")
+        if not url:
+            return None
+        # Use synchronous client; bot will consume asynchronously
+        _redis_client = redis.from_url(url, decode_responses=True)  # type: ignore
+        return _redis_client
+    except Exception:
+        return None
+
+
+def _enqueue_bot_event(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Push event payload to Redis queue for Discord Bot to consume.
+    Returns a result dict-like webhook sender for unified logging.
+    """
+    cli = _get_redis()
+    if not cli:
+        return {"ok": False, "status": 0, "error": "redis_unavailable"}
+    try:
+        cli.rpush("fk:admin_events", json.dumps(payload))
+        return {"ok": True, "status": 202}
+    except Exception as e:
+        return {"ok": False, "status": 0, "error": str(e)}
+
+
+def _enqueue_announcement(kind: str, title: str, description: str, **kwargs: Any) -> None:
+    """Record an announcement-like event into a Redis sorted set for feeders.
+    Stores with a monotonically increasing sequence and timestamp score.
+    """
+    cli = _get_redis()
+    if not cli:
+        return
+    try:
+        import time
+        seq = cli.incr('fk:ann:seq')
+        ts = int(time.time())
+        payload = {
+            'id': int(seq),
+            'ts': ts,
+            'kind': kind,
+            'title': title,
+            'description': description,
+        }
+        # include subset of kwargs
+        for k in ('actor','source','fields','footer','color'):
+            if k in kwargs:
+                payload[k] = kwargs[k]
+        cli.zadd('fk:announcements', {json.dumps(payload): ts})
+        # trim to last 200
+        try:
+            cli.zremrangebyrank('fk:announcements', 0, -201)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _brand_logo_url() -> Optional[str]:
+    cdn = os.getenv('PUBLIC_CDN_URL', '').strip()
+    base = os.getenv('PUBLIC_BASE_URL', '').strip()
+    if cdn:
+        return cdn.rstrip('/') + '/assets/ForumKit.png'
+    if base:
+        return base.rstrip('/') + '/uploads/assets/ForumKit.png'
+    return None
+
+
+def _brand_author() -> Dict[str, Any]:
+    author: Dict[str, Any] = { 'name': 'ForumKit' }
+    icon = _brand_logo_url()
+    if icon:
+        author['icon_url'] = icon
+    return author
+
+
+def _brand_footer_text() -> str:
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).isoformat()
+    return f"DEV. Serelix Studio • {ts}"
+
+
 def build_embed(kind: str, title: str, description: str, *,
                 author: str | None = None,
                 footer: str | None = None,
@@ -66,10 +169,13 @@ def build_embed(kind: str, title: str, description: str, *,
         "description": description,
         "color": color if isinstance(color, int) else color_for_kind(kind),
     }
+    # Branding author
     if author:
         embed["author"] = {"name": author}
-    if footer:
-        embed["footer"] = {"text": footer}
+    else:
+        embed["author"] = _brand_author()
+    # Footer
+    embed["footer"] = {"text": footer or _brand_footer_text()}
     if fields:
         embed["fields"] = fields
     return embed
@@ -107,6 +213,7 @@ def post_discord(webhook_url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 def admin_notify(kind: str, title: str, description: str, *,
                  author: str | None = None, footer: str | None = None,
                  fields: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+    """Low-level notify helper retained for compatibility (webhook-only)."""
     hook = get_admin_webhook_url()
     if not hook:
         return {"ok": False, "status": 0, "error": "no_admin_webhook"}
@@ -147,11 +254,12 @@ def build_event_payload(
     std_footer = " | ".join(std_footer_parts)
     footer_text = footer or std_footer
 
+    # Use brand author; include actor in fields
     embed = build_embed(
         kind,
         title,
         description,
-        author=actor,
+        author=None,
         footer=footer_text,
         fields=[*(fields or []), *extras] if extras or fields else fields,
         color=color,
@@ -165,18 +273,42 @@ def send_admin_event(
     description: str,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Send a Morandi-themed admin event to the configured webhook.
+    """Send a Morandi-themed admin event via webhook, bot, or both.
     kwargs are passed to build_event_payload (actor, source, fields, request_id, ticket_id, ts, footer, color).
+    Delivery mode controlled by ADMIN_NOTIFY_DELIVERY: webhook | bot | both.
     """
-    hook = get_admin_webhook_url()
-    if not hook:
-        res = {"ok": False, "status": 0, "error": "no_admin_webhook"}
-        _log_admin_event(kind, res)
-        return res
+    mode = _get_delivery_mode()
     payload = build_event_payload(kind, title, description, **kwargs)
-    res = post_discord(hook, payload)
-    _log_admin_event(kind, res)
-    return res
+
+    results: List[Dict[str, Any]] = []
+    if mode in {"webhook", "both"}:
+        hook = get_admin_webhook_url()
+        if hook:
+            results.append(post_discord(hook, payload))
+        else:
+            results.append({"ok": False, "status": 0, "error": "no_admin_webhook"})
+    if mode in {"bot", "both"}:
+        results.append(_enqueue_bot_event({
+            "kind": kind,
+            "title": title,
+            "description": description,
+            **{k: v for k, v in kwargs.items() if k in {"actor", "source", "fields", "request_id", "ticket_id", "ts", "footer", "color"}},
+        }))
+
+    # Announcement source hook
+    try:
+        if str(kind).lower() in {"announcement", "announce", "system_announcement"}:
+            _enqueue_announcement(kind, title, description, **kwargs)
+    except Exception:
+        pass
+
+    # unify: success if any ok
+    ok_any = any(r.get("ok") for r in results) if results else False
+    status = next((r.get("status") for r in results if r.get("ok")), 0)
+    err = ";".join(filter(None, [str(r.get("error")) for r in results if not r.get("ok")])) or None
+    result = {"ok": ok_any, "status": status, **({"error": err} if err else {})}
+    _log_admin_event(kind, result)
+    return result
 
 
 # ---- Lightweight delivery log (in-memory) ----

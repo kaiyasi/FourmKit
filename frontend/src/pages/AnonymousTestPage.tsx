@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import AnonymousAccountDisplay from '@/components/AnonymousAccountDisplay'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateAnonymousCode, isSystemDemo } from '@/utils/client'
@@ -21,7 +21,7 @@ export default function AnonymousTestPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/anonymous-test" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
       <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">

@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { AuthAPI } from "@/services/api";
+import { AuthAPI, ModeAPI } from "@/services/api";
 import { saveSession } from "@/utils/auth";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function AuthPage() {
@@ -13,9 +13,11 @@ export default function AuthPage() {
   const [err, setErr] = useState("");
   const nav = useNavigate();
   const { login } = useAuth();
+  const [loginMode, setLoginMode] = useState<"single" | "admin_only" | "open">("admin_only");
+  const canPublicRegister = loginMode === 'open';
   const { pathname } = useLocation()
 
-  // 初始化主題
+  // 初始化主題 + 讀取登入模式（用於是否顯示註冊）
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
@@ -44,6 +46,12 @@ export default function AuthPage() {
         }
       }
     } catch {}
+    ;(async () => {
+      try {
+        const r = await ModeAPI.get();
+        setLoginMode((r.login_mode as any) || 'admin_only');
+      } catch {}
+    })()
     return () => html.classList.remove('theme-ready')
   }, [])
 
@@ -157,12 +165,14 @@ export default function AuthPage() {
           >
             登入
           </button>
-          <button 
-            className={`px-4 py-2 rounded-xl border transition-all ${tab==='register'?'dual-btn':'bg-surface hover:bg-surface/80 border-border'}`} 
-            onClick={()=>setTab("register")}
-          >
-            註冊
-          </button>
+          {canPublicRegister ? (
+            <button 
+              className={`px-4 py-2 rounded-xl border transition-all ${tab==='register'?'dual-btn':'bg-surface hover:bg-surface/80 border-border'}`} 
+              onClick={()=>setTab("register")}
+            >
+              註冊
+            </button>
+          ) : null}
           <div className="ml-auto text-sm text-muted">ForumKit</div>
         </div>
 
@@ -211,33 +221,38 @@ export default function AuthPage() {
           </form>
         ) : (
           <form onSubmit={onRegister} className="grid gap-4">
+            {!canPublicRegister && (
+              <div className="mb-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                已停用公開註冊，請改用 Google 校園帳號登入，或聯絡管理員建立帳號。
+              </div>
+            )}
             <div className="grid gap-2">
               <label className="text-sm text-muted">使用者名稱</label>
-              <input name="username" placeholder="用於登入與顯示" className="form-control" autoComplete="username" required />
+              <input name="username" placeholder="用於登入與顯示" className="form-control" autoComplete="username" required disabled={!canPublicRegister} />
             </div>
             <div className="grid gap-2">
               <label className="text-sm text-muted">Email</label>
-              <input name="email" placeholder="example@school.edu" type="email" className="form-control" autoComplete="email" required />
+              <input name="email" placeholder="example@school.edu" type="email" className="form-control" autoComplete="email" required disabled={!canPublicRegister} />
             </div>
             <div className="grid gap-2">
               <label className="text-sm text-muted">密碼</label>
-              <input name="password" placeholder="至少 8 碼" type="password" className="form-control" autoComplete="new-password" required />
+              <input name="password" placeholder="至少 8 碼" type="password" className="form-control" autoComplete="new-password" required disabled={!canPublicRegister} />
             </div>
             <div className="grid gap-2">
               <label className="text-sm text-muted">校內綁定（選填）</label>
-              <input name="school_slug" placeholder="school-slug（校外留空）" className="form-control" />
+              <input name="school_slug" placeholder="school-slug（校外留空）" className="form-control" disabled={!canPublicRegister} />
             </div>
             <button 
-              disabled={loading} 
+              disabled={loading || !canPublicRegister} 
               className="px-4 py-3 rounded-xl dual-btn font-semibold disabled:opacity-60 transition-all"
             >
               {loading ? "註冊中..." : "註冊"}
             </button>
-            <p className="text-xs text-muted">註冊僅接受校園信箱（.edu/.edu.tw 等），gmail.com 不開放。</p>
+            <p className="text-xs text-muted">{canPublicRegister ? '註冊僅接受校園信箱（.edu/.edu.tw 等），gmail.com 不開放。' : '目前已關閉公開註冊。'}</p>
           </form>
         )}
       </div>
-      <MobileFabNav />
+      <MobileBottomNav />
     </div>
   );
 }

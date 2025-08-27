@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Home, PlusCircle, User, Settings, MessageSquare, Shield } from 'lucide-react'
+import { MessageSquare, ScrollText, PlusCircle, Settings, LogIn, Shield, HelpCircle } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { getRole } from '@/utils/auth'
 import { useAuth } from '@/contexts/AuthContext'
@@ -18,52 +18,24 @@ export function MobileBottomNav() {
 
   const isActive = (path: string) => location.pathname === path
 
-  const tabs = [
-    {
-      path: '/',
-      icon: Home,
-      label: '首頁',
-      show: true
-    },
-    {
-      path: '/boards',
-      icon: MessageSquare,
-      label: '討論',
-      show: true
-    },
-    {
-      path: '/create',
-      icon: PlusCircle,
-      label: '發文',
-      show: isLoggedIn
-    },
-    {
-      path: isLoggedIn ? '/settings/profile' : '/auth',
-      icon: isLoggedIn ? User : User,
-      label: isLoggedIn ? '我的' : '登入',
-      show: true
-    }
+  // 行動版統一底部導覽：貼文 / 版規(或後台) / 發文 / 設定(未登入為登入) / 支援
+  const isAdmin = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(role)
+  const visibleTabs = [
+    { path: '/boards', icon: MessageSquare, label: '貼文' },
+    isAdmin 
+      ? { path: '/admin', icon: Shield, label: '後台' }
+      : { path: '/rules', icon: ScrollText, label: '版規' },
+    { path: '/create', icon: PlusCircle, label: '發文' },
+    { path: isLoggedIn ? '/settings/profile' : '/auth', icon: isLoggedIn ? Settings : LogIn, label: isLoggedIn ? '設定' : '登入' },
+    { path: '/support', icon: HelpCircle, label: '支援' },
   ]
-
-  // 管理員專用標籤
-  const adminTab = {
-    path: '/admin',
-    icon: Shield,
-    label: '管理',
-    show: ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(role)
-  }
-
-  const visibleTabs = tabs.filter(tab => tab.show)
-  if (adminTab.show) {
-    visibleTabs.push(adminTab)
-  }
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
       {/* 安全區域背景 */}
       <div className="bg-nav-bg/95 backdrop-blur-md border-t border-nav-border">
         <div className="flex items-center justify-around px-2 py-1 pb-[env(safe-area-inset-bottom)]">
-          {visibleTabs.map((tab, index) => {
+          {visibleTabs.map((tab) => {
             const Icon = tab.icon
             const active = isActive(tab.path)
             

@@ -2,6 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import './index.css'
+// 確保主題在應用啟動時即刻套用（不依賴 NavBar/ThemeToggle 出現）
+import './lib/theme'
 import './styles/markdown.css'
 import App from './App'
 import AuthPage from './pages/AuthPage'
@@ -18,6 +20,8 @@ import AdminIntegrationsPage from './pages/admin/IntegrationsPage'
 import AdminPagesEditor from './pages/admin/PagesEditor'
 import AdminChatPage from './pages/admin/ChatPage'
 import AdminEventsPage from './pages/admin/EventsPage'
+import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage'
+import InstagramPage from './pages/admin/InstagramPage'
 import SupportPage from './pages/SupportPage'
 import AdminSupportInboxPage from './pages/admin/SupportInboxPage'
 import AboutPage from './pages/AboutPage'
@@ -57,15 +61,7 @@ const router = createBrowserRouter([
     { path: "/posts/:id", element: <PostDetailPage />, errorElement: <RouteError /> },
     { path: "/theme-designer", element: <ThemeDesignerPage />, errorElement: <RouteError /> },
 	{ path: "/403", element: <Forbidden403 />, errorElement: <RouteError /> },
-    { 
-        path: "/create", 
-        element: (
-            <RequireAuth>
-                <CreatePostPage />
-            </RequireAuth>
-        ),
-        errorElement: <RouteError />,
-    },
+    { path: "/create", element: <CreatePostPage />, errorElement: <RouteError /> },
     // 個人設定（僅登入用戶可見）
     { 
         path: "/settings/profile", 
@@ -146,6 +142,15 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
+        path: "/admin/instagram",
+        element: (
+            <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
+                <InstagramPage />
+            </RequireRoles>
+        ),
+        errorElement: <RouteError />,
+    },
+    {
         path: "/admin/pages",
         element: (
             <RequireRoles allow={['dev_admin','cross_admin','campus_admin']}>
@@ -168,6 +173,15 @@ const router = createBrowserRouter([
         element: (
             <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator']}>
                 <AdminEventsPage />
+            </RequireRoles>
+        ),
+        errorElement: <RouteError />,
+    },
+    {
+        path: "/admin/announcements",
+        element: (
+            <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
+                <AdminAnnouncementsPage />
             </RequireRoles>
         ),
         errorElement: <RouteError />,

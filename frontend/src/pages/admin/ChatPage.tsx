@@ -4,7 +4,7 @@ import { getRole, getSchoolId, isLoggedIn } from '@/utils/auth'
 import ChatPanel from '@/components/ChatPanel'
 import { Building2, Users, MessageSquare, ArrowLeft, Shield, Globe, Code, Loader2, User, Eye } from 'lucide-react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
 interface ChatRoom {
   id: string
@@ -162,7 +162,7 @@ export default function AdminChatPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/chat" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
       <main className="mx-auto max-w-6xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         {/* 頁面標題 */}

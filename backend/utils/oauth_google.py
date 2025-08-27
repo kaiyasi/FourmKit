@@ -3,6 +3,9 @@ import json
 import urllib.parse
 import urllib.request
 from typing import Optional, Tuple, Dict, Any
+from utils.db import get_session
+from models import School, SchoolSetting
+import json
 
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -83,6 +86,32 @@ def fetch_user_info(access_token: Optional[str] = None, id_token: Optional[str] 
     return {}
 
 
+def _find_school_by_domain(domain: str) -> Optional[School]:
+    """根據完整網域（不含 @）在 SchoolSetting.allowed_domains 中尋找綁定學校。"""
+    try:
+        with get_session() as s:
+            rows = s.query(School, SchoolSetting).join(SchoolSetting, School.id == SchoolSetting.school_id, isouter=True).all()
+            for sch, setting in rows:
+                if not setting or not (setting.data or '').strip():
+                    continue
+                try:
+                    data = json.loads(setting.data)
+                except Exception:
+                    continue
+                allowed = []
+                if isinstance(data, dict):
+                    allowed = data.get('allowed_domains') or []
+                if not isinstance(allowed, list):
+                    continue
+                # 綁定格式要求以 @ 開頭儲存
+                full = f"@{domain.lower()}"
+                if any(isinstance(x, str) and x.strip().lower() == full for x in allowed):
+                    return sch
+    except Exception:
+        return None
+    return None
+
+
 def check_school_domain(email: str) -> Tuple[bool, str]:
     """回傳 (是否允許, domain)。規則：
     - 明確拒絕 gmail.com
@@ -95,6 +124,10 @@ def check_school_domain(email: str) -> Tuple[bool, str]:
     domain = email.split("@", 1)[1]
     if domain == "gmail.com":
         return False, domain
+    # 先查詢是否被學校明確綁定（允許自定義完整網域）
+    sch = _find_school_by_domain(domain)
+    if sch:
+        return True, domain
     if domain.endswith(".edu") or domain.endswith(".edu.tw") or \
        domain.endswith(".edu.cn") or domain.endswith(".edu.hk") or \
        ".edu." in domain:

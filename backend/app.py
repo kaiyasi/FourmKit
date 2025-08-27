@@ -31,12 +31,13 @@ from routes.routes_media_v2 import bp as media_v2_bp
 from routes.routes_media import bp as media_bp
 from routes.routes_account import bp as account_bp
 from routes.routes_moderation import bp as moderation_bp
+from routes.routes_instagram import bp as instagram_bp
 from routes.routes_abuse import bp as abuse_bp
 from routes.routes_support import bp as support_bp
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 
-APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.0.0")
+APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.1.0")
 
 # 先建立未綁 app 的全域 socketio，在 create_app() 裡再 init_app
 socketio = SocketIO(
@@ -49,6 +50,11 @@ socketio = SocketIO(
 )
 
 _events_registered = False  # 防重註冊旗標
+
+
+def __brand_footer_text() -> str:
+    from datetime import datetime, timezone
+    return f"DEV. Serelix Studio • {datetime.now(timezone.utc).isoformat()}"
 
 # --------- Realtime rooms state (in-memory, single-process) ---------
 from collections import deque
@@ -576,6 +582,187 @@ def create_app() -> Flask:
     except Exception as e:
         print("[ForumKit] Single admin enforcement failed:", e)
 
+    # 準備品牌資產：將根目錄 ForumKit.png 複製到 uploads/public/assets 供 Webhook 取用
+    try:
+        src_candidates = [
+            os.path.abspath(os.path.join(os.getcwd(), 'ForumKit.png')),
+            os.path.abspath('/app/ForumKit.png'),
+        ]
+        src = next((p for p in src_candidates if os.path.exists(p)), None)
+        if src:
+            root = os.getenv('UPLOAD_ROOT', 'uploads')
+            dest_dir = os.path.join(root, 'public', 'assets')
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, 'ForumKit.png')
+            # 僅在不存在或來源較新時更新
+            need = True
+            try:
+                if os.path.exists(dest):
+                    need = os.path.getmtime(src) > os.path.getmtime(dest)
+            except Exception:
+                need = True
+            if need:
+                import shutil
+                shutil.copyfile(src, dest)
+                print('[ForumKit] Copied brand logo to', dest)
+    except Exception as e:
+        print('[ForumKit] Prepare brand asset failed:', e)
+
+    # 啟動使用者 Webhook 推送服務（可用 ADMIN_NOTIFY_DELIVERY=webhook/bot/both 與用戶級 Webhook 並行）
+    def _start_user_webhook_feeder():
+        import json as _json
+        import traceback
+        from sqlalchemy.orm import Session
+        from models import Post, School, User
+        from utils.db import get_session
+        from utils.notify import post_discord
+        try:
+            import redis  # type: ignore
+        except Exception:
+            return  # 無 redis 環境則略過
+
+        url = os.getenv('REDIS_URL', 'redis://redis:80/0')
+        interval = int(os.getenv('USER_WEBHOOK_FEED_INTERVAL', '60') or '60')
+        r = None
+        try:
+            r = redis.from_url(url, decode_responses=True)
+        except Exception:
+            r = None
+        if not r:
+            return
+
+        def _loop():
+            while True:
+                try:
+                    items = r.hgetall('user:webhooks') or {}
+                    if items:
+                        with get_session() as s:  # type: Session
+                            for uid, raw in items.items():
+                                try:
+                                    conf = _json.loads(raw) if raw else {}
+                                except Exception:
+                                    conf = {}
+                                if not conf or not conf.get('enabled') or not conf.get('url'):
+                                    continue
+                                # 用戶學校（綁定）
+                                try:
+                                    u = s.get(User, int(uid))
+                                    user_school_id = getattr(u, 'school_id', None)
+                                except Exception:
+                                    user_school_id = None
+
+                                kinds = conf.get('kinds') or {}
+                                wants_posts = bool(kinds.get('posts', True))
+                                wants_comments = bool(kinds.get('comments', False))
+                                wants_ann = bool(kinds.get('announcements', False))
+
+                                # 取最新貼文（審核通過）
+                                if wants_posts:
+                                    q = s.query(Post).filter(Post.status == 'approved')
+                                    if user_school_id:
+                                        q = q.filter(Post.school_id == user_school_id)
+                                    # 每用戶批次上限，可從設定帶入（預設 5）
+                                    batch = int(conf.get('batch', 5) or 5)
+                                    batch = 1 if batch < 1 else (10 if batch > 10 else batch)
+                                    q = q.order_by(Post.id.desc()).limit(batch)
+                                    posts = list(reversed(q.all()))
+                                    last_key = f'user:webhooks:last:{uid}'
+                                    last_raw = r.get(last_key)
+                                    last_id = int(last_raw) if last_raw and last_raw.isdigit() else 0
+                                    new_posts = [p for p in posts if int(getattr(p, 'id', 0)) > last_id]
+                                    for p in new_posts:
+                                        content = (p.content or '')
+                                        excerpt = content[:180]
+                                        try:
+                                            excerpt = re.sub('<[^>]+>', '', excerpt)
+                                        except Exception:
+                                            pass
+                                        title = f"#{p.id} 新貼文"
+                                        embed = {
+                                            'title': title,
+                                            'description': excerpt,
+                                            'color': 0x2b90d9,
+                                            'url': f"{os.getenv('PUBLIC_BASE_URL', '').rstrip('/')}/posts/{p.id}" if os.getenv('PUBLIC_BASE_URL') else None,
+                                            'author': { 'name': 'ForumKit', **({ 'icon_url': (os.getenv('PUBLIC_CDN_URL','') or os.getenv('PUBLIC_BASE_URL','')).rstrip('/') + ('/assets/ForumKit.png' if os.getenv('PUBLIC_CDN_URL') else '/uploads/assets/ForumKit.png') } if (os.getenv('PUBLIC_CDN_URL') or os.getenv('PUBLIC_BASE_URL')) else {}) },
+                                            'footer': { 'text': __brand_footer_text() }
+                                        }
+                                        # 媒體縮圖（若可用）
+                                        try:
+                                            img_url = None
+                                            cdn = os.getenv('PUBLIC_CDN_URL')
+                                            if not cdn and os.getenv('PUBLIC_BASE_URL'):
+                                                cdn = os.getenv('PUBLIC_BASE_URL').rstrip('/') + '/uploads'
+                                            if cdn and getattr(p, 'media', None):
+                                                # 僅挑第一張圖片（排除影片/其他）
+                                                for m in p.media:
+                                                    mp = (getattr(m, 'path', '') or '').lstrip('/')
+                                                    mk = (getattr(m, 'kind', '') or '').lower()
+                                                    is_img = any(mp.lower().endswith(ext) for ext in ['.jpg','.jpeg','.png','.webp','.gif']) or mk == 'image'
+                                                    if not is_img:
+                                                        continue
+                                                    if mp.startswith('public/'):
+                                                        img_url = cdn.rstrip('/') + '/' + mp.replace('public/','',1)
+                                                    else:
+                                                        img_url = cdn.rstrip('/') + '/' + mp
+                                                    break
+                                            if img_url:
+                                                embed['image'] = { 'url': img_url }
+                                        except Exception:
+                                            pass
+                                        try:
+                                            post_discord(conf['url'], { 'content': None, 'embeds': [embed] })
+                                        except Exception:
+                                            pass
+                                        last_id = max(last_id, int(p.id))
+                                    r.set(last_key, str(last_id))
+
+                                # 最新留言（審核通過）
+                                if wants_comments:
+                                    from models import Comment
+                                    from sqlalchemy import desc
+                                    cq = s.query(Comment).filter(Comment.status == 'approved', Comment.is_deleted == False)  # noqa: E712
+                                    if user_school_id:
+                                        # 透過貼文學校過濾
+                                        cq = cq.join(Post, Post.id == Comment.post_id).filter(Post.school_id == user_school_id)
+                                    batch = int(conf.get('batch', 5) or 5)
+                                    batch = 1 if batch < 1 else (10 if batch > 10 else batch)
+                                    cq = cq.order_by(desc(Comment.id)).limit(batch)
+                                    cmts = list(reversed(cq.all()))
+                                    c_last_key = f'user:webhooks:last_comment:{uid}'
+                                    c_last_raw = r.get(c_last_key)
+                                    c_last_id = int(c_last_raw) if c_last_raw and c_last_raw.isdigit() else 0
+                                    new_cmts = [c for c in cmts if int(getattr(c, 'id', 0)) > c_last_id]
+                                    for c in new_cmts:
+                                        text = (c.content or '')[:180]
+                                        try:
+                                            text = re.sub('<[^>]+>', '', text)
+                                        except Exception:
+                                            pass
+                                        title = f"💬 新留言 #{c.id}"
+                                        # 連回貼文
+                                        url_post = f"{os.getenv('PUBLIC_BASE_URL', '').rstrip('/')}/posts/{getattr(c, 'post_id', 0)}" if os.getenv('PUBLIC_BASE_URL') else None
+                                        embed = { 'title': title, 'description': text, 'color': 0x6b7280, 'url': url_post,
+                                                  'author': { 'name': 'ForumKit', **({ 'icon_url': (os.getenv('PUBLIC_CDN_URL','') or os.getenv('PUBLIC_BASE_URL','')).rstrip('/') + ('/assets/ForumKit.png' if os.getenv('PUBLIC_CDN_URL') else '/uploads/assets/ForumKit.png') } if (os.getenv('PUBLIC_CDN_URL') or os.getenv('PUBLIC_BASE_URL')) else {}) },
+                                                  'footer': { 'text': __brand_footer_text() } }
+                                        try:
+                                            post_discord(conf['url'], { 'content': None, 'embeds': [embed] })
+                                        except Exception:
+                                            pass
+                                        c_last_id = max(c_last_id, int(c.id))
+                                    r.set(c_last_key, str(c_last_id))
+                except Exception:
+                    traceback.print_exc()
+                finally:
+                    eventlet.sleep(max(15, interval))
+
+        try:
+            eventlet.spawn_n(_loop)
+            print('[ForumKit] user webhook feeder started')
+        except Exception as e:
+            print('[ForumKit] user webhook feeder failed:', e)
+
+    _start_user_webhook_feeder()
+
     # 限制 CORS 來源
     # CORS 允許來源：預設涵蓋常見本機與 Docker 映射連入
     default_http_origins = [
@@ -888,6 +1075,50 @@ def create_app() -> Flask:
             "user_stats": user_stats,
         })
 
+    # 公告管理（管理員）
+    @app.get('/api/admin/announcements')
+    def admin_ann_list():  # type: ignore[override]
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt
+        try:
+            verify_jwt_in_request()
+            claims = get_jwt() or {}
+            if claims.get('role') not in { 'dev_admin','campus_admin','cross_admin' }:
+                return jsonify({ 'msg': 'forbidden' }), 403
+        except Exception:
+            return jsonify({ 'msg': 'unauthorized' }), 401
+        items: list[dict[str, Any]] = []
+        try:
+            import redis, json as _json
+            r = redis.from_url(os.getenv('REDIS_URL','redis://redis:80/0'), decode_responses=True)
+            raw = r.zrevrange('fk:announcements', 0, 49)
+            for s in raw:
+                try:
+                    items.append(_json.loads(s))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return jsonify({ 'ok': True, 'items': items })
+
+    @app.post('/api/admin/announcements')
+    def admin_ann_create():  # type: ignore[override]
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt
+        try:
+            verify_jwt_in_request()
+            claims = get_jwt() or {}
+            if claims.get('role') not in { 'dev_admin','campus_admin','cross_admin' }:
+                return jsonify({ 'msg': 'forbidden' }), 403
+        except Exception:
+            return jsonify({ 'msg': 'unauthorized' }), 401
+        data = request.get_json(silent=True) or {}
+        title = str(data.get('title') or '').strip()
+        message = str(data.get('message') or '').strip()
+        if not title or not message:
+            return jsonify({ 'ok': False, 'msg': 'title/message required' }), 400
+        # 透過 notify 管線發送（自動寫入公告來源、Webhook、Bot 等）
+        res = notify_send_event(kind='announcement', title=title, description=message, source='/api/admin/announcements')
+        return jsonify({ 'ok': True, 'delivery': 'ok' if res.get('ok') else 'local_only', 'status': res.get('status') })
+
 
 
     @app.route("/api/color_vote", methods=["POST"])
@@ -1037,6 +1268,7 @@ def create_app() -> Flask:
     app.register_blueprint(account_bp)
     app.register_blueprint(media_bp)
     app.register_blueprint(media_v2_bp)
+    app.register_blueprint(instagram_bp)
     # 狀態與事件（僅 dev_admin 可讀）
     try:
         from routes.routes_status import bp as status_bp

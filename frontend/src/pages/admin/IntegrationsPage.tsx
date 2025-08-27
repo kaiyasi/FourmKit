@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { 
   RefreshCw, 
   CheckCircle, 
@@ -159,7 +159,7 @@ export default function AdminIntegrationsPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/integrations" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         {/* 頁首 */}

@@ -872,6 +872,26 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
     if not can_moderate_content(user, post.school_id):
         return jsonify({"ok": False, "error": "沒有權限操作此貼文"}), 403
 
+    # 不允許非 dev_admin 否決 dev_admin 的決策
+    try:
+        last_log = (
+            s.query(ModerationLog)
+             .filter(
+                ModerationLog.target_type == "post",
+                ModerationLog.target_id == post_id,
+                ModerationLog.action.in_(["approve", "reject", "override_approve", "override_reject"])
+             )
+             .order_by(ModerationLog.id.desc())
+             .first()
+        )
+        if last_log and last_log.moderator_id:
+            last_actor = s.query(User).get(last_log.moderator_id)
+            me = s.query(User).get(user_id)
+            if last_actor and last_actor.role == "dev_admin" and me and me.role != "dev_admin":
+                return jsonify({"ok": False, "error": "不可否決總管理決策"}), 403
+    except Exception:
+        pass
+
     old_status = post.status
     
     if action == "approve":
@@ -971,6 +991,26 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, media_item.school_id):
         return jsonify({"ok": False, "error": "沒有權限操作此媒體"}), 403
+
+    # 不允許非 dev_admin 否決 dev_admin 的決策
+    try:
+        last_log = (
+            s.query(ModerationLog)
+             .filter(
+                ModerationLog.target_type == "media",
+                ModerationLog.target_id == media_id,
+                ModerationLog.action.in_(["approve", "reject", "override_approve", "override_reject"])
+             )
+             .order_by(ModerationLog.id.desc())
+             .first()
+        )
+        if last_log and last_log.moderator_id:
+            last_actor = s.query(User).get(last_log.moderator_id)
+            me = s.query(User).get(user_id)
+            if last_actor and last_actor.role == "dev_admin" and me and me.role != "dev_admin":
+                return jsonify({"ok": False, "error": "不可否決總管理決策"}), 403
+    except Exception:
+        pass
 
     old_status = media_item.status
     

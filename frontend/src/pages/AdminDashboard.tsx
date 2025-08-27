@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { canSetMode, getRole, getRoleDisplayName } from '@/utils/auth'
-import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench } from 'lucide-react'
+import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, Instagram } from 'lucide-react'
 
 export default function AdminDashboard() {
   const role = getRole()
@@ -31,9 +31,9 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin" />
-      <MobileFabNav />
+      <MobileBottomNav />
 
-      <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center gap-3 mb-1">
             <LayoutDashboard className="w-5 h-5" />
@@ -47,12 +47,18 @@ export default function AdminDashboard() {
           <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋與 CSV 匯出" icon={MessagesSquare} />
           <Card to="/mode" title="模式管理" desc="維護/開發/測試/正常模式切換與規則設定" icon={Wrench} disabled={!canSetMode()} />
 
+          {/* Instagram 連動管理 */}
+          {['dev_admin','campus_admin','cross_admin'].includes(role) && (
+            <Card to="/admin/instagram" title="Instagram 連動" desc="帳號管理、模板設計、排程設定、發送記錄" icon={Instagram} />
+          )}
+
           {/* 系統管理面板 */}
           <Card to="/admin/users" title="使用者管理" desc="檢視與搜尋、重設密碼、角色指派" icon={Users} />
           <Card to="/admin/schools" title="學校管理" desc="清單、新增、重新命名" icon={Building2} />
           <Card to="/admin/integrations" title="整合狀態" desc="Webhook/Redis/心跳服務概況" icon={Network} />
           <Card to="/admin/pages" title="頁面內容（Markdown）" desc="關於/版規 的維護與即時預覽" icon={LayoutDashboard} />
           <Card to="/admin/support" title="使用者回報/聯絡" desc="查看最近的狀況回報、快速聯絡回覆" icon={MessagesSquare} />
+          <Card to="/admin/announcements" title="公告發佈" desc="發布系統公告，同步送往 Webhook 與訂閱" icon={Wrench} />
         </div>
       </main>
     </div>

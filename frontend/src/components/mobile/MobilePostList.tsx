@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getJSON, HttpError } from '@/lib/http'
-import { validatePostList, type PostList as PostListType, type Post } from '@/schemas/post'
+import { validatePostList, type PostList as PostListType } from '@/schemas/post'
 import { MobilePostCard } from './MobilePostCard'
-import { QuickPostFab } from './QuickPostFab'
 import { RefreshCw, AlertCircle, ChevronUp } from 'lucide-react'
 
 interface MobilePostListProps {
@@ -17,8 +16,12 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [isPulling, setIsPulling] = useState(false)
+  const [pullDistance, setPullDistance] = useState(0)
   
   const containerRef = useRef<HTMLDivElement>(null)
+  const startYRef = useRef(0)
+  const pullThreshold = 80
   const perPage = 15
 
   const haptic = (ms = 10) => { 
@@ -57,19 +60,26 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
       }
       
       const url = `/api/posts/list?limit=${perPage}&page=${p}${q}`
-      const result = await getJSON(url)
-      const validated = validatePostList(result)
+      const result = await getJSON<any>(url)
+      // 後端此路由回傳 { items }（無分頁欄位），這裡做寬鬆相容
+      let validated: PostListType
+      try {
+        validated = validatePostList(result)
+      } catch {
+        const items = Array.isArray(result?.items) ? result.items : []
+        validated = validatePostList({ items, page: p, per_page: perPage, total: items.length })
+      }
       
       if (refresh || p === 1) {
         setData(validated)
       } else {
-        setData(prev => ({
+        setData(prev => prev ? ({
           ...validated,
-          posts: [...(prev?.posts || []), ...validated.posts]
-        }))
+          items: [...(prev.items || []), ...validated.items]
+        }) : validated)
       }
       
-      setHasMore(validated.posts.length === perPage)
+      setHasMore(validated.items.length === perPage)
       setPage(refresh ? 2 : p + 1)
       
     } catch (err) {
@@ -85,6 +95,65 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
   useEffect(() => {
     fetchPage(1, true)
   }, [])
+
+  // 學校切換時自動刷新清單
+  useEffect(() => {
+    const onSchoolChanged = () => {
+      setPage(1)
+      setHasMore(true)
+      fetchPage(1, true)
+      try { if ('vibrate' in navigator) navigator.vibrate(6) } catch {}
+    }
+    window.addEventListener('fk_school_changed', onSchoolChanged as any)
+    return () => window.removeEventListener('fk_school_changed', onSchoolChanged as any)
+  }, [])
+
+  // 觸控下拉刷新處理
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (container.scrollTop === 0) {
+        startYRef.current = e.touches[0].clientY
+        setIsPulling(true)
+      }
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPulling || container.scrollTop > 0) {
+        setIsPulling(false)
+        setPullDistance(0)
+        return
+      }
+
+      const currentY = e.touches[0].clientY
+      const distance = Math.max(0, (currentY - startYRef.current) * 0.5)
+      
+      if (distance > 0) {
+        e.preventDefault()
+        setPullDistance(Math.min(distance, pullThreshold * 1.5))
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (isPulling && pullDistance >= pullThreshold) {
+        handlePullRefresh()
+      }
+      setIsPulling(false)
+      setPullDistance(0)
+    }
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: false })
+    container.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isPulling, pullDistance])
 
   // 滾動監聽
   useEffect(() => {
@@ -175,28 +244,48 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
   }
 
   return (
-    <div ref={containerRef} className="h-full overflow-y-auto">
-      {/* 下拉刷新提示 */}
-      <div className="sticky top-0 z-10 bg-bg/80 backdrop-blur-sm border-b border-border/50">
-        <div className="flex items-center justify-center py-3">
-          {refreshing ? (
-            <div className="flex items-center gap-2 text-sm text-muted">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>更新中...</span>
-            </div>
-          ) : (
-            <button
-              onClick={handlePullRefresh}
-              className="text-sm text-primary hover:text-primary-600 font-medium"
-            >
-              下拉刷新
-            </button>
-          )}
+    <div ref={containerRef} className="h-full overflow-y-auto relative">
+      {/* 下拉刷新提示 - 只在拉動時顯示 */}
+      {(isPulling || refreshing) && (
+        <div 
+          className="absolute top-0 left-0 right-0 z-10 bg-bg/95 backdrop-blur-sm border-b border-border/30 transition-transform duration-300"
+          style={{ 
+            transform: `translateY(${isPulling ? pullDistance - pullThreshold : 0}px)`,
+            opacity: isPulling ? Math.min(pullDistance / pullThreshold, 1) : 1
+          }}
+        >
+          <div className="flex items-center justify-center py-4">
+            {refreshing ? (
+              <div className="flex items-center gap-2 text-sm text-muted">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>更新中...</span>
+              </div>
+            ) : isPulling ? (
+              <div className="flex items-center gap-2 text-sm text-primary">
+                <RefreshCw 
+                  className={`w-4 h-4 transition-transform ${pullDistance >= pullThreshold ? 'rotate-180' : ''}`} 
+                />
+                <span>{pullDistance >= pullThreshold ? '鬆開刷新' : '繼續下拉'}</span>
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 貼文列表 */}
-      <div className="p-4 pb-24">
+      <div className="mobile-horizontal-padding mobile-vertical-padding pb-24">
+        {/* 骨架載入（初次） */}
+        {!data && loading && (
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="border border-border rounded-2xl p-4 bg-surface/70 animate-pulse">
+                <div className="h-4 w-24 bg-neutral-200 dark:bg-neutral-800 rounded mb-3" />
+                <div className="h-3 w-full bg-neutral-200 dark:bg-neutral-800 rounded mb-2" />
+                <div className="h-3 w-5/6 bg-neutral-200 dark:bg-neutral-800 rounded" />
+              </div>
+            ))}
+          </div>
+        )}
         {/* 注入的本地項目 */}
         {injectedItems.map((item, index) => (
           <MobilePostCard 
@@ -208,7 +297,7 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
         ))}
 
         {/* 服務器貼文 */}
-        {data?.posts.map((post) => (
+        {data?.items.map((post) => (
           <MobilePostCard
             key={post.id}
             post={post}
@@ -225,14 +314,14 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
         )}
 
         {/* 沒有更多內容 */}
-        {!hasMore && data?.posts.length && data.posts.length > 5 && (
+        {!hasMore && data?.items.length && data.items.length > 5 && (
           <div className="text-center py-6 text-muted text-sm">
             沒有更多貼文了
           </div>
         )}
 
         {/* 空狀態 */}
-        {data?.posts.length === 0 && injectedItems.length === 0 && (
+        {data?.items.length === 0 && injectedItems.length === 0 && (
           <div className="text-center py-12">
             <p className="text-muted mb-4">還沒有任何貼文</p>
             <p className="text-sm text-muted">成為第一個發文的人吧！</p>
@@ -253,8 +342,6 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
         </button>
       )}
 
-      {/* 快速發文 FAB */}
-      <QuickPostFab onPostCreated={handlePostCreated} />
     </div>
   )
 }

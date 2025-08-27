@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { Send, AlertTriangle, CheckCircle, ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -47,8 +47,8 @@ export default function SupportPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/support" />
-      <MobileFabNav />
-      <main className="mx-auto max-w-3xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <MobileBottomNav />
+      <main className="mx-auto max-w-3xl px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button onClick={() => window.history.back()} className="flex items-center gap-2 text-muted hover:text-fg transition-colors">
@@ -65,9 +65,10 @@ export default function SupportPage() {
               <div>
                 <label className="block text-sm text-muted mb-1">分類</label>
                 <select value={category} onChange={e=>setCategory(e.target.value)} className="form-control w-full">
-                  <option value="account">帳號/登入問題</option>
+                  <option value="suggestion">功能建議</option>
                   <option value="report">問題回報</option>
                   <option value="abuse">濫用/檢舉</option>
+                  <option value="account">帳號/登入問題</option>
                   <option value="other">其他</option>
                 </select>
               </div>
@@ -104,4 +105,3 @@ export default function SupportPage() {
     </div>
   )
 }
-

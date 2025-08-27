@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { Search, Filter, CheckCircle, XCircle, Eye, Clock, User, Calendar, Download, RefreshCw, AlertTriangle, FileText, History, Trash2 } from 'lucide-react'
 import { HttpError, getJSON } from '@/lib/http'
+import DesktopOnly from '@/components/ui/DesktopOnly'
 import ErrorPage from '@/components/ui/ErrorPage'
+import { formatLocalMinute } from '@/utils/time'
 import { getRole, getRoleDisplayName } from '@/utils/auth'
 
 type School = { id: number; slug: string; name: string }
@@ -92,7 +94,20 @@ export default function GeneralAdminPage() {
   const [stats, setStats] = useState({ pending_posts: 0, processed_today: 0 })
 
   const role = getRole()
+
+  // 角色階層（數字越大權限越高）
+  const roleRank = (r?: string|null) => {
+    switch (r) {
+      case 'dev_admin': return 100
+      case 'cross_admin': return 90
+      case 'campus_admin': return 80
+      case 'cross_moderator': return 70
+      case 'campus_moderator': return 60
+      default: return 50
+    }
+  }
   
+  // 僅桌面顯示主要內容
   // 媒體預覽組件
   const MediaPreview = ({ id, path, kind, url: providedUrl }: { id: number; path: string; kind?: string; url?: string }) => {
     const [url, setUrl] = useState<string | null>(null);
@@ -487,7 +502,7 @@ export default function GeneralAdminPage() {
   return (
     <div className="min-h-screen min-h-dvh bg-base">
       <NavBar pathname="/admin/moderation" />
-      
+
       <div className="container mx-auto px-4 py-6 max-w-7xl pt-20 sm:pt-24 md:pt-28">
         <div className="flex flex-col gap-6">
           {/* 標題與刷新 */}
@@ -706,7 +721,7 @@ export default function GeneralAdminPage() {
                               {post.created_at && (
                                 <span className="flex items-center gap-1">
                                   <Calendar className="w-3 h-3" />
-                                  {new Date(post.created_at).toLocaleString('zh-TW')}
+                                  {formatLocalMinute(post.created_at)}
                                 </span>
                               )}
                               {post.client_id && (
@@ -812,7 +827,7 @@ export default function GeneralAdminPage() {
                             )}
                           </div>
                           <div className="text-xs text-muted">
-                            {new Date(log.created_at).toLocaleString('zh-TW')}
+                            {formatLocalMinute(log.created_at)}
                           </div>
                         </div>
                         
@@ -925,7 +940,16 @@ export default function GeneralAdminPage() {
                                   )}
 
                                   {/* 否決操作（dev_admin / campus_admin / cross_admin 可見） */}
-                                  {['dev_admin', 'campus_admin', 'cross_admin'].includes(role) && logDetail.status && logDetail.id && (
+                                  {(() => {
+                                    // 僅當前使用者權限高於原審核者才顯示「否決」操作；
+                                    // 若未知原審核者角色，僅 dev_admin 可複決。
+                                    const myRank = roleRank(role)
+                                    const moderatorRole = (selectedLog as any)?.moderator_role as (string|undefined)
+                                    const hasModRole = typeof moderatorRole === 'string' && moderatorRole.length > 0
+                                    const modRank = roleRank(hasModRole ? moderatorRole : null)
+                                    const canOverride = hasModRole ? (myRank > modRank) : (role === 'dev_admin')
+                                    return canOverride && logDetail.status && logDetail.id
+                                  })() && (
                                     <div className="border-t pt-2 mt-2">
                                       <div className="text-xs text-muted mb-2">否決操作</div>
                                       {logDetail.status === 'approved' ? (
@@ -1044,7 +1068,7 @@ export default function GeneralAdminPage() {
                             <span className="text-sm text-muted">#{request.post_id}</span>
                           </div>
                           <div className="text-xs text-muted">
-                            {new Date(request.created_at).toLocaleString()}
+                            {formatLocalMinute(request.created_at)}
                           </div>
                         </div>
 
@@ -1131,7 +1155,7 @@ export default function GeneralAdminPage() {
                           <div className="text-xs text-muted">
                             <div>請求者IP: {request.requester_ip || '未知'}</div>
                             {request.reviewed_at && (
-                              <div>審核時間: {new Date(request.reviewed_at).toLocaleString()}</div>
+                              <div>審核時間: {formatLocalMinute(request.reviewed_at)}</div>
                             )}
                           </div>
 
@@ -1276,7 +1300,7 @@ export default function GeneralAdminPage() {
         </div>
       )}
 
-      <MobileFabNav />
+      <MobileBottomNav />
     </div>
   )
 }

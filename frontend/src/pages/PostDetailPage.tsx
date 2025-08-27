@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { getJSON, HttpError } from '@/lib/http'
 import ErrorPage from '@/components/ui/ErrorPage'
+import { formatLocalMinute } from '@/utils/time'
 import ChatPanel from '@/components/ChatPanel'
 import { useParams, useNavigate } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import CommentSection from '@/components/CommentSection'
 import { getRole } from '@/utils/auth'
 import { AlertTriangle, Trash2, MessageCircle, Share2, Flag } from 'lucide-react'
@@ -32,8 +33,8 @@ export default function PostDetailPage({ id }: { id?: number }) {
     return (
       <div className="min-h-screen">
         <NavBar pathname="/posts/404" />
-        <MobileFabNav />
-        <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+        <MobileBottomNav />
+        <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
           <ErrorPage status={404} title="無效的貼文編號" />
         </main>
     </div>
@@ -196,13 +197,13 @@ export default function PostDetailPage({ id }: { id?: number }) {
   return (
     <div className="min-h-screen min-h-dvh">
       <NavBar pathname={`/posts/${post.id}`} />
-      <MobileFabNav />
+      <MobileBottomNav />
       
       <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex justify-between items-start mb-4">
             <div className="text-xs text-muted">
-              #{post.id} <span className="mx-1">•</span> {post.created_at ? new Date(post.created_at).toLocaleString() : ''} <span className="mx-1">•</span>
+          #{post.id} <span className="mx-1">•</span> {post.created_at ? formatLocalMinute(post.created_at) : ''} <span className="mx-1">•</span>
               {(() => {
                 const label = String(post.author_hash || '').trim()
                 const isAnonCode = /^[A-Z0-9]{6}$/.test(label)

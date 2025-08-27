@@ -292,7 +292,8 @@ class DeleteService:
                         'file_name': media.file_name,
                         'file_type': media.file_type,
                         'path': media.path,
-                        'preview_url': media.preview_url
+                        # 若已發布(public/)，直接給靜態路徑；否則留空交由前端授權端點抓取
+                        'preview_url': (f"/uploads/{media.path}" if (media.path or '').startswith('public/') else None),
                     }
                     for media in media_files
                 ]

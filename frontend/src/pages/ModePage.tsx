@@ -3,7 +3,7 @@ import { ModeAPI, ContentRulesAPI } from "@/services/api";
 import { canSetMode, getRole } from "@/utils/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import { NavBar } from "@/components/layout/NavBar";
-import { MobileFabNav } from "@/components/layout/MobileFabNav";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { Server, Wrench, AlertTriangle, Zap, CheckCircle, Database, Activity, RefreshCw, Cloud, CloudOff, Lock, Shield } from "lucide-react";
 
 type ModeType = "normal" | "test" | "maintenance" | "development";
@@ -103,7 +103,7 @@ export default function ModePage() {
     }
   }
 
-  async function saveLoginMode() {
+  async function saveLoginMode(next: "single" | "admin_only" | "open") {
     if (!canSetMode()) {
       showMessage("權限不足：僅 dev_admin 可設定登入模式", "error");
       return;
@@ -116,8 +116,11 @@ export default function ModePage() {
     
     setLoading(true);
     try {
-      const r = await ModeAPI.set(undefined, undefined, undefined, loginMode);
-      showMessage(`登入模式已更新為：${loginMode === "single" ? "單一模式" : loginMode === "admin_only" ? "管理組模式" : "全開模式"}`, "success");
+      const r = await ModeAPI.set(undefined, undefined, undefined, next);
+      // 以後端回傳為準；若無則採用 next
+      const applied = (r as any)?.config?.login_mode || next;
+      setLoginMode(applied);
+      showMessage(`登入模式已更新為：${applied === "single" ? "單一模式" : applied === "admin_only" ? "管理組模式" : "全開模式"}`, "success");
     } catch (e: any) {
       console.error("Login mode save error:", e);
       let errorMsg = "保存失敗";
@@ -206,7 +209,7 @@ export default function ModePage() {
   return (
     <div className="min-h-screen min-h-dvh">
       <NavBar pathname="/mode" />
-      <MobileFabNav />
+      <MobileBottomNav />
 
       <div className="max-w-4xl mx-auto px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         {/* 標題區域 */}
@@ -303,10 +306,7 @@ export default function ModePage() {
           <div className="grid gap-4 md:grid-cols-3">
             {/* 單一模式 */}
             <button
-              onClick={() => {
-                setLoginMode("single");
-                setTimeout(saveLoginMode, 100);
-              }}
+              onClick={() => saveLoginMode("single")}
               disabled={loading}
               className={`
                 p-4 rounded-xl border transition-all text-left
@@ -337,10 +337,7 @@ export default function ModePage() {
 
             {/* 管理組模式 */}
             <button
-              onClick={() => {
-                setLoginMode("admin_only");
-                setTimeout(saveLoginMode, 100);
-              }}
+              onClick={() => saveLoginMode("admin_only")}
               disabled={loading}
               className={`
                 p-4 rounded-xl border transition-all text-left
@@ -371,10 +368,7 @@ export default function ModePage() {
 
             {/* 全開模式 */}
             <button
-              onClick={() => {
-                setLoginMode("open");
-                setTimeout(saveLoginMode, 100);
-              }}
+              onClick={() => saveLoginMode("open")}
               disabled={loading}
               className={`
                 p-4 rounded-xl border transition-all text-left

@@ -7,6 +7,7 @@ from utils.authz import require_role
 from PIL import Image
 import os
 from utils.admin_events import log_system_event
+import json
 
 bp = Blueprint("schools", __name__, url_prefix="/api/schools")
 @bp.get("/<string:slug>/settings")
@@ -421,3 +422,111 @@ def admin_overview(slug: str):
                 'note': 'gmail.com 不允許作為校園登入網域; 允許 .edu 類網域',
             }
         })
+
+
+@bp.get('/<string:slug>/domains')
+@jwt_required()
+@require_role('dev_admin', 'campus_admin')
+def list_school_domains(slug: str):
+    """列出學校綁定之完整網域清單（含 @）。"""
+    with get_session() as s:
+        sch = s.query(School).filter(School.slug == slug).first()
+        if not sch:
+            return jsonify({ 'msg': 'not found' }), 404
+        # 權限：campus_admin 僅能操作自己學校
+        uid = get_jwt_identity()
+        actor = s.get(User, int(uid)) if uid is not None else None
+        if actor and actor.role == 'campus_admin' and (not actor.school_id or actor.school_id != sch.id):
+            _log_unauthorized(actor, 'list_school_domains', slug)
+            return jsonify({ 'msg': '僅能操作所屬學校' }), 403
+        setting = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
+        data = {}
+        try:
+            if setting and (setting.data or '').strip():
+                data = json.loads(setting.data)
+        except Exception:
+            data = {}
+        allowed = data.get('allowed_domains') if isinstance(data, dict) else None
+        if not isinstance(allowed, list):
+            allowed = []
+        # 僅回傳字串陣列
+        out = [x for x in allowed if isinstance(x, str)]
+        return jsonify({ 'items': out })
+
+
+@bp.post('/<string:slug>/domains')
+@jwt_required()
+@require_role('dev_admin', 'campus_admin')
+def add_school_domain(slug: str):
+    """新增學校綁定網域。需以 @ 開頭，至少一個點（例：@nhsh.tp.edu.tw）。"""
+    body = request.get_json(silent=True) or {}
+    dom = (body.get('domain') or '').strip()
+    if not (dom.startswith('@') and '.' in dom):
+        return jsonify({ 'msg': '請輸入完整網域（例如 @nhsh.tp.edu.tw）' }), 400
+    full = dom.lower()
+    with get_session() as s:
+        sch = s.query(School).filter(School.slug == slug).first()
+        if not sch:
+            return jsonify({ 'msg': 'not found' }), 404
+        uid = get_jwt_identity()
+        actor = s.get(User, int(uid)) if uid is not None else None
+        if actor and actor.role == 'campus_admin' and (not actor.school_id or actor.school_id != sch.id):
+            _log_unauthorized(actor, 'add_school_domain', slug)
+            return jsonify({ 'msg': '僅能操作所屬學校' }), 403
+        setting = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
+        data = {}
+        try:
+            if setting and (setting.data or '').strip():
+                data = json.loads(setting.data)
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        allowed = data.get('allowed_domains')
+        if not isinstance(allowed, list):
+            allowed = []
+        if full not in allowed:
+            allowed.append(full)
+        data['allowed_domains'] = allowed
+        payload = json.dumps(data, ensure_ascii=False)
+        if not setting:
+            setting = SchoolSetting(school_id=sch.id, data=payload)
+            s.add(setting)
+        else:
+            setting.data = payload
+        s.commit()
+        return jsonify({ 'ok': True, 'items': allowed })
+
+
+@bp.delete('/<string:slug>/domains')
+@jwt_required()
+@require_role('dev_admin', 'campus_admin')
+def remove_school_domain(slug: str):
+    body = request.get_json(silent=True) or {}
+    dom = (body.get('domain') or '').strip().lower()
+    if not dom:
+        return jsonify({ 'msg': '缺少 domain' }), 400
+    with get_session() as s:
+        sch = s.query(School).filter(School.slug == slug).first()
+        if not sch:
+            return jsonify({ 'msg': 'not found' }), 404
+        uid = get_jwt_identity()
+        actor = s.get(User, int(uid)) if uid is not None else None
+        if actor and actor.role == 'campus_admin' and (not actor.school_id or actor.school_id != sch.id):
+            _log_unauthorized(actor, 'remove_school_domain', slug)
+            return jsonify({ 'msg': '僅能操作所屬學校' }), 403
+        setting = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
+        if not setting or not (setting.data or '').strip():
+            return jsonify({ 'ok': True, 'items': [] })
+        try:
+            data = json.loads(setting.data)
+        except Exception:
+            data = {}
+        allowed = data.get('allowed_domains') if isinstance(data, dict) else None
+        if not isinstance(allowed, list):
+            allowed = []
+        new_list = [x for x in allowed if isinstance(x, str) and x.strip().lower() != dom]
+        data['allowed_domains'] = new_list
+        setting.data = json.dumps(data, ensure_ascii=False)
+        s.commit()
+        return jsonify({ 'ok': True, 'items': new_list })

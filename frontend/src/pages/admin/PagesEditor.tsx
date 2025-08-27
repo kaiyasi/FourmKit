@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { Eye, Save, Upload, Download, Bold, Italic, Link, List, Quote, Code, ArrowLeft } from 'lucide-react'
 import { getRole, getRoleDisplayName } from '@/utils/auth'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,7 +28,6 @@ export default function AdminPagesEditor() {
 
   useEffect(() => {
     const html = document.documentElement
-    if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
     html.classList.add('theme-ready')
     return () => html.classList.remove('theme-ready')
   }, [])
@@ -154,7 +153,7 @@ export default function AdminPagesEditor() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/pages" />
-      <MobileFabNav />
+      <MobileBottomNav />
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         {/* 頁首 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">

@@ -14,6 +14,12 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import io
 import base64
+import json
+
+import redis.asyncio as aioredis
+from cogs.admin_events import AdminEventsCog
+from cogs.me import MeCog
+from cogs.connect import ConnectCog
 
 # 配置日誌
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +31,8 @@ FORUMKIT_API_URL = os.getenv('FORUMKIT_API_URL', 'http://localhost:12005/api')
 ADMIN_TOKEN = os.getenv('FORUMKIT_ADMIN_TOKEN', '')
 ALLOWED_GUILD_IDS = list(map(int, os.getenv('ALLOWED_GUILD_IDS', '').split(',') if os.getenv('ALLOWED_GUILD_IDS') else []))
 ADMIN_ROLE_NAME = os.getenv('ADMIN_ROLE_NAME', 'ForumKit Admin')
+DISCORD_ALERT_CHANNEL_ID = int(os.getenv('DISCORD_ALERT_CHANNEL_ID', '0') or '0')
+REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:80/0')
 
 # 機器人設定
 intents = discord.Intents.default()
@@ -112,6 +120,18 @@ class ForumKitAPI:
 # 全局 API 客戶端
 api = ForumKitAPI(FORUMKIT_API_URL, ADMIN_TOKEN)
 
+# Redis client (async)
+redis_cli: Optional[aioredis.Redis] = None
+
+async def get_redis() -> Optional[aioredis.Redis]:
+    global redis_cli
+    try:
+        if redis_cli is None or redis_cli.connection is None:
+            redis_cli = aioredis.from_url(REDIS_URL, decode_responses=True)
+        return redis_cli
+    except Exception:
+        return None
+
 
 def is_admin():
     """檢查是否為管理員"""
@@ -137,6 +157,16 @@ async def on_ready():
     logger.info(f'{bot.user} 已上線!')
     logger.info(f'已連接到 {len(bot.guilds)} 個伺服器')
     
+    # 同步斜線指令（優先同步到授權伺服器，否則全域）
+    try:
+        if ALLOWED_GUILD_IDS:
+            for gid in ALLOWED_GUILD_IDS:
+                await bot.tree.sync(guild=discord.Object(id=gid))
+        else:
+            await bot.tree.sync()
+        logger.info('Slash 指令已同步')
+    except Exception as e:
+        logger.warning(f'Sync slash 指令失敗: {e}')
     # 啟動定期任務
     status_monitor.start()
 
@@ -148,6 +178,12 @@ async def on_command_error(ctx, error):
     
     logger.error(f"指令錯誤: {error}")
     await ctx.send(f"❌ 指令執行失敗: {str(error)}")
+
+
+# 後台事件處理改由 AdminEventsCog 管理
+
+
+# 使用者綁定改由 MeCog (Slash) 提供
 
 
 # ===============================================================================
@@ -527,6 +563,10 @@ async def ping(ctx):
 async def main():
     """主函數"""
     try:
+        # 掛載 Cogs（含 Slash 指令）
+        await bot.add_cog(AdminEventsCog(bot, alert_channel_id=DISCORD_ALERT_CHANNEL_ID, redis_url=REDIS_URL))
+        await bot.add_cog(MeCog(bot, redis_url=REDIS_URL))
+        await bot.add_cog(ConnectCog(bot, api_base=FORUMKIT_API_URL, redis_url=REDIS_URL))
         await bot.start(BOT_TOKEN)
     except KeyboardInterrupt:
         logger.info("收到中斷信號，正在關閉...")

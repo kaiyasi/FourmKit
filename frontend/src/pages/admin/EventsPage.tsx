@@ -20,7 +20,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
 interface AdminEvent {
   timestamp: string
@@ -176,9 +176,9 @@ export default function EventsPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/events" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
-      <main className="mx-auto max-w-6xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-6xl px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         {/* 頁面標題 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
@@ -252,7 +252,7 @@ export default function EventsPage() {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="form-control"
               >
                 <option value="">全部類型</option>
                 <option value="user_login">用戶登入</option>
@@ -276,7 +276,7 @@ export default function EventsPage() {
               <select
                 value={filterSeverity}
                 onChange={(e) => setFilterSeverity(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="form-control"
               >
                 <option value="">全部程度</option>
                 <option value="low">低</option>

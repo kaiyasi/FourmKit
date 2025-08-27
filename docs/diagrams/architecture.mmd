@@ -1,0 +1,56 @@
+graph TB
+    %% 用戶層
+    User[用戶]
+    Mobile[手機用戶]
+    Admin[管理員]
+    
+    %% 入口層
+    LB[負載均衡器<br/>Nginx:12005]
+    CDN[CDN服務<br/>Nginx:12002]
+    
+    %% 應用層
+    Frontend[前端應用<br/>React + TS]
+    Backend[後端API<br/>Flask + SocketIO]
+    Socket[Socket服務<br/>:9101]
+    
+    %% 資料層
+    DB[(PostgreSQL<br/>:12007)]
+    Redis[(Redis<br/>:12008)]
+    Files[檔案存儲<br/>uploads/]
+    
+    %% 外部整合
+    Instagram[Instagram API]
+    Discord[Discord Webhook]
+    Google[Google OAuth]
+    
+    %% 連接關係
+    User --> LB
+    Mobile --> LB
+    Admin --> LB
+    
+    LB --> Frontend
+    LB --> Backend
+    
+    Frontend --> Backend
+    Frontend --> Socket
+    Backend --> Socket
+    
+    Backend --> DB
+    Backend --> Redis
+    Backend --> Files
+    Backend --> Instagram
+    Backend --> Discord
+    Backend --> Google
+    
+    CDN --> Files
+    
+    %% 樣式
+    classDef user fill:#e1f5fe
+    classDef service fill:#f3e5f5
+    classDef data fill:#e8f5e8
+    classDef external fill:#fff3e0
+    
+    class User,Mobile,Admin user
+    class LB,CDN,Frontend,Backend,Socket service
+    class DB,Redis,Files data
+    class Instagram,Discord,Google external

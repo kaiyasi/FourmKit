@@ -1,6 +1,6 @@
 import { AlertTriangle, Lock, Home, RefreshCw } from 'lucide-react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { useSearchParams } from 'react-router-dom'
 
 export default function LoginRestrictedPage() {
@@ -56,9 +56,9 @@ export default function LoginRestrictedPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/error" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
-      <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         <div className="max-w-lg mx-auto">
           <div className="bg-surface border border-border rounded-2xl p-6 sm:p-8 shadow-soft text-center">
             <div className="mx-auto w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">

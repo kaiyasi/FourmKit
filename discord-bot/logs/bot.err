@@ -1,0 +1,12 @@
+WARNING:discord.client:PyNaCl is not installed, voice will NOT be supported
+Traceback (most recent call last):
+  File "/mnt/data_pool_b/kaiyasi/ForumKit/discord-bot/forumkit_admin_bot.py", line 521, in <module>
+    @bot.command(name='help')
+     ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data_pool_b/kaiyasi/ForumKit/discord-bot/.venv/lib/python3.11/site-packages/discord/ext/commands/core.py", line 1553, in decorator
+    self.add_command(result)
+  File "/mnt/data_pool_b/kaiyasi/ForumKit/discord-bot/.venv/lib/python3.11/site-packages/discord/ext/commands/bot.py", line 264, in add_command
+    super().add_command(command)
+  File "/mnt/data_pool_b/kaiyasi/ForumKit/discord-bot/.venv/lib/python3.11/site-packages/discord/ext/commands/core.py", line 1391, in add_command
+    raise CommandRegistrationError(command.name)
+discord.ext.commands.errors.CommandRegistrationError: The command help is already an existing command or alias.

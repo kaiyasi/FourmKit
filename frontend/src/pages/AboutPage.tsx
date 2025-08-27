@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
 export default function AboutPage() {
   const { pathname } = useLocation()
@@ -33,8 +33,8 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname={pathname} />
-      <MobileFabNav />
-      <main className="mx-auto max-w-3xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <MobileBottomNav />
+      <main className="mx-auto max-w-3xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
           <h1 className="text-2xl font-semibold dual-text mb-3">關於我們</h1>
           {loading ? (

@@ -1,11 +1,18 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
+import hmac, hashlib, base64, os
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy.orm import Session
 from utils.db import get_session
 from models import User, School
 from PIL import Image
 import os
+import json as _json
+from urllib.parse import urlparse
+try:
+    import redis  # type: ignore
+except Exception:  # pragma: no cover
+    redis = None  # type: ignore
 
 bp = Blueprint("account", __name__, url_prefix="/api/account")
 
@@ -25,6 +32,14 @@ def get_profile():
                 auth_provider = 'google'
         except Exception:
             pass
+        # 生成穩定且無法反推的個人識別碼（亂碼顯示）
+        try:
+            secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
+            digest = hmac.new(secret.encode('utf-8'), str(u.id).encode('utf-8'), hashlib.sha256).digest()
+            personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+        except Exception:
+            personal_id = f"u{u.id:08d}"
+
         return jsonify({
             'id': u.id,
             'username': u.username,
@@ -34,6 +49,7 @@ def get_profile():
             'avatar_path': u.avatar_path,
             'auth_provider': auth_provider,
             'has_password': bool((u.password_hash or '').strip()),
+            'personal_id': personal_id,
         })
 
 
@@ -87,3 +103,91 @@ def upload_avatar():
         s.commit()
     return jsonify({ 'ok': True, 'path': rel })
 
+
+@bp.get("/webhook")
+@jwt_required()
+def get_user_webhook():
+    """取得當前使用者的個人 Webhook 設定（存於 Redis）。"""
+    if not redis:
+        return jsonify({ 'ok': False, 'error': 'redis_unavailable' }), 503
+    ident = get_jwt_identity()
+    url = os.getenv('REDIS_URL', 'redis://redis:80/0')
+    r = redis.from_url(url, decode_responses=True)
+    raw = r.hget('user:webhooks', str(ident)) or '{}'
+    try:
+        data = _json.loads(raw)
+    except Exception:
+        data = {}
+    last = r.get(f'user:webhooks:last:{ident}')
+    # 預設 kinds：僅新貼文
+    kinds = data.get('kinds') if isinstance(data.get('kinds'), dict) else { 'posts': True, 'comments': False, 'announcements': False }
+    data['kinds'] = {
+        'posts': bool(kinds.get('posts')),
+        'comments': bool(kinds.get('comments')),
+        'announcements': bool(kinds.get('announcements')),
+    }
+    last_c = r.get(f'user:webhooks:last_comment:{ident}')
+    return jsonify({ 'ok': True, 'config': data, 'last_post_id': int(last) if (last and last.isdigit()) else None, 'last_comment_id': int(last_c) if (last_c and last_c.isdigit()) else None })
+
+
+@bp.post("/webhook")
+@jwt_required()
+def set_user_webhook():
+    """設定個人 Webhook（url、school_slug、enabled）。"""
+    if not redis:
+        return jsonify({ 'ok': False, 'error': 'redis_unavailable' }), 503
+    ident = get_jwt_identity()
+    data = request.get_json(silent=True) or {}
+    urlv = str(data.get('url') or '').strip()
+    enabled = bool(data.get('enabled', True))
+    # kinds: { posts?:bool, comments?:bool, announcements?:bool }
+    raw_kinds = data.get('kinds') or {}
+    kinds = {
+        'posts': bool(raw_kinds.get('posts', True)),
+        'comments': bool(raw_kinds.get('comments', False)),
+        'announcements': bool(raw_kinds.get('announcements', False)),
+    }
+    batch = int(data.get('batch', 5) or 5)
+    if batch < 1: batch = 1
+    if batch > 10: batch = 10
+
+    if enabled:
+        if not urlv:
+            return jsonify({ 'ok': False, 'msg': '請輸入 Webhook URL' }), 400
+        # 基本格式檢查（允許 Discord/GH 等 https webhook）
+        try:
+            u = urlparse(urlv)
+            if u.scheme not in {'http','https'} or not u.netloc:
+                return jsonify({ 'ok': False, 'msg': 'Webhook URL 格式無效' }), 400
+        except Exception:
+            return jsonify({ 'ok': False, 'msg': 'Webhook URL 格式無效' }), 400
+
+    # 綁定學校固定使用使用者的 school_id（前端不再自填 school_slug）
+    payload = { 'url': urlv, 'enabled': enabled, 'kinds': kinds, 'batch': batch }
+    r = redis.from_url(os.getenv('REDIS_URL','redis://redis:80/0'), decode_responses=True)
+    r.hset('user:webhooks', str(ident), _json.dumps(payload))
+    return jsonify({ 'ok': True, 'config': payload })
+
+
+@bp.post("/webhook/test")
+@jwt_required()
+def test_user_webhook():
+    """對使用者設定或傳入的 URL 發送一則測試訊息。"""
+    if not redis:
+        return jsonify({ 'ok': False, 'error': 'redis_unavailable' }), 503
+    from utils.notify import post_discord, build_embed
+    ident = get_jwt_identity()
+    r = redis.from_url(os.getenv('REDIS_URL','redis://redis:80/0'), decode_responses=True)
+    data = request.get_json(silent=True) or {}
+    url_override = str(data.get('url') or '').strip()
+    conf_raw = r.hget('user:webhooks', str(ident)) or '{}'
+    try:
+        conf = _json.loads(conf_raw)
+    except Exception:
+        conf = {}
+    urlv = url_override or str(conf.get('url') or '')
+    if not urlv:
+        return jsonify({ 'ok': False, 'msg': '尚未設定 Webhook URL' }), 400
+    emb = build_embed('user_webhook_test', 'ForumKit 測試通知', 'Webhook 設定成功，將自動推送新貼文')
+    res = post_discord(urlv, { 'content': None, 'embeds': [emb] })
+    return jsonify({ 'ok': bool(res.get('ok')), 'status': res.get('status'), 'error': res.get('error') })

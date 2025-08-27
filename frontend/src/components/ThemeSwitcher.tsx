@@ -17,7 +17,7 @@ export function ThemeSwitcher(){
   return (
     <div className="flex items-center gap-2">
       <select
-        className="border border-border bg-surface rounded-xl px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        className="form-control w-auto"
         value={theme}
         onChange={e => {
           const t = e.target.value as ThemeName

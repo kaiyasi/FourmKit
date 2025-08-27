@@ -5,7 +5,6 @@ import { validatePost } from "../schemas/post";
 import AnonymousAccountDisplay from "./AnonymousAccountDisplay";
 
 export default function PostComposer({ token }: { token: string }) {
-  const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -65,8 +64,8 @@ export default function PostComposer({ token }: { token: string }) {
     e.preventDefault();
     setMsg(null);
     
-    if (!title.trim()) { 
-      setMsg("請輸入標題"); 
+    if (!content.trim()) { 
+      setMsg("請輸入內容"); 
       return; 
     }
     
@@ -81,17 +80,31 @@ export default function PostComposer({ token }: { token: string }) {
   async function doSubmit(finalSlug: string | '') {
     setSubmitting(true)
     try {
-      const fd = new FormData()
-      fd.set('title', title.trim())
-      fd.set('content', content.trim())
-      if (finalSlug) fd.set('school_slug', finalSlug)
-      try { console.log('[PostComposer] submit school_slug =', finalSlug || '(cross)') } catch {}
-      files.forEach(f => fd.append('files', f))
-      const result = await postFormData("/api/posts/with-media", fd)
-      const validatedPost = validatePost(result)
-      setMsg("已送出，等待審核")
-      setTitle(""); setContent(""); setFiles([])
-      console.log('created:', validatedPost)
+      // 優先使用純文本API，如果有檔案則使用多媒體API
+      if (files.length > 0) {
+        const fd = new FormData()
+        fd.set('content', content.trim())
+        if (finalSlug) fd.set('school_slug', finalSlug)
+        try { console.log('[PostComposer] submit with files, school_slug =', finalSlug || '(cross)') } catch {}
+        files.forEach(f => fd.append('files', f))
+        const result = await postFormData("/api/posts/with-media", fd)
+        const validatedPost = validatePost(result)
+        setMsg("已送出，等待審核")
+        setContent(""); setFiles([])
+        console.log('created:', validatedPost)
+      } else {
+        // 純文本發文
+        const { postJSON } = await import('../lib/http')
+        const payload: any = { content: content.trim() }
+        if (finalSlug) payload.school_slug = finalSlug
+        try { console.log('[PostComposer] submit text only, school_slug =', finalSlug || '(cross)') } catch {}
+        
+        const result = await postJSON('/api/posts', payload)
+        const validatedPost = validatePost(result)
+        setMsg("已送出，等待審核")
+        setContent(""); setFiles([])
+        console.log('created:', validatedPost)
+      }
     } catch (e:any) {
       if (e instanceof HttpError) setMsg(`送出失敗：${e.message}`)
       else if (e instanceof Error) setMsg(`送出失敗：${e.message}`)
@@ -141,8 +154,7 @@ export default function PostComposer({ token }: { token: string }) {
           </div>
         </div>
       )}
-      <input className="form-control" placeholder="標題" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80}/>
-      <textarea className="form-control min-h-[140px]" placeholder="內容（可留空）" value={content} onChange={(e) => setContent(e.target.value)}/>
+      <textarea className="form-control min-h-[140px]" placeholder="匿名分享你的想法..." value={content} onChange={(e) => setContent(e.target.value)}/>
       <UploadArea value={files} onChange={setFiles} maxCount={6} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

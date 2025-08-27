@@ -63,7 +63,8 @@ main, [data-scroll-container] { overscroll-behavior: contain; }
 /* 基礎 UI 元件（對齊主題變數） */
 .form-control {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.625rem 0.875rem; /* 統一高度 */
+  line-height: 1.25rem;
   background: var(--surface);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -72,6 +73,28 @@ main, [data-scroll-container] { overscroll-behavior: contain; }
 }
 .form-control::placeholder { color: var(--muted); opacity: .9; }
 .form-control:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); border-color: var(--primary); }
+/* Normalize all selects to match input height and add custom arrow */
+select, select.form-control {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 2.25rem;
+  line-height: 1.25rem;
+}
+select.form-control { height: auto; }
+select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 20 20' fill='%23888888'><path d='M5.5 7l4.5 5 4.5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 0.9rem;
+}
+input[type="color"].form-control { height: 2.5rem; padding: 0.25rem; }
+
+/* 文字溢出保護 */
+.prose, .prose-sm { overflow-wrap: anywhere; word-break: break-word; }
+
+/* 表格小螢幕可水平捲動 */
+.table-scroll { overflow-x: auto; }
 
 .btn-primary {
   display: inline-flex;

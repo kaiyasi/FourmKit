@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft } from 'lucide-react'
+import { formatLocalMinute } from '@/utils/time'
 import { getRoleDisplayName } from '@/utils/auth'
 
 interface User {
@@ -251,7 +252,7 @@ export default function AdminUsersPage() {
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/users" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
       <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         {/* 頁首 */}
@@ -362,7 +363,7 @@ export default function AdminUsersPage() {
                             {getRoleDisplayName(user.role as any) || user.role}
                           </span>
                           <span className="text-muted">
-                            註冊於 {new Date(user.created_at).toLocaleDateString()}
+                            註冊於 {formatLocalMinute(user.created_at)}
                           </span>
                         </div>
                       </div>
@@ -373,7 +374,7 @@ export default function AdminUsersPage() {
                         <select
                           value={user.role}
                           onChange={(e) => updateUserRole(user.id, e.target.value)}
-                          className="px-3 py-1.5 text-sm bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-w-[140px]"
+                          className="form-control text-sm min-w-[140px]"
                           title="調整權限"
                         >
                           {roles.map(role => (
@@ -387,7 +388,7 @@ export default function AdminUsersPage() {
                         <select
                           value={user.school?.slug || ''}
                           onChange={(e) => updateUserSchool(user.id, e.target.value)}
-                          className="px-3 py-1.5 text-sm bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-w-[140px]"
+                          className="form-control text-sm min-w-[140px]"
                           title="學校綁定"
                         >
                           {schools.map(school => (

@@ -183,7 +183,8 @@ export default function App() {
   const [progressLoading, setProgressLoading] = useState(true)
 
   const { isSmallScreen } = useScreenSize()
-  const mobileGateEnabled = (import.meta as any).env?.VITE_MOBILE_UNDER_CONSTRUCTION === '1'
+  // 預設關閉手機版限制，除非明確設定為啟用
+  const mobileGateEnabled = false // (import.meta as any).env?.VITE_MOBILE_UNDER_CONSTRUCTION === '1'
   const bypassed = (()=>{ try{ return localStorage.getItem('fk_mobile_ok')==='1' }catch{return false} })()
   const [injectedItems, setInjectedItems] = useState<any[]>([])
 
@@ -645,7 +646,7 @@ export default function App() {
           <MobilePostList injectedItems={injectedItems} />
         </div>
 
-        {/* 底部導航 */}
+        {/* 統一手機版導航 */}
         <MobileBottomNav />
         
         <RealtimeToastPanel onNewPost={handleNewPost} />

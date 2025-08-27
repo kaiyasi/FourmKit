@@ -55,13 +55,16 @@ def get_effective_user_id() -> int | None:
     except Exception:
         # 未帶 JWT 或驗證失敗都視為未登入；後續看是否啟用 dev bypass
         ident = None
-    # 1) 完整匿名：允許以 X-Client-Id 做為匿名使用者（無需登入）
+    # 1) 完整匿名：允許以 X-Client-Id 做為匿名使用（無需登入）
+    #    過去會為每個 client 建立一個使用者（anon_{client_id})，造成帳號氾濫。
+    #    改為統一掛載到單一來賓帳號：username='anon_guest'（role='user'），
+    #    顯示名稱仍由貼文的 client_id 產生 6 碼匿名碼，不受使用者名稱影響。
     try:
         client_id = request.headers.get("X-Client-Id", "").strip()
         if client_id:
             db = next(get_db())
             try:
-                uname = f"anon_{client_id}"
+                uname = "anon_guest"
                 u = db.query(User).filter_by(username=uname).first()
                 if not u:
                     u = User(username=uname, password_hash="", role="user")

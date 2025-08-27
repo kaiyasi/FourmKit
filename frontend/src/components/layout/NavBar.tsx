@@ -1,4 +1,4 @@
-import { Home, Newspaper, Info, ScrollText, LogIn, Settings, LayoutDashboard, MessageSquareDot, LogOut, AlertTriangle, Activity } from 'lucide-react'
+import { Home, Newspaper, Info, ScrollText, LogIn, Settings, LayoutDashboard, MessageSquareDot, LogOut, AlertTriangle, Activity, HelpCircle } from 'lucide-react'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import SchoolSwitcher from '@/components/SchoolSwitcher'
 import { Link } from 'react-router-dom'
@@ -14,6 +14,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/boards', label: '貼文', icon: Newspaper },
     { to: '/about', label: '關於我們', icon: Info },
     { to: '/rules', label: '版規', icon: ScrollText },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/auth', label: '登入', icon: LogIn, iconOnly: true },
   ],
   user: [
@@ -21,6 +22,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/boards', label: '貼文', icon: Newspaper },
     { to: '/about', label: '關於我們', icon: Info },
     { to: '/rules', label: '版規', icon: ScrollText },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/my-violations', label: '我的違規', icon: AlertTriangle },
     { to: '/settings/profile', label: '設定', icon: Settings },
   ],
@@ -30,6 +32,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/admin', label: '後台', icon: LayoutDashboard },
     { to: '/admin/chat', label: '聊天', icon: MessageSquareDot },
     { to: '/admin/events', label: '事件', icon: Activity },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/settings/admin', label: '設定', icon: Settings },
   ],
   campus_admin: [
@@ -38,6 +41,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/admin', label: '後台', icon: LayoutDashboard },
     { to: '/admin/chat', label: '聊天', icon: MessageSquareDot },
     { to: '/admin/events', label: '事件', icon: Activity },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/settings/admin', label: '設定', icon: Settings },
   ],
   cross_admin: [
@@ -46,6 +50,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/admin', label: '後台', icon: LayoutDashboard },
     { to: '/admin/chat', label: '聊天', icon: MessageSquareDot },
     { to: '/admin/events', label: '事件', icon: Activity },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/settings/admin', label: '設定', icon: Settings },
   ],
   campus_moderator: [
@@ -54,6 +59,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/admin', label: '後台', icon: LayoutDashboard },
     { to: '/admin/chat', label: '聊天', icon: MessageSquareDot },
     { to: '/admin/events', label: '事件', icon: Activity },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/settings/admin', label: '設定', icon: Settings },
   ],
   cross_moderator: [
@@ -62,6 +68,7 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
     { to: '/admin', label: '後台', icon: LayoutDashboard },
     { to: '/admin/chat', label: '聊天', icon: MessageSquareDot },
     { to: '/admin/events', label: '事件', icon: Activity },
+    { to: '/support', label: '支援', icon: HelpCircle },
     { to: '/settings/admin', label: '設定', icon: Settings },
   ],
 }
@@ -75,7 +82,7 @@ export function NavBar({ pathname }: { pathname: string }) {
   return (
     <nav className="fixed top-4 left-0 right-0 z-50 hidden md:block">
       <div className="mx-auto max-w-5xl">
-        <div className="flex items-center justify-center">
+        <div className="relative flex items-center justify-center">
           <ul className="flex items-center gap-6 px-6 py-3 rounded-2xl bg-surface/70 backdrop-blur-md border border-border shadow-sm h-12 tablet-nav">
             {/* 主要導航項目 */}
             {items.map(({ to, label, icon: Icon, iconOnly }) => {

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
-import { User, Shield, Bell, Save, Key, Mail, Building2, BadgeCheck, Edit, AlertTriangle } from 'lucide-react'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import { User, Shield, Bell, Save, Key, IdCard, Link as LinkIcon, Building2, BadgeCheck, Edit, AlertTriangle } from 'lucide-react'
 import { AccountAPI } from '@/services/api'
 import { getRole, isLoggedIn, getRoleDisplayName } from '@/utils/auth'
 
@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const isAdmin = ['admin', 'dev_admin', 'campus_admin', 'cross_admin'].includes(role)
   
   const [settings, setSettings] = useState<UserSettings>({})
-  const [profile, setProfile] = useState<{ username:string; email:string; role:string; school?: { id:number; slug:string; name:string }|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean } | null>(null)
+  const [profile, setProfile] = useState<{ username:string; email:string; role:string; school?: { id:number; slug:string; name:string }|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean; personal_id?: string } | null>(null)
   const [schoolSettings, setSchoolSettings] = useState<{ announcement?: string; allow_anonymous?: boolean; min_post_chars?: number }|null>(null)
   const [schoolMeta, setSchoolMeta] = useState<{ id:number; slug:string; name:string }|null>(null)
   const [canEditSchool, setCanEditSchool] = useState(false)
@@ -32,6 +32,8 @@ export default function SettingsPage() {
     document.documentElement.getAttribute('data-theme') || 'beige'
   )
   const [cpw, setCpw] = useState({ current_password: '', new_password: '' })
+  const [webhook, setWebhook] = useState<{ url: string; enabled: boolean; kinds: { posts:boolean; comments:boolean; announcements:boolean }, batch: number }>(()=>({ url:'', enabled:false, kinds:{ posts:true, comments:false, announcements:false }, batch:5 }))
+  const [webhookStatus, setWebhookStatus] = useState<string>('')
 
   useEffect(() => {
     const html = document.documentElement
@@ -64,6 +66,20 @@ export default function SettingsPage() {
         language: 'zh-TW'
       })
       await loadSchoolSettings()
+      try {
+        const wh = await AccountAPI.webhookGet()
+        const conf = wh?.config || {}
+        setWebhook({ 
+          url: conf.url || '', 
+          enabled: Boolean(conf.enabled), 
+          kinds: {
+            posts: Boolean(conf?.kinds?.posts ?? true),
+            comments: Boolean(conf?.kinds?.comments ?? false),
+            announcements: Boolean(conf?.kinds?.announcements ?? false)
+          },
+          batch: Number(conf?.batch ?? 5)
+        })
+      } catch {}
     } catch (error) {
       setMessage('載入設定失敗')
     } finally {
@@ -151,8 +167,8 @@ export default function SettingsPage() {
     return (
       <div className="min-h-screen">
         <NavBar pathname="/settings/profile" />
-        <MobileFabNav />
-        <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+        <MobileBottomNav />
+        <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft text-center">
             <Key className="w-12 h-12 mx-auto mb-4 text-muted" />
             <h1 className="text-xl font-semibold dual-text mb-2">需要登入</h1>
@@ -167,8 +183,8 @@ export default function SettingsPage() {
     return (
       <div className="min-h-screen">
         <NavBar pathname={pathname} />
-        <MobileFabNav />
-        <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+        <MobileBottomNav />
+        <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
           <div className="bg-surface border border-border rounded-2xl p-8 text-center text-muted">
             載入中...
           </div>
@@ -180,9 +196,9 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen min-h-dvh">
       <NavBar pathname={pathname} />
-      <MobileFabNav />
+      <MobileBottomNav />
 
-      <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
         {/* 頁首 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
@@ -214,6 +230,60 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          {/* 通知 Webhook 綁定 */}
+          <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
+            <div className="flex items-center gap-3 mb-4">
+              <LinkIcon className="w-6 h-6 text-primary" />
+              <h2 className="text-xl font-semibold dual-text">通知 Webhook（Discord 相容）</h2>
+            </div>
+            <div className="grid gap-4">
+              <div>
+                <label className="block text-sm font-medium text-muted mb-1">Webhook URL</label>
+                <input value={webhook.url} onChange={e=>setWebhook(prev=>({ ...prev, url:e.target.value }))} placeholder="https://discord.com/api/webhooks/..." className="form-control w-full" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex items-center justify-between p-3 bg-surface-hover rounded-xl border border-border">
+                  <div>
+                    <div className="font-medium text-fg">啟用自動推送</div>
+                    <div className="text-sm text-muted">最新貼文會自動推送至你的 Webhook</div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={webhook.enabled} onChange={e=>setWebhook(prev=>({ ...prev, enabled:e.target.checked }))} />
+                    <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+                <div className="p-3 bg-surface-hover rounded-xl border border-border">
+                  <div className="font-medium text-fg mb-2">推送類型</div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <label className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={webhook.kinds.posts} onChange={e=>setWebhook(prev=>({ ...prev, kinds: { ...prev.kinds, posts:e.target.checked } }))} />
+                      新貼文
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={webhook.kinds.comments} onChange={e=>setWebhook(prev=>({ ...prev, kinds: { ...prev.kinds, comments:e.target.checked } }))} />
+                      新留言
+                    </label>
+                    <label className="inline-flex items-center gap-2 opacity-70">
+                      <input type="checkbox" checked={webhook.kinds.announcements} onChange={e=>setWebhook(prev=>({ ...prev, kinds: { ...prev.kinds, announcements:e.target.checked } }))} />
+                      公告（即將推出）
+                    </label>
+                  </div>
+                </div>
+                <div className="p-3 bg-surface-hover rounded-xl border border-border">
+                  <div className="font-medium text-fg mb-2">每次推送最多</div>
+                  <select className="form-control w-40" value={webhook.batch} onChange={e=>setWebhook(prev=>({ ...prev, batch: Number(e.target.value) }))}>
+                    {Array.from({length:10},(_,i)=>i+1).map(n=> <option key={n} value={n}>{n} 則</option>)}
+                  </select>
+                  <div className="text-xs text-muted mt-1">全域頻率（管理員設定）：每 {import.meta.env?.VITE_USER_WEBHOOK_FEED_INTERVAL || '60'} 秒掃描一次</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={async()=>{ try{ const r= await AccountAPI.webhookSet({ url: webhook.url, enabled: webhook.enabled, kinds: webhook.kinds as any, batch: webhook.batch }); setWebhookStatus('已儲存'); setTimeout(()=>setWebhookStatus(''),1500)}catch(e:any){ setWebhookStatus(e?.message||'儲存失敗') } }} className="btn-primary px-4 py-2">儲存</button>
+                <button onClick={async()=>{ try{ const r= await AccountAPI.webhookTest(webhook.url||undefined); setWebhookStatus(r.ok? '測試成功': ('測試失敗 '+(r.error||''))) }catch(e:any){ setWebhookStatus(e?.message||'測試失敗') } }} className="btn-ghost px-4 py-2">發送測試</button>
+                {webhookStatus && <div className="text-sm text-muted">{webhookStatus}</div>}
+              </div>
+            </div>
+          </div>
           {/* 學校設定（依 SchoolSwitcher 決定學校） */}
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-4">
@@ -332,24 +402,46 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
-                
-                                 <div className="space-y-2">
-                   <label className="block text-sm font-medium text-muted">電子郵件</label>
-                   <div className="p-4 bg-surface-hover rounded-xl border border-border">
-                     <div className="flex items-center gap-3">
-                       <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center flex-shrink-0">
-                         <Mail className="w-5 h-5 text-fg" />
-                       </div>
-                       <div className="text-fg break-all min-w-0 flex-1">{profile.email}</div>
-                       {profile.auth_provider === 'google' && (
-                         <div className="flex items-center gap-1 text-xs text-muted flex-shrink-0">
-                           <BadgeCheck className="w-3 h-3 text-fg" />
-                           <span>Gmail</span>
-                         </div>
-                       )}
-                     </div>
-                   </div>
-                 </div>
+                {/* 個人識別碼（亂碼） */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-muted">個人識別碼</label>
+                  <div className="p-4 bg-surface-hover rounded-xl border border-border">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center flex-shrink-0">
+                        <IdCard className="w-5 h-5 text-fg" />
+                      </div>
+                      <div className="text-fg break-all min-w-0 flex-1 select-all" title="個人識別碼">
+                        <div className="flex items-center gap-2">
+                          <span>{profile.personal_id || '—'}</span>
+                          <button
+                            className="px-2 py-1 text-xs rounded-lg border hover:bg-surface"
+                            onClick={async ()=>{ try{ await navigator.clipboard.writeText(profile.personal_id||''); setMessage('已複製識別碼'); setTimeout(()=>setMessage(null), 1200)}catch{}}}
+                          >複製</button>
+                        </div>
+                        <div className="text-xs text-muted mt-1 flex items-center gap-2">
+                          我的學校：
+                          {profile.school?.name ? (
+                            <button
+                              className="px-2 py-0.5 rounded-full border text-xs hover:bg-surface"
+                              onClick={()=>{
+                                try {
+                                  if (profile?.school?.slug) {
+                                    localStorage.setItem('school_slug', profile.school.slug)
+                                    localStorage.setItem('selected_school_slug', profile.school.slug)
+                                    window.dispatchEvent(new CustomEvent('fk_school_changed', { detail: { slug: profile.school.slug } }))
+                                  }
+                                } catch {}
+                                window.location.href = '/boards'
+                              }}
+                            >{profile.school.name}</button>
+                          ) : (
+                            <span>未設定</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-muted">用戶角色</label>

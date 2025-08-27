@@ -140,15 +140,19 @@ def register():
         domain = email.split("@", 1)[1]
     except Exception:
         return jsonify({"msg": "Email 格式不正確"}), 400
+    from utils.oauth_google import _find_school_by_domain, derive_school_slug_from_domain
     allowed = [d.strip().lower() for d in (os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",") if os.getenv("ALLOWED_EMAIL_DOMAINS") else []) if d.strip()]
     is_edu = domain.endswith(".edu") or domain.endswith(".edu.tw") or domain.endswith(".edu.cn") or domain.endswith(".edu.hk")
-    if allowed:
-        if domain not in allowed and not any(domain.endswith("."+d) for d in allowed):
-            return jsonify({"msg": "僅限校園信箱註冊"}), 403
-    else:
-        # 沒有白名單時，預設僅接受 edu 類網域
-        if not is_edu:
-            return jsonify({"msg": "僅限校園信箱（.edu 網域）註冊"}), 403
+    # 若學校設定已明確綁定完整網域，視為允許
+    bound_school = _find_school_by_domain(domain)
+    if not bound_school:
+        if allowed:
+            if domain not in allowed and not any(domain.endswith("."+d) for d in allowed):
+                return jsonify({"msg": "僅限校園信箱註冊"}), 403
+        else:
+            # 沒有白名單時，預設僅接受 edu 類網域
+            if not is_edu:
+                return jsonify({"msg": "僅限校園信箱（.edu 網域）註冊"}), 403
     with get_session() as s:  # type: Session
         if s.query(User).filter_by(username=username).first():
             return jsonify({"msg": "使用者已存在"}), 409
@@ -157,8 +161,12 @@ def register():
         u = User(username=username, password_hash=generate_password_hash(password), role="user", email=email)
         # 依 email 網域推導學校 slug；若呼叫端有提供 school_slug，需與推導一致
         try:
-            derived = derive_school_slug_from_domain(domain) if is_edu else None
-            target_slug = (school_slug or derived or '').strip()
+            # 若綁定了完整網域，優先使用該學校
+            if bound_school:
+                target_slug = bound_school.slug
+            else:
+                derived = derive_school_slug_from_domain(domain) if is_edu else None
+                target_slug = (school_slug or derived or '').strip()
             if school_slug and derived and school_slug != derived:
                 return jsonify({"msg": f"學校與 Email 網域不符，請使用 {derived} 或留空自動推導"}), 400
             if target_slug:
@@ -319,7 +327,9 @@ def google_callback():
                     i += 1
                 u = User(username=uname, password_hash='', role='user', email=email)
                 # 綁定學校（若不存在則建立暫存學校並通知）
-                slug = derive_school_slug_from_domain(domain)
+                from utils.oauth_google import _find_school_by_domain
+                bound = _find_school_by_domain(domain)
+                slug = bound.slug if bound else derive_school_slug_from_domain(domain)
                 sch = s.query(School).filter(School.slug==slug).first()
                 if not sch and slug:
                     sch = School(slug=slug, name=slug)

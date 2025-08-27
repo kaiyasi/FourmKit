@@ -22,7 +22,10 @@ export default function ErrorPage({ status, title, message, hint, actionHref = '
         <h1 className="text-2xl font-bold dual-text mb-1">{title || variant.title}</h1>
         {message && <p className="text-sm text-muted mb-2 whitespace-pre-wrap break-words">{message}</p>}
         {hint && <p className="text-xs text-muted mb-4 whitespace-pre-wrap break-words">{hint}</p>}
-        <a href={actionHref} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border hover:bg-surface/80 text-sm">
+        <a 
+          href={actionHref} 
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border hover:bg-surface/80 text-sm"
+        >
           <Home className="w-4 h-4" /> {actionText}
         </a>
       </div>
@@ -51,4 +54,3 @@ function base(title: string, icon: any) {
     badgeFg: 'text-amber-700 dark:text-amber-300',
   }
 }
-

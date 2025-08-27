@@ -9,6 +9,7 @@ from models import User, UserRole, School, DeleteRequest, Post, Comment
 from werkzeug.security import generate_password_hash
 from sqlalchemy import func, and_, or_, desc
 from datetime import datetime, timezone, timedelta
+from services.delete_service import DeleteService
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -172,6 +173,9 @@ def monitor_comments():
             
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+
 
 @bp.get('/comments/stats')
 @jwt_required()

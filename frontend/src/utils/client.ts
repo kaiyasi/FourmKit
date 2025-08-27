@@ -69,10 +69,15 @@ export const makeTempKey = (content: string, created_at: string, author_hash: st
 
 // 列表去重函數
 export function dedup(arr: any[]) {
-  const seen = new Set<string|number>()
+  const seen = new Set<string | number>()
   const out: any[] = []
   for (const x of arr) {
-    const k = x.id ?? x.tempKey ?? (x.client_tx_id ? `tx:${x.client_tx_id}` : `h:${hash(x.content || '')}`)
+    // 更穩健的去重鍵：
+    // 1) 以後端正式 id 為主
+    // 2) 再看 tempKey 或 client_tx_id（樂觀項目）
+    // 3) 最後退回內容+時間+作者的哈希，避免同內容不同人/不同時間被合併
+    const fallbackSig = `h:${hash(`${x.content || ''}|${x.created_at || ''}|${x.author_hash || ''}`)}`
+    const k = x.id ?? x.tempKey ?? (x.client_tx_id ? `tx:${x.client_tx_id}` : fallbackSig)
     if (seen.has(k)) continue
     seen.add(k)
     out.push(x)

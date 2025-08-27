@@ -104,3 +104,6 @@ pnpm-debug.log*
 
 # ==== Build artifacts (extra safety) ====
 build/
+
+# ==== Project management ====
+Project.md

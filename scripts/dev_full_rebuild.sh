@@ -393,3 +393,30 @@ else
 fi
 
 success "ForumKit 開發環境重建流程完成！"
+
+# STEP 11: 啟動 Discord Bot（可選）
+if [ "${DISCORD_BOT_ENABLED:-1}" = "1" ]; then
+    step "${ICON_INFO} 啟動 Discord Bot"
+    BOT_DIR="$PROJECT_ROOT/discord-bot"
+    RUNNER="$PROJECT_ROOT/scripts/run_discord_bot.sh"
+    if [ -d "$BOT_DIR" ] && [ -f "$RUNNER" ]; then
+        # 嘗試關閉舊的 Bot（若有 pid 檔）
+        if [ -f "$BOT_DIR/logs/bot.pid" ]; then
+            old_pid="$(cat "$BOT_DIR/logs/bot.pid" 2>/dev/null || echo '')"
+            if [ -n "$old_pid" ] && ps -p "$old_pid" >/dev/null 2>&1; then
+                info "停止舊 Bot (PID=$old_pid)"
+                kill "$old_pid" >/dev/null 2>&1 || true
+                # 給他一點時間優雅結束
+                sleep 1
+            fi
+        fi
+
+        if bash "$RUNNER" >/dev/null 2>&1; then
+            success "Discord Bot 已啟動"
+        else
+            warning "Discord Bot 啟動失敗，請檢查 $BOT_DIR/logs"
+        fi
+    else
+        info "未找到 Discord Bot 專案或啟動腳本，略過 (設置 DISCORD_BOT_ENABLED=0 可關閉此步驟)"
+    fi
+fi

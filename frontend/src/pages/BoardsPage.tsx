@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import PostList from '@/components/PostList'
 import { MobilePostList } from '@/components/mobile/MobilePostList'
+import SchoolSwitcher from '@/components/SchoolSwitcher'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { NavBar } from '@/components/layout/NavBar'
 
@@ -24,8 +25,13 @@ export default function BoardsPage() {
       <div className="min-h-screen flex flex-col">
         {/* 頂部標題欄 */}
         <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border px-4 py-3">
-          <h1 className="font-semibold text-lg text-fg">討論看板</h1>
-          <p className="text-sm text-muted">校園匿名討論</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="font-semibold text-lg text-fg">ForumKit</h1>
+              <p className="text-sm text-muted">校園匿名討論</p>
+            </div>
+            <SchoolSwitcher compact />
+          </div>
         </header>
 
         {/* 貼文列表 */}

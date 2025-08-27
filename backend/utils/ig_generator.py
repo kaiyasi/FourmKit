@@ -5,6 +5,9 @@ Instagram 圖片生成器
 import os
 import re
 import textwrap
+import hashlib
+import zipfile
+from urllib.parse import quote_plus
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import requests
@@ -21,8 +24,8 @@ class InstagramCardGenerator:
         self.font_cache = {}
         
     def _get_font(self, font_name: str, size: int) -> ImageFont.FreeTypeFont:
-        """獲取字體，帶緩存"""
-        cache_key = f"{font_name}_{size}"
+        """獲取字體（本機字型路徑/家族名），帶緩存"""
+        cache_key = f"local::{font_name}_{size}"
         if cache_key not in self.font_cache:
             try:
                 # 嘗試系統字體
@@ -53,6 +56,87 @@ class InstagramCardGenerator:
                 self.font_cache[cache_key] = ImageFont.load_default()
                 
         return self.font_cache[cache_key]
+
+    def _font_cache_dir(self) -> str:
+        d = os.getenv('IG_FONT_CACHE', '/tmp/ig_fonts')
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+        return d
+
+    def _load_font_from_url(self, url: str, size: int) -> ImageFont.FreeTypeFont:
+        """從遠端 URL 下載 .ttf/.otf 字型後載入（含快取）。"""
+        key = f"url::{url}_{size}"
+        if key in self.font_cache:
+            return self.font_cache[key]
+        try:
+            ext = os.path.splitext(url.split('?')[0])[1].lower()
+            if ext not in {'.ttf', '.otf'}:
+                # 不支援 woff/woff2，交由上層 fallback
+                raise RuntimeError('Unsupported font extension (expect .ttf or .otf)')
+            h = hashlib.sha1(url.encode('utf-8')).hexdigest()[:16]
+            cache_path = os.path.join(self._font_cache_dir(), f"{h}{ext}")
+            if not os.path.exists(cache_path):
+                r = requests.get(url, timeout=15)
+                r.raise_for_status()
+                with open(cache_path, 'wb') as f:
+                    f.write(r.content)
+            font = ImageFont.truetype(cache_path, size)
+            self.font_cache[key] = font
+            return font
+        except Exception:
+            return ImageFont.load_default()
+
+    def _load_font_from_google(self, family: str, size: int, weight: str | None = None) -> ImageFont.FreeTypeFont:
+        """從 Google Fonts 直接下載 ZIP 並取出 TTF。
+        注意：此方法偏向離線快取，避免每次生成都打外網。
+        """
+        weight_pref = (weight or 'Regular').lower()
+        key = f"gfont::{family}:{weight_pref}:{size}"
+        if key in self.font_cache:
+            return self.font_cache[key]
+        try:
+            slug = family.strip()
+            url = f"https://fonts.google.com/download?family={quote_plus(slug)}"
+            # 快取 ZIP
+            h = hashlib.sha1(f"{slug}|{weight_pref}".encode('utf-8')).hexdigest()[:16]
+            zip_path = os.path.join(self._font_cache_dir(), f"g_{h}.zip")
+            if not os.path.exists(zip_path):
+                r = requests.get(url, timeout=20)
+                r.raise_for_status()
+                with open(zip_path, 'wb') as f:
+                    f.write(r.content)
+            # 搜尋 TTF
+            cand_names = [weight_pref, 'regular', 'book', 'medium', 'bold']
+            chosen_bytes: bytes | None = None
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                names = zf.namelist()
+                # 先過濾 .ttf
+                ttfs = [n for n in names if n.lower().endswith('.ttf')]
+                # 盡量挑含權重關鍵字的
+                for pref in cand_names:
+                    for n in ttfs:
+                        if pref in n.lower():
+                            chosen_bytes = zf.read(n)
+                            break
+                    if chosen_bytes:
+                        break
+                # 還是沒有就拿第一個 .ttf
+                if not chosen_bytes and ttfs:
+                    chosen_bytes = zf.read(ttfs[0])
+            if not chosen_bytes:
+                raise RuntimeError('No TTF found in Google Fonts ZIP')
+            # 寫入快取檔案
+            ttf_cache = os.path.join(self._font_cache_dir(), f"g_{h}_{weight_pref}.ttf")
+            if not os.path.exists(ttf_cache):
+                with open(ttf_cache, 'wb') as f:
+                    f.write(chosen_bytes)
+            font = ImageFont.truetype(ttf_cache, size)
+            self.font_cache[key] = font
+            return font
+        except Exception:
+            return ImageFont.load_default()
     
     def _clean_html_content(self, html_content: str) -> str:
         """清理 HTML 內容，轉為純文字"""
@@ -142,12 +226,12 @@ class InstagramCardGenerator:
                      template_config: Dict[str, Any],
                      school_name: str = "",
                      school_logo_path: str = "",
-                     post_id: int = None) -> bytes:
+                     post_id: int | None = None) -> bytes:
         """生成 Instagram 卡片"""
         
         # 基本設定
-        width = template_config.get('width', self.default_width)
-        height = template_config.get('height', self.default_height)
+        width = int(template_config.get('width', self.default_width))
+        height = int(template_config.get('height', self.default_height))
         
         # 色彩設定
         bg_color = template_config.get('background_color', '#ffffff')
@@ -160,27 +244,83 @@ class InstagramCardGenerator:
         title_size = template_config.get('title_size', 28)
         content_size = template_config.get('content_size', 18)
         
+        # 版面布局設定（layout_config）
+        layout = template_config.get('layout_config') or {}
+        try:
+            # 允許傳入 JSON 字串
+            if isinstance(layout, str):
+                import json
+                layout = json.loads(layout)
+        except Exception:
+            layout = {}
+
+        margin = int(layout.get('margin', 60))
+        top_accent_height = int(layout.get('top_accent_height', 8))
+        content_max_lines = int(layout.get('content_max_lines', 15))
+        line_spacing = int(layout.get('line_spacing', 8))
+        logo_size_cfg = int(layout.get('logo_size', 40))
+        logo_position = layout.get('logo_position', template_config.get('logo_position', 'bottom-right'))
+
+        # 可選：自訂內容區塊（優先於 margin 預設模式）
+        content_box = None
+        try:
+            cx = layout.get('content_x'); cy = layout.get('content_y')
+            cw = layout.get('content_width'); ch = layout.get('content_height')
+            if all(v is not None for v in (cx, cy, cw, ch)):
+                content_box = (int(cx), int(cy), int(cw), int(ch))
+        except Exception:
+            content_box = None
+
+        # 時間戳設定
+        show_ts = bool(layout.get('timestamp_show', False))
+        ts_format = str(layout.get('timestamp_format', ''))
+        ts_12h = bool(layout.get('timestamp_12h', layout.get('clock_12h', False)))
+        ts_x = layout.get('timestamp_x'); ts_y = layout.get('timestamp_y')
+        ts_color = layout.get('timestamp_color', accent_color)
+        ts_size = int(layout.get('timestamp_size', 14))
+        ts_font_google = layout.get('timestamp_font_google')
+        ts_font_url = layout.get('timestamp_font_url')
+
         # 建立畫布
         img = Image.new('RGB', (width, height), bg_color)
         draw = ImageDraw.Draw(img)
         
-        # 載入字體
-        title_font = self._get_font(title_font_name, title_size)
-        content_font = self._get_font(content_font_name, content_size)
+        # 遠端 / Google Fonts 參數（可用 URL 或 family 名稱）
+        title_font_url = template_config.get('title_font_url')
+        content_font_url = template_config.get('content_font_url')
+        title_font_google = template_config.get('title_font_google')
+        content_font_google = template_config.get('content_font_google')
+        title_font_weight = str(template_config.get('title_font_weight', 'Regular'))
+        content_font_weight = str(template_config.get('content_font_weight', 'Regular'))
+
+        # 載入字體（優先順序：URL -> Google family -> 本機）
+        if isinstance(title_font_url, str) and title_font_url.startswith('http'):
+            title_font = self._load_font_from_url(title_font_url, int(title_size))
+        elif isinstance(title_font_google, str) and title_font_google.strip():
+            title_font = self._load_font_from_google(title_font_google, int(title_size), title_font_weight)
+        else:
+            title_font = self._get_font(title_font_name, int(title_size))
+
+        if isinstance(content_font_url, str) and content_font_url.startswith('http'):
+            content_font = self._load_font_from_url(content_font_url, int(content_size))
+        elif isinstance(content_font_google, str) and content_font_google.strip():
+            content_font = self._load_font_from_google(content_font_google, int(content_size), content_font_weight)
+        else:
+            content_font = self._get_font(content_font_name, int(content_size))
         small_font = self._get_font(content_font_name, 14)
         
         # 清理內容
         clean_content = self._clean_html_content(content)
         
-        # 設定邊距
-        margin = 60
+        # 設定內容區域
         content_width = width - 2 * margin
         
         # 繪製頂部裝飾條
-        draw.rectangle([0, 0, width, 8], fill=accent_color)
-        
+        if top_accent_height > 0:
+            draw.rectangle([0, 0, width, top_accent_height], fill=accent_color)
+
         # 繪製標題區域
-        current_y = margin
+        current_y = margin if not content_box else int(content_box[1])
         
         # 學校名稱（如果有）
         if school_name:
@@ -202,7 +342,7 @@ class InstagramCardGenerator:
         # ForumKit 標題
         platform_title = "ForumKit 校園匿名討論"
         draw.text((margin, current_y), platform_title, fill=accent_color, font=title_font)
-        current_y += 50
+        current_y += int(title_size * 1.8)
         
         # 分隔線
         line_y = current_y
@@ -211,40 +351,79 @@ class InstagramCardGenerator:
         
         # 主要內容
         content_lines = clean_content.split('\n')
-        max_content_height = height - current_y - 120  # 保留底部空間
+        if content_box:
+            usable_w = int(content_box[2])
+            max_content_bottom = int(content_box[1] + content_box[3])
+            content_width = usable_w
+        else:
+            max_content_bottom = height - 120  # 保留底部空間
+        max_content_height = max_content_bottom - current_y
         
-        for line in content_lines[:15]:  # 限制行數
+        lines_drawn = 0
+        for line in content_lines:
             if not line.strip():
-                current_y += content_size // 2
+                current_y += max(2, content_size // 2)
                 continue
                 
             # 自動換行
-            wrapped_lines = self._wrap_text(line, content_font, content_width)
+            wrapped_lines = self._wrap_text(line, content_font, max(10, content_width))
             
             for wrapped_line in wrapped_lines:
-                if current_y + content_size > margin + max_content_height:
+                if lines_drawn >= content_max_lines:
+                    break
+                if current_y + content_size > (margin + max_content_height if not content_box else max_content_bottom):
                     # 內容太多，添加省略號
                     draw.text((margin, current_y), "...", fill=text_color, font=content_font)
                     break
                 
                 draw.text((margin, current_y), wrapped_line, fill=text_color, font=content_font)
-                current_y += content_size + 8
+                current_y += content_size + line_spacing
+                lines_drawn += 1
             
-            if current_y + content_size > margin + max_content_height:
+            if current_y + content_size > (margin + max_content_height if not content_box else max_content_bottom) or lines_drawn >= content_max_lines:
                 break
         
         # 繪製底部區域
         bottom_y = height - 80
+
+        # 時間戳（可選）
+        if show_ts:
+            try:
+                now = datetime.now()
+                if ts_format:
+                    fmt = ts_format
+                else:
+                    fmt = '%Y-%m-%d %I:%M %p' if ts_12h else '%Y-%m-%d %H:%M'
+                ts_text = now.strftime(fmt)
+            except Exception:
+                ts_text = ''
+            if ts_text:
+                ts_font = (
+                    self._load_font_from_url(ts_font_url, ts_size) if isinstance(ts_font_url, str) and ts_font_url.startswith('http') else
+                    self._load_font_from_google(ts_font_google, ts_size) if isinstance(ts_font_google, str) and ts_font_google.strip() else
+                    self._get_font(content_font_name, ts_size)
+                )
+                draw_x = int(ts_x) if ts_x is not None else margin
+                draw_y = int(ts_y) if ts_y is not None else max(margin, bottom_y - 30)
+                draw.text((draw_x, draw_y), ts_text, fill=ts_color or text_color, font=ts_font)
         
         # 載入並繪製學校 Logo
         if school_logo_path:
             logo = self._load_school_logo(school_logo_path)
             if logo:
-                logo_size = 40
+                logo_size = max(20, min(200, logo_size_cfg))
                 logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
-                logo_x = width - margin - logo_size
-                logo_y = bottom_y
-                img.paste(logo, (logo_x, logo_y), logo)
+                # 位置：top-left/top-right/bottom-left/bottom-right
+                pos = str(logo_position or 'bottom-right').lower()
+                if pos == 'top-left':
+                    logo_x, logo_y = margin, margin
+                elif pos == 'top-right':
+                    logo_x, logo_y = width - margin - logo_size, margin
+                elif pos == 'bottom-left':
+                    logo_x, logo_y = margin, bottom_y
+                else:  # bottom-right
+                    logo_x, logo_y = width - margin - logo_size, bottom_y
+                img.paste(logo, (int(logo_x), int(logo_y)), logo)
         
         # 平台標識
         watermark = template_config.get('watermark_text', 'ForumKit by Serelix Studio')
@@ -274,7 +453,11 @@ class InstagramCardGenerator:
         draw = ImageDraw.Draw(img)
         
         # 繪製標題
-        title_font = self._get_font(template_config.get('title_font', 'NotoSansTC'), 24)
+        title_font = (
+            self._load_font_from_google(template_config.get('title_font_google', '') or 'NotoSansTC', 24)
+            if template_config.get('title_font_google') else
+            self._get_font(template_config.get('title_font', 'NotoSansTC'), 24)
+        )
         accent_color = template_config.get('accent_color', '#3b82f6')
         
         draw.rectangle([0, 0, preview_width, 6], fill=accent_color)

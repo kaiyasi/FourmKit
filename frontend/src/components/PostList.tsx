@@ -2,13 +2,15 @@
 import { useEffect, useState, useRef } from 'react'
 import { getJSON, HttpError } from '../lib/http'
 import { validatePostList, type PostList as PostListType, type Post } from '../schemas/post'
-import { dedup } from '../utils/client'
+import { dedup, makeTempKey, hash } from '../utils/client'
 import ErrorBox from './ui/ErrorBox'
 import { Clock, Loader2, Link as LinkIcon, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import CommentSection from '@/components/CommentSection'
 import AnonymousAccountDisplay from './AnonymousAccountDisplay'
+import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
 import { getRole } from '@/utils/auth'
+import { formatLocalMinute } from '@/utils/time'
 
 export default function PostList({ injectedItems = [] }: { injectedItems?: any[] }) {
   const [data, setData] = useState<PostListType | null>(null)
@@ -56,9 +58,18 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
         // 寬鬆相容：若後端回傳僅有 { items }，則推導分頁欄位
         if (raw && Array.isArray(raw.items) && (raw.page === undefined || raw.per_page === undefined || raw.total === undefined)) {
           const items = raw.items.map((it: any, idx: number) => {
-            // 若缺必填欄位，嘗試簡單修補（避免整批失敗）
-            if (typeof it?.id !== 'number') it.id = -1 * (idx + 1)
+            // 若缺必填欄位，嘗試溫柔修補：不要亂造負數 id，改給 tempKey
             if (typeof it?.content !== 'string') it.content = ''
+            if (typeof it?.id !== 'number') {
+              const created_at = typeof it?.created_at === 'string' ? it.created_at : ''
+              const author_hash = typeof it?.author_hash === 'string' ? it.author_hash : ''
+              // 產生穩定且更不易撞的負號 id（前端臨時用）
+              const h = parseInt(hash(`${it.content}|${created_at}|${author_hash}|${p}:${idx}`), 10)
+              const syntheticId = -Math.max(1, (isFinite(h) && h > 0 ? h : (p * 1_000_000 + idx + 1)))
+              it.id = syntheticId
+              // 另外補一個 tempKey 供去重使用（更穩健）
+              it.tempKey = makeTempKey(String(it.content || ''), String(created_at || ''), String(author_hash || ''), `idx:${p}:${idx}`)
+            }
             return it
           })
           validated = validatePostList({ items, page: p, per_page: perPage, total: items.length })
@@ -201,7 +212,7 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
           return (
           <article id={p.id ? `post-${p.id}` : undefined} key={p.id ?? p.tempKey ?? `fallback-${allItems.indexOf(p)}`} className="rounded-xl border border-border bg-surface p-4 relative mobile-card mobile-list-item oppo-post-lg oppo-list-item-lg">
             <div className="text-xs text-muted mb-2 mobile-text-sm oppo-text-lg">
-              #{p.id || p.tempKey || '待確認'} <span className="mx-1">•</span> {p.created_at ? new Date(p.created_at).toLocaleString() : '時間未知'} <span className="mx-1">•</span>
+              #{p.id || p.tempKey || '待確認'} <span className="mx-1">•</span> {p.created_at ? formatLocalMinute(p.created_at) : '時間未知'} <span className="mx-1">•</span>
               {(() => {
                 const label = String(p.author_hash || '').trim()
                 const isAnonCode = /^[A-Z0-9]{6}$/.test(label)
@@ -214,15 +225,17 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
             <Cover />
             {p.id ? (
               <Link to={`/posts/${p.id}`} className="block hover:opacity-90 transition-opacity">
-                <div
+                <SafeHtmlContent 
+                  html={p.content}
                   className="prose prose-sm max-w-none text-fg mobile-text-base oppo-text-lg"
-                  dangerouslySetInnerHTML={{ __html: p.content }}
+                  allowLinks={true}
                 />
               </Link>
             ) : (
-              <div
+              <SafeHtmlContent 
+                html={p.content}
                 className="prose prose-sm max-w-none text-fg mobile-text-base oppo-text-lg"
-                dangerouslySetInnerHTML={{ __html: p.content }}
+                allowLinks={true}
               />
             )}
             

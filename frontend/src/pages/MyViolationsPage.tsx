@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { AlertTriangle, Edit, MessageSquare, Calendar, Eye, RefreshCw } from 'lucide-react'
+import { formatLocalMinute } from '@/utils/time'
 import { HttpError, getJSON } from '@/lib/http'
 import ErrorPage from '@/components/ui/ErrorPage'
 
@@ -202,7 +203,7 @@ export default function MyViolationsPage() {
                           {violation.created_at && (
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {new Date(violation.created_at).toLocaleString('zh-TW')}
+                              {formatLocalMinute(violation.created_at)}
                             </span>
                           )}
                         </div>
@@ -228,7 +229,7 @@ export default function MyViolationsPage() {
         </div>
       </div>
 
-      <MobileFabNav />
+      <MobileBottomNav />
     </div>
   )
 }

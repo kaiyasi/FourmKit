@@ -4,7 +4,8 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev netcat-traditional && \
+    build-essential libpq-dev netcat-traditional \
+    libmagic1 fonts-noto-cjk && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

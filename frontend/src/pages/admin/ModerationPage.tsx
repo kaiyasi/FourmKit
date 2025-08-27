@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { api } from '@/services/api';
 import io from 'socket.io-client';
 import { NavBar } from '@/components/layout/NavBar';
-import { MobileFabNav } from '@/components/layout/MobileFabNav';
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ArrowLeft, CheckCircle, XCircle, FileText, Image, Clock, User, MessageSquare, ThumbsUp, Filter, Search, RefreshCw } from 'lucide-react';
 
 interface ModerationItem {
@@ -368,13 +368,13 @@ export default function ModerationPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('zh-TW');
+    try { const { formatLocalMinute } = require('@/utils/time'); return formatLocalMinute(dateString) } catch { return new Date(dateString).toLocaleString('zh-TW') }
   };
 
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/moderation" />
-      <MobileFabNav />
+      <MobileBottomNav />
       
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
         {/* 頁面標題 */}
@@ -420,7 +420,7 @@ export default function ModerationPage() {
                 <select
                   value={filters.type}
                   onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
-                  className="px-3 py-2 border border-border rounded text-sm"
+                  className="form-control text-sm"
                 >
                   <option value="">所有類型</option>
                   <option value="post">貼文</option>
@@ -430,7 +430,7 @@ export default function ModerationPage() {
                 <select
                   value={filters.status}
                   onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                  className="px-3 py-2 border border-border rounded text-sm"
+                  className="form-control text-sm"
                 >
                   <option value="pending">待審核</option>
                   <option value="approved">已核准</option>
@@ -442,7 +442,7 @@ export default function ModerationPage() {
                   placeholder="Client ID"
                   value={filters.client_id}
                   onChange={(e) => setFilters(prev => ({ ...prev, client_id: e.target.value }))}
-                  className="px-3 py-2 border border-border rounded text-sm"
+                  className="form-control text-sm"
                 />
                 
                 <input
@@ -450,7 +450,7 @@ export default function ModerationPage() {
                   placeholder="IP 地址"
                   value={filters.ip}
                   onChange={(e) => setFilters(prev => ({ ...prev, ip: e.target.value }))}
-                  className="px-3 py-2 border border-border rounded text-sm"
+                  className="form-control text-sm"
                 />
               </div>
             </div>

@@ -11,6 +11,8 @@ class School(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     # 公開校徽路徑（相對於 uploads/，例如：public/schools/{id}/logo.webp）
     logo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 學校專用 Gmail 網域（例如：student.school.edu）
+    gmail_domain: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="學校專用 Gmail 網域")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     # Instagram 關聯

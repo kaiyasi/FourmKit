@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
-import { MobileFabNav } from '@/components/layout/MobileFabNav'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { Search, Filter, CheckCircle, XCircle, Trash2, Eye, Clock, User, Calendar, Download, RefreshCw, MessageSquare, BarChart3, AlertTriangle } from 'lucide-react'
 import { HttpError, getJSON } from '@/lib/http'
 import ErrorPage from '@/components/ui/ErrorPage'
 import { getRole, getRoleDisplayName } from '@/utils/auth'
+import { formatLocalMinute } from '@/utils/time'
 
 interface CommentItem {
   id: number
@@ -757,20 +758,20 @@ export default function AdminCommentsMonitorPage() {
                        <div>
                          <span className="text-muted">創建時間：</span>
                          <span className="text-fg">
-                           {detailData.created_at ? new Date(detailData.created_at).toLocaleString('zh-TW') : '未知'}
+                           {detailData.created_at ? formatLocalMinute(detailData.created_at) : '未知'}
                          </span>
                        </div>
                        <div>
                          <span className="text-muted">更新時間：</span>
                          <span className="text-fg">
-                           {detailData.updated_at ? new Date(detailData.updated_at).toLocaleString('zh-TW') : '未知'}
+                           {detailData.updated_at ? formatLocalMinute(detailData.updated_at) : '未知'}
                          </span>
                        </div>
                        {detailData.deleted_at && (
                          <div>
                            <span className="text-muted">刪除時間：</span>
                            <span className="text-fg">
-                             {new Date(detailData.deleted_at).toLocaleString('zh-TW')}
+                             {formatLocalMinute(detailData.deleted_at)}
                            </span>
                          </div>
                        )}
@@ -787,7 +788,7 @@ export default function AdminCommentsMonitorPage() {
          </div>
        )}
 
-       <MobileFabNav />
+      <MobileBottomNav />
      </div>
    )
  }

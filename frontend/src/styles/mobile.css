@@ -1,17 +1,38 @@
-/* 手機版專用樣式 */
+/* 手機版專用樣式 - 統一設計系統 */
 
-/* 觸控優化 */
+/* 響應式斷點統一使用 Tailwind 標準 */
 @media (max-width: 768px) {
-  /* 增加點擊區域 */
+  /* 標準化觸摸目標 - Apple HIG 建議 48px */
   .mobile-touch-target {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 48px;
+    min-width: 48px;
+  }
+  
+  /* 大型觸摸目標 - 主要操作按鈕 */
+  .mobile-touch-large {
+    min-height: 56px;
+    min-width: 56px;
   }
 
-  /* 手機版卡片陰影 */
+  /* 手機版卡片系統 */
   .mobile-card {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    border-radius: 12px;
+    border-radius: 16px;
+  }
+  
+  /* 手機版文字行高限制 */
+  .line-clamp-4 {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  
+  .line-clamp-6 {
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   /* 手機版安全區域 */
@@ -19,7 +40,8 @@
     padding-top: env(safe-area-inset-top);
   }
 
-  .mobile-safe-area-bottom {
+  .mobile-safe-area-bottom,
+  .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -73,11 +95,12 @@
   /* 手機版貼文卡片動效 */
   .mobile-post-card {
     transition: transform 0.1s ease, box-shadow 0.2s ease;
+    border-radius: 16px;
   }
 
   .mobile-post-card:active {
-    transform: scale(0.98);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transform: scale(0.985);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   }
 
   /* 手機版 FAB 浮動動效 */
@@ -218,6 +241,15 @@
   .mobile-vertical-padding {
     padding-top: 16px;
     padding-bottom: 16px;
+  }
+  
+  /* 手機版列表間距 */
+  .mobile-list-spacing {
+    gap: 12px;
+  }
+  
+  .mobile-card-spacing {
+    margin-bottom: 12px;
   }
 }
 
