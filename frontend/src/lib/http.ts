@@ -62,8 +62,11 @@ function getClientId(): string {
 
 function getSelectedSchoolSlug(): string | null {
   try {
-    const v = localStorage.getItem('selected_school_slug');
-    return v && v.trim() ? v.trim() : null;
+    const v = localStorage.getItem('selected_school_slug') || localStorage.getItem('school_slug');
+    if (!v) return null;
+    const trimmed = v.trim();
+    if (!trimmed || trimmed === '__ALL__') return null; // 全部：不送 Header，改用 all_schools 參數
+    return trimmed;
   } catch { return null; }
 }
 

@@ -8,9 +8,9 @@ import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import CommentSection from '@/components/CommentSection'
 import { getRole } from '@/utils/auth'
-import { AlertTriangle, Trash2, MessageCircle, Share2, Flag } from 'lucide-react'
+// 移除行動版懸浮操作列所需圖示（留言/分享/回報），避免與內文重複
 
-type DetailPost = { id: number; content: string; created_at?: string; author_hash?: string; media?: { id: number; path: string; kind?: string }[] }
+type DetailPost = { id: number; content: string; created_at?: string; author_hash?: string; school_id?: number | null; school?: { id:number; slug:string; name:string } | null; media?: { id: number; path: string; kind?: string }[] }
 
 export default function PostDetailPage({ id }: { id?: number }) {
   // 允許直接路由使用
@@ -27,6 +27,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
   const [showDeleteRequestModal, setShowDeleteRequestModal] = useState(false)
   const [deleteReason, setDeleteReason] = useState('')
   const [shareMsg, setShareMsg] = useState<string | null>(null)
+  const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
 
   // 確保 pid 是有效數字
   if (!pid || isNaN(pid)) {
@@ -59,6 +60,32 @@ export default function PostDetailPage({ id }: { id?: number }) {
       }
     })()
   }, [pid])
+
+  // 載入學校清單，供顯示名稱 fallback
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await fetch('/api/schools', { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json().catch(()=>({}))
+        if (alive && Array.isArray(j?.items)) setSchools(j.items)
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
+
+  const displaySchoolName = () => {
+    if (!post) return ''
+    const obj = (post as any).school as any
+    const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+    if (fromObj) return fromObj
+    const sidRaw = (post as any).school_id
+    const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
+    if (!hasSid || sidRaw === null) return '跨校' // 真跨校
+    const found = schools.find(s => s.id === sidRaw)
+    return (found?.name || found?.slug || '').trim()
+  }
 
   // 刪文請求
   const handleDeleteRequest = async () => {
@@ -200,26 +227,20 @@ export default function PostDetailPage({ id }: { id?: number }) {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
-        <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
+        <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 break-words">
           <div className="flex justify-between items-start mb-4">
             <div className="text-xs text-muted">
-          #{post.id} <span className="mx-1">•</span> {post.created_at ? formatLocalMinute(post.created_at) : ''} <span className="mx-1">•</span>
-              {(() => {
-                const label = String(post.author_hash || '').trim()
-                const isAnonCode = /^[A-Z0-9]{6}$/.test(label)
-                if (label === '系統訊息') return <span className="text-fg">系統訊息</span>
-                if (isAnonCode) return <span className="text-muted">匿名 {label}</span>
-                if (label) return <span className="text-fg">{label}</span>
-                return <span className="text-muted">匿名</span>
-              })()}
+              #{post.id} <span className="mx-1">•</span> {post.created_at ? formatLocalMinute(post.created_at) : ''}
+              {(() => { const name = displaySchoolName(); return name ? (<><span className="mx-1">•</span> <span className="text-fg">{name}</span></>) : null })()}
             </div>
           </div>
           
           {/* 內容顯示（後端已轉換為HTML） */}
           <div 
-            className="prose prose-sm max-w-none text-fg" 
+            className="prose prose-sm max-w-none text-fg break-words" 
             dangerouslySetInnerHTML={{ __html: post.content || '' }} 
           />
+          {/* 原本的主題設計按鈕移除，改由留言區右側操作列呈現 */}
           
           {/* 媒體內容 */}
           {post.media && post.media.length > 0 && (
@@ -233,7 +254,17 @@ export default function PostDetailPage({ id }: { id?: number }) {
 
         {/* 留言和反應區 */}
         <div id="comments-anchor" />
-        <CommentSection postId={post.id} />
+        <CommentSection
+          postId={post.id}
+          extraActions={post.id === 4 ? (
+            <a
+              href="/theme-designer"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-surface-hover hover:bg-surface-active text-muted hover:text-fg transition-colors"
+            >
+              <span>前往主題設計</span>
+            </a>
+          ) : null}
+        />
 
         {/* 刪文請求模態框 */}
         {showDeleteRequestModal && (
@@ -296,54 +327,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
           />
         </div>
       )}
-      {/* 行動版懸浮工具列 */}
-      <div className="fixed inset-x-0 bottom-0 z-40 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-3 mb-3 rounded-2xl border border-border bg-surface/95 backdrop-blur shadow-lg">
-          <div className="flex items-center justify-around py-2">
-            <button
-              onClick={() => {
-                try {
-                  document.getElementById('comments-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                } catch {}
-              }}
-              className="flex flex-col items-center gap-1 px-3 py-1 text-fg"
-            >
-              <MessageCircle className="w-5 h-5" />
-              <span className="text-xs">留言</span>
-            </button>
-            <button
-              onClick={async () => {
-                const url = `${location.origin}/posts/${post.id}`
-                const text = (post.content || '').replace(/<[^>]+>/g,'').slice(0, 60)
-                try {
-                  // Web Share API
-                  if (navigator.share) {
-                    await navigator.share({ title: `#${post.id}`, text, url })
-                  } else {
-                    await navigator.clipboard.writeText(url)
-                    setShareMsg('連結已複製')
-                    setTimeout(() => setShareMsg(null), 1500)
-                  }
-                } catch {}
-              }}
-              className="flex flex-col items-center gap-1 px-3 py-1 text-fg"
-            >
-              <Share2 className="w-5 h-5" />
-              <span className="text-xs">分享</span>
-            </button>
-            <button
-              onClick={() => { try { window.location.href = `/support?subject=${encodeURIComponent('回報貼文 #' + post.id)}` } catch {} }}
-              className="flex flex-col items-center gap-1 px-3 py-1 text-fg"
-            >
-              <Flag className="w-5 h-5" />
-              <span className="text-xs">回報</span>
-            </button>
-          </div>
-        </div>
-        {shareMsg && (
-          <div className="mx-auto max-w-sm mb-2 text-center text-xs text-fg bg-surface border border-border px-2 py-1 rounded-full shadow">{shareMsg}</div>
-        )}
-      </div>
+      {/* 移除：行動版懸浮工具列（留言/分享/回報），避免與內文重複 */}
     </div>
   )
 }

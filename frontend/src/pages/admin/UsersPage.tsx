@@ -17,6 +17,7 @@ interface User {
     name: string
   }
   created_at: string
+  personal_id: string
 }
 
 interface NewUser {
@@ -229,7 +230,8 @@ export default function AdminUsersPage() {
     }
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      // 先嘗試普通刪除
+      let response = await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')||''}`
@@ -237,7 +239,31 @@ export default function AdminUsersPage() {
       })
 
       if (!response.ok) {
-        throw new Error(await response.text())
+        const error = await response.json().catch(() => ({ msg: '刪除失敗' }))
+        
+        // 如果有關聯資料，詢問是否強制刪除
+        if (error.msg && error.msg.includes('存在關聯資料')) {
+          const forceDelete = confirm(
+            '該用戶有相關的貼文或留言。是否強制刪除？\n這將同時刪除該用戶的所有內容。'
+          )
+          
+          if (forceDelete) {
+            response = await fetch(`/api/admin/users/${userId}?force=1`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')||''}`
+              }
+            })
+            
+            if (!response.ok) {
+              throw new Error(await response.text())
+            }
+          } else {
+            return
+          }
+        } else {
+          throw new Error(error.msg || '刪除失敗')
+        }
       }
 
       setMessage('用戶刪除成功')
@@ -355,6 +381,9 @@ export default function AdminUsersPage() {
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-fg truncate">{user.username}</div>
                             <div className="text-sm text-muted truncate">{user.email}</div>
+                            <div className="text-xs text-muted font-mono bg-surface-hover px-2 py-1 rounded mt-1 inline-block">
+                              ID: {user.personal_id}
+                            </div>
                           </div>
                         </div>
                         

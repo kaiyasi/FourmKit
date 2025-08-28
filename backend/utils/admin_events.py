@@ -1,78 +1,30 @@
 """
-管理員事件記錄系統
-記錄各種重要操作，包括但不限於：
-- 留言審核
-- 發文審核
-- 刪文操作
-- 登入記錄
-- 帳號註冊
-- 學校資料更動
-- 系統設定變更
+相容層：舊的 admin_events API 映射到新的 EventService/SystemEvent。
+
+提供下列函式，維持原有呼叫點不需改動：
+- log_admin_event
+- get_recent_events
+- get_event_statistics
+- log_user_action
+- log_content_moderation
+- log_system_event
+- log_security_event
 """
 
-import os
-import json
-import time
+from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
-from collections import deque
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy.orm import Session
-from models import User, School, Post, Comment, ModerationLog
-from utils.notify import send_admin_event
 
-# 事件類型定義
-EVENT_TYPES = {
-    # 內容審核
-    "post_created": "貼文發布",
-    "post_approved": "貼文核准",
-    "post_rejected": "貼文拒絕",
-    "post_deleted": "貼文刪除",
-    "comment_created": "留言發布",
-    "comment_approved": "留言核准",
-    "comment_rejected": "留言拒絕",
-    "comment_deleted": "留言刪除",
-    
-    # 用戶管理
-    "user_registered": "用戶註冊",
-    "user_login": "用戶登入",
-    "user_logout": "用戶登出",
-    "user_role_changed": "角色變更",
-    "user_password_changed": "密碼變更",
-    "user_deleted": "用戶刪除",
-    
-    # 學校管理
-    "school_created": "學校新增",
-    "school_updated": "學校更新",
-    "school_deleted": "學校刪除",
-    
-    # 系統管理
-    "system_mode_changed": "系統模式變更",
-    "system_settings_changed": "系統設定變更",
-    "maintenance_mode": "維護模式",
-    
-    # 安全事件
-    "failed_login": "登入失敗",
-    "suspicious_activity": "可疑活動",
-    "rate_limit_exceeded": "速率限制",
-    
-    # 其他
-    "delete_request_created": "刪文請求",
-    "delete_request_approved": "刪文請求核准",
-    "delete_request_rejected": "刪文請求拒絕",
-    "file_uploaded": "檔案上傳",
-    "file_deleted": "檔案刪除",
-}
+from services.event_service import EventService
+from utils.db import get_session
 
-# 事件嚴重程度
-SEVERITY_LEVELS = {
-    "low": "低",
-    "medium": "中", 
-    "high": "高",
-    "critical": "嚴重"
-}
 
-# 內存中的事件緩存（最近1000條）
-_ADMIN_EVENTS_CACHE: deque = deque(maxlen=1000)
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
 
 def log_admin_event(
     event_type: str,
@@ -84,190 +36,132 @@ def log_admin_event(
     target_type: Optional[str] = None,
     severity: str = "medium",
     metadata: Optional[Dict[str, Any]] = None,
-    session: Optional[Session] = None
+    session: Optional[Session] = None,
 ) -> Dict[str, Any]:
-    """
-    記錄管理員事件
-    
-    Args:
-        event_type: 事件類型
-        title: 事件標題
-        description: 事件描述
-        actor_id: 操作者ID
-        actor_name: 操作者名稱
-        target_id: 目標對象ID
-        target_type: 目標對象類型
-        severity: 嚴重程度
-        metadata: 額外資料
-        session: 資料庫會話
-    """
-    
-    # 創建事件記錄
-    event_data = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "event_type": event_type,
-        "title": title,
-        "description": description,
-        "actor_id": actor_id,
-        "actor_name": actor_name,
-        "target_id": target_id,
-        "target_type": target_type,
-        "severity": severity,
-        "metadata": metadata or {},
-        "event_type_display": EVENT_TYPES.get(event_type, event_type),
-        "severity_display": SEVERITY_LEVELS.get(severity, severity)
-    }
-    
-    # 添加到內存緩存
-    _ADMIN_EVENTS_CACHE.appendleft(event_data)
-    
-    # 保存到資料庫（如果有session）且僅對真正的「審核結果」事件落盤到 moderation_logs
-    if session:
-        try:
-            # 僅記錄核准/拒絕類事件，避免把「送審」等一般事件混入審核紀錄
-            MOD_EVENTS_APPROVE = {"post_approved", "comment_approved", "media_approved"}
-            MOD_EVENTS_REJECT = {"post_rejected", "comment_rejected", "media_rejected"}
-            if event_type in MOD_EVENTS_APPROVE.union(MOD_EVENTS_REJECT):
-                norm_target = (target_type or "").strip().lower()
-                is_post = norm_target in {"post", "貼文"}
-                is_comment = norm_target in {"comment", "留言"}
+    """以新版事件系統落庫，回傳簡易字典（相容舊介面）。"""
 
-                resolved_old_status = None
-                resolved_new_status = ""
+    def _log(s: Session):
+        ev = EventService.log_event(
+            session=s,
+            event_type=event_type,
+            title=title,
+            description=description,
+            severity=severity,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            actor_role=None,
+            target_type=target_type,
+            target_id=str(target_id) if target_id is not None else None,
+            target_name=None,
+            school_id=None,
+            metadata=metadata or {},
+            client_ip=None,
+            client_id=None,
+            user_agent=None,
+            is_important=severity in {"high", "critical"},
+            send_webhook=True,
+        )
+        return {
+            "id": ev.id,
+            "timestamp": _now_iso(),
+            "event_type": ev.event_type,
+            "title": ev.title,
+            "description": ev.description,
+            "actor_id": ev.actor_id,
+            "actor_name": ev.actor_name,
+            "target_id": target_id,
+            "target_type": target_type,
+            "severity": ev.severity,
+            "metadata": getattr(ev, "metadata_json", None) or {},
+        }
 
-                if is_post and target_id:
-                    try:
-                        post_obj = session.get(Post, target_id)
-                        if post_obj is not None:
-                            resolved_new_status = post_obj.status or ("approved" if event_type in MOD_EVENTS_APPROVE else "rejected")
-                    except Exception:
-                        pass
-                elif is_comment and target_id:
-                    try:
-                        comment_obj = session.get(Comment, target_id)
-                        if comment_obj is not None:
-                            resolved_new_status = comment_obj.status or ("approved" if event_type in MOD_EVENTS_APPROVE else "rejected")
-                    except Exception:
-                        pass
+    if session is not None:
+        return _log(session)
+    # 若未提供 session，自行開啟一次性 session
+    with get_session() as s:
+        return _log(s)
 
-                # 映射為標準動作字串（資料表只應出現 approve/reject）
-                action_str = "approve" if event_type in MOD_EVENTS_APPROVE else "reject"
 
-                log_entry = ModerationLog(
-                    target_type=target_type or "system",
-                    target_id=target_id,
-                    action=action_str,
-                    old_status=resolved_old_status,
-                    new_status=resolved_new_status,
-                    reason=description,
-                    moderator_id=actor_id
-                )
-                session.add(log_entry)
-                session.commit()
-        except Exception as e:
-            print(f"Failed to save admin event to database: {e}")
-    
-    # 發送通知（重要事件）
-    if severity in ["high", "critical"] or event_type in [
-        "user_deleted", "system_mode_changed", "suspicious_activity"
-    ]:
-        try:
-            fields = []
-            if actor_name:
-                fields.append({"name": "操作者", "value": actor_name, "inline": True})
-            if target_id:
-                fields.append({"name": "目標ID", "value": str(target_id), "inline": True})
-            if target_type:
-                fields.append({"name": "目標類型", "value": target_type, "inline": True})
-            if severity != "medium":
-                fields.append({"name": "嚴重程度", "value": SEVERITY_LEVELS.get(severity, severity), "inline": True})
-            
-            send_admin_event(
-                kind=event_type,
-                title=title,
-                description=description,
-                actor=actor_name,
-                source="admin_events",
-                fields=fields
+def get_recent_events(
+    limit: int = 50,
+    event_type: Optional[str] = None,
+    severity: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """以新版事件系統查詢最近事件，轉成舊格式陣列。"""
+    with get_session() as s:
+        events = EventService.get_events(
+            session=s,
+            limit=limit,
+            offset=0,
+            category=None,
+            event_type=event_type,
+            severity=severity,
+            actor_id=None,
+            school_id=None,
+            unread_only=False,
+            important_only=False,
+            include_hidden=False,
+        )
+        out: List[Dict[str, Any]] = []
+        for ev in events:
+            out.append(
+                {
+                    "timestamp": (ev.created_at.isoformat() if ev.created_at else _now_iso()),
+                    "event_type": ev.event_type,
+                    "title": ev.title,
+                    "description": ev.description,
+                    "actor_id": ev.actor_id,
+                    "actor_name": ev.actor_name,
+                    "target_id": ev.target_id,
+                    "target_type": ev.target_type,
+                    "severity": ev.severity,
+                    "metadata": getattr(ev, "metadata_json", None) or {},
+                }
             )
-        except Exception as e:
-            print(f"Failed to send admin event notification: {e}")
-    
-    return event_data
+        return out
 
-def get_recent_events(limit: int = 50, event_type: Optional[str] = None, 
-                     severity: Optional[str] = None) -> List[Dict[str, Any]]:
-    """獲取最近的事件記錄"""
-    events = list(_ADMIN_EVENTS_CACHE)
-    
-    # 過濾事件類型
-    if event_type:
-        events = [e for e in events if e["event_type"] == event_type]
-    
-    # 過濾嚴重程度
-    if severity:
-        events = [e for e in events if e["severity"] == severity]
-    
-    return events[:limit]
 
 def get_event_statistics() -> Dict[str, Any]:
-    """獲取事件統計資料"""
-    events = list(_ADMIN_EVENTS_CACHE)
-    
-    # 按類型統計
-    type_stats = {}
-    for event in events:
-        event_type = event["event_type"]
-        type_stats[event_type] = type_stats.get(event_type, 0) + 1
-    
-    # 按嚴重程度統計
-    severity_stats = {}
-    for event in events:
-        severity = event["severity"]
-        severity_stats[severity] = severity_stats.get(severity, 0) + 1
-    
-    # 最近24小時的事件
-    now = datetime.now(timezone.utc)
-    recent_24h = [
-        e for e in events 
-        if (now - datetime.fromisoformat(e["timestamp"].replace('Z', '+00:00'))).total_seconds() < 86400
-    ]
-    
-    return {
-        "total_events": len(events),
-        "events_24h": len(recent_24h),
-        "type_distribution": type_stats,
-        "severity_distribution": severity_stats,
-        "recent_events": recent_24h[:10]
-    }
+    with get_session() as s:
+        return EventService.get_event_statistics(session=s)
 
-# 便捷函數
-def log_user_action(event_type: str, actor_id: int, actor_name: str, 
-                   action: str, target_id: Optional[int] = None, 
-                   target_type: Optional[str] = None, session: Optional[Session] = None):
-    """記錄用戶操作"""
+
+def log_user_action(
+    event_type: str,
+    actor_id: int,
+    actor_name: str,
+    action: str,
+    target_id: Optional[int] = None,
+    target_type: Optional[str] = None,
+    session: Optional[Session] = None,
+):
+    title = action or event_type
+    desc = f"用戶 {actor_name} {action}" if actor_name and action else (action or title)
     return log_admin_event(
         event_type=event_type,
-        title=f"{EVENT_TYPES.get(event_type, event_type)}",
-        description=f"用戶 {actor_name} {action}",
+        title=title,
+        description=desc,
         actor_id=actor_id,
         actor_name=actor_name,
         target_id=target_id,
         target_type=target_type,
-        session=session
+        session=session,
     )
 
-def log_content_moderation(event_type: str, moderator_id: int, moderator_name: str,
-                          content_type: str, content_id: int, action: str, 
-                          reason: Optional[str] = None, session: Optional[Session] = None):
-    """記錄內容審核"""
+
+def log_content_moderation(
+    event_type: str,
+    moderator_id: int,
+    moderator_name: str,
+    content_type: str,
+    content_id: int,
+    action: str,
+    reason: Optional[str] = None,
+    session: Optional[Session] = None,
+):
     description = f"管理員 {moderator_name} {action}了{content_type} #{content_id}"
     if reason:
         description += f"，原因：{reason}"
-    
-    # 注意：此處僅做「管理事件」記錄與通知，不再寫入 moderation_logs，
-    # 以避免與 routes_moderation.py 的 write_log() 重複落庫。
-    # 故強制 session=None 以跳過 DB 寫入。
     return log_admin_event(
         event_type=event_type,
         title=f"{content_type}審核",
@@ -278,24 +172,34 @@ def log_content_moderation(event_type: str, moderator_id: int, moderator_name: s
         target_type=content_type,
         severity="medium",
         metadata={"reason": reason} if reason else None,
-        session=None
+        session=session,
     )
 
-def log_system_event(event_type: str, title: str, description: str, 
-                    severity: str = "medium", metadata: Optional[Dict[str, Any]] = None):
-    """記錄系統事件"""
+
+def log_system_event(
+    event_type: str,
+    title: str,
+    description: str,
+    severity: str = "medium",
+    metadata: Optional[Dict[str, Any]] = None,
+):
     return log_admin_event(
         event_type=event_type,
         title=title,
         description=description,
         severity=severity,
-        metadata=metadata
+        metadata=metadata,
     )
 
-def log_security_event(event_type: str, description: str, 
-                      actor_id: Optional[int] = None, actor_name: Optional[str] = None,
-                      severity: str = "high", metadata: Optional[Dict[str, Any]] = None):
-    """記錄安全事件"""
+
+def log_security_event(
+    event_type: str,
+    description: str,
+    actor_id: Optional[int] = None,
+    actor_name: Optional[str] = None,
+    severity: str = "high",
+    metadata: Optional[Dict[str, Any]] = None,
+):
     return log_admin_event(
         event_type=event_type,
         title="安全事件",
@@ -303,5 +207,7 @@ def log_security_event(event_type: str, description: str,
         actor_id=actor_id,
         actor_name=actor_name,
         severity=severity,
-        metadata=metadata
+        metadata=metadata,
     )
+
+

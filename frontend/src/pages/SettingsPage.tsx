@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { User, Shield, Bell, Save, Key, IdCard, Link as LinkIcon, Building2, BadgeCheck, Edit, AlertTriangle } from 'lucide-react'
+import { User, Shield, Bell, Save, Key, IdCard, Link as LinkIcon, Building2, BadgeCheck, Edit, AlertTriangle, LogOut, BellRing, Trash2, Eye, EyeOff } from 'lucide-react'
+import { listNotifications, clearNotifications, markNotificationRead, markAllNotificationsRead } from '@/utils/notifications'
 import { AccountAPI } from '@/services/api'
 import { getRole, isLoggedIn, getRoleDisplayName } from '@/utils/auth'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface UserSettings {
   email?: string
@@ -15,9 +17,24 @@ interface UserSettings {
 }
 
 export default function SettingsPage() {
+  // 全部學校清單（供 dev_admin 切換）
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/schools', { cache: 'no-store' })
+        const j = await r.json()
+        if (Array.isArray(j?.items)) {
+          window.__allSchools = j.items
+        }
+      } catch {}
+    })()
+  }, [])
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
   const { pathname } = useLocation()
+  const { logout } = useAuth()
   const role = getRole()
-  const isAdmin = ['admin', 'dev_admin', 'campus_admin', 'cross_admin'].includes(role)
+  const isAdmin = ['admin', 'dev_admin', 'campus_admin', 'campus_moderator', 'cross_admin'].includes(role)
   
   const [settings, setSettings] = useState<UserSettings>({})
   const [profile, setProfile] = useState<{ username:string; email:string; role:string; school?: { id:number; slug:string; name:string }|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean; personal_id?: string } | null>(null)
@@ -33,7 +50,13 @@ export default function SettingsPage() {
   )
   const [cpw, setCpw] = useState({ current_password: '', new_password: '' })
   const [webhook, setWebhook] = useState<{ url: string; enabled: boolean; kinds: { posts:boolean; comments:boolean; announcements:boolean }, batch: number }>(()=>({ url:'', enabled:false, kinds:{ posts:true, comments:false, announcements:false }, batch:5 }))
+  const [webhookLoaded, setWebhookLoaded] = useState(false)
   const [webhookStatus, setWebhookStatus] = useState<string>('')
+  const [notifFilterSchoolOnly, setNotifFilterSchoolOnly] = useState(true)
+  const [notifs, setNotifs] = useState<any[]>([])
+  const [notifOpen, setNotifOpen] = useState(true) // 預設顯示最新通知
+  const [quietMode, setQuietMode] = useState<boolean>(()=>{ try { return localStorage.getItem('fk_quiet_toasts')==='1' } catch { return false } })
+  const [showCount, setShowCount] = useState<number>(20)
 
   useEffect(() => {
     const html = document.documentElement
@@ -45,6 +68,25 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings()
   }, [])
+
+  // 通知中心：訂閱變更
+  useEffect(() => {
+    const read = () => {
+      const currentSlug = (localStorage.getItem('school_slug')||'') || null
+      const itemsAll = notifFilterSchoolOnly
+        ? listNotifications({ school: currentSlug })
+        : listNotifications()
+      setNotifs(itemsAll)
+    }
+    read()
+    const onChanged = () => read()
+    window.addEventListener('fk_notifications_changed', onChanged as any)
+    window.addEventListener('fk_school_changed', onChanged as any)
+    return () => {
+      window.removeEventListener('fk_notifications_changed', onChanged as any)
+      window.removeEventListener('fk_school_changed', onChanged as any)
+    }
+  }, [notifFilterSchoolOnly])
 
   // 監聽學校切換，重新載入該校設定
   useEffect(() => {
@@ -65,20 +107,37 @@ export default function SettingsPage() {
         theme_preference: currentTheme,
         language: 'zh-TW'
       })
-      await loadSchoolSettings()
+      // 依角色自動選擇學校（校內管理員/校內版主不可自選）
+      try {
+        const r = getRole()
+        const userSchoolSlug = p?.school?.slug || ''
+        if ((r === 'campus_admin' || r === 'campus_moderator') && userSchoolSlug) {
+          const cur = (localStorage.getItem('school_slug')||'').trim()
+          if (cur !== userSchoolSlug) {
+            localStorage.setItem('school_slug', userSchoolSlug)
+            localStorage.setItem('selected_school_slug', userSchoolSlug)
+            window.dispatchEvent(new CustomEvent('fk_school_changed', { detail: { slug: userSchoolSlug } } as any))
+          }
+        }
+      } catch {}
+      await loadSchoolSettings(p)
       try {
         const wh = await AccountAPI.webhookGet()
         const conf = wh?.config || {}
-        setWebhook({ 
-          url: conf.url || '', 
-          enabled: Boolean(conf.enabled), 
-          kinds: {
-            posts: Boolean(conf?.kinds?.posts ?? true),
-            comments: Boolean(conf?.kinds?.comments ?? false),
-            announcements: Boolean(conf?.kinds?.announcements ?? false)
-          },
-          batch: Number(conf?.batch ?? 5)
-        })
+        // 僅在尚未載入過時才覆寫，以免覆蓋使用者正在輸入的內容
+        if (!webhookLoaded) {
+          setWebhook({ 
+            url: conf.url || '', 
+            enabled: Boolean(conf.enabled), 
+            kinds: {
+              posts: Boolean(conf?.kinds?.posts ?? true),
+              comments: Boolean(conf?.kinds?.comments ?? false),
+              announcements: Boolean(conf?.kinds?.announcements ?? false)
+            },
+            batch: Number(conf?.batch ?? 5)
+          })
+          setWebhookLoaded(true)
+        }
       } catch {}
     } catch (error) {
       setMessage('載入設定失敗')
@@ -87,12 +146,23 @@ export default function SettingsPage() {
     }
   }
 
-  const getCurrentSchoolSlug = () => (localStorage.getItem('school_slug') || '').trim()
+  const getCurrentSchoolSlug = () => {
+    // 角色強制：校內管理員/校內版主 → 永遠鎖定自己的學校
+    try {
+      const r = getRole()
+      const forced = profile?.school?.slug || ''
+      if ((r === 'campus_admin' || r === 'campus_moderator') && forced) {
+        return forced
+      }
+    } catch {}
+    const raw = (localStorage.getItem('school_slug') || '').trim()
+    return raw === '__ALL__' ? '' : raw
+  }
 
-  const loadSchoolSettings = async () => {
+  const loadSchoolSettings = async (overrideProfile?: { username:string; email:string; role:string; school?: { id:number; slug:string; name:string }|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean; personal_id?: string } ) => {
     try {
       const slug = getCurrentSchoolSlug()
-      if (!slug) { // 跨校視圖：唯讀且無具體學校
+      if (!slug) { // 未選擇學校或跨校：唯讀且無具體學校
         setSchoolSettings(null)
         setSchoolMeta(null)
         setCanEditSchool(false)
@@ -101,7 +171,8 @@ export default function SettingsPage() {
       const r = await fetch(`/api/schools/${encodeURIComponent(slug)}/settings`, { cache: 'no-store' })
       if (!r.ok) throw new Error('學校設定載入失敗')
       const j = await r.json().catch(()=>({}))
-      setSchoolMeta(j?.school || null)
+      const currentSchoolMeta = j?.school || null
+      setSchoolMeta(currentSchoolMeta)
       try {
         const data = j?.data
         const parsed = typeof data === 'string' ? JSON.parse(data || '{}') : (data || {})
@@ -113,10 +184,30 @@ export default function SettingsPage() {
       } catch {
         setSchoolSettings({ announcement:'', allow_anonymous:true, min_post_chars:15 })
       }
-      // 權限：dev_admin 可編輯；campus_admin 僅可編輯自己學校
+      // 權限：僅 dev_admin 可編輯學校設定（審核員與校內管理員唯讀）
       const role = getRole()
-      const editable = role === 'dev_admin' || (role === 'campus_admin' && profile?.school?.slug === slug)
+      const prof = overrideProfile || profile
+      // 檢查當前用戶是否有權限編輯此學校設定
+      const editable = role === 'dev_admin'
       setCanEditSchool(Boolean(editable))
+      
+      // 添加除錯資訊
+      console.log('[DEBUG] 學校設定權限檢查:', {
+        role,
+        userSchoolSlug: profile?.school?.slug,
+        userSchoolId: profile?.school?.id,
+        currentSlug: slug,
+        schoolMetaId: currentSchoolMeta?.id,
+        editable,
+        canEditSchoolBefore: canEditSchool
+      })
+      
+      if ((role === 'campus_admin' || role === 'campus_moderator') && !editable) {
+        console.log('[DEBUG] 權限檢查失敗 - 詳細資訊:', {
+          role,
+          reason: 'only dev_admin can edit school settings'
+        })
+      }
     } catch {
       setSchoolSettings(null)
       setCanEditSchool(false)
@@ -227,14 +318,14 @@ export default function SettingsPage() {
               {message}
             </div>
           )}
-        </div>
+      </div>
 
         <div className="space-y-6">
           {/* 通知 Webhook 綁定 */}
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-4">
               <LinkIcon className="w-6 h-6 text-primary" />
-              <h2 className="text-xl font-semibold dual-text">通知 Webhook（Discord 相容）</h2>
+              <h2 className="text-xl font-semibold dual-text">通知 Webhook</h2>
             </div>
             <div className="grid gap-4">
               <div>
@@ -264,7 +355,7 @@ export default function SettingsPage() {
                       新留言
                     </label>
                     <label className="inline-flex items-center gap-2 opacity-70">
-                      <input type="checkbox" checked={webhook.kinds.announcements} onChange={e=>setWebhook(prev=>({ ...prev, kinds: { ...prev.kinds, announcements:e.target.checked } }))} />
+                      <input type="checkbox" checked={webhook.kinds.announcements} disabled onChange={e=>setWebhook(prev=>({ ...prev, kinds: { ...prev.kinds, announcements:e.target.checked } }))} />
                       公告（即將推出）
                     </label>
                   </div>
@@ -284,20 +375,47 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-          {/* 學校設定（依 SchoolSwitcher 決定學校） */}
+          {/* 學校設定（依 SchoolSwitcher 決定學校）- 僅管理員可見 */}
+          {isAdmin && (
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-2">
               <Building2 className="w-6 h-6 text-primary" />
               <h2 className="text-xl font-semibold dual-text">學校設定</h2>
-              <div className="ml-auto text-sm text-muted">
-                目前學校：{schoolMeta?.name || '跨校（唯讀）'}
+              <div className="ml-auto text-xs text-muted leading-none">
+                目前學校：{schoolMeta?.name || '未選擇'}
               </div>
             </div>
+
+            {/* dev_admin 可選擇學校；校內管理員/校內版主不可自選，固定自己學校 */}
+            {role === 'dev_admin' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-muted mb-1">選擇學校</label>
+                <select
+                  className="form-control w-64"
+                  value={schoolMeta?.slug || ''}
+                  onChange={async e => {
+                    localStorage.setItem('school_slug', e.target.value)
+                    window.dispatchEvent(new CustomEvent('fk_school_changed'))
+                  }}
+                >
+                  <option value="" disabled>請選擇學校</option>
+                  {/* 取得全部學校清單 */}
+                  {Array.isArray(window.__allSchools) && window.__allSchools.map(s => (
+                    <option key={s.slug} value={s.slug}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* 校管理員只顯示自己學校（無下拉） */}
+            {role !== 'dev_admin' && schoolMeta && (
+              <div className="mb-2 text-sm text-muted">（僅能管理自己學校：{schoolMeta.name}）</div>
+            )}
 
             {!schoolMeta && (
               <div className="mb-4 p-3 rounded-lg border border-border bg-surface-hover text-sm text-muted flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
-                跨校視圖僅供檢視。請透過上方學校切換選擇特定學校以進行設定。
+                尚未選擇學校。請在上方選單選擇欲管理的學校以進行設定。
               </div>
             )}
 
@@ -361,6 +479,113 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          )}
+
+          {/* 通知中心：顯示於學校設定下方 */}
+          <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <BellRing className="w-6 h-6 text-primary" />
+                <h2 className="text-xl font-semibold dual-text">通知中心</h2>
+                <span className="ml-2 inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-surface-hover border border-border text-muted">{notifs.filter((n:any)=>!n.read).length} 未讀</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <label className="text-xs sm:text-sm text-muted flex items-center gap-2">
+                  <input type="checkbox" checked={quietMode} onChange={e=>{ setQuietMode(e.target.checked); try{ localStorage.setItem('fk_quiet_toasts', e.target.checked? '1':'0') }catch{} }} />
+                  安靜模式
+                </label>
+                <label className="text-xs sm:text-sm text-muted flex items-center gap-2">
+                  <input type="checkbox" checked={notifFilterSchoolOnly} onChange={e=>setNotifFilterSchoolOnly(e.target.checked)} />
+                  只顯示目前學校
+                </label>
+                <button
+                  className="px-2 py-1 text-xs sm:px-3 sm:py-2 sm:text-sm rounded-lg border hover:bg-surface shrink-0"
+                  onClick={() => {
+                    const slug = (localStorage.getItem('school_slug')||'') || null
+                    markAllNotificationsRead(notifFilterSchoolOnly ? { school: slug } : undefined)
+                  }}
+                >全部標為已讀</button>
+                <button
+                  className="px-2 py-1 text-xs sm:px-3 sm:py-2 sm:text-sm rounded-lg border hover:bg-surface shrink-0"
+                  onClick={() => {
+                    if (window.confirm('確定要清除所有通知嗎？此操作無法復原。')) {
+                      const slug = (localStorage.getItem('school_slug')||'') || null
+                      clearNotifications(notifFilterSchoolOnly ? { school: slug } : undefined)
+                      setNotifs([])
+                    }
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 inline mr-1" /> 清除
+                </button>
+              </div>
+            </div>
+            {/* 未讀列表（預設顯示） */}
+            {notifs.filter((n:any)=>!n.read).length === 0 ? (
+              <div className="text-sm text-muted">沒有未讀通知</div>
+            ) : (
+              <div className="divide-y divide-border rounded-xl border border-border overflow-hidden mb-4">
+                {notifs.filter((n:any)=>!n.read).slice(0, showCount).map((n:any) => {
+                  const labelSchool = (slug?: string|null) => {
+                    if (!slug || slug === '__ALL__') return '跨校'
+                    try {
+                      const all: any[] = (window as any).__allSchools
+                      if (Array.isArray(all)) {
+                        const found = all.find(s => s.slug === slug)
+                        return (found?.name || slug)
+                      }
+                    } catch {}
+                    return slug
+                  }
+                  return (
+                  <div key={n.id} className="p-2 sm:p-3 bg-surface">
+                    <div className="text-[11px] text-muted mb-1 flex flex-wrap items-center gap-2">
+                      <span>{new Date(n.ts).toLocaleString()}</span>
+                      {n.school ? (
+                        <span className="px-2 py-0.5 text-[11px] rounded bg-surface-hover border border-border">{labelSchool(n.school)}</span>
+                      ) : (
+                        <span className="text-muted">跨校</span>
+                      )}
+                    </div>
+                    <div className="text-sm text-fg flex items-start sm:items-center justify-between gap-3 break-words">
+                      <span className="min-w-0 break-words">{n.text}</span>
+                      <button className="text-xs px-2 py-1 rounded border hover:bg-surface shrink-0" onClick={()=> markNotificationRead(n.id)}>標為已讀</button>
+                    </div>
+                  </div>
+                  )
+                })}
+              </div>
+            )}
+            {/* 已讀區（可展開） */}
+            <div className="flex items-center justify-between mb-2 mt-2">
+              <button className="text-sm text-muted underline-offset-4 hover:underline" onClick={()=> setNotifOpen(v=>!v)}>
+                {notifOpen ? '收起歷史' : '展開歷史'}
+              </button>
+              {notifOpen && notifs.filter((n:any)=>n.read).length > showCount && (
+                <button className="text-sm text-muted underline-offset-4 hover:underline" onClick={()=> setShowCount(c => Math.min(c+20, notifs.filter((n:any)=>n.read).length))}>顯示更多</button>
+              )}
+            </div>
+            {notifOpen && (
+              notifs.filter((n:any)=>n.read).length === 0 ? (
+                <div className="text-sm text-muted">沒有歷史通知</div>
+              ) : (
+                <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
+                  {notifs.filter((n:any)=>n.read).slice(0, showCount).map((n:any) => (
+                    <div key={n.id} className="p-2 sm:p-3 bg-surface opacity-80">
+                      <div className="text-[11px] text-muted mb-1 flex flex-wrap items-center gap-2">
+                        <span>{new Date(n.ts).toLocaleString()}</span>
+                        {n.school ? (
+                          <span className="px-2 py-0.5 text-[11px] rounded bg-surface-hover border border-border">{(window as any).__allSchools?.find?.((s:any)=>s.slug===n.school)?.name || (n.school==='__ALL__'? '跨校': n.school)}</span>
+                        ) : (
+                          <span className="text-muted">跨校</span>
+                        )}
+                      </div>
+                      <div className="text-sm text-fg break-words">{n.text}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
           {/* 帳號資訊卡片 */}
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-6">
@@ -369,12 +594,39 @@ export default function SettingsPage() {
             </div>
             
             {profile && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-muted">用戶名稱</label>
+              <>
+                {/* （已停用）手機合併卡，改為沿用分卡樣式在手機以單欄排列 */}
+                <div className="hidden space-y-2">
                   <div className="p-4 bg-surface-hover rounded-xl border border-border">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center flex-shrink-0">
+                    <div className="text-base font-medium text-fg truncate" title={profile.username}>
+                      {profile.username}
+                    </div>
+                    <div className="mt-2 text-xs text-fg break-all select-all" title="個人識別碼">
+                      {profile.personal_id || '—'}
+                      {profile.personal_id && (
+                        <button
+                          className="ml-2 px-2 py-0.5 text-xs rounded-lg border hover:bg-surface"
+                          onClick={async ()=>{ try{ await navigator.clipboard.writeText(profile.personal_id||''); setMessage('已複製識別碼'); setTimeout(()=>setMessage(null), 1200)}catch{}}}
+                        >
+                          複製
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 text-sm text-muted">
+                      {getRoleDisplayName(profile.role as any)}
+                      <span className="mx-1">·</span>
+                      {profile.school?.name || '未設定學校'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 分卡樣式：手機單欄、平板以上雙欄 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-muted">用戶名稱</label>
+                    <div className="p-4 bg-surface-hover rounded-xl border border-border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center flex-shrink-0">
                         <User className="w-5 h-5 text-fg" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -387,15 +639,39 @@ export default function SettingsPage() {
                         )}
                       </div>
                       <button 
-                        onClick={() => {
-                          const newName = prompt('請輸入新的用戶名稱', profile.username)
+                        onClick={async () => {
+                          const newName = prompt('請輸入新的用戶名稱\n規則：至少2字符，只能包含英數字和 - _ .', profile.username)
                           if (newName && newName.trim() && newName !== profile.username) {
-                            // 這裡應該調用 API 更新用戶名稱
-                            setMessage('用戶名稱更新功能開發中')
+                            const trimmedName = newName.trim()
+                            
+                            // 基本驗證
+                            if (trimmedName.length < 2) {
+                              setMessage('用戶名稱至少需要 2 個字符')
+                              return
+                            }
+                            
+                            if (!/^[a-zA-Z0-9\-_.]+$/.test(trimmedName)) {
+                              setMessage('用戶名稱只能包含英數字和 - _ .')
+                              return
+                            }
+                            
+                            try {
+                              setSaving(true)
+                              await AccountAPI.updateProfile({ username: trimmedName })
+                              setMessage('用戶名稱更新成功')
+                              // 重新載入個人資料
+                              const updatedProfile = await AccountAPI.profile()
+                              setProfile(updatedProfile)
+                            } catch (error: any) {
+                              setMessage(error?.message || '用戶名稱更新失敗')
+                            } finally {
+                              setSaving(false)
+                            }
                           }
                         }}
                         className="p-1 rounded hover:bg-surface transition-colors flex-shrink-0 ml-auto"
                         title="編輯用戶名稱"
+                        disabled={saving}
                       >
                         <Edit className="w-4 h-4 text-fg" />
                       </button>
@@ -467,6 +743,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+            </>
             )}
           </div>
 
@@ -482,24 +759,44 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">目前密碼</label>
-                  <input
-                    type="password"
-                    value={cpw.current_password}
-                    onChange={(e) => setCpw(prev => ({ ...prev, current_password: e.target.value }))}
-                    className="w-full p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    placeholder="輸入目前密碼"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? "text" : "password"}
+                      value={cpw.current_password}
+                      onChange={(e) => setCpw(prev => ({ ...prev, current_password: e.target.value }))}
+                      className="w-full p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary pr-10"
+                      placeholder="輸入目前密碼"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted"
+                      tabIndex={-1}
+                      onClick={()=>setShowCurrentPassword(v=>!v)}
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">新密碼</label>
-                  <input
-                    type="password"
-                    value={cpw.new_password}
-                    onChange={(e) => setCpw(prev => ({ ...prev, new_password: e.target.value }))}
-                    className="w-full p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    placeholder="輸入新密碼"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={cpw.new_password}
+                      onChange={(e) => setCpw(prev => ({ ...prev, new_password: e.target.value }))}
+                      className="w-full p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary pr-10"
+                      placeholder="輸入新密碼"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted"
+                      tabIndex={-1}
+                      onClick={()=>setShowNewPassword(v=>!v)}
+                    >
+                      {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 
                 <button 
@@ -555,6 +852,34 @@ export default function SettingsPage() {
                   <div className="flex justify-between p-3 bg-surface-hover rounded-lg">
                     <span className="text-muted">註冊時間</span>
                     <span className="font-medium">未知</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 手機版登出區塊 */}
+            <div className="md:hidden bg-surface border border-border rounded-2xl p-6 shadow-soft">
+              <div className="flex items-center gap-3 mb-6">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+                <h2 className="text-xl font-semibold dual-text">帳號管理</h2>
+              </div>
+              
+              <div className="space-y-4">
+                <button
+                  onClick={() => {
+                    if (confirm('確定要登出嗎？')) {
+                      logout()
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-3 p-4 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-xl border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors mobile-touch-target"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span className="font-medium">登出帳號</span>
+                </button>
+                
+                <div className="p-4 bg-surface-hover rounded-xl border border-border">
+                  <div className="text-sm text-muted text-center">
+                    登出後需要重新登入才能存取個人化內容
                   </div>
                 </div>
               </div>

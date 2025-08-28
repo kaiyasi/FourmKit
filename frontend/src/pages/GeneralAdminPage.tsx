@@ -53,6 +53,11 @@ interface AuditLog {
   old_status?: string
   new_status?: string
   reason?: string
+  // 新後端欄位（相容舊版）
+  action_display?: string
+  old_status_display?: string
+  new_status_display?: string
+  source?: string | null
 }
 
 export default function GeneralAdminPage() {
@@ -266,7 +271,7 @@ export default function GeneralAdminPage() {
   const loadAuditLogs = async () => {
     try {
       const response = await getJSON<{ logs?: AuditLog[], items?: AuditLog[] }>('/api/moderation/logs')
-      // 處理新的 API 格式：response 可能是 {logs: [...]} 或 {items: [...]}
+      // 處理新的 API 格式：response 可能是 {logs: [...]} 或 {items: [...]} 
       const logs = response.logs || response.items || []
       setAuditLogs(logs)
     } catch (e) {
@@ -521,8 +526,8 @@ export default function GeneralAdminPage() {
             </div>
           </div>
 
-          {/* 統計卡片 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 統計卡片 + 快捷連結 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-surface border border-border rounded-xl p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
@@ -546,6 +551,20 @@ export default function GeneralAdminPage() {
                 </div>
               </div>
             </div>
+
+            {/* 手機可見：聊天室快捷卡片（避免手機看不到入口） */}
+            <div className="bg-surface border border-border rounded-xl p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-blue-700"><path d="M2.25 12a9.75 9.75 0 1117.19 6.03.75.75 0 00-.14.44v2.53a.75.75 0 01-1.28.53l-1.8-1.8a.75.75 0 00-.53-.22h-.24A9.72 9.72 0 012.25 12z"/></svg>
+                </div>
+                <div className="flex-1">
+                  <div className="text-base font-semibold text-fg">管理員聊天室</div>
+                  <div className="text-sm text-muted">即時溝通（含自訂聊天室）</div>
+                </div>
+                <a href="/admin/chat" className="btn-secondary px-3 py-2 text-sm">進入</a>
+              </div>
+            </div>
           </div>
 
           {/* 頁籤 */}
@@ -563,6 +582,7 @@ export default function GeneralAdminPage() {
                 待審核貼文
               </button>
               
+              {role === 'dev_admin' && (
               <button
                 onClick={() => setActiveTab('logs')}
                 className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
@@ -574,6 +594,7 @@ export default function GeneralAdminPage() {
                 <History className="w-4 h-4 inline mr-2" />
                 審核紀錄
               </button>
+              )}
 
               <button
                 onClick={() => setActiveTab('delete_requests')}
@@ -786,7 +807,7 @@ export default function GeneralAdminPage() {
               </>
             )}
 
-            {activeTab === 'logs' && (
+            {activeTab === 'logs' && role === 'dev_admin' && (
               <div className="bg-surface border border-border rounded-xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-medium text-fg">審核紀錄</h3>
@@ -810,19 +831,26 @@ export default function GeneralAdminPage() {
                       <div key={log.id} className="border border-border rounded-xl p-4 bg-surface/50">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              log.action === 'approve' 
-                                ? 'bg-success-bg text-success-text' 
-                                : 'bg-danger-bg text-danger-text'
-                            }`}>
-                              {log.action === 'approve' ? '批准' : '拒絕'}
-                            </span>
+                            {(() => {
+                              const isApprove = (log.action || '').startsWith('approve') || log.action === 'approve' || log.action === 'override_approve'
+                              const label = log.action_display || (isApprove ? '核准' : '拒絕')
+                              return (
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${isApprove ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'}`}>
+                                  {label}
+                                </span>
+                              )
+                            })()}
                             <span className="text-xs px-2 py-1 bg-muted/10 text-muted rounded">
                               {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}
                             </span>
-                            {log.old_status && log.new_status && (
+                            {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
                               <span className="text-xs text-muted">
-                                {log.old_status} → {log.new_status}
+                                {(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
+                              </span>
+                            )}
+                            {typeof log.source === 'string' && (
+                              <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                                來源：{log.source || '跨校'}
                               </span>
                             )}
                           </div>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { joinRoom, leaveRoom, sendMessage } from '@/services/rooms'
 import { getClientId } from '@/utils/client'
 
-type Msg = { room: string; message: string; client_id?: string; ts?: string }
+type Msg = { room: string; message: string; client_id?: string; ts?: string; username?: string }
 
 export default function ChatPanel({ room, title, subtitle }: { room: string; title?: string; subtitle?: string }) {
   const clientId = useMemo(() => getClientId(), [])
@@ -79,7 +79,7 @@ export default function ChatPanel({ room, title, subtitle }: { room: string; tit
             const key = `${m.client_id||''}|${m.ts||''}|${m.message}`
             return (
             <div key={key} className={`max-w-[85%] p-2 rounded-xl border border-border ${m.client_id === clientId ? 'ml-auto bg-primary/10' : 'bg-surface/70'}`}>
-              <div className="text-xs text-muted mb-0.5">{m.client_id === clientId ? '我' : (m.client_id || '匿名')}</div>
+              <div className="text-xs text-muted mb-0.5">{m.client_id === clientId ? '我' : (m.username || m.client_id || '匿名')}</div>
               <div className="text-sm text-fg break-words whitespace-pre-wrap">{m.message}</div>
               <div className="text-[10px] text-muted mt-0.5">{m.ts ? new Date(m.ts).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : ''}</div>
             </div>

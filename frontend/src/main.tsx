@@ -5,7 +5,7 @@ import './index.css'
 // 確保主題在應用啟動時即刻套用（不依賴 NavBar/ThemeToggle 出現）
 import './lib/theme'
 import './styles/markdown.css'
-import App from './App'
+import App from './utils/App'
 import AuthPage from './pages/AuthPage'
 import ModePage from './pages/ModePage'
 import SettingsPage from './pages/SettingsPage'
@@ -23,7 +23,7 @@ import AdminEventsPage from './pages/admin/EventsPage'
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage'
 import InstagramPage from './pages/admin/InstagramPage'
 import SupportPage from './pages/SupportPage'
-import AdminSupportInboxPage from './pages/admin/SupportInboxPage'
+import AdminSupportPage from './pages/AdminSupportPage'
 import AboutPage from './pages/AboutPage'
 import RulesPage from './pages/RulesPage'
 import Forbidden403 from './pages/Forbidden403'
@@ -33,9 +33,11 @@ import { RequireAuth, RequireRoles } from './router/guards'
 import PostDetailPage from './pages/PostDetailPage'
 import RouteError from './components/ui/RouteError'
 import ExternalAccountErrorPage from './pages/ExternalAccountErrorPage'
+import RegisterConfirmPage from './pages/RegisterConfirmPage'
 import LoginRestrictedPage from './pages/LoginRestrictedPage'
 import { initRestartCheck, startPeriodicRestartCheck } from './utils/auth'
 import { AuthProvider } from './contexts/AuthContext'
+import { NotificationProvider } from './contexts/NotificationContext'
 
 // 在應用啟動時檢查重啟
 initRestartCheck().catch(console.error);
@@ -51,6 +53,7 @@ window.addEventListener('beforeunload', () => {
 const router = createBrowserRouter([
 	{ path: "/", element: <App />, errorElement: <RouteError /> },
     { path: "/auth", element: <AuthPage />, errorElement: <RouteError /> },
+    { path: "/auth/register-confirm", element: <RegisterConfirmPage />, errorElement: <RouteError /> },
     { path: "/error/external-account", element: <ExternalAccountErrorPage />, errorElement: <RouteError /> },
     { path: "/error/login-restricted", element: <LoginRestrictedPage />, errorElement: <RouteError /> },
     // 公開頁面：看板（貼文清單 + 發文）
@@ -190,7 +193,7 @@ const router = createBrowserRouter([
         path: "/admin/support",
         element: (
             <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
-                <AdminSupportInboxPage />
+                <AdminSupportPage />
             </RequireRoles>
         ),
         errorElement: <RouteError />,
@@ -198,7 +201,7 @@ const router = createBrowserRouter([
     { 
         path: "/settings/admin", 
         element: (
-            <RequireRoles allow={['dev_admin', 'campus_admin', 'cross_admin']}>
+            <RequireRoles allow={['dev_admin', 'campus_admin', 'campus_moderator', 'cross_admin']}>
                 <SettingsPage />
             </RequireRoles>
         ),
@@ -210,7 +213,9 @@ const router = createBrowserRouter([
 ReactDOM.createRoot(document.getElementById('root')!).render(
 	<React.StrictMode>
 		<AuthProvider>
-			<RouterProvider router={router} />
+			<NotificationProvider>
+				<RouterProvider router={router} />
+			</NotificationProvider>
 		</AuthProvider>
 	</React.StrictMode>,
 )

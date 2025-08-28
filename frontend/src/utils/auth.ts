@@ -57,23 +57,44 @@ export async function checkForRestart(): Promise<boolean> {
     const currentTime = Date.now();
     const timeDiff = currentTime - lastTime;
     
-    // 延長檢測間隔到 2 分鐘，避免過於頻繁的檢查
-    if (timeDiff > 120 * 1000) {
-      const response = await fetch('/api/healthz');
+    // 延長檢測間隔到 10 分鐘，避免過於頻繁的檢查
+    if (timeDiff > 600 * 1000) {
+      const response = await fetch('/api/healthz', { 
+        method: 'GET',
+        cache: 'no-cache'  // 確保每次都是最新的
+      });
       if (response.ok) {
         const data = await response.json();
         const currentRestartId = data.restart_id;
         const storedRestartId = localStorage.getItem(RESTART_ID_KEY);
         
         // 只有在有存儲的重啟ID且與當前不同時才認為是重啟
+        // 並且增加額外檢查：確保不是因為網路問題導致的誤判
         if (storedRestartId && storedRestartId !== currentRestartId) {
           console.log('[Auth] 檢測到服務重啟，重啟ID變更:', storedRestartId, '->', currentRestartId);
+          // 再次確認，避免單次網路錯誤導致誤判
+          try {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒
+            const confirmResponse = await fetch('/api/healthz', { cache: 'no-cache' });
+            if (confirmResponse.ok) {
+              const confirmData = await confirmResponse.json();
+              if (confirmData.restart_id !== currentRestartId) {
+                console.log('[Auth] 重啟檢測確認不一致，可能是網路問題，取消登出');
+                return false;
+              }
+            }
+          } catch (confirmError) {
+            console.warn('[Auth] 重啟檢測確認失敗，可能是網路問題，取消登出');
+            return false;
+          }
+          
           clearSession();
           return true;
         }
         
-        // 更新重啟標識
+        // 更新重啟標識和時間戳
         localStorage.setItem(RESTART_ID_KEY, currentRestartId);
+        localStorage.setItem(RESTART_KEY, currentTime.toString());
       }
     }
     
@@ -124,7 +145,7 @@ export async function initRestartCheck(): Promise<void> {
   }
 }
 
-// 定期重啟檢查（每 5 分鐘檢查一次）
+// 定期重啟檢查（每 30 分鐘檢查一次，減少誤判）
 export function startPeriodicRestartCheck(): () => void {
   const interval = setInterval(async () => {
     try {
@@ -139,7 +160,7 @@ export function startPeriodicRestartCheck(): () => void {
     } catch (error) {
       console.warn('[Auth] 定期重啟檢查失敗:', error);
     }
-  }, 300 * 1000); // 每 5 分鐘檢查一次
+  }, 30 * 60 * 1000); // 每 30 分鐘檢查一次
   
   // 返回清理函數
   return () => clearInterval(interval);

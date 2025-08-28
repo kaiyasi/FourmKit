@@ -5,9 +5,15 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 全域過渡效果（尊重使用者「減少動態」偏好） */
+/* 全域過渡效果（改為僅色彩/陰影/透明度，避免輸入框 caret/選取異常） */
 *, *::before, *::after {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
+  transition-duration: 0.2s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 表單元素不套用過渡，避免輸入時 caret 抖動或失焦 */
+input, textarea, select, .form-control {
+  transition: none !important;
 }
 
 /* 主題切換動畫 */
@@ -62,26 +68,43 @@ main, [data-scroll-container] { overscroll-behavior: contain; }
 
 /* 基礎 UI 元件（對齊主題變數） */
 .form-control {
+  box-sizing: border-box;
   width: 100%;
-  padding: 0.625rem 0.875rem; /* 統一高度 */
-  line-height: 1.25rem;
+  padding: 0.5rem 0.875rem; /* 更保守，避免行高裁切 */
+  min-height: 2.75rem;       /* 44px 觸控友善高度（不強制固定高度） */
+  line-height: 1.5;          /* 使用較自然的行高，避免不同平台裁切 */
   background: var(--surface);
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   outline: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 .form-control::placeholder { color: var(--muted); opacity: .9; }
 .form-control:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); border-color: var(--primary); }
+/* 更緊湊版：用於需要與相鄰輸入高度嚴格一致的場景（例如 FilterBar 的瀏覽範圍） */
+.form-control--compact {
+  padding-block: 0.375rem; /* 減少上下內距，避免視覺拉高 */
+  min-height: 2.5rem;      /* 稍微較小，實測更貼近各瀏覽器原生 select 高度 */
+  line-height: 1.25;       /* 壓低行高避免抬高外框 */
+}
 /* Normalize all selects to match input height and add custom arrow */
 select, select.form-control {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
   padding-right: 2.25rem;
-  line-height: 1.25rem;
+  line-height: 1.5;           /* 與 input 對齊，避免文字被裁切 */
+  min-height: 2.75rem;        /* 與 input 一致的最小高度 */
 }
-select.form-control { height: auto; }
+/* select 的緊湊版（覆蓋預設） */
+select.form-control--compact {
+  padding-right: 2rem;  /* 保留箭頭空間但更緊湊 */
+  min-height: 2.5rem;
+  line-height: 1.25;
+}
 select {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 20 20' fill='%23888888'><path d='M5.5 7l4.5 5 4.5-5z'/></svg>");
   background-repeat: no-repeat;

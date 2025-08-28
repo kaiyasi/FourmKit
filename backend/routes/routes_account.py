@@ -190,4 +190,12 @@ def test_user_webhook():
         return jsonify({ 'ok': False, 'msg': '尚未設定 Webhook URL' }), 400
     emb = build_embed('user_webhook_test', 'ForumKit 測試通知', 'Webhook 設定成功，將自動推送新貼文')
     res = post_discord(urlv, { 'content': None, 'embeds': [emb] })
-    return jsonify({ 'ok': bool(res.get('ok')), 'status': res.get('status'), 'error': res.get('error') })
+    
+    # 提供更友好的錯誤訊息
+    response = { 'ok': bool(res.get('ok')), 'status': res.get('status') }
+    if not res.get('ok'):
+        error = res.get('error', '未知錯誤')
+        response['error'] = error
+        response['msg'] = error  # 前端可能使用 msg 字段
+    
+    return jsonify(response)

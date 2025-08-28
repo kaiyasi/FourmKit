@@ -33,12 +33,17 @@ export function joinRoom(room: string, clientId: string, opts?: {
   // 記住以便重連時自動加入
   joined.set(room, { clientId })
 
-  s.emit('room.join', { room, client_id: clientId })
+  // 夾帶 JWT，便於後端綁定 user 資訊（供管理端查詢線上清單與顯示名稱）
+  const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null) || undefined
+  s.emit('room.join', { room, client_id: clientId, ...(token ? { token } : {}) })
 
   // 自動重連後重加入
   const rejoin = () => {
     const rec = joined.get(room)
-    if (rec) s.emit('room.join', { room, client_id: rec.clientId })
+    if (rec) {
+      const t = (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null) || undefined
+      s.emit('room.join', { room, client_id: rec.clientId, ...(t ? { token: t } : {}) })
+    }
   }
   s.on('connect', rejoin)
 

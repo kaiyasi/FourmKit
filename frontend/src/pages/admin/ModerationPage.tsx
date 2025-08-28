@@ -5,6 +5,7 @@ import io from 'socket.io-client';
 import { NavBar } from '@/components/layout/NavBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ArrowLeft, CheckCircle, XCircle, FileText, Image, Clock, User, MessageSquare, ThumbsUp, Filter, Search, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ModerationItem {
   id: number;
@@ -45,9 +46,16 @@ interface ModerationLog {
     username: string;
   };
   created_at: string;
+  // 新後端欄位（相容）
+  action_display?: string;
+  old_status_display?: string;
+  new_status_display?: string;
+  source?: string | null;
 }
 
 export default function ModerationPage() {
+  const { role } = useAuth();
+  const isDev = (role === 'dev_admin');
   const [items, setItems] = useState<ModerationItem[]>([]);
   const [logs, setLogs] = useState<ModerationLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -201,6 +209,7 @@ export default function ModerationPage() {
 
   // 獲取審核日誌
   const fetchLogs = useCallback(async () => {
+    if (!isDev) return; // 僅 dev_admin 取用
     try {
       const response = await api('/api/moderation/logs?per_page=50');
       if (response.ok) {
@@ -209,7 +218,7 @@ export default function ModerationPage() {
     } catch (error) {
       console.error('Failed to fetch logs:', error);
     }
-  }, []);
+  }, [isDev]);
 
   // 獲取統計
   const fetchStats = useCallback(async () => {
@@ -329,10 +338,11 @@ export default function ModerationPage() {
       if (data.post_id && data.content) {
         const notification = document.createElement('div');
         notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        const authorLine = isDev && data.author ? `作者: ${data.author} | ` : '';
         notification.innerHTML = `
           <div class="font-semibold">新貼文送審</div>
           <div class="text-sm">${data.content}</div>
-          <div class="text-xs mt-1">作者: ${data.author} | 時間: ${new Date(data.ts).toLocaleTimeString()}</div>
+          <div class="text-xs mt-1">${authorLine}時間: ${new Date(data.ts).toLocaleTimeString()}</div>
         `;
         document.body.appendChild(notification);
         
@@ -437,21 +447,25 @@ export default function ModerationPage() {
                   <option value="rejected">已拒絕</option>
                 </select>
                 
-                <input
-                  type="text"
-                  placeholder="Client ID"
-                  value={filters.client_id}
-                  onChange={(e) => setFilters(prev => ({ ...prev, client_id: e.target.value }))}
-                  className="form-control text-sm"
-                />
+                {isDev && (
+                  <input
+                    type="text"
+                    placeholder="Client ID"
+                    value={filters.client_id}
+                    onChange={(e) => setFilters(prev => ({ ...prev, client_id: e.target.value }))}
+                    className="form-control text-sm"
+                  />
+                )}
                 
-                <input
-                  type="text"
-                  placeholder="IP 地址"
-                  value={filters.ip}
-                  onChange={(e) => setFilters(prev => ({ ...prev, ip: e.target.value }))}
-                  className="form-control text-sm"
-                />
+                {isDev && (
+                  <input
+                    type="text"
+                    placeholder="IP 地址"
+                    value={filters.ip}
+                    onChange={(e) => setFilters(prev => ({ ...prev, ip: e.target.value }))}
+                    className="form-control text-sm"
+                  />
+                )}
               </div>
             </div>
 
@@ -459,7 +473,7 @@ export default function ModerationPage() {
             <div className="space-y-3">
               {items.length === 0 ? (
                 <div className="text-center py-8 text-muted">
-                  {loading ? '載入中...' : '沒有待審核的內容'}
+                  貼文已提交審核，通過後會在清單中顯示。
                 </div>
               ) : (
                 items.map((item) => (
@@ -498,10 +512,10 @@ export default function ModerationPage() {
                     {item.type === 'post' ? (
                       <div>
                         <div className="mb-2 text-sm line-clamp-2" dangerouslySetInnerHTML={{ __html: item.excerpt || '' }} />
-                        {item.author && (
+                        {isDev && item.author && (
                           <div className="text-xs text-muted mb-2">
-                            作者: {item.author.username}
-                            {item.author.school_name && ` (${item.author.school_name})`}
+                            作者: {(item as any).author?.username || ''}
+                            {(item as any).author?.school_name && ` (${(item as any).author?.school_name})`}
                           </div>
                         )}
                         <div className="flex items-center gap-4 text-xs text-muted">
@@ -539,9 +553,11 @@ export default function ModerationPage() {
                       </div>
                     )}
 
-                    <div className="text-xs text-muted mt-2">
-                      來源: {item.client_id ? `client_id=${item.client_id}` : 'client_id=-'} · {item.ip ? `IP=${item.ip}` : 'IP=-'}
-                    </div>
+                    {isDev && (
+                      <div className="text-xs text-muted mt-2">
+                        來源: {item.client_id ? `client_id=${item.client_id}` : 'client_id=-'} · {item.ip ? `IP=${item.ip}` : 'IP=-'}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -686,27 +702,43 @@ export default function ModerationPage() {
               </div>
             )}
 
-            {/* 審核日誌 */}
-            <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-              <h3 className="text-lg font-semibold text-fg mb-4">審核日誌</h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {logs.map((log) => (
-                  <div key={log.id} className="p-2 bg-surface-hover rounded text-xs">
-                    <div className="flex items-center gap-1 mb-1">
-                      <span className={`text-xs ${log.action === 'approve' ? 'text-green-600' : 'text-red-600'}`}>●</span>
-                      <span>{log.action === 'approve' ? '核准' : '拒絕'} {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}</span>
+            {/* 審核日誌（僅 dev_admin 顯示） */}
+            {isDev && (
+              <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+                <h3 className="text-lg font-semibold text-fg mb-4">審核日誌</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {logs.map((log) => (
+                    <div key={log.id} className="p-2 bg-surface-hover rounded text-xs">
+                      <div className="flex items-center gap-2 mb-1">
+                        {(() => {
+                          const isApprove = (log.action || '').startsWith('approve') || log.action === 'approve' || log.action === 'override_approve'
+                          return <span className={`text-xs ${isApprove ? 'text-green-600' : 'text-red-600'}`}>●</span>
+                        })()}
+                        <span>
+                          {(log.action_display || (log.action === 'approve' ? '核准' : '拒絕'))}
+                          {' '}
+                          {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}
+                        </span>
+                        {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
+                          <span className="text-muted">
+                            {(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
+                          </span>
+                        )}
+                        {typeof log.source === 'string' && (
+                          <span className="text-primary/80">來源：{log.source || '跨校'}</span>
+                        )}
+                      </div>
+                      <div className="text-muted">
+                        審核員: {log.moderator?.username || log.id} · 時間: {formatDate(log.created_at)}
+                      </div>
+                      {log.reason && (
+                        <div className="text-muted mt-1">原因: {log.reason}</div>
+                      )}
                     </div>
-                    <div className="text-muted">
-                      審核員: {log.moderator?.username || log.id}<br />
-                      時間: {formatDate(log.created_at)}
-                    </div>
-                    {log.reason && (
-                      <div className="text-muted mt-1">原因: {log.reason}</div>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </main>

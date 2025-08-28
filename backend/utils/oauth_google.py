@@ -2,7 +2,7 @@ import os
 import json
 import urllib.parse
 import urllib.request
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 from utils.db import get_session
 from models import School, SchoolSetting
 import json
@@ -113,34 +113,96 @@ def _find_school_by_domain(domain: str) -> Optional[School]:
 
 
 def check_school_domain(email: str) -> Tuple[bool, str]:
-    """回傳 (是否允許, domain)。規則：
-    - 明確拒絕 gmail.com
-    - 允許所有 .edu 類網域（.edu / .edu.tw / .edu.* 或包含 .edu.）
-    - 其餘一律拒絕（不再使用 GOOGLE_ALLOWED_HD 或其他白名單）
+    """檢查域名是否允許登入/註冊。
+    需求更新：僅允許 .edu 或 .edu.tw 網域；其餘一律不允許。
+    維持拒絕常見個人信箱網域（gmail.com 等）。
+    回傳 (ok, domain)
     """
-    email = (email or "").strip().lower()
-    if "@" not in email:
-        return False, ""
-    domain = email.split("@", 1)[1]
-    if domain == "gmail.com":
+    try:
+        email = (email or "").strip().lower()
+        if "@" not in email:
+            print(f"[DEBUG] check_school_domain: 無效email格式 '{email}'")
+            return False, ""
+        domain = email.split("@", 1)[1]
+        
+        print(f"[DEBUG] check_school_domain: email={email}, domain={domain}")
+        
+        # 明確拒絕常見的個人信箱
+        personal_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com']
+        if domain in personal_domains:
+            print(f"[DEBUG] check_school_domain: 拒絕個人信箱 {domain}")
+            return False, domain
+        # 允許學校設定明列的綁定網域（SchoolSetting.allowed_domains）
+        try:
+            bound = _find_school_by_domain(domain)
+            if bound is not None:
+                print(f"[DEBUG] check_school_domain: 通過綁定學校 {bound.slug} for domain {domain}")
+                return True, domain
+        except Exception:
+            pass
+
+        # 額外允許的網域尾綴（以逗號分隔，例：.ac.uk,.edu.sg）
+        extra: List[str] = []
+        try:
+            raw = (os.getenv('EXTRA_EMAIL_SUFFIXES') or os.getenv('ALLOWED_EMAIL_SUFFIXES') or '').strip()
+            if raw:
+                extra = [x.strip().lower() for x in raw.split(',') if x.strip()]
+        except Exception:
+            extra = []
+        for suf in extra:
+            if domain.endswith(suf):
+                print(f"[DEBUG] check_school_domain: 通過額外尾綴 {suf} for {domain}")
+                return True, domain
+
+        # 僅允許教育網域：.edu 或 .edu.xx（如 .edu.tw/.edu.hk/.edu.cn）
+        # 允許多層子網域：xxx.yyy.edu.tw 也算通過
+        if domain.endswith('.edu'):
+            print(f"[DEBUG] check_school_domain: 通過允許的教育網域 {domain}")
+            return True, domain
+        # .edu.xx（ccTLD）
+        try:
+            import re
+            if re.search(r"\.edu\.[a-z]{2,}$", domain):
+                print(f"[DEBUG] check_school_domain: 通過允許的教育網域 {domain}")
+                return True, domain
+        except Exception:
+            pass
+        # 舊規保留（明確列出）
+        if domain.endswith('.edu.tw'):
+            print(f"[DEBUG] check_school_domain: 通過允許的教育網域 {domain}")
+            return True, domain
+        print(f"[DEBUG] check_school_domain: 非允許教育網域 {domain}")
         return False, domain
-    # 先查詢是否被學校明確綁定（允許自定義完整網域）
-    sch = _find_school_by_domain(domain)
-    if sch:
-        return True, domain
-    if domain.endswith(".edu") or domain.endswith(".edu.tw") or \
-       domain.endswith(".edu.cn") or domain.endswith(".edu.hk") or \
-       ".edu." in domain:
-        return True, domain
-    return False, domain
+        
+    except Exception as e:
+        print(f"[ERROR] check_school_domain: 處理過程中出錯 {e}")
+        return False, ""
 
 
 def derive_school_slug_from_domain(domain: str) -> str:
+    """
+    從學校域名中提取學校代碼，適配台灣學校格式和國際格式
+    台灣格式：@schoolslug.county-cityslug.edu.tw -> schoolslug
+    國際格式：@dept.schoolslug.edu -> schoolslug  
+    一般格式：@schoolslug.edu -> schoolslug
+    """
     parts = (domain or "").lower().split('.')
-    # 取 'edu' 之前的標籤；例如 dept.ncku.edu.tw -> ncku
+    
+    # 台灣學校格式：@nhsh.tp.edu.tw -> nhsh
+    if len(parts) >= 4 and parts[-2] == 'edu' and parts[-1] == 'tw':
+        # 取第一個部分作為學校代碼
+        return parts[0] if parts[0] else ''
+    
+    # 國際學校格式：查找 edu 之前的部分
     if 'edu' in parts:
         idx = parts.index('edu')
-        if idx > 0:
+        if idx >= 2:
+            # 如果有多個部分，取 edu 前面的部分
+            # 例如：dept.ncku.edu -> ncku
             return parts[idx-1]
-    # 否則取第一段
+        elif idx >= 1:
+            # 例如：schoolslug.edu -> schoolslug  
+            return parts[idx-1]
+    
+    # 兜底：取第一段
     return parts[0] if parts else ''

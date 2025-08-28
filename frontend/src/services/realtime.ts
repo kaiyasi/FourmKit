@@ -11,6 +11,9 @@ let postListenerInstalled = false
 let commentListenerInstalled = false
 let announceListenerInstalled = false
 let moderationListenerInstalled = false
+let deleteReqListenerInstalled = false
+let supportListenerInstalled = false
+let reactionListenerInstalled = false
 let postEventCount = 0
 
 // 全域唯一的 post listener 管理器
@@ -118,6 +121,22 @@ export function ensureAnnounceListener(onIncoming: (payload: any) => void) {
   s.on('announce', handler)
 }
 
+// 可選：回饋（讚/踩/表情）事件監聽器，若後端有推播則會生效
+export function ensureReactionListeners(onReacted: (payload: any) => void) {
+  if (reactionListenerInstalled) return
+  const s = getSocket()
+  const handler = (payload:any) => {
+    console.debug('[realtime] received reaction:', payload)
+    onReacted(payload)
+  }
+  // 嘗試多個事件名以相容不同後端實作
+  s.off('post.reacted'); s.off('reaction'); s.off('comment.reacted')
+  s.on('post.reacted', handler)
+  s.on('reaction', handler)
+  s.on('comment.reacted', handler)
+  reactionListenerInstalled = true
+}
+
 export function ensureModerationListeners(onApproved: (payload: any) => void, onRejected: (payload: any) => void) {
   if (moderationListenerInstalled) return
   const s = getSocket()
@@ -125,4 +144,22 @@ export function ensureModerationListeners(onApproved: (payload: any) => void, on
   s.on('post.approved', onApproved)
   s.on('post.rejected', onRejected)
   moderationListenerInstalled = true
+}
+
+export function ensureDeleteRequestListeners(onCreated: (payload:any)=>void, onApproved:(payload:any)=>void, onRejected:(payload:any)=>void) {
+  if (deleteReqListenerInstalled) return
+  const s = getSocket()
+  s.off('delete_request.created'); s.off('delete_request.approved'); s.off('delete_request.rejected')
+  s.on('delete_request.created', onCreated)
+  s.on('delete_request.approved', onApproved)
+  s.on('delete_request.rejected', onRejected)
+  deleteReqListenerInstalled = true
+}
+
+export function ensureSupportListeners(onReported: (payload:any)=>void) {
+  if (supportListenerInstalled) return
+  const s = getSocket()
+  s.off('support.reported')
+  s.on('support.reported', onReported)
+  supportListenerInstalled = true
 }

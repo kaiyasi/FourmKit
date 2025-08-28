@@ -4,6 +4,7 @@ import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { canSetMode, getRole, getRoleDisplayName } from '@/utils/auth'
 import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, Instagram } from 'lucide-react'
+import { MessageSquareDot } from 'lucide-react'
 
 export default function AdminDashboard() {
   const role = getRole()
@@ -16,14 +17,13 @@ export default function AdminDashboard() {
   }, [])
 
   const Card = ({ to, title, desc, icon: Icon, disabled }: { to: string; title: string; desc: string; icon: any; disabled?: boolean }) => (
-    <Link to={disabled ? '#' : to} className={`p-4 rounded-2xl border border-border bg-surface shadow-soft flex items-start gap-3 ${disabled ? 'opacity-60 pointer-events-none' : 'hover:bg-surface/80'}`}>
-      <div className="p-2 rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-border">
+    <Link to={disabled ? '#' : to} className={`p-4 rounded-2xl border border-border bg-surface shadow-soft flex items-start gap-3 hover:bg-surface/80 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
+      <div className="p-2 rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-border flex-shrink-0">
         <Icon className="w-5 h-5" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="font-semibold dual-text">{title}</div>
-        <div className="text-sm text-muted hidden sm:block">{desc}</div>
-        <div className="text-xs text-muted sm:hidden">{desc.split('、')[0]}...</div>
+        <div className="text-sm text-muted truncate">{desc}</div>
       </div>
     </Link>
   )
@@ -45,6 +45,8 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <Card to="/admin/moderation" title="審核管理" desc="查看待審、詳情預覽、批次核准/退件、日誌匯出" icon={ShieldCheck} />
           <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋與 CSV 匯出" icon={MessagesSquare} />
+          {/* 聊天室快捷卡片（手機也可見） */}
+          <Card to="/admin/chat" title="管理員聊天室" desc="即時溝通（支援自訂聊天室）" icon={MessageSquareDot} />
           <Card to="/mode" title="模式管理" desc="維護/開發/測試/正常模式切換與規則設定" icon={Wrench} disabled={!canSetMode()} />
 
           {/* Instagram 連動管理 */}

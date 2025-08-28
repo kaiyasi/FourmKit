@@ -8,9 +8,10 @@ interface MobilePostCardProps {
   post: Post
   onReaction?: (postId: number, reaction: string) => void
   onShare?: (postId: number) => void
+  schools?: { id:number; slug:string; name:string }[]
 }
 
-export function MobilePostCard({ post, onReaction, onShare }: MobilePostCardProps) {
+export function MobilePostCard({ post, onReaction, onShare, schools = [] }: MobilePostCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
   
@@ -59,12 +60,14 @@ export function MobilePostCard({ post, onReaction, onShare }: MobilePostCardProp
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
               <span className="text-xs font-semibold text-primary">
                 {(() => {
-                  const label = String(post.author_hash || '').trim()
-                  const isAnonCode = /^[A-Z0-9]{6}$/.test(label)
-                  if (label === '系統訊息') return '系'
-                  if (isAnonCode) return label.slice(0, 2)
-                  if (label) return label.charAt(0)
-                  return '匿'
+                  const nameField = String((post as any).school_name || '').trim()
+                  const obj = (post as any).school as any
+                  const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+                  const sidRaw = (post as any).school_id
+                  const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
+                  const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
+                  const name = nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
+                  return name ? name.charAt(0) : ''
                 })()}
               </span>
             </div>
@@ -72,19 +75,17 @@ export function MobilePostCard({ post, onReaction, onShare }: MobilePostCardProp
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium dual-text truncate">
                   {(() => {
-                    const label = String(post.author_hash || '').trim()
-                    const isAnonCode = /^[A-Z0-9]{6}$/.test(label)
-                    if (label === '系統訊息') return '系統訊息'
-                    if (isAnonCode) return `匿名 ${label}`
-                    if (label) return label
-                    return '匿名用戶'
+                    const nameField = String((post as any).school_name || '').trim()
+                    const obj = (post as any).school as any
+                    const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+                    const sidRaw = (post as any).school_id
+                    const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
+                    const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
+                    const name = nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
+                    return name
                   })()}
                 </span>
-                {post.pending_private && (
-                  <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded-full flex-shrink-0">
-                    審核中
-                  </span>
-                )}
+                {/* 不再顯示送審預覽狀態 */}
               </div>
               <div className="flex items-center gap-1 text-xs text-muted">
                 <Clock className="w-3 h-3" />
@@ -158,25 +159,29 @@ export function MobilePostCard({ post, onReaction, onShare }: MobilePostCardProp
             </Link>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <button
               onClick={copyLink}
-              className="p-2 rounded-full text-muted hover:text-fg hover:bg-surface-hover transition-all duration-200 mobile-touch-target active:scale-95"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all ${
+                copiedLink ? 'bg-primary text-white shadow-sm' : 'bg-surface-hover hover:bg-surface-active text-muted hover:text-fg'
+              }`}
               title="複製連結"
             >
               {copiedLink ? (
-                <Check className="w-4 h-4 text-green-500" />
+                <Check className="w-4 h-4" />
               ) : (
                 <Copy className="w-4 h-4" />
               )}
+              <span>{copiedLink ? '已複製' : '複製連結'}</span>
             </button>
-            
+
             <button
               onClick={() => setShowActions(true)}
-              className="p-2 rounded-full text-muted hover:text-fg hover:bg-surface-hover transition-all duration-200 mobile-touch-target active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface-hover hover:bg-surface-active text-muted hover:text-fg transition-all"
               title="更多操作"
             >
               <MoreHorizontal className="w-4 h-4" />
+              <span>更多</span>
             </button>
           </div>
         </div>

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { Palette, Save, Upload, Download, Eye, Sparkles, Home } from 'lucide-react'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import { NavBar } from '@/components/layout/NavBar'
 
 interface ThemeConfig {
   name: string
@@ -118,16 +120,45 @@ export default function ThemeDesignerPage() {
 
   const applyTheme = () => {
     const root = document.documentElement
-    Object.entries(theme.colors).forEach(([key, value]) => {
-      root.style.setProperty(`--color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`, value)
-    })
-    root.style.setProperty('--border-radius', theme.borderRadius)
-    root.style.setProperty('--font-heading', theme.fonts.heading)
-    root.style.setProperty('--font-body', theme.fonts.body)
-    root.style.setProperty('--font-mono', theme.fonts.mono)
-    root.style.setProperty('--animation-duration', theme.animations.duration)
-    root.style.setProperty('--animation-easing', theme.animations.easing)
+    // 對齊現有主題系統（theme.css）的 CSS 變數
+    try {
+      root.style.setProperty('--primary', theme.colors.primary)
+      root.style.setProperty('--bg', theme.colors.background)
+      root.style.setProperty('--surface', theme.colors.surface)
+      root.style.setProperty('--border', theme.colors.border)
+      root.style.setProperty('--fg', theme.colors.text)
+      root.style.setProperty('--muted', theme.colors.textMuted)
+      // 輔助/訊息色彩（非必填）
+      root.style.setProperty('--success', theme.colors.success)
+      root.style.setProperty('--warning', theme.colors.warning)
+      root.style.setProperty('--danger', theme.colors.error)
+      // 字體與圓角
+      root.style.setProperty('--font-heading', theme.fonts.heading)
+      root.style.setProperty('--font-body', theme.fonts.body)
+      root.style.setProperty('--font-mono', theme.fonts.mono)
+      root.style.setProperty('--border-radius', theme.borderRadius)
+      // 動畫
+      root.style.setProperty('--animation-duration', theme.animations.duration)
+      root.style.setProperty('--animation-easing', theme.animations.easing)
+    } catch {}
   }
+
+  // 從目前主題變數讀取，作為初始值（避免硬編碼）
+  useEffect(() => {
+    try {
+      const root = document.documentElement
+      const get = (v: string) => getComputedStyle(root).getPropertyValue(v).trim() || undefined
+      const next = { ...theme }
+      next.colors.primary = get('--primary') || next.colors.primary
+      next.colors.background = get('--bg') || next.colors.background
+      next.colors.surface = get('--surface') || next.colors.surface
+      next.colors.border = get('--border') || next.colors.border
+      next.colors.text = get('--fg') || next.colors.text
+      next.colors.textMuted = get('--muted') || next.colors.textMuted
+      setTheme(next)
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const saveThemeToProfile = async () => {
     if (!isLoggedIn) {
@@ -222,19 +253,19 @@ export default function ThemeDesignerPage() {
 
   const ColorInput = ({ label, path, value }: { label: string, path: string, value: string }) => (
     <div className="space-y-2">
-      <label className="text-sm font-medium">{label}</label>
+      <label className="text-sm font-medium text-fg">{label}</label>
       <div className="flex gap-2 items-center">
         <input
           type="color"
           value={value}
           onChange={(e) => updateTheme(path, e.target.value)}
-          className="w-12 h-10 rounded border border-gray-300"
+          className="w-12 h-10 rounded border border-border bg-surface"
         />
         <input
           type="text"
           value={value}
           onChange={(e) => updateTheme(path, e.target.value)}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm"
+          className="form-control flex-1"
           placeholder="#000000"
         />
       </div>
@@ -242,64 +273,60 @@ export default function ThemeDesignerPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+    <div className="min-h-screen min-h-dvh">
+      <NavBar pathname="/theme-designer" />
+      <MobileBottomNav />
+
+      <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+        {/* 頁首卡片 */}
+        <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate('/')} className="p-2 hover:bg-gray-100 rounded-lg">
-                <Home className="w-5 h-5" />
-              </button>
-              <Palette className="w-6 h-6 text-blue-600" />
+              <div className="w-10 h-10 rounded-xl bg-surface/70 border border-border grid place-items-center">
+                <Palette className="w-5 h-5 text-fg" />
+              </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">ForumKit 主題設計工具</h1>
-                <p className="text-sm text-gray-600">設計屬於您的專屬主題</p>
+                <h1 className="text-xl sm:text-2xl font-semibold dual-text">主題設計工具</h1>
+                <p className="text-sm text-muted">對齊平台色系與元件風格</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPreviewMode(!previewMode)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${
-                  previewMode ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <Eye className="w-4 h-4" />
-                {previewMode ? '停止預覽' : '即時預覽'}
-              </button>
-            </div>
+            <button
+              onClick={() => setPreviewMode(!previewMode)}
+              className="btn-ghost px-3 py-2 text-sm flex items-center gap-2"
+            >
+              <Eye className="w-4 h-4" />
+              {previewMode ? '停止預覽' : '即時預覽'}
+            </button>
           </div>
         </div>
-      </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid lg:grid-cols-3 gap-6">
           {/* 設計面板 */}
           <div className="lg:col-span-2 space-y-6">
             {/* 基本資訊 */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-600" />
+            <div className="bg-surface rounded-2xl border border-border p-6 shadow-soft">
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-fg">
+                <Sparkles className="w-5 h-5 text-fg" />
                 主題資訊
               </h2>
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">主題名稱</label>
+                  <label className="block text-sm font-medium text-muted mb-2">主題名稱</label>
                   <input
                     type="text"
                     value={theme.name}
                     onChange={(e) => updateTheme('name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="form-control w-full"
                     placeholder="我的專屬主題"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">主題描述</label>
+                  <label className="block text-sm font-medium text-muted mb-2">主題描述</label>
                   <input
                     type="text"
                     value={theme.description}
                     onChange={(e) => updateTheme('description', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="form-control w-full"
                     placeholder="簡短描述您的主題"
                   />
                 </div>
@@ -307,8 +334,8 @@ export default function ThemeDesignerPage() {
             </div>
 
             {/* 設計選項 */}
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="border-b border-gray-200">
+            <div className="bg-surface rounded-2xl border border-border shadow-soft">
+              <div className="border-b border-border">
                 <nav className="flex">
                   {[
                     { key: 'colors', label: '色彩配置', icon: '🎨' },
@@ -321,8 +348,8 @@ export default function ThemeDesignerPage() {
                       onClick={() => setActiveTab(tab.key as any)}
                       className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                         activeTab === tab.key 
-                          ? 'border-blue-500 text-blue-600' 
-                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                          ? 'border-primary text-primary' 
+                          : 'border-transparent text-muted hover:text-fg'
                       }`}
                     >
                       <span className="mr-2">{tab.icon}</span>
@@ -336,13 +363,13 @@ export default function ThemeDesignerPage() {
                 {activeTab === 'colors' && (
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-4">
-                      <h3 className="font-medium text-gray-900">主要色彩</h3>
+                      <h3 className="font-medium text-fg">主要色彩</h3>
                       <ColorInput label="主色調" path="colors.primary" value={theme.colors.primary} />
                       <ColorInput label="輔助色" path="colors.secondary" value={theme.colors.secondary} />
                       <ColorInput label="強調色" path="colors.accent" value={theme.colors.accent} />
                     </div>
                     <div className="space-y-4">
-                      <h3 className="font-medium text-gray-900">背景色彩</h3>
+                      <h3 className="font-medium text-fg">背景色彩</h3>
                       <ColorInput label="背景色" path="colors.background" value={theme.colors.background} />
                       <ColorInput label="卡片色" path="colors.surface" value={theme.colors.surface} />
                       <ColorInput label="邊框色" path="colors.border" value={theme.colors.border} />
@@ -353,32 +380,32 @@ export default function ThemeDesignerPage() {
                 {activeTab === 'typography' && (
                   <div className="space-y-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">標題字體</label>
+                      <label className="block text-sm font-medium text-muted mb-2">標題字體</label>
                       <input
                         type="text"
                         value={theme.fonts.heading}
                         onChange={(e) => updateTheme('fonts.heading', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="form-control w-full"
                         placeholder="system-ui, -apple-system, sans-serif"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">內文字體</label>
+                      <label className="block text-sm font-medium text-muted mb-2">內文字體</label>
                       <input
                         type="text"
                         value={theme.fonts.body}
                         onChange={(e) => updateTheme('fonts.body', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="form-control w-full"
                         placeholder="system-ui, -apple-system, sans-serif"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">等寬字體</label>
+                      <label className="block text-sm font-medium text-muted mb-2">等寬字體</label>
                       <input
                         type="text"
                         value={theme.fonts.mono}
                         onChange={(e) => updateTheme('fonts.mono', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="form-control w-full"
                         placeholder="'JetBrains Mono', 'Fira Code', monospace"
                       />
                     </div>
@@ -388,12 +415,12 @@ export default function ThemeDesignerPage() {
                 {activeTab === 'layout' && (
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">圓角大小</label>
+                      <label className="block text-sm font-medium text-muted mb-2">圓角大小</label>
                       <input
                         type="text"
                         value={theme.borderRadius}
                         onChange={(e) => updateTheme('borderRadius', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="form-control w-full"
                         placeholder="0.75rem"
                       />
                     </div>
@@ -403,22 +430,22 @@ export default function ThemeDesignerPage() {
                 {activeTab === 'effects' && (
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">動畫時間</label>
+                      <label className="block text-sm font-medium text-muted mb-2">動畫時間</label>
                       <input
                         type="text"
                         value={theme.animations.duration}
                         onChange={(e) => updateTheme('animations.duration', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="form-control w-full"
                         placeholder="150ms"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">緩動效果</label>
+                      <label className="block text-sm font-medium text-muted mb-2">緩動效果</label>
                       <input
                         type="text"
                         value={theme.animations.easing}
                         onChange={(e) => updateTheme('animations.easing', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="form-control w-full"
                         placeholder="cubic-bezier(0.4, 0, 0.2, 1)"
                       />
                     </div>
@@ -431,8 +458,8 @@ export default function ThemeDesignerPage() {
           {/* 操作面板 */}
           <div className="space-y-6">
             {/* 預覽區 */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <h3 className="font-medium text-gray-900 mb-3">主題預覽</h3>
+            <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
+              <h3 className="font-medium text-fg mb-3">主題預覽</h3>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center gap-2">
                   <div 
@@ -459,21 +486,21 @@ export default function ThemeDesignerPage() {
             </div>
 
             {/* 操作按鈕 */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-              <h3 className="font-medium text-gray-900">操作選項</h3>
+            <div className="bg-surface rounded-2xl border border-border p-4 space-y-3 shadow-soft">
+              <h3 className="font-medium text-fg">操作選項</h3>
               
               <button
                 onClick={saveThemeToProfile}
                 disabled={!isLoggedIn}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="btn-primary w-full px-4 py-2 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 儲存至個人資料
               </button>
-              
+
               <button
                 onClick={submitToPlatform}
-                className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2"
+                className="btn-ghost w-full px-4 py-2 flex items-center justify-center gap-2"
               >
                 <Upload className="w-4 h-4" />
                 提交給平台
@@ -482,12 +509,12 @@ export default function ThemeDesignerPage() {
               <div className="flex gap-2">
                 <button
                   onClick={exportTheme}
-                  className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2"
+                  className="btn-ghost flex-1 px-3 py-2 flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   匯出
                 </button>
-                <label className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 cursor-pointer">
+                <label className="btn-ghost flex-1 px-3 py-2 flex items-center justify-center gap-2 cursor-pointer">
                   <Upload className="w-4 h-4" />
                   匯入
                   <input
@@ -502,17 +529,17 @@ export default function ThemeDesignerPage() {
 
             {/* 已儲存的主題 */}
             {savedThemes.length > 0 && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <h3 className="font-medium text-gray-900 mb-3">已儲存的主題</h3>
+              <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
+                <h3 className="font-medium text-fg mb-3">已儲存的主題</h3>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {savedThemes.map((t, idx) => (
                     <button
                       key={idx}
                       onClick={() => setTheme(t)}
-                      className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50"
+                      className="w-full text-left p-3 rounded-xl border border-border bg-surface hover:bg-surface-hover"
                     >
-                      <div className="font-medium text-sm">{t.name}</div>
-                      <div className="text-xs text-gray-600">{t.description}</div>
+                      <div className="font-medium text-sm text-fg">{t.name}</div>
+                      <div className="text-xs text-muted">{t.description}</div>
                       <div className="flex gap-1 mt-2">
                         {[t.colors.primary, t.colors.secondary, t.colors.accent].map((color, cidx) => (
                           <div
@@ -529,9 +556,9 @@ export default function ThemeDesignerPage() {
             )}
 
             {/* 使用說明 */}
-            <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
-              <h3 className="font-medium text-blue-900 mb-2">使用說明</h3>
-              <ul className="text-sm text-blue-800 space-y-1">
+            <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
+              <h3 className="font-medium text-fg mb-2">使用說明</h3>
+              <ul className="text-sm text-muted space-y-1">
                 <li>• 修改設定後點擊「即時預覽」查看效果</li>
                 <li>• 登入用戶可將主題儲存至個人資料</li>
                 <li>• 「提交給平台」會將主題發送給開發團隊</li>
@@ -540,7 +567,7 @@ export default function ThemeDesignerPage() {
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

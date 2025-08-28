@@ -68,6 +68,11 @@ _room_msgs: DefaultDict[str, Deque[dict]] = DefaultDict(lambda: deque(maxlen=_RO
 _sid_rooms: DefaultDict[str, Set[str]] = DefaultDict(set)  # type: ignore[var-annotated]
 _room_clients: DefaultDict[str, Set[str]] = DefaultDict(set)  # client_id 集合，非 sid  # type: ignore[var-annotated]
 _sid_client: DefaultDict[str, str] = DefaultDict(str)  # sid -> client_id  # type: ignore[var-annotated]
+_client_user: DefaultDict[str, dict] = DefaultDict(dict)  # client_id -> {"user_id": int, "username": str, "role": str}  # type: ignore[var-annotated]
+
+# 自訂聊天室（記憶體）
+# 結構：{ room_id: { "owner_id": int, "name": str, "description": str, "members": set[int] } }
+_custom_rooms: DefaultDict[str, dict] = DefaultDict(dict)  # type: ignore[var-annotated]
 
 # 房間總量限制（避免被大量建房間耗盡記憶體）
 _WS_ROOMS_MAX = int(os.getenv("WS_ROOMS_MAX", "1000"))
@@ -92,6 +97,17 @@ def _ws_allow(key: str, calls: int, per_seconds: int) -> bool:
 _ROOM_NAME_RE = re.compile(r"^[a-z0-9:_-]{1,64}$")
 def _valid_room_name(name: str) -> bool:
     return bool(_ROOM_NAME_RE.match(name))
+
+# ---- WebSocket rate-limit parameters (configurable via env) ----
+try:
+    _WS_JOIN_CALLS = int(os.getenv("WS_JOIN_CALLS", "10"))           # default 10 joins / 10s per sid
+    _WS_JOIN_WINDOW = int(os.getenv("WS_JOIN_WINDOW", "10"))         # seconds
+    _WS_MSG_CALLS_PER_CLIENT = int(os.getenv("WS_MSG_CALLS_PER_CLIENT", "20"))  # default 20 msgs / 10s per client_id
+    _WS_MSG_CALLS_PER_SID = int(os.getenv("WS_MSG_CALLS_PER_SID", "25"))        # default 25 msgs / 10s per sid
+    _WS_MSG_WINDOW = int(os.getenv("WS_MSG_WINDOW", "10"))           # seconds
+except Exception:
+    _WS_JOIN_CALLS, _WS_JOIN_WINDOW = 10, 10
+    _WS_MSG_CALLS_PER_CLIENT, _WS_MSG_CALLS_PER_SID, _WS_MSG_WINDOW = 20, 25, 10
 
 
 """Ticket utilities moved to utils.ticket to avoid circular imports."""
@@ -210,11 +226,6 @@ def _load_changelog_content() -> tuple[str | None, dict[str, Any]]:
         "./DEVELOPMENT_RECORD.md",
         "../DEVELOPMENT_RECORD.md",
         os.path.join(os.path.dirname(__file__), "..", "DEVELOPMENT_RECORD.md"),
-        # 其他說明文件（最後備援）
-        "Codex.md",
-        "./Codex.md",
-        "Code.md",
-        "./Code.md",
     ]
     for p in candidate_paths:
         content, info = _try_read_file(p)
@@ -533,6 +544,13 @@ def create_app() -> Flask:
 
     # 初始化資料庫和 JWT
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "devkey")
+    # 設定 JWT Token 過期時間：預設 7 天，可透過環境變數調整
+    from datetime import timedelta
+    jwt_expires_hours = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_HOURS", "168"))  # 預設 168 小時 = 7 天
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=jwt_expires_hours)
+    # Refresh Token 過期時間：預設 30 天
+    refresh_expires_days = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))
+    app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=refresh_expires_days)
     jwt = JWTManager(app)
 
     # 優先初始化資料庫，並（若啟用）以環境變數確保單一開發者帳號存在
@@ -1204,7 +1222,7 @@ def create_app() -> Flask:
 
     @app.route("/api/report", methods=["POST"])
     def report_issue() -> Response:  # noqa: F841
-        """問題回報：送 Discord；若 webhook 未設置則回 local_only。"""
+        """問題回報：送 Discord 並寫入站內事件（用於 /admin/support 顯示）。"""
         try:
             # 為此次請求產生處理單號
             ticket_id = new_ticket_id("FKR")  # ForumKit Report
@@ -1236,6 +1254,28 @@ def create_app() -> Flask:
                 ts=str(g.get('request_ts')),
                 request_id=str(g.get('request_id')),
             )
+
+            # 同步寫入站內事件快取（供後台顯示）
+            try:
+                from utils.admin_events import log_admin_event
+                log_admin_event(
+                    event_type="issue_report",
+                    title=f"問題回報：{category}",
+                    description=message + (f"\n[email]={contact}" if contact else ""),
+                    actor_id=None,
+                    actor_name=(contact or None),
+                    target_id=None,
+                    target_type="support",
+                    severity="medium",
+                    metadata={
+                        "ticket_id": ticket_id,
+                        "ip": ip_raw,
+                        "cf_ip": cf_ip,
+                        "srv_ip": srv_ip,
+                    },
+                )
+            except Exception:
+                pass
 
             if not res.get("ok"):
                 res2 = res
@@ -1269,6 +1309,12 @@ def create_app() -> Flask:
     app.register_blueprint(media_bp)
     app.register_blueprint(media_v2_bp)
     app.register_blueprint(instagram_bp)
+    # 掛載 Google Auth blueprint
+    try:
+        from app.blueprints.auth_google import bp as google_auth_bp
+        app.register_blueprint(google_auth_bp)
+    except Exception as _e:
+        print('[ForumKit] auth_google not mounted:', _e)
     # 狀態與事件（僅 dev_admin 可讀）
     try:
         from routes.routes_status import bp as status_bp
@@ -1279,6 +1325,13 @@ def create_app() -> Flask:
     # 留言與反應系統
     from routes.routes_comments import bp as comments_bp
     app.register_blueprint(comments_bp)
+    
+    # 新的事件與通知系統
+    try:
+        from routes.routes_events import bp as events_bp
+        app.register_blueprint(events_bp)
+    except Exception as _e:
+        print('[ForumKit] routes_events not mounted:', _e)
 
     # ---- Realtime rooms debug APIs (for Day10 validation) ----
     from flask_jwt_extended import jwt_required
@@ -1292,10 +1345,22 @@ def create_app() -> Flask:
             rooms = set(list(_room_msgs.keys()) + list(_room_clients.keys()))
             items = []
             for r in rooms:
+                # 獲取房間中的用戶信息
+                room_users = []
+                for client_id in _room_clients.get(r, set()):
+                    user_info = _client_user.get(client_id, {})
+                    room_users.append({
+                        "client_id": client_id,
+                        "user_id": user_info.get("user_id"),
+                        "username": user_info.get("username"),
+                        "role": user_info.get("role")
+                    })
+                
                 items.append({
                     "room": r,
                     "clients": len(_room_clients.get(r, set())),
                     "backlog": len(_room_msgs.get(r, [])),
+                    "users": room_users
                 })
             return jsonify({"ok": True, "items": items, "total": len(items)})
         except Exception as e:  # noqa: BLE001
@@ -1430,6 +1495,10 @@ def register_socketio_events():
                 pass
         _sid_rooms.pop(sid, None)
         _sid_client.pop(sid, None)
+        
+        # 清理用戶映射信息
+        if client_id in _client_user:
+            _client_user.pop(client_id, None)
 
     @socketio.on("ping")
     def on_ping(data: Any):  # noqa: F841
@@ -1449,17 +1518,98 @@ def register_socketio_events():
                 return emit("room.error", {"room": room, "error": "ROOM_REQUIRED"})
             if not _valid_room_name(room):
                 return emit("room.error", {"room": room, "error": "INVALID_ROOM_NAME"})
-            # 速率限制：每 sid 每 10s 最多 5 次 join
-            if not _ws_allow(f"join:{request.sid}", calls=5, per_seconds=10):
+            # 速率限制（可由環境變數覆寫）：每 sid 每視窗最多 N 次 join
+            if not _ws_allow(f"join:{request.sid}", calls=_WS_JOIN_CALLS, per_seconds=_WS_JOIN_WINDOW):
                 return emit("room.error", {"room": room, "error": "RATE_LIMIT"})
             # 房間數量上限：若是新房間且超額則拒絕
             is_new_room = room not in _room_msgs
             if is_new_room and (len(_room_msgs) >= _WS_ROOMS_MAX):
                 return emit("room.error", {"room": room, "error": "ROOMS_LIMIT"})
+            # 自訂聊天室 ACL：僅 dev_admin 或被加入成員可進入
+            try:
+                if room.startswith("custom:"):
+                    # 先從 header 或 payload 取 token，再 decode 並查詢使用者角色
+                    from flask_jwt_extended import decode_token
+                    from utils.db import get_session
+                    from models import User
+                    claims = {}
+                    token = None
+                    try:
+                        auth_header = request.headers.get('Authorization', '')
+                        if auth_header.startswith('Bearer '):
+                            token = auth_header[7:]
+                        elif payload.get('token'):
+                            token = payload.get('token')
+                        if token:
+                            claims = decode_token(token) or {}
+                    except Exception:
+                        claims = {}
+                    role = str(claims.get('role') or '')
+                    user_id_claim = claims.get('sub')
+                    # 若沒有角色聲明，嘗試以 sub 讀取使用者資料
+                    if not role and user_id_claim is not None:
+                        try:
+                            with get_session() as s:
+                                u = s.get(User, int(user_id_claim))
+                                if u and getattr(u, 'role', None):
+                                    role = str(u.role)
+                        except Exception:
+                            pass
+                    allowed = False
+                    if role == 'dev_admin':
+                        allowed = True
+                    else:
+                        info = _custom_rooms.get(room)
+                        if info:
+                            members = info.get('members') or set()
+                            try:
+                                uid_int = int(user_id_claim) if user_id_claim is not None else None
+                            except Exception:
+                                uid_int = None
+                            if uid_int is not None and uid_int in members:
+                                allowed = True
+                    if not allowed:
+                        return emit("room.error", {"room": room, "error": "ACCESS_DENIED"})
+            except Exception:
+                pass
+
             join_room(room)
             _sid_rooms[request.sid].add(room)
             _sid_client[request.sid] = client_id
             _room_clients[room].add(client_id)
+
+            # 嘗試獲取並儲存用戶信息
+            try:
+                from flask_jwt_extended import decode_token
+                from utils.db import get_session
+                from models import User
+                
+                # 從請求中嘗試獲取 JWT token
+                auth_header = request.headers.get('Authorization', '')
+                token = None
+                if auth_header.startswith('Bearer '):
+                    token = auth_header[7:]
+                elif payload.get('token'):
+                    token = payload.get('token')
+                
+                if token:
+                    try:
+                        decoded = decode_token(token)
+                        user_id = decoded.get('sub')
+                        if user_id:
+                            with get_session() as s:
+                                user = s.get(User, int(user_id))
+                                if user:
+                                    _client_user[client_id] = {
+                                        "user_id": user.id,
+                                        "username": user.username,
+                                        "role": user.role,
+                                        "school_id": user.school_id
+                                    }
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
             # 回傳 backlog 給加入者
             msgs = list(_room_msgs[room])
@@ -1483,6 +1633,14 @@ def register_socketio_events():
             _sid_rooms[request.sid].discard(room)
             if client_id in _room_clients.get(room, set()):
                 _room_clients[room].discard(client_id)
+                # 如果用戶不在任何房間中，清理用戶映射信息
+                user_in_any_room = False
+                for room_clients in _room_clients.values():
+                    if client_id in room_clients:
+                        user_in_any_room = True
+                        break
+                if not user_in_any_room and client_id in _client_user:
+                    _client_user.pop(client_id, None)
         except Exception:
             pass
         emit("room.presence", {"room": room, "count": len(_room_clients[room])}, to=room)
@@ -1508,19 +1666,34 @@ def register_socketio_events():
             from utils.ratelimit import is_ip_blocked, add_ip_strike
             if is_ip_blocked():
                 return emit("room.error", {"room": room, "error": "IP_BLOCKED"})
-            # 速率限制：每 client_id 每 10s 最多 8 則；每 sid 每 10s 最多 10 則
-            if not _ws_allow(f"chat:{client_id}", calls=8, per_seconds=10) or not _ws_allow(f"sid:{request.sid}", calls=10, per_seconds=10):
+            # 速率限制（可由環境變數覆寫）：每 client_id / sid 在視窗內最大全局訊息數
+            if (not _ws_allow(f"chat:{client_id}", calls=_WS_MSG_CALLS_PER_CLIENT, per_seconds=_WS_MSG_WINDOW)
+                or not _ws_allow(f"sid:{request.sid}", calls=_WS_MSG_CALLS_PER_SID, per_seconds=_WS_MSG_WINDOW)):
                 try: add_ip_strike()
                 except Exception: pass
                 return emit("room.error", {"room": room, "error": "RATE_LIMIT"})
         except Exception:
             pass
 
+        # 解析顯示名稱：若能識別 user，優先用 username，其次匿名 client_id 縮寫
+        display_name = None
+        try:
+            user_info = _client_user.get(client_id) if client_id else None
+            if user_info and user_info.get("username"):
+                display_name = str(user_info.get("username") or "").strip()
+            if not display_name:
+                # 匿名以 client_id 前 8 碼（或 sid: 後綴）當暱稱
+                base = (client_id or "").replace("sid:", "")
+                display_name = base[:8] if base else "匿名"
+        except Exception:
+            display_name = None
+
         payload_out = {
             "room": room,
             "message": msg,
             "client_id": client_id,
             "ts": payload.get("ts") or datetime.now(timezone.utc).isoformat(),
+            "username": display_name,
         }
         # 存入 backlog
         _room_msgs[room].append(payload_out)

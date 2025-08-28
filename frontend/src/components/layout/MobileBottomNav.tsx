@@ -3,6 +3,7 @@ import { MessageSquare, ScrollText, PlusCircle, Settings, LogIn, Shield, HelpCir
 import { Link, useLocation } from 'react-router-dom'
 import { getRole } from '@/utils/auth'
 import { useAuth } from '@/contexts/AuthContext'
+import { NotificationBadge } from '../notifications/NotificationButton'
 
 export function MobileBottomNav() {
   const { isLoggedIn } = useAuth()
@@ -53,7 +54,14 @@ export function MobileBottomNav() {
                   }
                 `}
               >
-                <Icon className={`w-5 h-5 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
+                {/* 設定按鈕特殊處理：添加通知紅點 */}
+                {tab.label === '設定' && isLoggedIn ? (
+                  <NotificationBadge>
+                    <Icon className={`w-5 h-5 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
+                  </NotificationBadge>
+                ) : (
+                  <Icon className={`w-5 h-5 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
+                )}
                 <span className={`text-xs font-medium truncate ${active ? 'font-semibold' : ''}`}>
                   {tab.label}
                 </span>

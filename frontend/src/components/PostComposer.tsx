@@ -38,6 +38,16 @@ export default function PostComposer({ token }: { token: string }) {
     })()
   }, [])
 
+  // 桌面版：學校清單載入後，若尚未選定，帶入預設（登入者=自己的學校；未登入=跨校）
+  useEffect(() => {
+    try {
+      if (schools.length === 0) return
+      if (targetSlug) return
+      const mySlug = mySchoolId ? (schools.find(s=>s.id===mySchoolId)?.slug || '') : ''
+      setTargetSlug(mySlug || '')
+    } catch {}
+  }, [schools])
+
   // 監聽全域學校切換事件，隨時同步到發文選擇
   useEffect(() => {
     const onChanged = (e: any) => {
@@ -53,12 +63,12 @@ export default function PostComposer({ token }: { token: string }) {
   // 開啟確認對話框時，若尚未選擇且有預設或清單，設置預設學校
   useEffect(() => {
     if (confirmOpen && !targetSlug) {
-      if (defaultSlug) setTargetSlug(defaultSlug)
-      else if (localStorage.getItem('role') === 'dev_admin' && schools.length > 0) {
-        setTargetSlug(schools[0].slug)
-      }
+      const mySlug = mySchoolId ? (schools.find(s=>s.id===mySchoolId)?.slug || '') : ''
+      if (mySlug) setTargetSlug(mySlug)
+      else if (defaultSlug) setTargetSlug(defaultSlug)
+      else if (schools.length > 0) setTargetSlug('') // 預設跨校
     }
-  }, [confirmOpen, defaultSlug, schools, targetSlug])
+  }, [confirmOpen, defaultSlug, schools, targetSlug, mySchoolId])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,13 +78,13 @@ export default function PostComposer({ token }: { token: string }) {
       setMsg("請輸入內容"); 
       return; 
     }
-    
-    // 若具備校內身分或是 dev_admin，送出前先確認發文範圍；否則直接跨校
-    if (mySchoolId || localStorage.getItem('role') === 'dev_admin') { 
-      setConfirmOpen(true); 
-      return 
+    // 桌面版：直接依目前選擇送出；行動版保留確認視窗流程
+    const isDesktop = (()=>{ try { return window.innerWidth >= 768 } catch { return true } })()
+    if (isDesktop) {
+      await doSubmit(targetSlug)
+      return
     }
-    await doSubmit('')
+    setConfirmOpen(true)
   }
 
   async function doSubmit(finalSlug: string | '') {
@@ -117,6 +127,20 @@ export default function PostComposer({ token }: { token: string }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 max-w-2xl mx-auto">
+      {/* 桌面版：發佈範圍內嵌選擇器（行動版維持送出前彈窗） */}
+      <div className="hidden md:flex items-center gap-3">
+        <label className="text-sm text-muted">發佈範圍</label>
+        <select
+          className="form-control !w-auto"
+          value={targetSlug}
+          onChange={(e)=> setTargetSlug(e.target.value as any)}
+        >
+          <option value="">跨校（全部）</option>
+          {schools.map(s => (
+            <option key={s.id} value={s.slug}>{s.name}</option>
+          ))}
+        </select>
+      </div>
       {/* 確認對話框：選擇發文範圍 */}
       {confirmOpen && (
         <div className="fixed inset-0 z-50">
@@ -125,16 +149,8 @@ export default function PostComposer({ token }: { token: string }) {
             <h3 className="font-semibold dual-text mb-2">選擇發文範圍</h3>
             <p className="text-sm text-muted mb-3">請確認要發佈到哪裡：</p>
             <div className="space-y-2 mb-3">
-              {/* 如果有綁定學校，顯示我的學校選項 */}
-              {mySchoolId && (
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="scope" checked={targetSlug === (schools.find(s=>s.id===mySchoolId)?.slug || '')}
-                         onChange={()=> setTargetSlug(schools.find(s=>s.id===mySchoolId)?.slug || '') } />
-                  <span className="text-sm">我的學校：{schools.find(s=>s.id===mySchoolId)?.name || '（未知）'}</span>
-                </label>
-              )}
-              {/* 如果是 dev_admin，顯示所有學校選項 */}
-              {localStorage.getItem('role') === 'dev_admin' && schools.map(school => (
+              {/* 所有人可選擇任一學校 */}
+              {schools.map(school => (
                 <label key={school.id} className="flex items-center gap-2">
                   <input type="radio" name="scope" checked={targetSlug === school.slug}
                          onChange={()=> setTargetSlug(school.slug) } />
@@ -160,7 +176,10 @@ export default function PostComposer({ token }: { token: string }) {
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted">{files.length} 個附件</div>
           <div className="text-sm text-muted">
-            發文者：<AnonymousAccountDisplay showIcon={true} />
+            將發佈至：{(() => {
+              const found = schools.find(s=>s.slug===targetSlug)
+              return (found?.name) || '跨校'
+            })()}
           </div>
         </div>
         <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-60">

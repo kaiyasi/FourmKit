@@ -150,12 +150,12 @@ def seed_data():
                 },
                 {
                     "content": "<h1>📝 Markdown 格式示範 - 讓你的貼文更精彩</h1><p>ForumKit 支援豐富的 Markdown 格式，讓你的內容更生動！</p><h2>📋 基本格式</h2><p><strong>粗體文字</strong>、<em>斜體文字</em>、<code>程式碼</code>、<del>刪除線</del></p><h2>📂 列表展示</h2><h3>無序列表：</h3><ul><li>第一項重點</li><li>第二項重點<ul><li>子項目 A</li><li>子項目 B</li></ul></li><li>第三項重點</li></ul><h3>有序列表：</h3><ol><li>步驟一</li><li>步驟二</li><li>步驟三</li></ol><h2>💻 程式碼區塊</h2><pre><code class=\"language-python\"># Python 範例\ndef hello_forumkit():\n    print(\"Hello, ForumKit!\")\n    return \"歡迎使用 Markdown 格式！\"\n</code></pre><h2>📊 表格展示</h2><table><thead><tr><th>功能</th><th>支援程度</th><th>說明</th></tr></thead><tbody><tr><td>文字格式</td><td>✅ 完整支援</td><td>粗體、斜體、標題等</td></tr><tr><td>列表</td><td>✅ 完整支援</td><td>有序、無序、巢狀列表</td></tr><tr><td>程式碼</td><td>✅ 完整支援</td><td>語法高亮顯示</td></tr><tr><td>表格</td><td>✅ 完整支援</td><td>如本表格所示</td></tr></tbody></table><h2>💡 使用小貼士</h2><blockquote><p><strong>小提示：</strong> 在發文時點擊「預覽」按鈕，可以即時查看格式效果哦！</p></blockquote><p>快來試試這些格式，讓你的貼文更加豐富有趣！ 🎨</p>",
-                    "school_id": ncku.id,
+                    "school_id": None,
                     "created_at": datetime.now() - timedelta(hours=1)
                 },
                 {
                     "content": "<h1>🎨 ForumKit 主題定製服務</h1><p>想要為 ForumKit 設計專屬主題嗎？我們提供完整的主題定製服務！</p><h2>🎯 定製內容</h2><ul><li><strong>色彩配置</strong> - 主色調、輔助色、強調色</li><li><strong>字體樣式</strong> - 標題字體、內文字體、特殊效果</li><li><strong>介面元素</strong> - 按鈕、卡片、導航欄設計</li><li><strong>動畫效果</strong> - 過渡動畫、互動回饋</li><li><strong>響應式佈局</strong> - 手機、平板、電腦適配</li></ul><h2>🛠️ 提交方式</h2><ol><li><strong>個人收藏</strong> - 儲存至個人帳戶（需登入）</li><li><strong>平台實裝</strong> - 提交給開發團隊審核</li></ol><p><strong>立即開始設計：</strong></p><p>🎨 <strong><a href=\"/theme-designer\" target=\"_blank\">進入主題設計工具</a></strong></p><p>💡 <strong>功能特色：</strong></p><ul><li>🎯 即時預覽效果</li><li>💾 個人主題收藏</li><li>📤 一鍵提交給開發團隊</li><li>🔄 主題匯入匯出</li><li>🎨 完整的視覺編輯器</li></ul><hr><p><small>💫 由 Serelix Studio 開發維護 | 讓校園討論更精彩</small></p>",
-                    "school_id": None,  # 跨校主題貼文
+                    "school_id": ncku.id,  # 指定成功大學
                     "created_at": datetime.now() - timedelta(minutes=45)
                 }
             ]

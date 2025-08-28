@@ -209,6 +209,7 @@ def filter_posts_by_permissions(session: Session, user: User, base_query=None):
         過濾後的查詢
     """
     from sqlalchemy.orm import Query
+    from sqlalchemy import or_
     
     if base_query is None:
         base_query = session.query(Post)
@@ -222,15 +223,23 @@ def filter_posts_by_permissions(session: Session, user: User, base_query=None):
     if permissions['can_view_all_schools']:
         return base_query
     
-    # 否則只能查看有權限的學校
+    # 構建查詢條件
+    conditions = []
+    
+    # 如果用戶可以查看特定學校的貼文
     if permissions['can_post_to_schools']:
-        return base_query.filter(
-            Post.school_id.in_(permissions['can_post_to_schools'])
-        )
+        conditions.append(Post.school_id.in_(permissions['can_post_to_schools']))
     
     # 如果用戶有跨校權限，可以查看跨校貼文
     if permissions['is_cross_school']:
-        return base_query.filter(Post.school_id.is_(None))
+        conditions.append(Post.school_id.is_(None))
+    
+    # 如果有任何條件，使用OR組合；否則返回空結果
+    if conditions:
+        if len(conditions) == 1:
+            return base_query.filter(conditions[0])
+        else:
+            return base_query.filter(or_(*conditions))
     
     # 如果沒有任何權限，返回空結果
     return base_query.filter(Post.id == 0)

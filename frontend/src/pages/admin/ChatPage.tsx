@@ -34,6 +34,9 @@ export default function AdminChatPage() {
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
   const [showOnlineUsers, setShowOnlineUsers] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [roomName, setRoomName] = useState('')
+  const [roomDesc, setRoomDesc] = useState('')
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -66,8 +69,17 @@ export default function AdminChatPage() {
           }))
           setAvailableRooms(rooms)
 
-          if (rooms.length > 0 && !selectedRoom) {
-            setSelectedRoom(rooms[0].id)
+          // 依身份自動選擇房間：校內管理員/校內版主 → 默認選自己學校的管理員聊天室
+          if (rooms.length > 0) {
+            const role = String(data.user_role || '').trim()
+            const schoolId = Number(data.user_school_id || 0) || null
+            let picked: string | null = null
+            if ((role === 'campus_admin' || role === 'campus_moderator') && schoolId) {
+              const m = (data.rooms || []).find((r: any) => r.school_specific && Number(r.school_id || 0) === schoolId)
+              if (m) picked = m.id
+            }
+            if (!picked) picked = rooms[0]?.id || null
+            if (picked && picked !== selectedRoom) setSelectedRoom(picked)
           }
         } else {
           const errorData = await response.json().catch(() => ({}))
@@ -155,6 +167,104 @@ export default function AdminChatPage() {
 
   const selectedRoomData = availableRooms.find(room => room.id === selectedRoom)
 
+  const canCreateRoom = role === 'dev_admin'
+
+  const createRoom = async () => {
+    if (!canCreateRoom) return
+    try {
+      setCreating(true)
+      const payload: any = {}
+      if (roomName.trim()) payload.name = roomName.trim()
+      if (roomDesc.trim()) payload.description = roomDesc.trim()
+      const r = await fetch('/api/admin/chat-rooms/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')||''}` },
+        body: JSON.stringify(payload)
+      })
+      if (!r.ok) throw new Error(await r.text())
+      setRoomName('')
+      setRoomDesc('')
+      // 重新載入房間
+      const response = await fetch('/api/admin/chat-rooms', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const rooms = data.rooms.map((room: any) => ({
+          id: room.id,
+          name: room.name,
+          description: room.description,
+          icon: getRoomIcon(room.id),
+          accessRoles: room.access_roles,
+          schoolSpecific: room.school_specific,
+          onlineCount: room.online_count || 0
+        }))
+        setAvailableRooms(rooms)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const deleteRoom = async () => {
+    if (!canCreateRoom || !selectedRoom.startsWith('custom:')) return
+    if (!confirm('確定要刪除此自訂聊天室？')) return
+    try {
+      const r = await fetch(`/api/admin/chat-rooms/custom/${encodeURIComponent(selectedRoom)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')||''}` }
+      })
+      if (!r.ok) throw new Error(await r.text())
+      setSelectedRoom('')
+      // 重新載入
+      const response = await fetch('/api/admin/chat-rooms', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } })
+      if (response.ok) {
+        const data = await response.json()
+        const rooms = data.rooms.map((room: any) => ({
+          id: room.id,
+          name: room.name,
+          description: room.description,
+          icon: getRoomIcon(room.id),
+          accessRoles: room.access_roles,
+          schoolSpecific: room.school_specific,
+          onlineCount: room.online_count || 0
+        }))
+        setAvailableRooms(rooms)
+      }
+    } catch (e) { console.error(e) }
+  }
+
+  const addMember = async () => {
+    if (!canCreateRoom || !selectedRoom.startsWith('custom:')) return
+    const uid = prompt('輸入要加入的使用者 ID')
+    if (!uid) return
+    try {
+      const r = await fetch(`/api/admin/chat-rooms/custom/${encodeURIComponent(selectedRoom)}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')||''}` },
+        body: JSON.stringify({ user_id: Number(uid) })
+      })
+      if (!r.ok) throw new Error(await r.text())
+      alert('已加入成員')
+    } catch (e) { console.error(e) }
+  }
+
+  const removeMember = async () => {
+    if (!canCreateRoom || !selectedRoom.startsWith('custom:')) return
+    const uid = prompt('輸入要移除的使用者 ID')
+    if (!uid) return
+    try {
+      const r = await fetch(`/api/admin/chat-rooms/custom/${encodeURIComponent(selectedRoom)}/members/${encodeURIComponent(String(uid))}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')||''}` }
+      })
+      if (!r.ok) throw new Error(await r.text())
+      alert('已移除成員')
+    } catch (e) { console.error(e) }
+  }
+
   if (!isLoggedIn()) {
     return null
   }
@@ -204,6 +314,16 @@ export default function AdminChatPage() {
             <div className="lg:col-span-1">
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h3 className="font-semibold text-fg mb-4">聊天室列表</h3>
+                {canCreateRoom && (
+                  <div className="mb-4 p-3 rounded-xl border border-border bg-surface-hover">
+                    <div className="text-sm font-medium mb-2">建立自訂聊天室（僅 dev_admin）</div>
+                    <div className="grid gap-2">
+                      <input value={roomName} onChange={e=>setRoomName(e.target.value)} placeholder="名稱（可留空）" className="form-control" />
+                      <input value={roomDesc} onChange={e=>setRoomDesc(e.target.value)} placeholder="描述（可留空）" className="form-control" />
+                      <button onClick={createRoom} disabled={creating} className="btn-primary px-3 py-2 w-full">{creating? '建立中…' : '建立聊天室'}</button>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   {availableRooms.length === 0 ? (
                     <div className="text-center py-8">
@@ -275,6 +395,13 @@ export default function AdminChatPage() {
                           <Eye className="w-4 h-4" />
                           {showOnlineUsers ? '隱藏' : '顯示'}線上用戶
                         </button>
+                        {canCreateRoom && selectedRoom.startsWith('custom:') && (
+                          <div className="flex items-center gap-2">
+                            <button onClick={addMember} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80">加入成員</button>
+                            <button onClick={removeMember} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80">移除成員</button>
+                            <button onClick={deleteRoom} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-red-500/10 text-red-600">刪除聊天室</button>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <ChatPanel 

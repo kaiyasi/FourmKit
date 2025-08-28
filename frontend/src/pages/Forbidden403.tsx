@@ -1,8 +1,9 @@
 import { ShieldAlert, Home, ArrowLeft } from 'lucide-react'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
 export default function Forbidden403() {
   return (
-    <div className="min-h-screen grid place-items-center p-6">
+    <div className="min-h-screen grid place-items-center p-6 pb-24">
       <div className="max-w-lg w-full rounded-2xl border border-border bg-surface p-6 shadow-soft text-center">
         <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center mb-3">
           <ShieldAlert className="w-6 h-6 text-rose-600 dark:text-rose-300" />
@@ -18,6 +19,7 @@ export default function Forbidden403() {
           </button>
         </div>
       </div>
+      <MobileBottomNav />
     </div>
   )
 }

@@ -126,13 +126,15 @@ export const ModeAPI = {
     login_mode?: "single" | "admin_only" | "open";
     enforce_min_post_chars?: boolean;
     min_post_chars?: number;
+    mobile_maintenance?: boolean;
+    mobile_maintenance_message?: string;
   }>(j("/api/mode")),
   set: (
     mode?: "normal" | "test" | "maintenance" | "development",
     maintenanceMessage?: string,
     maintenanceUntil?: string,
     loginMode?: "single" | "admin_only" | "open",
-    extra?: { enforce_min_post_chars?: boolean; min_post_chars?: number }
+    extra?: { enforce_min_post_chars?: boolean; min_post_chars?: number; mobile_maintenance?: boolean; mobile_maintenance_message?: string }
   ) =>
   api<{ ok: boolean; mode: "normal" | "test" | "maintenance" | "development"; config: any }>(j("/api/mode"), {
       method: "POST",
@@ -141,7 +143,10 @@ export const ModeAPI = {
         ...(maintenanceMessage && maintenanceMessage.trim() ? { notice: maintenanceMessage.trim() } : {}), 
         ...(maintenanceUntil && maintenanceUntil.trim() ? { eta: maintenanceUntil.trim() } : {}),
         ...(loginMode ? { login_mode: loginMode } : {}),
-        ...(extra || {})
+        ...(extra?.enforce_min_post_chars !== undefined ? { enforce_min_post_chars: extra.enforce_min_post_chars } : {}),
+        ...(extra?.min_post_chars !== undefined ? { min_post_chars: extra.min_post_chars } : {}),
+        ...(extra?.mobile_maintenance !== undefined ? { mobile_maintenance: extra.mobile_maintenance } : {}),
+        ...(extra?.mobile_maintenance_message !== undefined ? { mobile_maintenance_message: extra.mobile_maintenance_message } : {}),
       }),
     }),
 };

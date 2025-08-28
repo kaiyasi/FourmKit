@@ -12,6 +12,8 @@ import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
 import { getRole } from '@/utils/auth'
 import { formatLocalMinute } from '@/utils/time'
 
+type SchoolInfo = { id: number; slug: string; name: string }
+
 export default function PostList({ injectedItems = [] }: { injectedItems?: any[] }) {
   const [data, setData] = useState<PostListType | null>(null)
   const [page, setPage] = useState(1)
@@ -21,6 +23,20 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
   const perPage = 10
   const [copiedFor, setCopiedFor] = useState<number | null>(null)
   const longPressRef = useRef<number | null>(null)
+  const [schools, setSchools] = useState<SchoolInfo[]>([])
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await fetch('/api/schools', { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json().catch(()=>({}))
+        if (alive && Array.isArray(j?.items)) setSchools(j.items)
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
 
   const fetchPage = async (p = 1) => {
     if (loading) return
@@ -28,7 +44,11 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
     setError(null)
     
     try {
-      const slug = localStorage.getItem('school_slug') || ''
+      const raw = localStorage.getItem('school_slug')
+      const slug = raw === null ? '__ALL__' : raw
+      const kw = (localStorage.getItem('posts_filter_keyword') || '').trim()
+      const start = localStorage.getItem('posts_filter_start') || ''
+      const end = localStorage.getItem('posts_filter_end') || ''
       let q = ''
       
       // 檢查用戶是否為總管理員
@@ -43,21 +63,25 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
         // 忽略錯誤，繼續執行
       }
       
-      if (slug) {
-        q = `&school=${encodeURIComponent(slug)}`
-      } else if (isDevAdmin) {
-        // 總管理員在沒有選擇學校時，顯示所有學校的貼文
+      if (slug === '__ALL__') {
         q = '&all_schools=true'
+      } else if (slug) {
+        q = `&school=${encodeURIComponent(slug)}`
+      } else {
+        // 空字串視為僅跨校
+        q = '&cross_only=true'
       }
       
-      const raw = await getJSON<any>(`/api/posts?page=${p}&per_page=${perPage}${q}`)
+      const dateQ = `${start ? `&start=${encodeURIComponent(start)}` : ''}${end ? `&end=${encodeURIComponent(end)}` : ''}`
+      const kwQ = kw ? `&q=${encodeURIComponent(kw)}` : ''
+      const resp = await getJSON<any>(`/api/posts/list?limit=${perPage}&page=${p}${q}${dateQ}${kwQ}`)
       let validated: PostListType
       try {
-        validated = validatePostList(raw)
+        validated = validatePostList(resp)
       } catch (e) {
         // 寬鬆相容：若後端回傳僅有 { items }，則推導分頁欄位
-        if (raw && Array.isArray(raw.items) && (raw.page === undefined || raw.per_page === undefined || raw.total === undefined)) {
-          const items = raw.items.map((it: any, idx: number) => {
+        if (resp && Array.isArray(resp.items) && (resp.page === undefined || resp.per_page === undefined || resp.total === undefined)) {
+          const items = resp.items.map((it: any, idx: number) => {
             // 若缺必填欄位，嘗試溫柔修補：不要亂造負數 id，改給 tempKey
             if (typeof it?.content !== 'string') it.content = ''
             if (typeof it?.id !== 'number') {
@@ -109,7 +133,12 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
     const onChanged = () => fetchPage(1)
     window.addEventListener('fk_school_changed', onChanged as any)
     window.addEventListener('fk_reload_posts', onChanged as any)
-    return () => window.removeEventListener('fk_school_changed', onChanged as any)
+    window.addEventListener('fk_filter_changed', onChanged as any)
+    return () => {
+      window.removeEventListener('fk_school_changed', onChanged as any)
+      window.removeEventListener('fk_reload_posts', onChanged as any)
+      window.removeEventListener('fk_filter_changed', onChanged as any)
+    }
   }, [])
 
   // 私有貼文標記（只在本機判定）
@@ -117,8 +146,8 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
     try { return new Set<number>(JSON.parse(localStorage.getItem('forumkit_my_posts') || '[]')) } catch { return new Set<number>() }
   })()
 
-  // 合併：以伺服器資料優先，私有占位次之（當審核通過時，自然被伺服器資料覆蓋）
-  const allItems = data ? dedup([...(data.items as any[]), ...injectedItems]) : injectedItems;
+  // 僅使用伺服器資料；不再顯示本地「送審預覽」
+  const allItems = data ? (data.items as any[]) : [];
 
   const copyLink = async (id?: number) => {
     if (!id) return
@@ -211,15 +240,29 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
           }
           return (
           <article id={p.id ? `post-${p.id}` : undefined} key={p.id ?? p.tempKey ?? `fallback-${allItems.indexOf(p)}`} className="rounded-xl border border-border bg-surface p-4 relative mobile-card mobile-list-item oppo-post-lg oppo-list-item-lg">
-            <div className="text-xs text-muted mb-2 mobile-text-sm oppo-text-lg">
-              #{p.id || p.tempKey || '待確認'} <span className="mx-1">•</span> {p.created_at ? formatLocalMinute(p.created_at) : '時間未知'} <span className="mx-1">•</span>
+            <div className="text-xs text-muted mb-2 mobile-text-sm oppo-text-lg break-words">
               {(() => {
-                const label = String(p.author_hash || '').trim()
-                const isAnonCode = /^[A-Z0-9]{6}$/.test(label)
-                if (label === '系統訊息') return <span className="text-fg">系統訊息</span>
-                if (isAnonCode) return <span className="text-muted">匿名 {label}</span>
-                if (label) return <span className="text-fg">{label}</span>
-                return <span className="text-muted">匿名</span>
+                const nameField = String((p as any).school_name || '').trim()
+                const obj = (p as any).school as any
+                const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+                const sidRaw = (p as any).school_id
+                const sidNum = ((): number | null => {
+                  if (typeof sidRaw === 'number') return Number.isFinite(sidRaw) ? sidRaw : null
+                  if (typeof sidRaw === 'string' && /^\d+$/.test(sidRaw)) {
+                    const n = parseInt(sidRaw, 10)
+                    return Number.isFinite(n) ? n : null
+                  }
+                  return null
+                })()
+                const hasSid = typeof sidNum === 'number' && sidNum !== null
+                const mapped = hasSid ? ((schools.find(s=>s.id===sidNum)?.name || schools.find(s=>s.id===sidNum)?.slug || '').trim()) : ''
+                const name = nameField || fromObj || (!hasSid ? '跨校' : mapped)
+                return (
+                  <>
+                    #{p.id} <span className="mx-1">•</span> {p.created_at ? formatLocalMinute(p.created_at) : '時間未知'}
+                    {name ? (<><span className="mx-1">•</span> <span className="text-fg">{name}</span></>) : null}
+                  </>
+                )
               })()}
             </div>
             <Cover />
@@ -240,7 +283,7 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
             )}
             
             {/* 留言與反應系統 */}
-            {p.id && <CommentSection postId={p.id} />}
+            {p.id && <CommentSection postId={p.id} initialTotal={(p as any).comment_count || 0} />}
             
             <div
               className="mt-3 flex items-center justify-end gap-2 mobile-gap-sm"
@@ -255,11 +298,7 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
               onTouchEnd={() => { if (longPressRef.current) { clearTimeout(longPressRef.current as any); longPressRef.current = null } }}
               onTouchCancel={() => { if (longPressRef.current) { clearTimeout(longPressRef.current as any); longPressRef.current = null } }}
             >
-              {p.pending_private ? (
-                <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> 送審中
-                </span>
-              ) : myIds.has(p.id) && p.created_at ? (
+              {myIds.has(p.id) && p.created_at ? (
                 <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-neutral-100 text-neutral-700 dark:bg-neutral-900/40 dark:text-neutral-200">
                   <Clock className="w-3.5 h-3.5" /> {new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -269,11 +308,13 @@ export default function PostList({ injectedItems = [] }: { injectedItems?: any[]
               {p.id && (
                 <button
                   onClick={() => copyLink(p.id)}
-                  className="hidden md:inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border hover:bg-surface/70"
+                  className={`hidden md:inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
+                    copiedFor === p.id ? 'bg-primary text-white shadow-sm' : 'bg-surface-hover hover:bg-surface-active text-muted hover:text-fg'
+                  }`}
                   title="複製貼文連結"
                 >
-                  {copiedFor === p.id ? <Check className="w-3.5 h-3.5 text-primary" /> : <LinkIcon className="w-3.5 h-3.5" />}
-                  {copiedFor === p.id ? '已複製' : '複製連結'}
+                  {copiedFor === p.id ? <Check className="w-4 h-4" /> : <LinkIcon className="w-4 h-4" />}
+                  <span>{copiedFor === p.id ? '已複製' : '複製連結'}</span>
                 </button>
               )}
             </div>

@@ -209,22 +209,22 @@ export default function EventsPage() {
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-surface-hover rounded-xl p-4 text-center">
-                <div className="text-2xl font-bold text-fg">{statistics.total_events}</div>
+                <div className="text-2xl font-bold text-fg">{statistics?.total_events ?? 0}</div>
                 <div className="text-sm text-muted">總事件數</div>
               </div>
               <div className="bg-surface-hover rounded-xl p-4 text-center">
-                <div className="text-2xl font-bold text-blue-600">{statistics.events_24h}</div>
+                <div className="text-2xl font-bold text-blue-600">{statistics?.events_24h ?? 0}</div>
                 <div className="text-sm text-muted">24小時內</div>
               </div>
               <div className="bg-surface-hover rounded-xl p-4 text-center">
                 <div className="text-2xl font-bold text-green-600">
-                  {statistics.severity_distribution.low || 0}
+                  {statistics?.severity_distribution?.low ?? 0}
                 </div>
                 <div className="text-sm text-muted">低風險</div>
               </div>
               <div className="bg-surface-hover rounded-xl p-4 text-center">
                 <div className="text-2xl font-bold text-red-600">
-                  {(statistics.severity_distribution.high || 0) + (statistics.severity_distribution.critical || 0)}
+                  {((statistics?.severity_distribution?.high ?? 0) + (statistics?.severity_distribution?.critical ?? 0))}
                 </div>
                 <div className="text-sm text-muted">高風險</div>
               </div>

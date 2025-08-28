@@ -183,6 +183,15 @@ header
 
 # STEP 1: 預檢與權限設定
 step "$ICON_CHECK 預檢環境與權限設定"
+# 基本相依檢查
+if ! command -v docker >/dev/null 2>&1; then
+    error "未安裝 Docker，請先安裝 Docker(含 Compose 插件)"
+    exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+    error "未偵測到 Docker Compose 插件（docker compose），請確認 Docker 版本或安裝 compose plugin"
+    exit 1
+fi
 smart_permissions_fix
 
 # STEP 2: 清理環境
@@ -395,7 +404,7 @@ fi
 success "ForumKit 開發環境重建流程完成！"
 
 # STEP 11: 啟動 Discord Bot（可選）
-if [ "${DISCORD_BOT_ENABLED:-1}" = "1" ]; then
+if [ "${DISCORD_BOT_ENABLED:-0}" = "1" ]; then
     step "${ICON_INFO} 啟動 Discord Bot"
     BOT_DIR="$PROJECT_ROOT/discord-bot"
     RUNNER="$PROJECT_ROOT/scripts/run_discord_bot.sh"
@@ -406,7 +415,7 @@ if [ "${DISCORD_BOT_ENABLED:-1}" = "1" ]; then
             if [ -n "$old_pid" ] && ps -p "$old_pid" >/dev/null 2>&1; then
                 info "停止舊 Bot (PID=$old_pid)"
                 kill "$old_pid" >/dev/null 2>&1 || true
-                # 給他一點時間優雅結束
+                # 給他一點時間結束
                 sleep 1
             fi
         fi
@@ -415,6 +424,10 @@ if [ "${DISCORD_BOT_ENABLED:-1}" = "1" ]; then
             success "Discord Bot 已啟動"
         else
             warning "Discord Bot 啟動失敗，請檢查 $BOT_DIR/logs"
+            if [ -f "$BOT_DIR/logs/bot.err" ]; then
+                info "最近錯誤："
+                tail -n 20 "$BOT_DIR/logs/bot.err" || true
+            fi
         fi
     else
         info "未找到 Discord Bot 專案或啟動腳本，略過 (設置 DISCORD_BOT_ENABLED=0 可關閉此步驟)"

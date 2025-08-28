@@ -38,6 +38,12 @@ class User(Base):
     authored_media: Mapped[list["Media"]] = relationship("Media", foreign_keys="Media.author_id", back_populates="author")
     deleted_media: Mapped[list["Media"]] = relationship("Media", foreign_keys="Media.deleted_by")
     reviewed_delete_requests: Mapped[list["DeleteRequest"]] = relationship("DeleteRequest", foreign_keys="DeleteRequest.reviewed_by", back_populates="reviewed_by_user")
+    
+    # 工單系統關聯
+    submitted_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.submitter_id", back_populates="submitter")
+    assigned_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.assigned_to", back_populates="assigned_user")
+    ticket_responses: Mapped[list["TicketResponse"]] = relationship("TicketResponse", back_populates="author")
+    identity_codes: Mapped[list["UserIdentityCode"]] = relationship("UserIdentityCode", back_populates="user")
 
 
 

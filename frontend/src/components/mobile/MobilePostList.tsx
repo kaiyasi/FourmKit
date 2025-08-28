@@ -23,6 +23,35 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
   const startYRef = useRef(0)
   const pullThreshold = 80
   const perPage = 15
+  const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
+  // 手機版搜尋/篩選
+  const [kw, setKw] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_keyword')||'' }catch{ return '' }})
+  const [start, setStart] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_start')||'' }catch{ return '' }})
+  const [end, setEnd] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_end')||'' }catch{ return '' }})
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(false)
+  const [selectedSchool, setSelectedSchool] = useState<string>(()=>{
+    try {
+      const v = localStorage.getItem('school_slug')
+      return v === null ? '__ALL__' : v
+    } catch {
+      return '__ALL__'
+    }
+  })
+
+  useEffect(()=>{
+    let abort = false
+    ;(async()=>{
+      try{
+        const res = await fetch('/api/schools/list?limit=1000&page=1')
+        if(!res.ok) return
+        const data = await res.json()
+        if(abort) return
+        const items = (data?.items || data?.schools || []) as any[]
+        setSchools(items.map(s=>({ id: s.id, slug: s.slug, name: s.name })))
+      }catch{}
+    })()
+    return ()=>{ abort = true }
+  }, [])
 
   const haptic = (ms = 10) => { 
     try { 
@@ -38,8 +67,23 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
     setError(null)
     
     try {
-      const slug = localStorage.getItem('school_slug') || ''
+      const raw = localStorage.getItem('school_slug')
+      const slug = raw === null ? '__ALL__' : raw
+      const startStored = localStorage.getItem('posts_filter_start') || ''
+      const endStored = localStorage.getItem('posts_filter_end') || ''
+      const kwStored = (localStorage.getItem('posts_filter_keyword') || '').trim()
       let q = ''
+      
+      console.log('🏫 [DEBUG] MobilePostList fetchPage:', {
+        page: p,
+        refresh,
+        storedSlug: slug,
+        allStorageKeys: {
+          school_slug: localStorage.getItem('school_slug'),
+          current_school_slug: localStorage.getItem('current_school_slug'),
+          selected_school_slug: localStorage.getItem('selected_school_slug')
+        }
+      })
       
       // 檢查用戶是否為總管理員
       let isDevAdmin = false
@@ -48,19 +92,34 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
         if (profileResponse.ok) {
           const profileData = await profileResponse.json()
           isDevAdmin = profileData.role === 'dev_admin'
+          console.log('👤 [DEBUG] User profile:', { role: profileData.role, isDevAdmin })
         }
       } catch (e) {
-        // 忽略錯誤，繼續執行
+        console.warn('[DEBUG] Profile fetch failed:', e)
       }
       
-      if (slug) {
-        q = `&school=${encodeURIComponent(slug)}`
-      } else if (isDevAdmin) {
+      if (slug === '__ALL__') {
         q = '&all_schools=true'
+        console.log('🌐 [DEBUG] Using ALL schools')
+      } else if (slug) {
+        q = `&school=${encodeURIComponent(slug)}`
+        console.log('🎯 [DEBUG] Using school filter:', { slug, query: q })
+      } else {
+        if (slug === '') {
+          console.log('🌐 [DEBUG] Cross-school only')
+          q = `&cross_only=true`
+        } else {
+          console.log('🌐 [DEBUG] No school selected - showing all schools')
+        }
       }
+
+      const dateQ = `${startStored ? `&start=${encodeURIComponent(startStored)}` : ''}${endStored ? `&end=${encodeURIComponent(endStored)}` : ''}`
+      const kwQ = kwStored ? `&q=${encodeURIComponent(kwStored)}` : ''
       
-      const url = `/api/posts/list?limit=${perPage}&page=${p}${q}`
+      const url = `/api/posts/list?limit=${perPage}&page=${p}${q}${dateQ}${kwQ}`
+      console.log('🌐 [DEBUG] API URL:', url)
       const result = await getJSON<any>(url)
+      console.log('📦 [DEBUG] API Response:', result)
       // 後端此路由回傳 { items }（無分頁欄位），這裡做寬鬆相容
       let validated: PostListType
       try {
@@ -96,6 +155,20 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
     fetchPage(1, true)
   }, [])
 
+  // 載入學校清單（供顯示名稱 fallback 使用）
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await fetch('/api/schools', { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json()
+        if (alive && Array.isArray(j?.items)) setSchools(j.items)
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
+
   // 學校切換時自動刷新清單
   useEffect(() => {
     const onSchoolChanged = () => {
@@ -114,30 +187,44 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
     if (!container) return
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (container.scrollTop === 0) {
+      // 只有在頁面頂部且不在刷新狀態時才開始拉拽檢測
+      if (container.scrollTop === 0 && !refreshing && !loading) {
         startYRef.current = e.touches[0].clientY
-        setIsPulling(true)
+        // 不立即設置 isPulling，等到確認是下拉動作時再設置
       }
     }
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isPulling || container.scrollTop > 0) {
+      // 如果不在頁面頂部，忽略觸控事件
+      if (container.scrollTop > 5) {
         setIsPulling(false)
         setPullDistance(0)
         return
       }
 
       const currentY = e.touches[0].clientY
-      const distance = Math.max(0, (currentY - startYRef.current) * 0.5)
+      const deltaY = currentY - startYRef.current
       
-      if (distance > 0) {
+      // 只有向下拉且距離超過最小閾值時才認為是下拉刷新
+      if (deltaY > 10) {
+        if (!isPulling) {
+          setIsPulling(true)
+        }
+        
+        const distance = Math.max(0, deltaY * 0.4) // 降低拖拽敏感度
+        setPullDistance(Math.min(distance, pullThreshold * 1.2))
+        
+        // 防止頁面滾動
         e.preventDefault()
-        setPullDistance(Math.min(distance, pullThreshold * 1.5))
+      } else if (deltaY < -5) {
+        // 上拉時立即取消拖拽狀態
+        setIsPulling(false)
+        setPullDistance(0)
       }
     }
 
     const handleTouchEnd = () => {
-      if (isPulling && pullDistance >= pullThreshold) {
+      if (isPulling && pullDistance >= pullThreshold && !refreshing) {
         handlePullRefresh()
       }
       setIsPulling(false)
@@ -274,6 +361,71 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
 
       {/* 貼文列表 */}
       <div className="mobile-horizontal-padding mobile-vertical-padding pb-24">
+        {/* 手機版搜尋/篩選 */}
+        <div className="mb-3">
+          <button
+            className="w-full text-left text-sm px-3 py-2 rounded-xl border border-border bg-surface/70"
+            onClick={()=>setFiltersOpen(v=>!v)}
+          >{filtersOpen ? '隱藏搜尋篩選' : '顯示搜尋篩選'}</button>
+          {filtersOpen && (
+            <div className="mt-2 grid grid-cols-1 gap-2">
+              <div>
+                <label className="text-xs text-muted mb-1 block">學校</label>
+                <select
+                  className="form-control text-sm"
+                  value={selectedSchool}
+                  onChange={e=>{
+                    const val = e.target.value
+                    setSelectedSchool(val)
+                    try { localStorage.setItem('school_slug', val) } catch {}
+                    fetchPage(1, true)
+                  }}
+                >
+                  <option value="__ALL__">全部學校</option>
+                  <option value="">跨校</option>
+                  {schools.map(s=> (
+                    <option key={s.id} value={s.slug}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <input
+                value={kw}
+                onChange={e=>setKw(e.target.value)}
+                placeholder="關鍵字…"
+                className="form-control text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={start} onChange={e=>setStart(e.target.value)} className="form-control text-sm" />
+                <input type="date" value={end} onChange={e=>setEnd(e.target.value)} className="form-control text-sm" />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-2 rounded-xl border dual-btn text-sm"
+                  onClick={()=>{
+                    try{
+                      kw?.trim() ? localStorage.setItem('posts_filter_keyword', kw.trim()) : localStorage.removeItem('posts_filter_keyword')
+                      start ? localStorage.setItem('posts_filter_start', start) : localStorage.removeItem('posts_filter_start')
+                      end ? localStorage.setItem('posts_filter_end', end) : localStorage.removeItem('posts_filter_end')
+                    }catch{}
+                    fetchPage(1, true)
+                  }}
+                >套用</button>
+                <button
+                  className="px-3 py-2 rounded-xl border text-sm"
+                  onClick={()=>{
+                    setKw(''); setStart(''); setEnd('')
+                    try{
+                      localStorage.removeItem('posts_filter_keyword')
+                      localStorage.removeItem('posts_filter_start')
+                      localStorage.removeItem('posts_filter_end')
+                    }catch{}
+                    fetchPage(1, true)
+                  }}
+                >清除</button>
+              </div>
+            </div>
+          )}
+        </div>
         {/* 骨架載入（初次） */}
         {!data && loading && (
           <div className="space-y-3">
@@ -286,15 +438,7 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
             ))}
           </div>
         )}
-        {/* 注入的本地項目 */}
-        {injectedItems.map((item, index) => (
-          <MobilePostCard 
-            key={item.tempKey || `injected-${index}`}
-            post={item}
-            onReaction={handleReaction}
-            onShare={handleShare}
-          />
-        ))}
+        {/* 取消本地送審預覽：只顯示伺服器項目 */}
 
         {/* 服務器貼文 */}
         {data?.items.map((post) => (
@@ -303,6 +447,7 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
             post={post}
             onReaction={handleReaction}
             onShare={handleShare}
+            schools={schools}
           />
         ))}
 
@@ -314,14 +459,14 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
         )}
 
         {/* 沒有更多內容 */}
-        {!hasMore && data?.items.length && data.items.length > 5 && (
+        {!hasMore && ((data?.items?.length || 0) > 5) && (
           <div className="text-center py-6 text-muted text-sm">
             沒有更多貼文了
           </div>
         )}
 
         {/* 空狀態 */}
-        {data?.items.length === 0 && injectedItems.length === 0 && (
+        {data?.items.length === 0 && (
           <div className="text-center py-12">
             <p className="text-muted mb-4">還沒有任何貼文</p>
             <p className="text-sm text-muted">成為第一個發文的人吧！</p>

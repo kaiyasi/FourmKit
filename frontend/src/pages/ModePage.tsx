@@ -66,6 +66,9 @@ export default function ModePage() {
   // 發文內容規則
   const [enforceMinChars, setEnforceMinChars] = useState(true)
   const [minChars, setMinChars] = useState(15)
+  // 手機版維護
+  const [mobileMaintenance, setMobileMaintenance] = useState(false)
+  const [mobileMessage, setMobileMessage] = useState('')
 
   // 初始化主題
   useEffect(() => {
@@ -93,6 +96,8 @@ export default function ModePage() {
       setMaintenanceMessage(r.maintenance_message || "");
       setMaintenanceUntil(r.maintenance_until || "");
       setLoginMode(r.login_mode || "admin_only");
+      setMobileMaintenance(Boolean(r.mobile_maintenance));
+      setMobileMessage(r.mobile_maintenance_message || '手機版目前正在優化中，建議使用桌面版瀏覽器獲得完整體驗。');
       try {
         const cr = await ContentRulesAPI.get()
         if (typeof cr.enforce_min_post_chars === 'boolean') setEnforceMinChars(cr.enforce_min_post_chars)
@@ -121,6 +126,7 @@ export default function ModePage() {
       const applied = (r as any)?.config?.login_mode || next;
       setLoginMode(applied);
       showMessage(`登入模式已更新為：${applied === "single" ? "單一模式" : applied === "admin_only" ? "管理組模式" : "全開模式"}`, "success");
+      try { window.dispatchEvent(new Event('fk_mode_updated')) } catch {}
     } catch (e: any) {
       console.error("Login mode save error:", e);
       let errorMsg = "保存失敗";
@@ -167,6 +173,7 @@ export default function ModePage() {
       showMessage(`已切換至${MODE_CONFIGS[newMode].name}`, "success");
       // 重新載入模式以獲取最新設定
       setTimeout(loadCurrentMode, 500);
+      try { window.dispatchEvent(new Event('fk_mode_updated')) } catch {}
     } catch (e: any) {
       console.error("Mode switch error:", e);
       let errorMsg = "切換失敗";
@@ -396,6 +403,44 @@ export default function ModePage() {
                 允許所有用戶登入和註冊
               </p>
             </button>
+          </div>
+        </div>
+
+        {/* 手機版維護設定 */}
+        <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <CloudOff className="w-5 h-5 text-fg" />
+            <h3 className="font-semibold text-fg">手機版維護設定</h3>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-surface-hover rounded-xl border border-border mb-3">
+            <div>
+              <div className="font-medium text-fg">啟用手機版維護頁</div>
+              <div className="text-sm text-muted">行動裝置進站時顯示臨時頁，建議改用電腦瀏覽</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={mobileMaintenance} onChange={e=>setMobileMaintenance(e.target.checked)} />
+              <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted mb-1">維護訊息（選填）</label>
+            <input className="form-control" value={mobileMessage} onChange={e=>setMobileMessage(e.target.value)} placeholder="手機版目前正在優化中，建議使用桌面版瀏覽器獲得完整體驗。" />
+            <div className="text-xs text-muted mt-1">留空將使用預設訊息</div>
+          </div>
+          <div className="flex justify-end mt-4">
+            <button
+              onClick={async()=>{
+                try{
+                  setLoading(true)
+                  await ModeAPI.set(undefined, undefined, undefined, undefined, { mobile_maintenance: mobileMaintenance, mobile_maintenance_message: mobileMessage })
+                  showMessage('手機版維護設定已更新', 'success')
+                  try { window.dispatchEvent(new Event('fk_mode_updated')) } catch {}
+                }catch(e:any){
+                  showMessage(e?.message || '更新失敗','error')
+                }finally{ setLoading(false) }
+              }}
+              className="btn-primary px-4 py-2"
+            >儲存</button>
           </div>
         </div>
 

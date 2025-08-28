@@ -135,6 +135,17 @@ def block_ip(ip: str | None = None) -> None:
     ip = ip or get_client_ip()
     ttl = int(os.getenv('IP_BLOCK_TTL_SECONDS', '86400'))  # 預設封鎖 1 天
     key = _ip_key(ip, 'blocked')
+    # 事件紀錄：IP 被封鎖
+    try:
+        from utils.admin_events import log_security_event
+        log_security_event(
+            event_type="ip_blocked",
+            description=f"IP {ip} 因違規或頻繁登入被封鎖 {ttl} 秒。",
+            severity="high",
+            metadata={"ip": ip, "ttl": ttl}
+        )
+    except Exception as e:
+        print(f"[admin_events] log_security_event failed: {e}")
     if _redis_ok and _redis is not None:
         _redis.setex(key, ttl, '1')
     else:

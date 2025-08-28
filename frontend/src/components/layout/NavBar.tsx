@@ -1,6 +1,6 @@
 import { Home, Newspaper, Info, ScrollText, LogIn, Settings, LayoutDashboard, MessageSquareDot, LogOut, AlertTriangle, Activity, HelpCircle } from 'lucide-react'
 import { ThemeToggle } from '../ui/ThemeToggle'
-import SchoolSwitcher from '@/components/SchoolSwitcher'
+import NotificationButton from '../notifications/NotificationButton'
 import { Link } from 'react-router-dom'
 import { 
   getRole, 
@@ -111,9 +111,8 @@ export function NavBar({ pathname }: { pathname: string }) {
             
             {/* 右側功能區塊 */}
             <li className="pl-4 ml-4 border-l border-border flex items-center gap-3">
-              <SchoolSwitcher />
-              <div className="w-px h-6 bg-border"></div>
               <ThemeToggle />
+              {isLoggedIn && <NotificationButton size="md" />}
               {isLoggedIn && (
                 <button
                   onClick={logout}

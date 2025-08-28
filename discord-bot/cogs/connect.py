@@ -25,7 +25,7 @@ class ConnectCog(commands.Cog):
     def __init__(self, bot: commands.Bot, *, api_base: str | None = None, redis_url: str | None = None):
         self.bot = bot
         self.api_base = (api_base or os.getenv('FORUMKIT_API_URL', 'http://localhost:12005/api')).rstrip('/')
-        self.redis_url = redis_url or os.getenv('REDIS_URL', 'redis://redis:80/0')
+        self.redis_url = redis_url or os.getenv('REDIS_URL', f"redis://localhost:{os.getenv('REDIS_PORT','12008')}/0")
         self._redis = None
         self._http: aiohttp.ClientSession | None = None
         self._loop = self._feed_loop
@@ -159,4 +159,3 @@ class ConnectCog(commands.Cog):
     @_feed_loop.before_loop
     async def _ready(self):
         await self.bot.wait_until_ready()
-

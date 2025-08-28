@@ -8,7 +8,7 @@ from utils.authz import require_role
 from utils.fsops import ensure_within, UPLOAD_ROOT
 from utils.upload_utils import publish_media_by_id, infer_ext_from_mime
 from utils.school_permissions import can_moderate_content
-from utils.admin_events import log_content_moderation
+from services.event_service import EventService
 import mimetypes
 from pathlib import Path
 import os
@@ -185,6 +185,44 @@ def write_log(
         # 讓呼叫端照常提交主要交易
         pass
 
+def upsert_log_by_replacing_last(
+    s: Session,
+    ttype: str,
+    tid: int,
+    act: str,
+    old: str | None,
+    new: str,
+    reason: str | None,
+    mid: int,
+):
+    """更新最後一筆相同目標的審核紀錄；若不存在則新建。
+    - 用於否決（override）情境，避免產生衝突的雙重紀錄。
+    - act 以最終動作為主（'approve' 或 'reject'），不使用 'override_*'。
+    """
+    try:
+        last = (
+            s.query(ModerationLog)
+             .filter(ModerationLog.target_type == ttype, ModerationLog.target_id == tid)
+             .order_by(ModerationLog.id.desc())
+             .first()
+        )
+        if last is not None:
+            # 僅更新可變欄位，保留最初 old_status 與 created_at
+            try:
+                last.action = act
+                last.new_status = new
+                last.reason = reason
+                last.moderator_id = mid
+                s.add(last)
+                return
+            except Exception:
+                pass
+        # 找不到舊紀錄時，退回新增一筆
+        write_log(s, ttype, tid, act, old, new, reason, mid)
+    except Exception:
+        # 降級策略：任何查詢/更新異常時，至少寫一筆新紀錄
+        write_log(s, ttype, tid, act, old, new, reason, mid)
+
 
 def _get_signed_media_url(mid: int) -> str | None:
     """生成媒體的簽名預覽URL"""
@@ -230,6 +268,62 @@ def _verify(mid: int, exp: int, sig: str, secret: str) -> bool:
             return hmac.compare_digest(expected, sig)
     except Exception:
         return False
+
+
+@bp.get("/progress")
+@jwt_required(optional=True)
+def my_moderation_progress():
+    """回傳目前使用者的貼文審核進度列表（與審核清單/貼文標示一致）。
+    響應格式對齊 /api/moderation/queue：
+      { ok, data: { items: [...], pagination: {...} } }
+    item 欄位：id, status, rejected_reason, created_at, excerpt, school, school_name, is_cross
+    支援參數：mine=1（預設僅看本人），limit（預設20，最多50）
+    """
+    mine = (request.args.get("mine") or "1").strip().lower() in {"1", "true", "yes", "on"}
+    limit = min(max(int(request.args.get("limit") or 20), 1), 50)
+    uid = get_jwt_identity()
+    if mine and uid is None:
+        # 未登入情境回傳空清單，避免 404/401 造成前端報錯
+        return jsonify({"ok": True, "data": {"items": [], "pagination": {"page": 1, "per_page": limit, "total": 0, "has_next": False}}})
+    try:
+        with get_session() as s:
+            q = s.query(Post).order_by(Post.id.desc())
+            if mine and uid is not None:
+                q = q.filter(Post.author_id == int(uid))
+            rows = q.limit(limit).all()
+            items = []
+            for p in rows:
+                # 學校資訊（對齊貼文清單的欄位）
+                school_obj = None
+                school_name = None
+                try:
+                    if getattr(p, 'school_id', None):
+                        sch = s.query(School).get(int(p.school_id))
+                        if sch:
+                            school_obj = {"id": sch.id, "slug": sch.slug, "name": sch.name}
+                            school_name = sch.name
+                except Exception:
+                    pass
+                items.append({
+                    "id": p.id,
+                    "status": p.status,
+                    "rejected_reason": p.rejected_reason,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "excerpt": (p.content or "")[:120],
+                    "school": school_obj,
+                    "school_name": school_name,
+                    "is_cross": not bool(getattr(p, 'school_id', None)),
+                })
+            return jsonify({
+                "ok": True,
+                "data": {
+                    "items": items,
+                    "pagination": {"page": 1, "per_page": limit, "total": len(items), "has_next": False},
+                },
+            })
+    except Exception as e:
+        # 降級：任何錯誤時回空清單以穩定 UI
+        return jsonify({"ok": True, "data": {"items": [], "pagination": {"page": 1, "per_page": limit, "total": 0, "has_next": False}}})
 
 
 @bp.get("/queue")
@@ -306,6 +400,9 @@ def get_moderation_queue():
                 media_query.order_by(Media.id.desc()).offset(media_offset).limit(per_page).all()
             )
 
+            # 是否允許顯示敏感資訊（作者真名、client_id、IP）
+            show_sensitive = (user.role == 'dev_admin')
+
             # 處理貼文數據
             posts_data = []
             for post in posts:
@@ -316,16 +413,12 @@ def get_moderation_queue():
                     if school:
                         school_name = school.name
 
-                # 獲取作者資訊
+                # 獲取作者資訊（僅 dev_admin 看到細節）
                 author_info = None
-                if post.author_id:
+                if show_sensitive and post.author_id:
                     author = s.query(User).filter(User.id == post.author_id).first()
                     if author:
-                        author_info = {
-                            "id": author.id,
-                            "username": author.username,
-                            "school_name": school_name,
-                        }
+                        author_info = {"id": int(author.id), "username": author.username, "school_name": school_name}
 
                 # 獲取貼文的媒體附件
                 post_media = []
@@ -353,11 +446,10 @@ def get_moderation_queue():
                         "excerpt": _markdown_to_html((post.content or "")[:200]),
                         "status": post.status,
                         "created_at": post.created_at.isoformat() if post.created_at else None,
-                        "author": author_info["username"] if author_info else "匿名",
-                        "author_id": author_info["id"] if author_info else None,
+                        "author": author_info if author_info else None,
                         "school_name": school_name,
-                        "client_id": post.client_id,
-                        "ip": post.ip,
+                        "client_id": (post.client_id if show_sensitive else None),
+                        "ip": (post.ip if show_sensitive else None),
                         "comment_count": s.query(func.count())
                         .select_from(Comment)
                         .filter(Comment.post_id == post.id)
@@ -383,16 +475,12 @@ def get_moderation_queue():
                     if school:
                         school_name = school.name
 
-                # 獲取作者資訊
+                # 獲取作者資訊（僅 dev_admin 看到細節）
                 author_info = None
-                if media_item.author_id:
+                if show_sensitive and media_item.author_id:
                     author = s.query(User).filter(User.id == media_item.author_id).first()
                     if author:
-                        author_info = {
-                            "id": author.id,
-                            "username": author.username,
-                            "school_name": school_name,
-                        }
+                        author_info = {"id": int(author.id), "username": author.username, "school_name": school_name}
 
                 # 生成預覽URL
                 preview_url = _get_signed_media_url(media_item.id)
@@ -410,11 +498,10 @@ def get_moderation_queue():
                         "created_at": media_item.created_at.isoformat()
                         if media_item.created_at
                         else None,
-                        "author": author_info["username"] if author_info else "匿名",
-                        "author_id": author_info["id"] if author_info else None,
+                        "author": author_info if author_info else None,
                         "school_name": school_name,
-                        "client_id": media_item.client_id,
-                        "ip": media_item.ip,
+                        "client_id": (media_item.client_id if show_sensitive else None),
+                        "ip": (media_item.ip if show_sensitive else None),
                         "path": media_item.path,
                         "preview_url": preview_url,
                     }
@@ -535,7 +622,7 @@ def get_post_detail(post_id: int):
 
 @bp.post("/approve")
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin", "campus_admin", "cross_admin", "campus_moderator", "cross_moderator")
 def approve_content():
     """核准內容"""
     try:
@@ -576,6 +663,10 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
     if not can_moderate_content(user, post.school_id):
         return jsonify({"ok": False, "error": "沒有權限核准此貼文"}), 403
 
+    # Idempotent：已核准則略過，避免重複寫日誌
+    if (post.status or '').lower() == MODERATION_STATUS["APPROVED"]:
+        return jsonify({"ok": True, "message": "貼文已是核准狀態，略過"})
+
     old_status = post.status
     post.status = MODERATION_STATUS["APPROVED"]
     post.rejected_reason = None
@@ -612,9 +703,8 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
     # 發送SocketIO事件
     try:
         from app import socketio
-
-        socketio.emit("post.approved", {"id": post_id})
-    except ImportError:
+        socketio.emit("post.approved", {"id": post_id, "status": "approved"})
+    except Exception:
         pass
 
     return jsonify({"ok": True, "message": "貼文核准成功"})
@@ -630,6 +720,10 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, media_item.school_id):
         return jsonify({"ok": False, "error": "沒有權限核准此媒體"}), 403
+
+    # Idempotent：已核准則略過
+    if (media_item.status or '').lower() == MODERATION_STATUS["APPROVED"]:
+        return jsonify({"ok": True, "message": "媒體已是核准狀態，略過"})
 
     old_status = media_item.status
     try:
@@ -660,7 +754,7 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
 
 @bp.post("/reject")
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin", "campus_admin", "cross_admin", "campus_moderator", "cross_moderator")
 def reject_content():
     """拒絕內容"""
     try:
@@ -707,6 +801,10 @@ def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
     if not can_moderate_content(user, post.school_id):
         return jsonify({"ok": False, "error": "沒有權限拒絕此貼文"}), 403
 
+    # Idempotent：已拒絕則略過
+    if (post.status or '').lower() == MODERATION_STATUS["REJECTED"]:
+        return jsonify({"ok": True, "message": "貼文已是拒絕狀態，略過"})
+
     old_status = post.status
     post.status = MODERATION_STATUS["REJECTED"]
     post.rejected_reason = reason
@@ -734,15 +832,21 @@ def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
     )
     try:
         u = s.query(User).get(user_id)
-        log_content_moderation(
-            event_type="post_rejected",
-            moderator_id=int(user_id),
-            moderator_name=(u.username if u else 'unknown'),
-            content_type="post",
-            content_id=int(post_id),
-            action="拒絕",
-            reason=reason,
+        EventService.log_event(
             session=s,
+            event_type="post.rejected",
+            title="管理員拒絕貼文",
+            description=f"管理員 {u.username if u else 'unknown'} 拒絕了貼文 #{post_id}" + (f"，原因：{reason}" if reason else ""),
+            severity="medium",
+            actor_id=int(user_id),
+            actor_name=u.username if u else 'unknown',
+            actor_role=u.role if u else None,
+            target_type="post",
+            target_id=int(post_id),
+            school_id=u.school_id if u else None,
+            metadata={"reason": reason, "old_status": old_status, "new_status": post.status},
+            is_important=False,
+            send_webhook=True
         )
     except Exception:
         pass
@@ -751,9 +855,8 @@ def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
     # 發送SocketIO事件
     try:
         from app import socketio
-
-        socketio.emit("post.rejected", {"id": post_id})
-    except ImportError:
+        socketio.emit("post.rejected", {"id": post_id, "status": "rejected", "reason": reason})
+    except Exception:
         pass
 
     return jsonify({"ok": True, "message": "貼文拒絕成功"})
@@ -772,6 +875,10 @@ def _reject_media(s: Session, media_id: int, user_id: int, reason: str):
     if not can_moderate_content(user, media_item.school_id):
         return jsonify({"ok": False, "error": "沒有權限拒絕此媒體"}), 403
 
+    # Idempotent：已拒絕則略過
+    if (media_item.status or '').lower() == MODERATION_STATUS["REJECTED"]:
+        return jsonify({"ok": True, "message": "媒體已是拒絕狀態，略過"})
+
     old_status = media_item.status
     media_item.status = MODERATION_STATUS["REJECTED"]
     media_item.rejected_reason = reason
@@ -781,15 +888,21 @@ def _reject_media(s: Session, media_id: int, user_id: int, reason: str):
     )
     try:
         u = s.query(User).get(user_id)
-        log_content_moderation(
-            event_type="media_rejected",
-            moderator_id=int(user_id),
-            moderator_name=(u.username if u else 'unknown'),
-            content_type="media",
-            content_id=int(media_id),
-            action="拒絕",
-            reason=reason,
+        EventService.log_event(
             session=s,
+            event_type="media.rejected",
+            title="管理員拒絕媒體",
+            description=f"管理員 {u.username if u else 'unknown'} 拒絕了媒體 #{media_id}" + (f"，原因：{reason}" if reason else ""),
+            severity="medium",
+            actor_id=int(user_id),
+            actor_name=u.username if u else 'unknown',
+            actor_role=u.role if u else None,
+            target_type="media",
+            target_id=int(media_id),
+            school_id=u.school_id if u else None,
+            metadata={"reason": reason, "old_status": old_status, "new_status": media_item.status},
+            is_important=False,
+            send_webhook=True
         )
     except Exception:
         pass
@@ -893,6 +1006,10 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
         pass
 
     old_status = post.status
+    target_status = MODERATION_STATUS["APPROVED"] if action == "approve" else MODERATION_STATUS["REJECTED"]
+    # 若狀態本已一致，視為無變更（避免重複否決/寫日誌）
+    if (old_status or '').lower() == target_status:
+        return jsonify({"ok": True, "message": "狀態未變更，略過"})
     
     if action == "approve":
         post.status = MODERATION_STATUS["APPROVED"]
@@ -911,11 +1028,11 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
                     pass
                 media_item.status = MODERATION_STATUS["APPROVED"]
                 media_item.rejected_reason = None
-                write_log(
+                upsert_log_by_replacing_last(
                     s,
                     MODERATION_TYPE["MEDIA"],
                     media_item.id,
-                    "override_approve",
+                    "approve",
                     old_media_status,
                     media_item.status,
                     f"否決核准: {reason}",
@@ -923,14 +1040,21 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
                 )
         try:
             u2 = s.query(User).get(user_id)
-            log_content_moderation(
-                event_type="post_approved",
-                moderator_id=int(user_id),
-                moderator_name=(u2.username if u2 else 'unknown'),
-                content_type="post",
-                content_id=int(post_id),
-                action="核准",
+            EventService.log_event(
                 session=s,
+                event_type="post.approved",
+                title="管理員核准貼文",
+                description=f"管理員 {u2.username if u2 else 'unknown'} 核准了貼文 #{post_id}",
+                severity="low",
+                actor_id=int(user_id),
+                actor_name=u2.username if u2 else 'unknown',
+                actor_role=u2.role if u2 else None,
+                target_type="post",
+                target_id=int(post_id),
+                school_id=u2.school_id if u2 else None,
+                metadata={"old_status": old_status, "new_status": post.status},
+                is_important=False,
+                send_webhook=True
             )
         except Exception:
             pass
@@ -945,26 +1069,26 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
                 old_media_status = media_item.status
                 media_item.status = MODERATION_STATUS["REJECTED"]
                 media_item.rejected_reason = reason
-                write_log(
+                upsert_log_by_replacing_last(
                     s,
                     MODERATION_TYPE["MEDIA"],
                     media_item.id,
-                    "override_reject",
+                    "reject",
                     old_media_status,
                     media_item.status,
                     f"否決拒絕: {reason}",
                     user_id,
                 )
 
-    write_log(
-        s, 
-        MODERATION_TYPE["POST"], 
-        post_id, 
-        f"override_{action}", 
-        old_status, 
-        post.status, 
-        f"否決{'核准' if action == 'approve' else '拒絕'}: {reason}", 
-        user_id
+    upsert_log_by_replacing_last(
+        s,
+        MODERATION_TYPE["POST"],
+        post_id,
+        ("approve" if action == "approve" else "reject"),
+        old_status,
+        post.status,
+        f"否決{'核准' if action == 'approve' else '拒絕'}: {reason}",
+        user_id,
     )
     s.commit()
 
@@ -972,10 +1096,10 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
     try:
         from app import socketio
         if action == "approve":
-            socketio.emit("post.approved", {"id": post_id})
+            socketio.emit("post.approved", {"id": post_id, "status": "approved"})
         else:
-            socketio.emit("post.rejected", {"id": post_id})
-    except ImportError:
+            socketio.emit("post.rejected", {"id": post_id, "status": "rejected", "reason": reason})
+    except Exception:
         pass
 
     return jsonify({"ok": True, "message": f"貼文否決{'核准' if action == 'approve' else '拒絕'}成功"})
@@ -1013,6 +1137,9 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
         pass
 
     old_status = media_item.status
+    target_status = MODERATION_STATUS["APPROVED"] if action == "approve" else MODERATION_STATUS["REJECTED"]
+    if (old_status or '').lower() == target_status:
+        return jsonify({"ok": True, "message": "狀態未變更，略過"})
     
     if action == "approve":
         try:
@@ -1025,14 +1152,21 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
         media_item.rejected_reason = None
         try:
             u4 = s.query(User).get(user_id)
-            log_content_moderation(
-                event_type="media_approved",
-                moderator_id=int(user_id),
-                moderator_name=(u4.username if u4 else 'unknown'),
-                content_type="media",
-                content_id=int(media_id),
-                action="核准",
+            EventService.log_event(
                 session=s,
+                event_type="media.approved",
+                title="管理員核准媒體",
+                description=f"管理員 {u4.username if u4 else 'unknown'} 核准了媒體 #{media_id}",
+                severity="low",
+                actor_id=int(user_id),
+                actor_name=u4.username if u4 else 'unknown',
+                actor_role=u4.role if u4 else None,
+                target_type="media",
+                target_id=int(media_id),
+                school_id=u4.school_id if u4 else None,
+                metadata={"old_status": old_status, "new_status": media_item.status},
+                is_important=False,
+                send_webhook=True
             )
         except Exception:
             pass
@@ -1040,15 +1174,15 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
         media_item.status = MODERATION_STATUS["REJECTED"]
         media_item.rejected_reason = reason
 
-    write_log(
-        s, 
-        MODERATION_TYPE["MEDIA"], 
-        media_id, 
-        f"override_{action}", 
-        old_status, 
-        media_item.status, 
-        f"否決{'核准' if action == 'approve' else '拒絕'}: {reason}", 
-        user_id
+    upsert_log_by_replacing_last(
+        s,
+        MODERATION_TYPE["MEDIA"],
+        media_id,
+        ("approve" if action == "approve" else "reject"),
+        old_status,
+        media_item.status,
+        f"否決{'核准' if action == 'approve' else '拒絕'}: {reason}",
+        user_id,
     )
     s.commit()
 
@@ -1065,9 +1199,27 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
     return jsonify({"ok": True, "message": f"媒體否決{'核准' if action == 'approve' else '拒絕'}成功"})
 
 
+def _zh_action(action: str) -> str:
+    m = {
+        'approve': '核准',
+        'reject': '拒絕',
+        'override_approve': '否決-核准',
+        'override_reject': '否決-拒絕',
+    }
+    return m.get((action or '').lower(), action or '')
+
+def _zh_status(status: str | None) -> str:
+    m = {
+        'pending': '待審',
+        'approved': '已核准',
+        'rejected': '已拒絕',
+    }
+    key = (status or '').lower()
+    return m.get(key, status or '')
+
 @bp.get("/logs")
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin", "campus_admin", "cross_admin", "campus_moderator", "cross_moderator")
 def get_moderation_logs():
     """獲取審核日誌"""
     try:
@@ -1078,6 +1230,11 @@ def get_moderation_logs():
         moderator_id = request.args.get("moderator_id", type=int)
 
         with get_session() as s:
+            # 檢查權限 - 是否為 dev_admin
+            user_id = get_jwt_identity()
+            user = s.query(User).get(user_id)
+            show_sensitive = (user and user.role == 'dev_admin')
+            
             query = s.query(ModerationLog)
 
             # 篩選條件
@@ -1100,7 +1257,7 @@ def get_moderation_logs():
                 .all()
             )
 
-            # 處理日誌數據
+            # 處理日誌數據（僅 dev_admin 可見，以避免個資外流）
             logs_data = []
             for log in logs:
                 # 獲取審核者資訊
@@ -1109,20 +1266,79 @@ def get_moderation_logs():
                 if moderator:
                     moderator_info = {"id": moderator.id, "username": moderator.username}
 
+                # 來源：嘗試讀取目標之 school 以顯示「跨校/某校」
+                source = None
+                try:
+                    if log.target_type == MODERATION_TYPE["POST"]:
+                        p = s.query(Post).get(int(log.target_id)) if log.target_id else None
+                        if p and getattr(p, 'school_id', None):
+                            sch = s.query(School).get(p.school_id)
+                            source = sch.name if sch else None
+                        else:
+                            source = '跨校'
+                    elif log.target_type == MODERATION_TYPE["MEDIA"]:
+                        m = s.query(Media).get(int(log.target_id)) if log.target_id else None
+                        sch_id = getattr(m, 'school_id', None)
+                        if sch_id:
+                            sch = s.query(School).get(sch_id)
+                            source = sch.name if sch else None
+                        else:
+                            # 若媒體未綁 school，嘗試從所屬貼文帶出
+                            if m and getattr(m, 'post_id', None):
+                                p2 = s.query(Post).get(m.post_id)
+                                if p2 and getattr(p2, 'school_id', None):
+                                    sch = s.query(School).get(p2.school_id)
+                                    source = sch.name if sch else None
+                                else:
+                                    source = '跨校'
+                            else:
+                                source = '跨校'
+                except Exception:
+                    source = None
+
+                # 獲取原作者資訊（顯示誰的請求但控制 IP 顯示）
+                author_info = None
+                author_ip = None
+                try:
+                    if log.target_type == MODERATION_TYPE["POST"]:
+                        p = s.query(Post).get(int(log.target_id)) if log.target_id else None
+                        if p:
+                            if p.author_id:
+                                author = s.query(User).filter(User.id == p.author_id).first()
+                                if author:
+                                    author_info = {"id": author.id, "username": author.username}
+                            author_ip = p.ip if show_sensitive else None
+                    elif log.target_type == MODERATION_TYPE["MEDIA"]:
+                        m = s.query(Media).get(int(log.target_id)) if log.target_id else None
+                        if m:
+                            if m.author_id:
+                                author = s.query(User).filter(User.id == m.author_id).first()
+                                if author:
+                                    author_info = {"id": author.id, "username": author.username}
+                            author_ip = m.ip if show_sensitive else None
+                except Exception:
+                    pass
+
                 logs_data.append(
                     {
                         "id": log.id,
                         "target_type": log.target_type,
                         "target_id": log.target_id,
                         "action": log.action,
+                        "action_display": _zh_action(log.action),
                         "old_status": log.old_status,
                         "new_status": log.new_status,
+                        "old_status_display": _zh_status(log.old_status),
+                        "new_status_display": _zh_status(log.new_status),
                         "reason": log.reason,
                         "moderator": moderator_info["username"]
                         if moderator_info
                         else f"ID: {log.moderator_id}",
                         "moderator_id": log.moderator_id,
                         "created_at": log.created_at.isoformat() if log.created_at else None,
+                        "source": source or None,
+                        "author": author_info,
+                        "author_ip": author_ip,
                     }
                 )
 

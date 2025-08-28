@@ -18,6 +18,7 @@ import { getRole, getRoleDisplayName } from '@/utils/auth'
 interface Comment {
   id: number
   content: string
+  author_id: number
   author_label: string
   created_at: string
   stats: {
@@ -39,6 +40,8 @@ interface CommentSectionProps {
   postId: number
   initialReactionStats?: PostReactionStats
   userPostReaction?: string | null
+  initialTotal?: number
+  extraActions?: React.ReactNode
 }
 
 const REACTION_ICONS = {
@@ -62,7 +65,9 @@ const REACTION_LABELS = {
 export default function CommentSection({ 
   postId, 
   initialReactionStats = {}, 
-  userPostReaction = null
+  userPostReaction = null,
+  initialTotal = 0,
+  extraActions
 }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
@@ -71,7 +76,7 @@ export default function CommentSection({
   const [showComments, setShowComments] = useState(false)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
-  const [total, setTotal] = useState(0)
+  const [total, setTotal] = useState(initialTotal || 0)
   const [error, setError] = useState<string | null>(null)
   const [deleteRequesting, setDeleteRequesting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -85,7 +90,14 @@ export default function CommentSection({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const role = getRole()
   const isLoggedIn = !!localStorage.getItem('token') && role !== 'guest'
-  const canDelete = role === 'dev_admin' || role === 'campus_admin' || role === 'cross_admin'
+  const currentUserId = localStorage.getItem('token') ? (() => {
+    try {
+      const payload = JSON.parse(atob(localStorage.getItem('token')!.split('.')[1]))
+      return parseInt(payload.sub || payload.user_id)
+    } catch {
+      return null
+    }
+  })() : null
 
   // 載入留言
   const loadComments = async (pageNum: number = 1, append: boolean = false) => {
@@ -394,8 +406,8 @@ export default function CommentSection({
         
         {/* 右側按鈕群 */}
         <div className="flex items-center gap-2">
-          {/* 刪文請求按鈕 */}
-          {canDelete && (
+          {/* 刪文請求按鈕 - 所有用戶都可以申請 */}
+          {isLoggedIn && (
             <button
               onClick={() => setShowDeleteDialog(true)}
               disabled={deleteRequesting}
@@ -405,6 +417,7 @@ export default function CommentSection({
               {deleteRequesting ? '處理中...' : '刪文請求'}
             </button>
           )}
+          {extraActions}
       {/* 刪文理由輸入 Dialog */}
       {showDeleteDialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -541,8 +554,9 @@ export default function CommentSection({
                       </span>
                     </div>
                     
-                    {/* 刪除按鈕 */}
-                    {canDelete && (
+                    {/* 刪除按鈕 - 作者本人或管理員可刪除 */}
+                    {(currentUserId === comment.author_id || 
+                      ['dev_admin', 'campus_admin', 'cross_admin'].includes(role)) && (
                       <button
                         onClick={() => deleteComment(comment.id)}
                         className="p-1 text-muted hover:text-red-600 transition-colors"

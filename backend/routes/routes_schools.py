@@ -1,64 +1,114 @@
 from flask import Blueprint, jsonify, request
 from sqlalchemy.orm import Session
 from utils.db import get_session
-from models import School, User, Post, Media, SchoolSetting
+from models import School, User, Post, Media, SchoolSetting, Comment
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.authz import require_role
 from PIL import Image
 import os
-from utils.admin_events import log_system_event
+from services.event_service import EventService
 import json
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import func
+from utils.oauth_google import derive_school_slug_from_domain, check_school_domain  # noqa: F401  # 可能未用到
 
 bp = Blueprint("schools", __name__, url_prefix="/api/schools")
+
+
+def _log_unauthorized(actor: User | None, action: str, slug_or_id: str | int | None = None):
+    try:
+        name = getattr(actor, 'username', None) or 'unknown'
+        role = getattr(actor, 'role', None) or 'guest'
+        desc = (
+            f"actor={name} role={role} path={request.path} method={request.method} "
+            f"action={action} target={slug_or_id}"
+        )
+        from utils.db import get_session
+        with get_session() as s:
+            EventService.log_event(
+                session=s,
+                event_type='security.suspicious_activity',
+                title='未授權學校管理嘗試',
+                description=desc,
+                severity='high',
+                actor_id=actor.id if actor else None,
+                actor_name=name,
+                actor_role=role if role != 'guest' else None,
+                target_type="school",
+                target_id=slug_or_id if isinstance(slug_or_id, int) else None,
+                metadata={
+                    'ip': request.headers.get('X-Forwarded-For') or request.remote_addr,
+                    'user_agent': request.headers.get('User-Agent'),
+                    'target_slug': slug_or_id if isinstance(slug_or_id, str) else None
+                },
+                is_important=True,
+                send_webhook=True
+            )
+    except Exception:
+        pass
+
+
 @bp.get("/<string:slug>/settings")
 @jwt_required(optional=True)
 def get_school_settings(slug: str):
-    """取得某校設定。未登入允許讀取（僅公開內容），但目前返回整包 JSON，前端自行控制。
-    權限：
-      - dev_admin 可讀任一學校
-      - campus_admin/campus_moderator 僅讀自己學校
-      - 其他角色允許讀取（唯讀）
-    """
+    """取得某校設定。未登入允許讀取（僅公開內容），但目前返回整包 JSON，前端自行控制。"""
     with get_session() as s:  # type: Session
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
         row = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
         return jsonify({
-            'school': { 'id': sch.id, 'slug': sch.slug, 'name': sch.name },
+            'school': {'id': sch.id, 'slug': sch.slug, 'name': sch.name},
             'data': (row.data if row else '{}')
         })
 
 
 @bp.put("/<string:slug>/settings")
 @jwt_required()
-@require_role("dev_admin", "campus_admin")
+@require_role("dev_admin")
 def update_school_settings(slug: str):
     """更新某校設定。校內管理員僅能更新自己學校；dev_admin 無限制。"""
     data = request.get_json(silent=True) or {}
-    import json
     try:
-        # 僅允許 JSON 物件
+        # 僅允許 JSON 物件或 JSON 字串
         if isinstance(data, str):
             json.loads(data)  # 驗證字串是有效 JSON
             payload = data
         else:
             payload = json.dumps(data, ensure_ascii=False)
     except Exception:
-        return jsonify({ 'msg': '無效的JSON' }), 400
+        return jsonify({'msg': '無效的JSON'}), 400
 
-    from flask_jwt_extended import get_jwt_identity
     with get_session() as s:  # type: Session
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
-        # 權限：campus_admin 必須同校
+            return jsonify({'msg': 'not found'}), 404
+
+        # 權限：campus_moderator 必須同校；dev_admin 無限制
         uid = get_jwt_identity()
-        actor = s.query(User).get(uid) if uid else None
-        if actor and actor.role == 'campus_admin':
-            if not actor.school_id or actor.school_id != sch.id:
+        actor = s.get(User, int(uid)) if uid else None
+        
+        # 詳細除錯資訊
+        debug_info = {
+            'user_id': actor.id if actor else None,
+            'user_role': actor.role if actor else None,
+            'user_school_id': actor.school_id if actor else None,
+            'target_school_id': sch.id,
+            'target_slug': slug,
+            'jwt_identity': uid
+        }
+        print(f"[DEBUG] 學校設定更新權限檢查: {debug_info}")
+        
+        if actor and actor.role == 'campus_moderator':
+            if not actor.school_id or int(actor.school_id) != int(sch.id):
+                debug_msg = f"權限檢查失敗: user_id={actor.id}, user_school_id={actor.school_id}, target_school_id={sch.id}, slug={slug}"
+                print(f"[DEBUG] {debug_msg}")  # 伺服器日誌
                 _log_unauthorized(actor, 'update_school_settings', slug)
-                return jsonify({ 'msg': '無權限：僅能更新自己學校設定' }), 403
+                return jsonify({
+                    'msg': '無權限：僅能更新自己學校設定',
+                    'debug': debug_info  # 返回詳細除錯資訊
+                }), 403
+
         row = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
         if not row:
             row = SchoolSetting(school_id=sch.id, data=payload)
@@ -66,23 +116,35 @@ def update_school_settings(slug: str):
         else:
             row.data = payload
         s.commit()
+
+        # 紀錄系統事件（best-effort）
         try:
-            uid = get_jwt_identity()
-            actor = None
+            actor_user = None
+            actor_name = None
             if uid:
-                from models import User
-                u = s.get(User, int(uid))
-                actor = u.username if u else None
-            log_system_event(
-                event_type='system_settings_changed',
+                actor_user = s.get(User, int(uid))
+                actor_name = actor_user.username if actor_user else None
+            
+            EventService.log_event(
+                session=s,
+                event_type='school.settings_changed',
                 title='學校設定變更',
-                description=f'slug={slug}',
+                description=f'學校 {slug} 的設定已被更新' + (f' (by {actor_name})' if actor_name else ''),
                 severity='medium',
-                metadata={'actor': actor} if actor else None,
+                actor_id=int(uid) if uid else None,
+                actor_name=actor_name,
+                actor_role=actor_user.role if actor_user else None,
+                target_type="school",
+                target_id=sch.id,
+                school_id=sch.id,
+                metadata={'school_slug': slug, 'settings_data': payload},
+                is_important=False,
+                send_webhook=True
             )
         except Exception:
             pass
-        return jsonify({ 'ok': True })
+
+        return jsonify({'ok': True})
 
 
 @bp.get("")
@@ -101,15 +163,17 @@ def create_school():
     slug = (data.get('slug') or '').strip().lower()
     name = (data.get('name') or '').strip() or slug
     if not slug:
-        return jsonify({ 'msg': '缺少 slug' }), 400
+        return jsonify({'msg': '缺少 slug'}), 400
     if not all(ch.isalnum() or ch in '-_' for ch in slug):
-        return jsonify({ 'msg': 'slug 僅能包含英數與 - _' }), 400
+        return jsonify({'msg': 'slug 僅能包含英數與 - _'}), 400
     with get_session() as s:  # type: Session
-        if s.query(School).filter(School.slug==slug).first():
-            return jsonify({ 'msg': 'slug 已存在' }), 409
+        if s.query(School).filter(School.slug == slug).first():
+            return jsonify({'msg': 'slug 已存在'}), 409
         sch = School(slug=slug, name=name or slug)
-        s.add(sch); s.commit(); s.refresh(sch)
-        return jsonify({ 'ok': True, 'item': { 'id': sch.id, 'slug': sch.slug, 'name': sch.name } })
+        s.add(sch)
+        s.commit()
+        s.refresh(sch)
+        return jsonify({'ok': True, 'item': {'id': sch.id, 'slug': sch.slug, 'name': sch.name}})
 
 
 @bp.patch("/<int:sid>")
@@ -119,33 +183,37 @@ def update_school(sid: int):
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
     new_slug = (data.get('slug') or '').strip().lower()
+
     # slug 驗證（若要更新）
     if new_slug:
         if not all(ch.isalnum() or ch in '-_' for ch in new_slug):
-            return jsonify({ 'msg': 'slug 僅能包含英數與 - _' }), 400
+            return jsonify({'msg': 'slug 僅能包含英數與 - _'}), 400
+
     with get_session() as s:  # type: Session
         sch = s.get(School, sid)
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
-        # 權限：campus_admin 僅能修改自己學校
-        from flask_jwt_extended import get_jwt_identity
+            return jsonify({'msg': 'not found'}), 404
+
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid is not None else None
         if actor and actor.role == 'campus_admin':
             if not actor.school_id or int(actor.school_id) != int(sid):
                 _log_unauthorized(actor, 'update_school', sid)
-                return jsonify({ 'msg': '僅能修改所屬學校' }), 403
+                return jsonify({'msg': '僅能修改所屬學校'}), 403
+
         # 名稱更新
         if name:
             sch.name = name
+
         # 代碼(slug)更新：需唯一
         if new_slug and new_slug != sch.slug:
             exists = s.query(School).filter(School.slug == new_slug).first()
             if exists:
-                return jsonify({ 'msg': 'slug 已存在' }), 409
+                return jsonify({'msg': 'slug 已存在'}), 409
             sch.slug = new_slug
+
         s.commit()
-        return jsonify({ 'ok': True, 'item': { 'id': sch.id, 'slug': sch.slug, 'name': sch.name } })
+        return jsonify({'ok': True, 'item': {'id': sch.id, 'slug': sch.slug, 'name': sch.name}})
 
 
 @bp.delete("/<int:sid>")
@@ -156,19 +224,21 @@ def delete_school(sid: int):
     with get_session() as s:  # type: Session
         sch = s.get(School, sid)
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
+
         # 檢查關聯
-        has_user = s.query(User).filter(User.school_id==sid).first() is not None
-        has_post = s.query(Post).filter(Post.school_id==sid).first() is not None
-        has_media = s.query(Media).filter(Media.school_id==sid).first() is not None
-        force = (request.args.get('force') or '').strip() in {'1','true','yes','on'}
+        has_user = s.query(User).filter(User.school_id == sid).first() is not None
+        has_post = s.query(Post).filter(Post.school_id == sid).first() is not None
+        has_media = s.query(Media).filter(Media.school_id == sid).first() is not None
+        force = (request.args.get('force') or '').strip() in {'1', 'true', 'yes', 'on'}
+
         if (has_user or has_post or has_media) and not force:
-            return jsonify({ 'msg': '存在關聯資料，無法刪除（可加 ?force=1 強制）' }), 409
+            return jsonify({'msg': '存在關聯資料，無法刪除（可加 ?force=1 強制）'}), 409
+
         if force:
             # 1) 先清除與該校相關的貼文/媒體/留言
             try:
-                from models import Comment
-                post_ids = [pid for (pid,) in s.query(Post.id).filter(Post.school_id==sid).all()]
+                post_ids = [pid for (pid,) in s.query(Post.id).filter(Post.school_id == sid).all()]
                 if post_ids:
                     s.query(Media).filter(Media.post_id.in_(post_ids)).delete(synchronize_session=False)
                     s.query(Comment).filter(Comment.post_id.in_(post_ids)).delete(synchronize_session=False)
@@ -177,12 +247,14 @@ def delete_school(sid: int):
                 pass
             # 2) 使用者 school 綁定解除
             try:
-                s.query(User).filter(User.school_id==sid).update({ User.school_id: None })
+                s.query(User).filter(User.school_id == sid).update({User.school_id: None})
             except Exception:
                 pass
+
         # 刪除資料列
         s.delete(sch)
         s.commit()
+
         # 嘗試移除校徽檔案夾（best-effort）
         try:
             root = os.getenv("UPLOAD_ROOT", "uploads")
@@ -199,7 +271,8 @@ def delete_school(sid: int):
                     pass
         except Exception:
             pass
-        return jsonify({ 'ok': True })
+
+        return jsonify({'ok': True})
 
 
 @bp.post("/<int:sid>/logo")
@@ -209,7 +282,8 @@ def upload_school_logo(sid: int):
     """上傳校徽（webp），存至 uploads/public/schools/{sid}/logo.webp，更新 logo_path。"""
     fs = request.files.get('file')
     if not fs or not fs.filename:
-        return jsonify({ 'msg': '缺少檔案' }), 400
+        return jsonify({'msg': '缺少檔案'}), 400
+
     try:
         im = Image.open(fs.stream)
         im = im.convert("RGB")
@@ -222,42 +296,29 @@ def upload_school_logo(sid: int):
         im.save(out_path, format="WEBP", quality=90, method=6)
         rel = os.path.relpath(out_path, start=root).replace("\\", "/")  # e.g. public/schools/1/logo.webp
     except Exception as e:
-        return jsonify({ 'msg': f'處理圖片失敗: {e}' }), 400
+        return jsonify({'msg': f'處理圖片失敗: {e}'}), 400
 
     with get_session() as s:  # type: Session
         sch = s.get(School, sid)
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
+
         # 僅允許 dev_admin 或本校 campus_admin 上傳校徽
         try:
-            from flask_jwt_extended import get_jwt_identity
             uid = get_jwt_identity()
             actor = s.get(User, int(uid)) if uid is not None else None
             if actor and actor.role == 'campus_admin':
                 if not actor.school_id or int(actor.school_id) != int(sid):
                     _log_unauthorized(actor, 'upload_school_logo', sid)
-                    return jsonify({ 'msg': '僅能修改所屬學校的校徽' }), 403
+                    return jsonify({'msg': '僅能修改所屬學校的校徽'}), 403
         except Exception:
             # 若無法驗證則拒絕（保守）
-            return jsonify({ 'msg': 'permission denied' }), 403
-def _log_unauthorized(actor: User | None, action: str, slug_or_id: str | int | None = None):
-    try:
-        name = getattr(actor, 'username', None) or 'unknown'
-        role = getattr(actor, 'role', None) or 'guest'
-        desc = f"actor={name} role={role} path={request.path} method={request.method} action={action} target={slug_or_id}"
-        log_system_event(
-            event_type='suspicious_activity',
-            title='未授權學校管理嘗試',
-            description=desc,
-            severity='high',
-            metadata={'ip': request.headers.get('X-Forwarded-For') or request.remote_addr}
-        )
-    except Exception:
-        pass
+            return jsonify({'msg': 'permission denied'}), 403
 
+        # 更新並回應
         sch.logo_path = rel
         s.commit()
-    return jsonify({ 'ok': True, 'path': rel })
+        return jsonify({'ok': True, 'path': rel})
 
 
 @bp.get('/admin')
@@ -277,11 +338,11 @@ def admin_list():
             sch = s.get(School, actor.school_id)
             items = []
             if sch:
-                items.append({ 'id': sch.id, 'slug': sch.slug, 'name': sch.name, 'logo_path': sch.logo_path })
-            return jsonify({ 'items': items })
+                items.append({'id': sch.id, 'slug': sch.slug, 'name': sch.name, 'logo_path': sch.logo_path})
+            return jsonify({'items': items})
         rows = s.query(School).order_by(School.slug.asc()).all()
-        items = [{ 'id': x.id, 'slug': x.slug, 'name': x.name, 'logo_path': x.logo_path } for x in rows]
-        return jsonify({ 'items': items })
+        items = [{'id': x.id, 'slug': x.slug, 'name': x.name, 'logo_path': x.logo_path} for x in rows]
+        return jsonify({'items': items})
 
 
 @bp.get('/<string:slug>/admin_overview')
@@ -289,28 +350,36 @@ def admin_list():
 @require_role('dev_admin', 'campus_admin')
 def admin_overview(slug: str):
     """學校管理總覽（統計＋偵測回饋）"""
-    from sqlalchemy import func
-    from models import Post, Media, Comment
-    from utils.oauth_google import derive_school_slug_from_domain, check_school_domain
     with get_session() as s:  # type: Session
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
+
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid is not None else None
         if actor and actor.role == 'campus_admin':
             if not actor.school_id or actor.school_id != sch.id:
                 _log_unauthorized(actor, 'admin_overview', slug)
-                return jsonify({ 'msg': '僅能檢視自己學校' }), 403
+                return jsonify({'msg': '僅能檢視自己學校'}), 403
 
-        # 統計
+        # 總數
         users_total = s.query(func.count(User.id)).filter(User.school_id == sch.id).scalar() or 0
         posts_total = s.query(func.count(Post.id)).filter(Post.school_id == sch.id).scalar() or 0
-        comments_total = s.query(func.count(Comment.id)).join(Post, Comment.post_id == Post.id).filter(Post.school_id == sch.id).scalar() or 0
-        media_total = s.query(func.count(Media.id)).join(Post, Media.post_id == Post.id).filter(Post.school_id == sch.id).scalar() or 0
+        # join Comment 計算該校貼文下的留言量
+        comments_total = (
+            s.query(func.count(Comment.id))
+            .join(Post, Comment.post_id == Post.id)
+            .filter(Post.school_id == sch.id)
+            .scalar() or 0
+        )
+        media_total = (
+            s.query(func.count(Media.id))
+            .join(Post, Media.post_id == Post.id)
+            .filter(Post.school_id == sch.id)
+            .scalar() or 0
+        )
 
         # 期間統計（今日/本週/本月）
-        from datetime import datetime, timezone, timedelta
         now = datetime.now(timezone.utc)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=today_start.weekday())
@@ -321,19 +390,32 @@ def admin_overview(slug: str):
                 return s.query(func.count(User.id)).filter(User.school_id == sch.id, User.created_at >= ts).scalar() or 0
             except Exception:
                 return 0
+
         def _cnt_posts_since(ts):
             try:
                 return s.query(func.count(Post.id)).filter(Post.school_id == sch.id, Post.created_at >= ts).scalar() or 0
             except Exception:
                 return 0
+
         def _cnt_comments_since(ts):
             try:
-                return s.query(func.count(Comment.id)).join(Post, Comment.post_id == Post.id).filter(Post.school_id == sch.id, Comment.created_at >= ts).scalar() or 0
+                return (
+                    s.query(func.count(Comment.id))
+                    .join(Post, Comment.post_id == Post.id)
+                    .filter(Post.school_id == sch.id, Comment.created_at >= ts)
+                    .scalar() or 0
+                )
             except Exception:
                 return 0
+
         def _cnt_media_since(ts):
             try:
-                return s.query(func.count(Media.id)).join(Post, Media.post_id == Post.id).filter(Post.school_id == sch.id, Media.created_at >= ts).scalar() or 0
+                return (
+                    s.query(func.count(Media.id))
+                    .join(Post, Media.post_id == Post.id)
+                    .filter(Post.school_id == sch.id, Media.created_at >= ts)
+                    .scalar() or 0
+                )
             except Exception:
                 return 0
 
@@ -377,15 +459,15 @@ def admin_overview(slug: str):
             pass
 
         # Email 網域分佈（前 5 名）
-        domain_counts: dict[str,int] = {}
-        top_domains: list[tuple[str,int]] = []
+        domain_counts: dict[str, int] = {}
+        top_domains: list[tuple[str, int]] = []
         try:
             rows = s.query(User.email).filter(User.school_id == sch.id, User.email.isnot(None)).all()
             for (em,) in rows:
                 try:
                     eml = (em or '').lower().strip()
                     if '@' in eml:
-                        dom = eml.split('@',1)[1]
+                        dom = eml.split('@', 1)[1]
                         domain_counts[dom] = domain_counts.get(dom, 0) + 1
                 except Exception:
                     pass
@@ -405,15 +487,21 @@ def admin_overview(slug: str):
                 suggested_from_domain = None
 
         return jsonify({
-            'school': { 'id': sch.id, 'slug': sch.slug, 'name': sch.name, 'logo_path': sch.logo_path, 'created_at': sch.created_at.isoformat() if sch.created_at else None },
+            'school': {
+                'id': sch.id,
+                'slug': sch.slug,
+                'name': sch.name,
+                'logo_path': sch.logo_path,
+                'created_at': sch.created_at.isoformat() if getattr(sch, 'created_at', None) else None
+            },
             'stats': {
                 'users_total': users_total,
                 'posts_total': posts_total,
                 'comments_total': comments_total,
                 'media_total': media_total,
                 'periods': periods,
-                'cross_split': { 'campus_posts': campus_posts, 'cross_posts': cross_posts },
-                'top_email_domains': [{ 'domain': d, 'count': c } for d,c in top_domains],
+                'cross_split': {'campus_posts': campus_posts, 'cross_posts': cross_posts},
+                'top_email_domains': [{'domain': d, 'count': c} for d, c in top_domains],
                 'gmail_count': gmail_count,
                 'edu_email_count': edu_count,
             },
@@ -432,13 +520,13 @@ def list_school_domains(slug: str):
     with get_session() as s:
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
         # 權限：campus_admin 僅能操作自己學校
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid is not None else None
-        if actor and actor.role == 'campus_admin' and (not actor.school_id or actor.school_id != sch.id):
+        if actor and actor.role == 'campus_admin' and (not actor.school_id or int(actor.school_id) != int(sch.id)):
             _log_unauthorized(actor, 'list_school_domains', slug)
-            return jsonify({ 'msg': '僅能操作所屬學校' }), 403
+            return jsonify({'msg': '僅能操作所屬學校'}), 403
         setting = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
         data = {}
         try:
@@ -451,7 +539,7 @@ def list_school_domains(slug: str):
             allowed = []
         # 僅回傳字串陣列
         out = [x for x in allowed if isinstance(x, str)]
-        return jsonify({ 'items': out })
+        return jsonify({'items': out})
 
 
 @bp.post('/<string:slug>/domains')
@@ -462,17 +550,17 @@ def add_school_domain(slug: str):
     body = request.get_json(silent=True) or {}
     dom = (body.get('domain') or '').strip()
     if not (dom.startswith('@') and '.' in dom):
-        return jsonify({ 'msg': '請輸入完整網域（例如 @nhsh.tp.edu.tw）' }), 400
+        return jsonify({'msg': '請輸入完整網域（例如 @nhsh.tp.edu.tw）'}), 400
     full = dom.lower()
     with get_session() as s:
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid is not None else None
-        if actor and actor.role == 'campus_admin' and (not actor.school_id or actor.school_id != sch.id):
+        if actor and actor.role == 'campus_admin' and (not actor.school_id or int(actor.school_id) != int(sch.id)):
             _log_unauthorized(actor, 'add_school_domain', slug)
-            return jsonify({ 'msg': '僅能操作所屬學校' }), 403
+            return jsonify({'msg': '僅能操作所屬學校'}), 403
         setting = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
         data = {}
         try:
@@ -495,7 +583,7 @@ def add_school_domain(slug: str):
         else:
             setting.data = payload
         s.commit()
-        return jsonify({ 'ok': True, 'items': allowed })
+        return jsonify({'ok': True, 'items': allowed})
 
 
 @bp.delete('/<string:slug>/domains')
@@ -505,19 +593,19 @@ def remove_school_domain(slug: str):
     body = request.get_json(silent=True) or {}
     dom = (body.get('domain') or '').strip().lower()
     if not dom:
-        return jsonify({ 'msg': '缺少 domain' }), 400
+        return jsonify({'msg': '缺少 domain'}), 400
     with get_session() as s:
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
-            return jsonify({ 'msg': 'not found' }), 404
+            return jsonify({'msg': 'not found'}), 404
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid is not None else None
-        if actor and actor.role == 'campus_admin' and (not actor.school_id or actor.school_id != sch.id):
+        if actor and actor.role == 'campus_admin' and (not actor.school_id or int(actor.school_id) != int(sch.id)):
             _log_unauthorized(actor, 'remove_school_domain', slug)
-            return jsonify({ 'msg': '僅能操作所屬學校' }), 403
+            return jsonify({'msg': '僅能操作所屬學校'}), 403
         setting = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
         if not setting or not (setting.data or '').strip():
-            return jsonify({ 'ok': True, 'items': [] })
+            return jsonify({'ok': True, 'items': []})
         try:
             data = json.loads(setting.data)
         except Exception:
@@ -529,4 +617,4 @@ def remove_school_domain(slug: str):
         data['allowed_domains'] = new_list
         setting.data = json.dumps(data, ensure_ascii=False)
         s.commit()
-        return jsonify({ 'ok': True, 'items': new_list })
+        return jsonify({'ok': True, 'items': new_list})

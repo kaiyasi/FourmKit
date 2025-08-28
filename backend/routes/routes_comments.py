@@ -8,6 +8,7 @@ from utils.ratelimit import get_client_ip
 from utils.auth import get_effective_user_id
 from models import Post, Comment, PostReaction, CommentReaction, User
 from utils.school_permissions import can_comment_on_post
+from utils.notify import send_admin_event as admin_notify
 
 bp = Blueprint("comments", __name__, url_prefix="/api")
 
@@ -40,8 +41,8 @@ def _author_label(u: User | None, client_id: str = None) -> str:
                 return result
             return "匿名"
         
-        # 如果是正常登入帳號
-        return "帳號"
+        # 如果是正常登入帳號，返回用戶名
+        return username if username else "用戶"
         
     except Exception:
         return "未知"
@@ -82,6 +83,7 @@ def list_comments(pid: int):
             items.append({
                 "id": c.id,
                 "content": c.content,
+                "author_id": c.author_id,  # 添加作者 ID 給前端判斷權限
                 "author_label": _author_label(s.get(User, c.author_id), request.headers.get("X-Client-Id", "").strip()),
                 "created_at": c.created_at.isoformat() if getattr(c, "created_at", None) else None,
                 "stats": {"likes": int(likes), "dislikes": int(dislikes)},
@@ -130,24 +132,55 @@ def create_comment(pid: int):
         s.commit()
         s.refresh(c)
         
-        # 記錄留言發布事件
+        # 記錄留言發布事件（Webhook/Queue）
         try:
-            from utils.admin_events import log_user_action
-            log_user_action(
-                event_type="comment_created",
-                actor_id=uid,
-                actor_name=u.username if u else f"用戶({uid})",
-                action="發布留言",
-                target_id=c.id,
-                target_type="留言"
+            actor_name = getattr(user, 'username', None) or f"user:{uid}"
+            snippet = (c.content or '')
+            if len(snippet) > 120:
+                snippet = snippet[:120] + '…'
+            fields = [{"name": "Post", "value": f"#{pid}", "inline": True}]
+            if snippet:
+                fields.append({"name": "Snippet", "value": snippet})
+            admin_notify(
+                kind='comment',
+                title='新留言',
+                description=f'{actor_name} 在貼文 #{pid} 新增留言',
+                actor=actor_name,
+                source='/api/posts/{pid}/comments',
+                fields=fields,
             )
         except Exception:
             pass  # 事件記錄失敗不影響留言發布
+
+        # 推送即時事件給前端（若有 SocketIO）
+        try:
+            from app import socketio
+            # 盡量提供 school_slug，供前端標示來源
+            school_slug = None
+            try:
+                sch = None
+                if getattr(p, 'school_id', None):
+                    from models import School
+                    sch = s.get(School, int(p.school_id))
+                school_slug = getattr(sch, 'slug', None) if sch else None
+            except Exception:
+                school_slug = None
+            socketio.emit('comment.created', {
+                'id': c.id,
+                'post_id': pid,
+                'content': c.content,
+                'author_id': uid,
+                'school_slug': school_slug,
+                'post': { 'id': pid, 'school_slug': school_slug },
+            })
+        except Exception:
+            pass
         
         u = s.get(User, uid)
         return jsonify({
             "id": c.id,
             "content": c.content,
+            "author_id": c.author_id,  # 添加作者 ID 給前端判斷權限
             "author_label": _author_label(u, request.headers.get("X-Client-Id", "").strip()),
             "created_at": c.created_at.isoformat() if getattr(c, "created_at", None) else None,
             "stats": {"likes": 0, "dislikes": 0},
@@ -226,7 +259,7 @@ def toggle_post_reaction(pid: int):
         })
 
 
-@bp.post("/api/comments/<int:cid>/reactions")
+@bp.post("/comments/<int:cid>/reactions")
 @jwt_required()
 def toggle_comment_reaction(cid: int):
     data = request.get_json(silent=True) or {}
@@ -252,7 +285,7 @@ def toggle_comment_reaction(cid: int):
         return jsonify({ "user_reaction": (user_reaction.reaction_type if user_reaction else None), "stats": {"likes": int(likes), "dislikes": int(dislikes)} })
 
 
-@bp.delete("/api/comments/<int:cid>")
+@bp.delete("/comments/<int:cid>")
 @jwt_required()
 def delete_comment(cid: int):
     """軟刪除留言（作者本人或管理員可刪）。"""

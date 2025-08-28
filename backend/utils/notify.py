@@ -183,7 +183,19 @@ def build_embed(kind: str, title: str, description: str, *,
 
 def post_discord(webhook_url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     if not webhook_url:
-        return {"ok": False, "status": 0, "error": "missing webhook url"}
+        return {"ok": False, "status": 0, "error": "缺少 Webhook URL"}
+    
+    # 驗證 URL 格式
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(webhook_url)
+        if not parsed.scheme or not parsed.netloc:
+            return {"ok": False, "status": 0, "error": "Webhook URL 格式不正確，請確認是否為有效的 https://... 網址"}
+        if parsed.scheme not in {'http', 'https'}:
+            return {"ok": False, "status": 0, "error": "Webhook URL 必須使用 http:// 或 https://"}
+    except Exception:
+        return {"ok": False, "status": 0, "error": "無法解析 Webhook URL，請檢查網址格式"}
+    
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urlrequest.Request(
@@ -205,9 +217,31 @@ def post_discord(webhook_url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             detail = he.read().decode("utf-8", errors="replace")
         except Exception:
             pass
-        return {"ok": False, "status": he.code, "error": f"HTTPError {he.code}: {he.reason}", "detail": detail}
+        error_msg = f"Webhook 請求失敗 (HTTP {he.code})"
+        if he.code == 400:
+            error_msg = "Webhook URL 無效或請求格式錯誤"
+        elif he.code == 401:
+            error_msg = "Webhook 權限不足，請檢查 URL 是否正確"
+        elif he.code == 404:
+            error_msg = "找不到 Webhook，請檢查 URL 是否存在"
+        elif he.code == 429:
+            error_msg = "Webhook 請求過於頻繁，請稍後重試"
+        elif he.code >= 500:
+            error_msg = "Webhook 服務器錯誤，請稍後重試"
+        
+        return {"ok": False, "status": he.code, "error": error_msg, "detail": detail}
     except URLError as ue:
-        return {"ok": False, "status": 0, "error": f"URLError {ue.reason}"}
+        error_msg = "連接 Webhook 失敗"
+        if "Name or service not known" in str(ue.reason) or "nodename nor servname provided" in str(ue.reason):
+            error_msg = "無法找到 Webhook 主機，請檢查網址是否正確"
+        elif "Connection refused" in str(ue.reason):
+            error_msg = "Webhook 服務器拒絕連接"
+        elif "timeout" in str(ue.reason).lower():
+            error_msg = "連接 Webhook 超時，請檢查網路連接"
+        
+        return {"ok": False, "status": 0, "error": error_msg}
+    except Exception as e:
+        return {"ok": False, "status": 0, "error": f"發送 Webhook 時發生未知錯誤: {str(e)}"}
 
 
 def admin_notify(kind: str, title: str, description: str, *,
@@ -308,6 +342,48 @@ def send_admin_event(
     err = ";".join(filter(None, [str(r.get("error")) for r in results if not r.get("ok")])) or None
     result = {"ok": ok_any, "status": status, **({"error": err} if err else {})}
     _log_admin_event(kind, result)
+
+    # 可選：同步寫入站內事件中心（預設啟用）。
+    # 目的：避免只有 Discord 有通知、事件中心無紀錄的情況。
+    try:
+        enabled = (os.getenv("ADMIN_NOTIFY_LOG_EVENTS", "1").strip().lower() in {"1","true","yes","on"})
+    except Exception:
+        enabled = True
+    if enabled:
+        try:
+            from services.event_service import EventService  # 避免模組層循環
+            from utils.db import get_session
+            # 盡力紀錄；失敗不影響 webhook 結果
+            with get_session() as s:
+                meta: Dict[str, Any] = {}
+                for k in ("source","fields","request_id","ticket_id","ts","footer","color"):
+                    if k in kwargs:
+                        meta[k] = kwargs[k]
+                EventService.log_event(
+                    session=s,
+                    event_type=f"notify.{kind}",
+                    title=title,
+                    description=description,
+                    severity="medium",
+                    actor_id=None,
+                    actor_name=str(kwargs.get("actor") or "") or None,
+                    actor_role=None,
+                    target_type=None,
+                    target_id=None,
+                    school_id=None,
+                    metadata=meta or None,
+                    client_ip=None,
+                    client_id=None,
+                    user_agent=None,
+                    is_important=False,
+                    send_webhook=False,
+                )
+                try:
+                    s.commit()
+                except Exception:
+                    pass
+        except Exception:
+            pass
     return result
 
 

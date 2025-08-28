@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import PostList from '@/components/PostList'
 import { MobilePostList } from '@/components/mobile/MobilePostList'
-import SchoolSwitcher from '@/components/SchoolSwitcher'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { NavBar } from '@/components/layout/NavBar'
+import FilterBar from '@/components/FilterBar'
 
 export default function BoardsPage() {
   const [isMobile, setIsMobile] = useState(false)
@@ -30,7 +30,7 @@ export default function BoardsPage() {
               <h1 className="font-semibold text-lg text-fg">ForumKit</h1>
               <p className="text-sm text-muted">校園匿名討論</p>
             </div>
-            <SchoolSwitcher compact />
+            {/* 移除學校切換按鈕（依平台新設定） */}
           </div>
         </header>
 
@@ -59,6 +59,7 @@ export default function BoardsPage() {
 
         {/* 貼文清單（含封面與張數徽章） */}
         <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 shadow-soft">
+          <FilterBar />
           <PostList injectedItems={injected} />
         </div>
       </main>

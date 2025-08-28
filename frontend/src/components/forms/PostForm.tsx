@@ -1,9 +1,11 @@
 // frontend/src/components/PostForm.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import UploadArea from '../UploadArea'
 import { postJSON, postFormData, HttpError } from '../../lib/http'
 import { validatePost } from '../../schemas/post'
 import { getClientId, newTxId } from '../../utils/client'
+
+type School = { id: number; slug: string; name: string }
 
 export default function PostForm({ onCreated }: { onCreated: (post: any) => void }) {
   const [content, setContent] = useState('')
@@ -11,8 +13,34 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [schools, setSchools] = useState<School[]>([])
+  const defaultSlug = (() => {
+    try {
+      return (
+        localStorage.getItem('school_slug') ||
+        localStorage.getItem('current_school_slug') ||
+        localStorage.getItem('selected_school_slug') ||
+        ''
+      )
+    } catch { return '' }
+  })()
+  const [targetSlug, setTargetSlug] = useState<string | ''>(defaultSlug)
 
-  const submit = async () => {
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await fetch('/api/schools', { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json()
+        if (alive && Array.isArray(j?.items)) setSchools(j.items)
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
+
+  const doSubmit = async (finalSlug: string | '') => {
     const body = content.trim()
     // 最小字數交由後端依設定檢查（前端不硬卡）
     setBusy(true); setErr(null)
@@ -21,15 +49,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     const txId = newTxId()
     const now = new Date().toISOString()
 
-    // 私有占位：只在本機顯示的待審貼文卡，方便看到「送審中」
-    onCreated?.({
-      tempKey: `tmp_${txId}`,
-      client_tx_id: txId,
-      content: body, // 使用純文本，不轉換為HTML
-      author_hash: '您',
-      created_at: now,
-      pending_private: true,
-    })
+    // 不再插入本地「送審中」占位卡
     
     try {
       let result
@@ -39,6 +59,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         const fd = new FormData()
         fd.set('content', body)
         fd.set('client_tx_id', txId)
+        if (finalSlug) fd.set('school_slug', finalSlug)
         files.forEach(f => fd.append('files', f))
         
         const headers = { 
@@ -53,7 +74,9 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
           'X-Client-Id': clientId, 
           'X-Tx-Id': txId 
         }
-        result = await postJSON('/api/posts', { content: body, client_tx_id: txId }, { headers })
+        const payload: any = { content: body, client_tx_id: txId }
+        if (finalSlug) payload.school_slug = finalSlug
+        result = await postJSON('/api/posts', payload, { headers })
       }
       
       // 後端已建立為 pending，前端不插入公開清單（保留私有占位即可），僅提示成功送審
@@ -71,12 +94,47 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
       }
     } finally { 
       setBusy(false) 
+      setConfirmOpen(false)
     }
+  }
+
+  const submit = async () => {
+    if (!content.trim()) {
+      setErr('請先輸入內容')
+      return
+    }
+    // 桌面：按下送出先跳出選擇框
+    setConfirmOpen(true)
   }
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4 shadow-soft">
       <h3 className="font-semibold dual-text mb-2 text-base sm:text-lg">發表新貼文</h3>
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={()=>setConfirmOpen(false)} />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] sm:w-[520px] rounded-2xl border border-border bg-surface shadow-2xl p-4">
+            <h4 className="font-semibold dual-text mb-2">選擇發佈範圍</h4>
+            <p className="text-sm text-muted mb-3">請選擇要把這則貼文送到哪裡：</p>
+            <div className="space-y-2 max-h-[40vh] overflow-auto pr-1">
+              {schools.map(s => (
+                <label key={s.id} className="flex items-center gap-2">
+                  <input type="radio" name="target" checked={targetSlug === s.slug} onChange={()=> setTargetSlug(s.slug)} />
+                  <span className="text-sm">{s.name}</span>
+                </label>
+              ))}
+              <label className="flex items-center gap-2">
+                <input type="radio" name="target" checked={targetSlug === ''} onChange={()=> setTargetSlug('')} />
+                <span className="text-sm">跨校（全部）</span>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button className="btn-ghost text-sm" onClick={()=>setConfirmOpen(false)}>取消</button>
+              <button className="btn-primary text-sm" onClick={()=>doSubmit(targetSlug)}>確認送出</button>
+            </div>
+          </div>
+        </div>
+      )}
       <textarea
         className="form-control min-h-[100px] sm:min-h-[120px] text-sm sm:text-base"
         placeholder="想說點什麼？支援 Markdown 語法：**粗體**、*斜體*、`程式碼`、[連結](網址)、# 標題、- 清單"

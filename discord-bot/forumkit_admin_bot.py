@@ -8,6 +8,11 @@ from discord.ext import commands, tasks
 import aiohttp
 import asyncio
 import os
+from pathlib import Path
+try:
+    from dotenv import load_dotenv  # type: ignore
+except Exception:  # pragma: no cover
+    load_dotenv = None  # type: ignore
 import json
 import logging
 from datetime import datetime, timedelta
@@ -25,6 +30,14 @@ from cogs.connect import ConnectCog
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 優先嘗試載入根目錄與本目錄 .env（若安裝了 python-dotenv）
+if load_dotenv is not None:
+    try:
+        load_dotenv(dotenv_path=str(Path(__file__).resolve().parent.parent / '.env'), override=False)
+        load_dotenv(dotenv_path=str(Path(__file__).resolve().parent / '.env'), override=False)
+    except Exception:
+        pass
+
 # 機器人設定
 BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN', '')
 FORUMKIT_API_URL = os.getenv('FORUMKIT_API_URL', 'http://localhost:12005/api')
@@ -32,7 +45,8 @@ ADMIN_TOKEN = os.getenv('FORUMKIT_ADMIN_TOKEN', '')
 ALLOWED_GUILD_IDS = list(map(int, os.getenv('ALLOWED_GUILD_IDS', '').split(',') if os.getenv('ALLOWED_GUILD_IDS') else []))
 ADMIN_ROLE_NAME = os.getenv('ADMIN_ROLE_NAME', 'ForumKit Admin')
 DISCORD_ALERT_CHANNEL_ID = int(os.getenv('DISCORD_ALERT_CHANNEL_ID', '0') or '0')
-REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:80/0')
+# Bot 預設連本機 Redis（對應 compose 對外 ${REDIS_PORT:-12008}）
+REDIS_URL = os.getenv('REDIS_URL', f"redis://localhost:{os.getenv('REDIS_PORT', '12008')}/0")
 
 # 機器人設定
 intents = discord.Intents.default()
@@ -518,7 +532,7 @@ async def status_monitor():
 # 輔助指令
 # ===============================================================================
 
-@bot.command(name='help')
+@bot.command(name='helps')
 async def help_command(ctx):
     """顯示幫助信息"""
     embed = discord.Embed(

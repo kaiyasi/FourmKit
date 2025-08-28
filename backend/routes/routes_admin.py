@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.authz import require_role
 from utils.notify import send_admin_event as notify_send_event
+from services.event_service import EventService
 from sqlalchemy.orm import Session
 from utils.db import get_session
 from models import User, UserRole, School, DeleteRequest, Post, Comment
@@ -10,8 +11,69 @@ from werkzeug.security import generate_password_hash
 from sqlalchemy import func, and_, or_, desc
 from datetime import datetime, timezone, timedelta
 from services.delete_service import DeleteService
+import hmac, hashlib, base64, os, uuid
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
+
+# 自訂聊天室管理 API（僅 dev_admin）
+@bp.post('/chat-rooms/custom')
+@jwt_required()
+@require_role('dev_admin')
+def create_custom_room():
+    from app import _custom_rooms
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip() or '自訂聊天室'
+    description = (data.get('description') or '').strip() or '由總管理員建立'
+    rid = f"custom:{uuid.uuid4().hex[:8]}"
+    owner_id = get_jwt_identity()
+    _custom_rooms[rid] = { 'owner_id': owner_id, 'name': name, 'description': description, 'members': set() }
+    return jsonify({ 'ok': True, 'id': rid, 'name': name })
+
+@bp.delete('/chat-rooms/custom/<string:room_id>')
+@jwt_required()
+@require_role('dev_admin')
+def delete_custom_room(room_id: str):
+    from app import _custom_rooms, _room_clients
+    if not room_id or not room_id.startswith('custom:'):
+        return jsonify({ 'error': 'INVALID_ROOM' }), 400
+    try:
+        _custom_rooms.pop(room_id, None)
+        # 清理線上清單
+        _room_clients.pop(room_id, None)
+    except Exception:
+        pass
+    return jsonify({ 'ok': True, 'deleted': room_id })
+
+@bp.post('/chat-rooms/custom/<string:room_id>/members')
+@jwt_required()
+@require_role('dev_admin')
+def add_custom_room_member(room_id: str):
+    from app import _custom_rooms
+    data = request.get_json(silent=True) or {}
+    try:
+        target_id = int(data.get('user_id'))
+    except Exception:
+        return jsonify({ 'error': 'USER_ID_REQUIRED' }), 400
+    room = _custom_rooms.get(room_id)
+    if not room:
+        return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
+    members: set = room.setdefault('members', set())  # type: ignore
+    members.add(int(target_id))
+    return jsonify({ 'ok': True, 'room_id': room_id, 'user_id': target_id })
+
+@bp.delete('/chat-rooms/custom/<string:room_id>/members/<int:user_id>')
+@jwt_required()
+@require_role('dev_admin')
+def remove_custom_room_member(room_id: str, user_id: int):
+    from app import _custom_rooms
+    room = _custom_rooms.get(room_id)
+    if not room:
+        return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
+    try:
+        room.setdefault('members', set()).discard(int(user_id))  # type: ignore
+    except Exception:
+        pass
+    return jsonify({ 'ok': True, 'room_id': room_id, 'user_id': user_id, 'removed': True })
 
 def _can_moderate_comment(moderator: User, comment: Comment, session) -> bool:
     """檢查用戶是否有權限審核特定留言"""
@@ -320,17 +382,23 @@ def approve_comment(comment_id: int):
             
             # 記錄管理員事件
             try:
-                from utils.admin_events import log_content_moderation
+                from services.event_service import EventService
                 moderator_name = current_user.username if current_user else f"管理員({moderator_id})"
                 
-                log_content_moderation(
-                    event_type="comment_approved",
-                    moderator_id=moderator_id,
-                    moderator_name=moderator_name,
-                    content_type="留言",
-                    content_id=comment_id,
-                    action="核准",
-                    session=s
+                EventService.log_event(
+                    session=s,
+                    event_type="comment.approved",
+                    title=f"管理員核准留言",
+                    description=f"管理員 {moderator_name} 核准了留言 #{comment_id}",
+                    severity="low",
+                    actor_id=moderator_id,
+                    actor_name=moderator_name,
+                    actor_role=current_user.role if current_user else None,
+                    target_type="comment",
+                    target_id=comment_id,
+                    school_id=current_user.school_id if current_user else None,
+                    is_important=False,
+                    send_webhook=True
                 )
             except Exception:
                 pass  # 事件記錄失敗不影響主要功能
@@ -412,18 +480,24 @@ def reject_comment(comment_id: int):
             
             # 記錄管理員事件
             try:
-                from utils.admin_events import log_content_moderation
+                from services.event_service import EventService
                 moderator_name = current_user.username if current_user else f"管理員({moderator_id})"
                 
-                log_content_moderation(
-                    event_type="comment_rejected",
-                    moderator_id=moderator_id,
-                    moderator_name=moderator_name,
-                    content_type="留言",
-                    content_id=comment_id,
-                    action="拒絕",
-                    reason=reason,
-                    session=s
+                EventService.log_event(
+                    session=s,
+                    event_type="comment.rejected",
+                    title=f"管理員拒絕留言",
+                    description=f"管理員 {moderator_name} 拒絕了留言 #{comment_id}，原因：{reason}",
+                    severity="medium",
+                    actor_id=moderator_id,
+                    actor_name=moderator_name,
+                    actor_role=current_user.role if current_user else None,
+                    target_type="comment",
+                    target_id=comment_id,
+                    school_id=current_user.school_id if current_user else None,
+                    metadata={"reason": reason, "old_status": old_status},
+                    is_important=False,
+                    send_webhook=True
                 )
             except Exception:
                 pass  # 事件記錄失敗不影響主要功能
@@ -663,7 +737,7 @@ def delete_comment(comment_id: int):
 # 刪文請求查詢
 @bp.get('/delete-requests')
 @jwt_required()
-@require_role('dev_admin', 'campus_admin', 'cross_admin')
+@require_role('dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator')
 def list_delete_requests():
     from services.delete_service import DeleteService
     
@@ -671,13 +745,24 @@ def list_delete_requests():
     limit = min(int(request.args.get('limit', 100)), 500)
     
     with get_session() as s:
-        requests = DeleteService.get_delete_requests(s, status, limit)
+        user_id = get_jwt_identity()
+        current_user = s.query(User).filter(User.id == user_id).first() if user_id else None
+        # 只允許審文組查詢自己學校的刪文請求
+        if current_user and current_user.role in ('campus_moderator',):
+            if not current_user.school_id:
+                return jsonify({'error': 'campus moderator must have school_id'}), 403
+            requests = [r for r in DeleteService.get_delete_requests(s, status, limit) if r.get('post_author_id') and s.query(Post).get(r['post_id']).school_id == current_user.school_id]
+        elif current_user and current_user.role in ('cross_moderator',):
+            # 可根據 cross_moderator 權限範圍進一步過濾（此處暫同 admin）
+            requests = DeleteService.get_delete_requests(s, status, limit)
+        else:
+            requests = DeleteService.get_delete_requests(s, status, limit)
         return jsonify({'items': requests, 'total': len(requests)})
 
 # 刪文請求審核（核准）
 @bp.post('/delete-requests/<int:rid>/approve')
 @jwt_required()
-@require_role('dev_admin', 'campus_admin', 'cross_admin')
+@require_role('dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator')
 def approve_delete_request(rid: int):
     from services.delete_service import DeleteService
     
@@ -694,18 +779,25 @@ def approve_delete_request(rid: int):
         if result["success"]:
             # 記錄管理員事件
             try:
-                from utils.admin_events import log_content_moderation
+                from services.event_service import EventService
                 moderator = s.query(User).filter(User.id == moderator_id).first()
                 moderator_name = moderator.username if moderator else f"管理員({moderator_id})"
                 
-                log_content_moderation(
-                    event_type="delete_request_approved",
-                    moderator_id=moderator_id,
-                    moderator_name=moderator_name,
-                    content_type="刪文請求",
-                    content_id=rid,
-                    action="核准",
-                    session=s
+                EventService.log_event(
+                    session=s,
+                    event_type="content.delete_request_approved",
+                    title=f"管理員核准刪文請求",
+                    description=f"管理員 {moderator_name} 核准了刪文請求 #{rid}" + (f"，備註：{note}" if note else ""),
+                    severity="medium",
+                    actor_id=moderator_id,
+                    actor_name=moderator_name,
+                    actor_role=moderator.role if moderator else None,
+                    target_type="delete_request",
+                    target_id=rid,
+                    school_id=moderator.school_id if moderator else None,
+                    metadata={"note": note} if note else None,
+                    is_important=True,
+                    send_webhook=True
                 )
             except Exception:
                 pass  # 事件記錄失敗不影響主要功能
@@ -745,19 +837,25 @@ def reject_delete_request(rid: int):
         if result["success"]:
             # 記錄管理員事件
             try:
-                from utils.admin_events import log_content_moderation
+                from services.event_service import EventService
                 moderator = s.query(User).filter(User.id == moderator_id).first()
                 moderator_name = moderator.username if moderator else f"管理員({moderator_id})"
                 
-                log_content_moderation(
-                    event_type="delete_request_rejected",
-                    moderator_id=moderator_id,
-                    moderator_name=moderator_name,
-                    content_type="刪文請求",
-                    content_id=rid,
-                    action="拒絕",
-                    reason=note,
-                    session=s
+                EventService.log_event(
+                    session=s,
+                    event_type="content.delete_request_rejected",
+                    title=f"管理員拒絕刪文請求",
+                    description=f"管理員 {moderator_name} 拒絕了刪文請求 #{rid}" + (f"，原因：{note}" if note else ""),
+                    severity="medium",
+                    actor_id=moderator_id,
+                    actor_name=moderator_name,
+                    actor_role=moderator.role if moderator else None,
+                    target_type="delete_request",
+                    target_id=rid,
+                    school_id=moderator.school_id if moderator else None,
+                    metadata={"reason": note} if note else None,
+                    is_important=False,
+                    send_webhook=True
                 )
             except Exception:
                 pass  # 事件記錄失敗不影響主要功能
@@ -840,6 +938,15 @@ def list_users():
                         'name': school.name
                     }
             
+            # 生成個人識別碼
+            personal_id = None
+            try:
+                secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
+                digest = hmac.new(secret.encode('utf-8'), str(u.id).encode('utf-8'), hashlib.sha256).digest()
+                personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+            except Exception:
+                personal_id = f"u{u.id:08d}"
+            
             items.append({
                 'id': u.id,
                 'username': u.username,
@@ -848,6 +955,7 @@ def list_users():
                 'school_id': getattr(u, 'school_id', None),
                 'school': school_info,
                 'created_at': u.created_at.isoformat() if getattr(u, 'created_at', None) else None,
+                'personal_id': personal_id,
             })
         return jsonify({ 'items': items, 'total': len(items) })
 
@@ -869,6 +977,44 @@ def set_user_password(uid: int):
         if actor and actor.role == 'cross_admin':
             return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
         u.password_hash = generate_password_hash(pwd)
+        
+        # 生成個人識別碼並記錄管理員事件
+        try:
+            # 生成目標用戶的個人識別碼
+            secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
+            digest = hmac.new(secret.encode('utf-8'), str(u.id).encode('utf-8'), hashlib.sha256).digest()
+            target_personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+            
+            # 生成操作者的個人識別碼
+            actor_personal_id = None
+            if actor:
+                digest = hmac.new(secret.encode('utf-8'), str(actor.id).encode('utf-8'), hashlib.sha256).digest()
+                actor_personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+            
+            EventService.log_event(
+                session=s,
+                event_type="user.password_changed",
+                title="管理員修改用戶密碼",
+                description=f"管理員 {actor.username if actor else 'Unknown'} 修改了用戶 {u.username} 的密碼",
+                severity="medium",
+                actor_id=actor.id if actor else None,
+                actor_name=actor.username if actor else None,
+                actor_role=actor.role if actor else None,
+                target_type="user",
+                target_id=str(u.id),
+                target_name=u.username,
+                school_id=u.school_id,
+                metadata={
+                    "target_username": u.username,
+                    "target_personal_id": target_personal_id,
+                    "actor_personal_id": actor_personal_id,
+                },
+                is_important=True,
+                send_webhook=True
+            )
+        except Exception:
+            pass
+        
         s.commit()
         return jsonify({ 'ok': True })
 
@@ -894,7 +1040,43 @@ def set_user_role(uid: int):
         if actor and actor.role == 'campus_admin':
             if not actor.school_id or u.school_id != actor.school_id:
                 return jsonify({ 'msg': '無權限：僅能變更同校使用者' }), 403
+        old_role = u.role
         u.role = role
+        
+        # 生成個人識別碼並記錄管理員事件
+        try:
+            # 生成目標用戶的個人識別碼
+            secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
+            digest = hmac.new(secret.encode('utf-8'), str(u.id).encode('utf-8'), hashlib.sha256).digest()
+            target_personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+            
+            # 生成操作者的個人識別碼
+            actor_personal_id = None
+            if actor:
+                digest = hmac.new(secret.encode('utf-8'), str(actor.id).encode('utf-8'), hashlib.sha256).digest()
+                actor_personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+            
+            log_admin_event(
+                event_type="user_role_changed",
+                title="管理員修改用戶角色",
+                description=f"管理員 {actor.username if actor else 'Unknown'} 將用戶 {u.username} 的角色從 {old_role} 修改為 {role}",
+                actor_id=actor.id if actor else None,
+                actor_name=actor.username if actor else None,
+                target_id=u.id,
+                target_type="user",
+                severity="high",
+                metadata={
+                    "target_username": u.username,
+                    "old_role": old_role,
+                    "new_role": role,
+                    "target_personal_id": target_personal_id,
+                    "actor_personal_id": actor_personal_id,
+                },
+                session=s,
+            )
+        except Exception:
+            pass
+        
         s.commit()
         return jsonify({ 'ok': True })
 
@@ -973,19 +1155,27 @@ def set_user_school(uid: int):
         
         # 記錄事件
         try:
-            from utils.admin_events import log_user_action
+            from services.event_service import EventService
             admin_id = get_jwt_identity()
             admin = s.query(User).get(admin_id) if admin_id else None
             admin_name = admin.username if admin else f"管理員({admin_id})"
             
             action = f"綁定到學校 {school_slug}" if school_slug else "解除學校綁定"
-            log_user_action(
-                event_type="user_role_changed",
+            EventService.log_event(
+                session=s,
+                event_type="user.school_binding_changed",
+                title=f"管理員變更用戶學校綁定",
+                description=f"管理員 {admin_name} 為用戶 {u.username} {action}",
+                severity="medium",
                 actor_id=admin_id,
                 actor_name=admin_name,
-                action=f"為用戶 {u.username} {action}",
+                actor_role=admin.role if admin else None,
+                target_type="user",
                 target_id=u.id,
-                target_type="用戶"
+                school_id=admin.school_id if admin else None,
+                metadata={"old_school": u.school_id, "new_school": school.id if school_slug else None},
+                is_important=False,
+                send_webhook=True
             )
         except Exception:
             pass
@@ -995,10 +1185,14 @@ def set_user_school(uid: int):
 
 @bp.delete('/users/<int:uid>')
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin", "campus_admin")
 def delete_user(uid: int):
-    """刪除使用者：僅在無關聯貼文/留言/媒體時允許刪除，避免破壞外鍵。"""
+    """刪除使用者：預設僅在無關聯資料時允許刪除。加上 ?force=1 可強制刪除並清理關聯資料。"""
     from models import Post, Comment, Media
+    
+    # 檢查是否強制刪除
+    force = request.args.get('force', '').strip().lower() in ['1', 'true', 'yes']
+    
     with get_session() as s:  # type: Session
         # 權限檢查：校內管理員僅能刪除同校使用者
         actor_id = get_jwt_identity()
@@ -1011,14 +1205,107 @@ def delete_user(uid: int):
         if actor and actor.role == 'campus_admin':
             if not actor.school_id or u.school_id != actor.school_id:
                 return jsonify({ 'msg': '無權限：僅能刪除同校使用者' }), 403
+        
         # 檢查關聯
         has_post = s.query(Post).filter(Post.author_id==uid).first() is not None
         has_comment = s.query(Comment).filter(Comment.author_id==uid).first() is not None
         has_media = s.query(Media).join(Post, Media.post_id==Post.id).filter(Post.author_id==uid).first() is not None
-        if has_post or has_comment or has_media:
-            return jsonify({ 'msg': '存在關聯資料，無法刪除' }), 409
-        s.delete(u); s.commit()
-        return jsonify({ 'ok': True })
+        
+        if (has_post or has_comment or has_media) and not force:
+            return jsonify({ 
+                'msg': '存在關聯資料，無法刪除（可加 ?force=1 強制刪除）',
+                'details': {
+                    'has_posts': has_post,
+                    'has_comments': has_comment, 
+                    'has_media': has_media
+                }
+            }), 409
+        
+        # 強制刪除：清理關聯資料
+        if force and (has_post or has_comment or has_media):
+            try:
+                # 1. 刪除用戶的所有留言
+                comments_deleted = s.query(Comment).filter(Comment.author_id == uid).count()
+                s.query(Comment).filter(Comment.author_id == uid).delete(synchronize_session=False)
+                
+                # 2. 刪除用戶貼文的媒體檔案
+                post_ids = [p.id for p in s.query(Post.id).filter(Post.author_id == uid).all()]
+                media_deleted = 0
+                if post_ids:
+                    media_deleted = s.query(Media).filter(Media.post_id.in_(post_ids)).count()
+                    s.query(Media).filter(Media.post_id.in_(post_ids)).delete(synchronize_session=False)
+                
+                # 3. 刪除用戶的所有貼文
+                posts_deleted = s.query(Post).filter(Post.author_id == uid).count()
+                s.query(Post).filter(Post.author_id == uid).delete(synchronize_session=False)
+                
+                print(f"[DEBUG] 強制刪除用戶 {uid} 的關聯資料: posts={posts_deleted}, comments={comments_deleted}, media={media_deleted}")
+                
+            except Exception as e:
+                print(f"[ERROR] 清理用戶 {uid} 關聯資料時出錯: {e}")
+                s.rollback()
+                return jsonify({ 'msg': f'清理關聯資料時出錯: {str(e)}' }), 500
+        
+        # 生成被刪除用戶的個人識別碼
+        target_personal_id = None
+        try:
+            secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
+            digest = hmac.new(secret.encode('utf-8'), str(u.id).encode('utf-8'), hashlib.sha256).digest()
+            target_personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+        except Exception:
+            target_personal_id = f"u{u.id:08d}"
+
+        # 生成操作者的個人識別碼
+        actor_personal_id = None
+        if actor:
+            try:
+                secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
+                digest = hmac.new(secret.encode('utf-8'), str(actor.id).encode('utf-8'), hashlib.sha256).digest()
+                actor_personal_id = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')[:12]
+            except Exception:
+                actor_personal_id = f"u{actor.id:08d}"
+
+        # 記錄管理員事件
+        try:
+            EventService.log_event(
+                session=s,
+                event_type="user.deleted",
+                title=f"管理員刪除用戶",
+                description=f"管理員 {actor.username if actor else 'Unknown'} 刪除了用戶 {u.username}"
+                           + (f"\n強制刪除模式：清理了相關貼文和留言" if force and (has_post or has_comment or has_media) else ""),
+                severity="high",
+                actor_id=actor.id if actor else None,
+                actor_name=actor.username if actor else None,
+                actor_role=actor.role if actor else None,
+                target_type="user",
+                target_id=str(u.id),
+                target_name=u.username,
+                school_id=u.school_id,
+                metadata={
+                    "deleted_username": u.username,
+                    "deleted_email": u.email,
+                    "deleted_role": u.role,
+                    "school_id": u.school_id,
+                    "force_delete": force,
+                    "cleaned_associations": force and (has_post or has_comment or has_media),
+                    "target_personal_id": target_personal_id,
+                    "actor_personal_id": actor_personal_id,
+                },
+                is_important=True,
+                send_webhook=True
+            )
+        except Exception:
+            pass
+
+        # 刪除用戶
+        s.delete(u)
+        s.commit()
+        
+        return jsonify({ 
+            'ok': True, 
+            'forced': force,
+            'cleaned_associations': force and (has_post or has_comment or has_media)
+        })
 
 @bp.post('/users')
 @jwt_required()
@@ -1159,6 +1446,24 @@ def get_chat_rooms():
             for room in available_rooms:
                 client_ids = list(_room_clients.get(room["id"], set()))
                 room["online_count"] = len(client_ids)
+
+            # dev_admin 附加自訂聊天室列表（記憶體）
+            try:
+                if role == "dev_admin":
+                    from app import _custom_rooms
+                    for rid, info in list(_custom_rooms.items()):
+                        client_ids = list(_room_clients.get(rid, set()))
+                        available_rooms.append({
+                            "id": rid,
+                            "name": info.get("name") or f"自訂聊天室 {rid}",
+                            "description": info.get("description") or "由總管理員建立的自訂聊天室",
+                            "access_roles": ["dev_admin"],
+                            "school_specific": False,
+                            "online_count": len(client_ids),
+                            "custom": True,
+                        })
+            except Exception:
+                pass
             
             return jsonify({
                 "rooms": available_rooms,
@@ -1213,60 +1518,77 @@ def get_chat_room_users(room_id: str):
                     "admin_dev": ["dev_admin"],
                 }
                 if room_id not in fixed_rooms:
-                    return jsonify({"error": "ROOM_NOT_FOUND"}), 404
-                if role != "dev_admin" and role not in fixed_rooms[room_id]:
-                    return jsonify({"error": "ACCESS_DENIED"}), 403
+                    # 自訂聊天室：僅 dev_admin 可存取
+                    from app import _custom_rooms
+                    if room_id not in _custom_rooms:
+                        return jsonify({"error": "ROOM_NOT_FOUND"}), 404
+                    if role != "dev_admin":
+                        return jsonify({"error": "ACCESS_DENIED"}), 403
+                else:
+                    if role != "dev_admin" and role not in fixed_rooms[room_id]:
+                        return jsonify({"error": "ACCESS_DENIED"}), 403
             
             # 從 WebSocket 狀態獲取線上用戶
-            from app import _room_clients, _sid_client
+            from app import _room_clients
+            try:
+                from app import _client_user
+            except ImportError:
+                _client_user = {}
             
-            # 獲取聊天室中的用戶ID列表
+            # 獲取聊天室中的 client_id 列表
             client_ids = list(_room_clients.get(room_id, set()))
             
             # 獲取用戶詳細資訊
             online_users = []
             for client_id in client_ids:
-                # 嘗試從 client_id 中提取用戶ID
-                # 這裡假設 client_id 格式為 "user:123" 或直接是用戶ID
                 try:
-                    user_id_from_client = None
-                    if isinstance(client_id, str) and client_id.startswith("user:"):
-                        user_id_from_client = int(client_id.split(":")[1])
-                    else:
-                        # 嘗試解析為整數 user_id
-                        try:
-                            user_id_from_client = int(client_id)
-                        except Exception:
-                            # 可能是 socket SID，改用 _sid_client 反查
-                            try:
-                                info = _sid_client.get(client_id) or {}
-                                # 常見鍵名：user_id / uid / id
-                                for k in ("user_id", "uid", "id"):
-                                    if k in info and info[k]:
-                                        user_id_from_client = int(info[k])
-                                        break
-                            except Exception:
-                                user_id_from_client = None
-                    
-                    if not user_id_from_client:
+                    # 從 _client_user 映射中獲取用戶信息
+                    user_info = _client_user.get(client_id)
+                    if not user_info or not user_info.get("user_id"):
+                        # 後備：無法解析身份時，仍回傳匿名客戶端資訊，避免前端顯示為空
+                        online_users.append({
+                            "id": None,
+                            "username": client_id[:8] if client_id else "匿名",
+                            "role": "guest",
+                            "school_id": None,
+                            "client_id": client_id
+                        })
                         continue
-
+                    
+                    user_id_from_client = user_info["user_id"]
+                    
                     # 排除自己（前端清單只顯示其他用戶）
                     if int(user_id_from_client) == int(user_id):
                         continue
-
-                    user_info = s.query(User).get(int(user_id_from_client))
-                    if user_info:
+                    
+                    # 驗證用戶是否仍存在於數據庫中
+                    db_user = s.query(User).get(int(user_id_from_client))
+                    if db_user:
                         online_users.append({
-                            "id": user_info.id,
-                            "username": user_info.username,
-                            "role": user_info.role,
-                            "school_id": user_info.school_id,
+                            "id": db_user.id,
+                            "username": db_user.username,
+                            "role": db_user.role,
+                            "school_id": db_user.school_id,
                             "client_id": client_id
                         })
-                except (ValueError, IndexError):
-                    # 如果無法解析用戶ID，跳過
-                    continue
+                    else:
+                        # 後備：找不到資料庫用戶時，維持基本資訊
+                        online_users.append({
+                            "id": None,
+                            "username": user_info.get("username") or (client_id[:8] if client_id else "匿名"),
+                            "role": user_info.get("role") or "guest",
+                            "school_id": user_info.get("school_id"),
+                            "client_id": client_id
+                        })
+                except (ValueError, TypeError, KeyError):
+                    # 如果無法解析用戶信息，跳過
+                    online_users.append({
+                        "id": None,
+                        "username": client_id[:8] if client_id else "匿名",
+                        "role": "guest",
+                        "school_id": None,
+                        "client_id": client_id
+                    })
             
             return jsonify({
                 "room_id": room_id,
@@ -1281,40 +1603,94 @@ def get_chat_room_users(room_id: str):
 @jwt_required()
 @require_role("dev_admin", "campus_admin", "cross_admin", "campus_moderator", "cross_moderator")
 def get_admin_events():
-    """獲取管理員事件記錄"""
+    """獲取管理員事件記錄（重定向到新的事件API）"""
     try:
-        from utils.admin_events import get_recent_events, get_event_statistics
+        from services.event_service import EventService
+        from utils.db import get_session
+        from models import User
         
         # 獲取查詢參數
-        limit = min(100, max(1, int(request.args.get('limit', 50))))
+        limit = min(200, max(1, int(request.args.get('limit', 50))))
         event_type = request.args.get('type', '').strip() or None
+        category = request.args.get('category', '').strip() or None
         severity = request.args.get('severity', '').strip() or None
         include_stats = request.args.get('stats', 'false').lower() == 'true'
         
-        # 獲取事件記錄
-        events = get_recent_events(limit=limit, event_type=event_type, severity=severity)
+        # 權限檢查
+        current_user_id = get_jwt_identity()
+        with get_session() as s:
+            current_user = s.get(User, current_user_id)
+            if not current_user:
+                return jsonify({"error": "用戶不存在"}), 404
+            
+            # 校內管理員權限限制
+            school_id = None
+            if current_user.role in ["campus_admin", "campus_moderator"] and current_user.school_id:
+                school_id = current_user.school_id
+            
+            # 獲取事件記錄
+            events = EventService.get_events(
+                session=s,
+                limit=limit,
+                category=category,
+                event_type=event_type,
+                severity=severity,
+                school_id=school_id
+            )
+            
+            # 轉換為字典格式並處理敏感信息
+            events_data = []
+            for event in events:
+                event_dict = event.to_dict()
+                # 格式化時間顯示
+                try:
+                    ts = event.created_at
+                    event_dict["time_display"] = ts.strftime("%Y-%m-%d %H:%M:%S")
+                    event_dict["time_ago"] = _format_time_ago(ts)
+                except Exception:
+                    event_dict["time_display"] = str(event.created_at)
+                    event_dict["time_ago"] = "未知"
+                
+                # 非dev_admin用戶隱藏敏感信息
+                if current_user.role != "dev_admin":
+                    event_dict["client_ip"] = None
+                    event_dict["user_agent"] = None
+                    if event_dict.get("metadata"):
+                        sensitive_keys = ["ip", "user_agent", "password", "token"]
+                        for key in sensitive_keys:
+                            event_dict["metadata"].pop(key, None)
+                
+                events_data.append(event_dict)
         
-        # 格式化時間顯示
-        for event in events:
-            try:
-                ts = datetime.fromisoformat(event["timestamp"].replace('Z', '+00:00'))
-                event["time_display"] = ts.strftime("%Y-%m-%d %H:%M:%S")
-                event["time_ago"] = _format_time_ago(ts)
-            except Exception:
-                event["time_display"] = event["timestamp"]
-                event["time_ago"] = "未知"
-        
-        result = {
-            "events": events,
-            "total": len(events)
-        }
-        
-        # 包含統計資料
-        if include_stats:
-            stats = get_event_statistics()
-            result["statistics"] = stats
-        
-        return jsonify(result)
+            result = {
+                "events": events_data,
+                "total": len(events_data)
+            }
+            
+            # 包含統計資料
+            if include_stats:
+                stats = EventService.get_event_statistics(
+                    session=s,
+                    days=7,
+                    school_id=school_id
+                )
+                # 轉換為前端預期鍵名
+                try:
+                    today_key = datetime.now(timezone.utc).date().isoformat()
+                except Exception:
+                    today_key = ""
+                severity_distribution = stats.get("severity_stats", {}) if isinstance(stats, dict) else {}
+                type_distribution = stats.get("category_stats", {}) if isinstance(stats, dict) else {}
+                daily_stats = stats.get("daily_stats", {}) if isinstance(stats, dict) else {}
+                result["statistics"] = {
+                    "total_events": int(stats.get("total_events", 0)) if isinstance(stats, dict) else 0,
+                    "events_24h": int(daily_stats.get(today_key, 0)) if isinstance(daily_stats, dict) else 0,
+                    "type_distribution": type_distribution,
+                    "severity_distribution": severity_distribution,
+                    "recent_events": [],
+                }
+            
+            return jsonify(result)
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1334,3 +1710,61 @@ def _format_time_ago(timestamp: datetime) -> str:
         return f"{minutes}分鐘前"
     else:
         return "剛剛"
+
+
+@bp.post('/notify-new-domain')
+def notify_new_domain():
+    """用戶請求添加新域名到系統的通知端點"""
+    data = request.get_json(silent=True) or {}
+    domain = (data.get('domain') or '').strip()
+    email = (data.get('email') or '').strip() 
+    message = (data.get('message') or '').strip()
+    
+    if not domain:
+        return jsonify({"msg": "缺少域名參數"}), 400
+    
+    try:
+        # 記錄到管理員事件日誌
+        from services.event_service import EventService
+        with get_session() as s:
+            EventService.log_event(
+                session=s,
+                event_type="system.domain_request",
+                title=f"用戶請求添加域名",
+                description=f"用戶請求添加域名: {domain}" + (f"，聯絡信箱：{email}" if email else "") + (f"，訊息：{message}" if message else ""),
+                severity="medium",
+                target_type="domain",
+                target_id=None,
+                metadata={
+                    "domain": domain,
+                    "user_email": email,
+                    "message": message,
+                    "client_ip": request.headers.get("CF-Connecting-IP") or request.remote_addr,
+                    "user_agent": request.headers.get("User-Agent")
+                },
+                is_important=True,
+                send_webhook=True
+            )
+        
+        # 發送 Discord 通知（如果配置了）
+        try:
+            from app import _admin_webhook_url, _admin_notify_embed, _post_discord
+            hook = _admin_webhook_url()
+            if hook:
+                embed = _admin_notify_embed(
+                    kind="domain_request",
+                    title="新域名加入請求",
+                    description=f"用戶請求添加域名到系統\n\n**域名:** {domain}\n**用戶:** {email}\n**訊息:** {message}",
+                    color=0x3B82F6,  # 藍色
+                    author=f"系統通知",
+                    footer=f"請管理員在後台添加此域名"
+                )
+                _post_discord(hook, {"content": None, "embeds": [embed]})
+        except Exception as e:
+            print(f"發送Discord通知失敗: {e}")
+        
+        return jsonify({"ok": True, "message": "已通知管理員"})
+    
+    except Exception as e:
+        print(f"處理域名請求通知時出錯: {e}")
+        return jsonify({"msg": "通知失敗"}), 500

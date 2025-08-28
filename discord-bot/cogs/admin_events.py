@@ -20,7 +20,7 @@ class AdminEventsCog(commands.Cog):
     def __init__(self, bot: commands.Bot, *, alert_channel_id: int | None = None, redis_url: str | None = None):
         self.bot = bot
         self.alert_channel_id = int(alert_channel_id or int(os.getenv('DISCORD_ALERT_CHANNEL_ID', '0') or '0'))
-        self.redis_url = redis_url or os.getenv('REDIS_URL', 'redis://redis:80/0')
+        self.redis_url = redis_url or os.getenv('REDIS_URL', f"redis://localhost:{os.getenv('REDIS_PORT','12008')}/0")
         self._redis = None
         # 以 Cog 方式管理背景任務
         self._task = self._admin_event_listener

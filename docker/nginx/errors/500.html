@@ -3,23 +3,50 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>服務異常 · ForumKit</title>
+  <title>服務暫時不可用 · ForumKit</title>
   <style>
     body{margin:0;background:#faf7f0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,'Helvetica Neue',Arial}
     .wrap{min-height:100vh;display:grid;place-items:center;padding:24px}
-    .card{max-width:640px;width:100%;background:#fff8;border:1px solid #e5e1da;border-radius:16px;padding:24px;text-align:center;backdrop-filter:saturate(160%) blur(6px)}
-    .icon{width:56px;height:56px;border-radius:16px;margin:0 auto 10px;display:grid;place-items:center;background:#fef3c7;color:#92400e}
-    .btn{display:inline-flex;gap:8px;align-items:center;margin-top:12px;padding:8px 12px;border:1px solid #d4d4d4;border-radius:12px;color:#222;text-decoration:none}
+    .card{max-width:720px;width:100%;background:#ffffffcc;border:1px solid #e5e1da;border-radius:16px;padding:28px;text-align:center;backdrop-filter:saturate(160%) blur(6px)}
+    .icon{width:64px;height:64px;border-radius:16px;margin:0 auto 12px;display:grid;place-items:center;background:#fef3c7;color:#92400e;font-weight:600}
+    .title{margin:6px 0 8px;font-size:24px}
+    .desc{margin:0;color:#555;font-size:15px;line-height:1.6}
+    .actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+    .btn{display:inline-flex;gap:8px;align-items:center;padding:10px 14px;border:1px solid #d4d4d4;border-radius:12px;color:#222;text-decoration:none;background:#fff}
+    .btn.primary{background:#111827;color:#fff;border-color:#111827}
+    .muted{margin-top:10px;color:#777;font-size:12px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,'Courier New',monospace}
   </style>
   </head>
 <body>
   <div class="wrap">
     <div class="card">
-      <div class="icon">500</div>
-      <h1 style="margin:4px 0 8px;font-size:22px">服務暫時異常</h1>
-      <p style="margin:0;color:#555;font-size:14px">伺服器暫時打瞌睡了，請稍後再試。</p>
-      <a class="btn" href="/">回到首頁</a>
+      <div class="icon">維護</div>
+      <h1 class="title">服務暫時不可用（可能是 502/503）</h1>
+      <p class="desc">
+        系統可能正在重啟或短暫維護中，請稍後再試。<br/>
+        我們會在 <span id="sec" class="mono">15</span> 秒後自動重試。
+      </p>
+      <div class="actions">
+        <button class="btn primary" onclick="reloadNow()">立即重試</button>
+        <a class="btn" href="/login">前往登入</a>
+        <a class="btn" href="/">回到首頁</a>
+      </div>
+      <p class="muted">若問題持續，請稍後重新整理或聯絡管理員。</p>
+      <p class="muted">時間：<span id="ts" class="mono"></span></p>
     </div>
   </div>
+  <script>
+    (function(){
+      var wait = 15, el = document.getElementById('sec');
+      var ts = document.getElementById('ts');
+      try { ts.textContent = new Date().toISOString().replace('T',' ').replace('Z',' UTC'); } catch(e) {}
+      var timer = setInterval(function(){
+        wait -= 1; if (wait < 0) { clearInterval(timer); location.reload(); return; }
+        el.textContent = String(wait);
+      }, 1000);
+    })();
+    function reloadNow(){ try { location.reload(); } catch(e) { location.href = '/'; } }
+  </script>
 </body>
 </html>
