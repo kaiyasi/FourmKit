@@ -1,8 +1,30 @@
-node_modules
-.dist
-.git
-npm-debug.log*
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Python/Backend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/node_modules/
+
+# Runtime data
+uploads/
+cdn-data/
+nginx/logs/
+
+# VCS/OS
+.git/
+.gitignore
 .DS_Store
-.vscode
-.idea
-*.swp
+Thumbs.db
+
+# Local env
+.env
+.env.*

@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant U as 用戶
+    participant F as Frontend
+    participant B as Backend API
+    participant S as Socket.IO
+    participant D as Database
+    participant A as 管理員
+    
+    Note over U,A: 用戶登入與貼文創建流程
+    
+    U->>F: 訪問網站
+    F->>B: POST /api/auth/login
+    B->>D: 驗證用戶憑證
+    D-->>B: 用戶信息
+    B-->>F: JWT Token
+    F-->>U: 登入成功
+    
+    U->>S: WebSocket 連接
+    S-->>U: 連接確認 {hello}
+    
+    U->>F: 創建貼文
+    F->>B: POST /api/posts/create
+    B->>D: 儲存貼文 (status: pending)
+    B-->>F: 創建成功
+    B->>S: emit("moderation_update")
+    S->>A: 新貼文待審核通知
+    
+    A->>B: POST /api/moderation/post/{id}/approve
+    B->>D: 更新貼文狀態
+    B->>S: emit("post_approved", {post_data})
+    S->>U: 貼文已核准通知
+    S->>F: 更新貼文列表

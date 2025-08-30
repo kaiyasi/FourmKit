@@ -1,0 +1,276 @@
+/* 手機版專用樣式 - 統一設計系統 */
+
+/* 響應式斷點統一使用 Tailwind 標準 */
+@media (max-width: 768px) {
+  /* 標準化觸摸目標 - Apple HIG 建議 48px */
+  .mobile-touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+  
+  /* 大型觸摸目標 - 主要操作按鈕 */
+  .mobile-touch-large {
+    min-height: 56px;
+    min-width: 56px;
+  }
+
+  /* 手機版卡片系統 */
+  .mobile-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 16px;
+  }
+  
+  /* 手機版文字行高限制 */
+  .line-clamp-4 {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  
+  .line-clamp-6 {
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 手機版安全區域 */
+  .mobile-safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .mobile-safe-area-bottom,
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* 手機版滑動優化 */
+  .mobile-scroll-smooth {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* 手機版文字選擇優化 */
+  .mobile-select-text {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* 手機版按鈕動效 */
+  .mobile-button-press {
+    transition: all 0.1s ease-in-out;
+  }
+
+  .mobile-button-press:active {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+
+  /* 手機版輸入框優化 */
+  .mobile-input {
+    font-size: 16px; /* 防止 iOS Safari 縮放 */
+    border-radius: 8px;
+  }
+
+  /* 手機版長按禁用 */
+  .mobile-no-select {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* 手機版頂部留白 - 避免 NavBar 擋住內容 */
+  .mobile-navbar-spacing {
+    padding-top: 88px !important; /* NavBar 總高度：16px (top) + 12px (py-3) + 48px (h-12) + 12px (py-3) */
+  }
+
+  /* 手機版底部導航漸入動畫 */
+  .mobile-bottom-nav-enter {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  .mobile-bottom-nav-enter-active {
+    transform: translateY(0);
+    opacity: 1;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+
+  /* 手機版貼文卡片動效 */
+  .mobile-post-card {
+    transition: transform 0.1s ease, box-shadow 0.2s ease;
+    border-radius: 16px;
+  }
+
+  .mobile-post-card:active {
+    transform: scale(0.985);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  /* 手機版 FAB 浮動動效 */
+  .mobile-fab {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .mobile-fab:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .mobile-fab:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  /* 手機版抽屜動畫 */
+  .mobile-drawer-overlay {
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
+  }
+
+  .mobile-drawer-content {
+    animation: slideUp 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  /* 手機版滑動提示 */
+  .mobile-swipe-hint {
+    position: relative;
+  }
+
+  .mobile-swipe-hint::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid var(--muted);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    opacity: 0.6;
+  }
+
+  /* 手機版加載動畫 */
+  .mobile-loading-spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* 手機版長文本截斷 */
+  .mobile-text-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .mobile-text-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .mobile-text-clamp-4 {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Dark mode 手機版樣式調整 */
+@media (max-width: 768px) {
+  .dark .mobile-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .mobile-fab {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .mobile-fab:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* 手機版專用工具類 */
+@media (max-width: 768px) {
+  .mobile-only {
+    display: block !important;
+  }
+
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  .mobile-full-height {
+    height: 100vh;
+    height: 100dvh; /* 動態視口高度 */
+  }
+
+  .mobile-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    backdrop-filter: blur(8px);
+    background-color: rgba(var(--surface-rgb), 0.9);
+  }
+
+  .mobile-bottom-spacing {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-horizontal-padding {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .mobile-vertical-padding {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  
+  /* 手機版列表間距 */
+  .mobile-list-spacing {
+    gap: 12px;
+  }
+  
+  .mobile-card-spacing {
+    margin-bottom: 12px;
+  }
+}
+
+/* 超小螢幕優化 (< 480px) */
+@media (max-width: 480px) {
+  .mobile-compact .mobile-horizontal-padding {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .mobile-compact .mobile-vertical-padding {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .mobile-compact .mobile-card {
+    border-radius: 8px;
+  }
+}

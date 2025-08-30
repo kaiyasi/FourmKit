@@ -1,0 +1,3 @@
+[alembic]
+script_location = migrations
+sqlalchemy.url = %(DATABASE_URL)s

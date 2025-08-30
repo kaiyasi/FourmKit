@@ -1,0 +1,370 @@
+import { useEffect, useState } from 'react'
+import { getJSON, HttpError } from '@/lib/http'
+import ErrorPage from '@/components/ui/ErrorPage'
+import { formatLocalMinute } from '@/utils/time'
+import ChatPanel from '@/components/ChatPanel'
+import { useParams, useNavigate } from 'react-router-dom'
+import { NavBar } from '@/components/layout/NavBar'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import CommentSection from '@/components/CommentSection'
+import { getRole } from '@/utils/auth'
+import { Trash2, Link as LinkIcon } from 'lucide-react'
+// 移除行動版懸浮操作列所需圖示（留言/分享/回報），避免與內文重複
+
+type DetailPost = { id: number; content: string; created_at?: string; author_hash?: string; school_id?: number | null; school?: { id:number; slug:string; name:string } | null; media?: { id: number; path: string; kind?: string }[]; is_pinned?: boolean; pinned_at?: string }
+
+export default function PostDetailPage({ id }: { id?: number }) {
+  // 允許直接路由使用
+  const params = useParams()
+  const navigate = useNavigate()
+  const pid = id ?? Number(params.id)
+  
+  // 狀態宣告置頂，避免 early return 使用尚未宣告的變數
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [post, setPost] = useState<DetailPost | null>(null)
+  const [lightbox, setLightbox] = useState<{ url: string } | null>(null)
+  const [deleteRequesting, setDeleteRequesting] = useState(false)
+  const [showDeleteRequestModal, setShowDeleteRequestModal] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [shareMsg, setShareMsg] = useState<string | null>(null)
+  const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
+
+  // 確保 pid 是有效數字
+  if (!pid || isNaN(pid)) {
+    return (
+      <div className="min-h-screen">
+        <NavBar pathname="/posts/404" />
+        <MobileBottomNav />
+        <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+          <ErrorPage status={404} title="無效的貼文編號" />
+        </main>
+    </div>
+  )
+}
+
+  const role = getRole()
+  const canDelete = role === 'dev_admin' || role === 'campus_admin' || role === 'cross_admin'
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true); setError(null)
+        if (!pid || Number.isNaN(pid)) { setError('無效的貼文編號'); setLoading(false); return }
+        const data = await getJSON<DetailPost>(`/api/posts/${pid}`)
+        setPost(data)
+      } catch (e: any) {
+        if (e instanceof HttpError) setError(e.message)
+        else setError(String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [pid])
+
+  // 載入學校清單，供顯示名稱 fallback
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await fetch('/api/schools', { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json().catch(()=>({}))
+        if (alive && Array.isArray(j?.items)) setSchools(j.items)
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
+
+  const displaySchoolName = () => {
+    if (!post) return ''
+    const obj = (post as any).school as any
+    const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+    if (fromObj) return fromObj
+    const sidRaw = (post as any).school_id
+    const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
+    if (!hasSid || sidRaw === null) return '跨校' // 真跨校
+    const found = schools.find(s => s.id === sidRaw)
+    return (found?.name || found?.slug || '').trim()
+  }
+
+  // 刪文請求
+  const handleDeleteRequest = async () => {
+    if (!deleteReason.trim()) {
+      alert('請填寫刪文理由')
+      return
+    }
+
+    try {
+      setDeleteRequesting(true)
+      
+      // 構建 headers，如果有 token 就加上，沒有也沒關係
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      }
+      const token = localStorage.getItem('token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`/api/posts/${pid}/delete_request`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ reason: deleteReason.trim() })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({} as any))
+        const msg = (typeof errorData?.error === 'string') ? errorData.error : (errorData?.error?.message || '發送刪文請求失敗')
+        throw new Error(msg)
+      }
+
+      alert('刪文請求已發送，管理員將進行審核')
+      setShowDeleteRequestModal(false)
+      setDeleteReason('')
+      navigate('/')
+    } catch (error: any) {
+      console.error('刪文請求失敗:', error)
+      alert(error.message || '發送刪文請求失敗')
+    } finally {
+      setDeleteRequesting(false)
+    }
+  }
+
+  if (loading) return <div className="min-h-screen grid place-items-center"><div className="text-muted">載入中...</div></div>
+  if (error) {
+    const anyErr = error as any
+    const status = anyErr?._http?.status || (typeof anyErr?.status === 'number' ? anyErr.status : undefined)
+    return <ErrorPage status={status || 404} title={status===404? '貼文不存在或尚未公開': undefined} message={String(error)} />
+  }
+  if (!post) return <ErrorPage status={404} title="貼文不存在或尚未公開" />
+
+  const MediaTile = ({ m }: { m: { id: number; path: string; kind?: string } }) => {
+    const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(m.path || '') || m.kind === 'image'
+    const isVid = /\.(mp4|webm|mov)$/i.test(m.path || '') || m.kind === 'video'
+    const [loading, setLoading] = useState(isImg)
+    const [error, setError] = useState(false)
+    const [url, setUrl] = useState<string | null>(null)
+    const role = getRole()
+    const canUsePreviewApi = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(role || '')
+
+    useEffect(() => {
+      let alive = true
+      
+      const load = async () => {
+        try {
+          // 已公開的媒體直連 CDN（不經授權 API）
+          let rel = (m.path || '').replace(/^\/+/, '')
+          if (rel.startsWith('public/')) {
+            // 使用 CDN 服務直接訪問，移除 public/ 前綴
+            const cdnUrl = `https://cdn.serelix.xyz/${rel.replace(/^public\//, '')}?t=${Date.now()}`
+            setUrl(cdnUrl)
+            return
+          }
+
+          // 移除管理員預覽API調用，直接使用靜態檔案路徑
+          throw new Error('NO_PUBLIC_PATH')
+        } catch (e: any) {
+          if (!alive) return
+          // 如果 API 失敗，嘗試直接訪問檔案路徑作為備用
+          try {
+            let rel2 = (m.path || '').replace(/^\/+/, '')
+            if (rel2.startsWith('public/')) {
+              setUrl(`https://cdn.serelix.xyz/${rel2.replace(/^public\//, '')}?t=${Date.now()}`)
+            } else if (rel2.startsWith('media/')) {
+              setUrl(`https://cdn.serelix.xyz/${rel2}?t=${Date.now()}`)
+            } else {
+              const ext = (m.path || '').split('.').pop() || 'jpg'
+              const direct = `https://cdn.serelix.xyz/${m.id}.${ext}?t=${Date.now()}`
+              setUrl(direct)
+            }
+          } catch (e2: any) {
+            setError(true)
+          }
+        }
+      }
+      
+      load()
+      return () => {
+        alive = false
+      }
+    }, [m.id, m.path])
+
+    return (
+      <div className="border border-border rounded-xl p-2 min-h-[6rem] grid place-items-center bg-surface/50">
+        {isImg ? (
+          url ? (
+            <img
+              src={url}
+              alt={`media-${m.id}`}
+              className={`w-full h-64 object-contain rounded transition-opacity ${loading ? 'opacity-0' : 'opacity-100'}`}
+              loading="lazy"
+              onLoad={() => setLoading(false)}
+              onError={() => { setLoading(false); setError(true) }}
+              onClick={() => !error && setLightbox({ url })}
+            />
+          ) : (
+            <div className="text-xs text-muted">載入中...</div>
+          )
+        ) : isVid ? (
+          url ? (
+            <video src={url} controls className="w-full h-64 object-contain rounded" />
+          ) : (
+            <div className="text-xs text-muted">載入中...</div>
+          )
+        ) : (
+          url ? (
+            <a href={url} className="text-sm underline break-all" target="_blank" rel="noreferrer">下載附件</a>
+          ) : (
+            <div className="text-xs text-muted">載入中...</div>
+          )
+        )}
+        {loading && (
+          <div className="absolute w-[92%] h-[88%] animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-800" />
+        )}
+        {error && (
+          <div className="text-xs text-muted">無法載入圖片</div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen min-h-dvh">
+      <NavBar pathname={`/posts/${post.id}`} />
+      <MobileBottomNav />
+      
+      <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+        <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 break-words">
+          <div className="flex justify-between items-start mb-4">
+            <div className="text-xs text-muted">
+              #{post.id} <span className="mx-1">•</span> {post.created_at ? formatLocalMinute(post.created_at) : ''}
+              {(() => { const name = displaySchoolName(); return name ? (<><span className="mx-1">•</span> <span className="text-fg">{name}</span></>) : null })()}
+            </div>
+            
+            {/* 貼文詳情頁面的操作按鈕 */}
+            <div className="flex items-center gap-2">
+              {/* 刪文請求按鈕 */}
+              {localStorage.getItem('token') && (
+                <button
+                  onClick={() => setShowDeleteRequestModal(true)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-800/30 dark:text-red-400"
+                  title="申請刪除貼文"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>刪文請求</span>
+                </button>
+              )}
+              
+              {/* 貼文連結按鈕 */}
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/posts/${post.id}`
+                  navigator.clipboard.writeText(url)
+                  alert('貼文連結已複製到剪貼簿')
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all bg-surface-hover hover:bg-surface-active text-muted hover:text-fg"
+                title="複製貼文連結"
+              >
+                <LinkIcon className="w-4 h-4" />
+                <span>貼文連結</span>
+              </button>
+            </div>
+          </div>
+          
+          {/* 內容顯示（後端已轉換為HTML） */}
+          <div 
+            className="prose prose-sm max-w-none text-fg break-words" 
+            dangerouslySetInnerHTML={{ __html: post.content || '' }} 
+          />
+          {/* 原本的主題設計按鈕移除，改由留言區右側操作列呈現 */}
+          
+          {/* 媒體內容 */}
+          {post.media && post.media.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              {post.media.map((m) => (
+                <MediaTile key={m.id} m={m} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 留言和反應區 */}
+        <div id="comments-anchor" />
+        <CommentSection
+          postId={post.id}
+          extraActions={post.id === 4 ? (
+            <a
+              href="/theme-designer"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-surface-hover hover:bg-surface-active text-muted hover:text-fg transition-colors"
+            >
+              <span>前往主題設計</span>
+            </a>
+          ) : null}
+        />
+
+        {/* 刪文請求模態框 */}
+        {showDeleteRequestModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-fg mb-4">刪文請求</h3>
+              <p className="text-sm text-muted mb-4">
+                請填寫刪文理由，管理員將根據理由進行審核。
+              </p>
+              
+              <textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="請詳細說明刪文理由..."
+                className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                rows={4}
+                maxLength={500}
+              />
+              
+              <div className="flex justify-between items-center mt-2 mb-4">
+                <span className="text-xs text-muted">
+                  {deleteReason.length}/500
+                </span>
+              </div>
+              
+              <div className="flex gap-3 flex-col sm:flex-row">
+                <button
+                  onClick={() => {
+                    setShowDeleteRequestModal(false)
+                    setDeleteReason('')
+                  }}
+                  className="btn-ghost flex-1 py-2"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleDeleteRequest}
+                  disabled={deleteRequesting || !deleteReason.trim()}
+                  className="btn-primary flex-1 py-2 disabled:opacity-50"
+                >
+                  {deleteRequesting ? '發送中...' : '發送請求'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* 圖片燈箱 */}
+      {lightbox && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <img 
+            src={lightbox.url} 
+            alt="放大圖片" 
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+      {/* 移除：行動版懸浮工具列（留言/分享/回報），避免與內文重複 */}
+    </div>
+  )
+}

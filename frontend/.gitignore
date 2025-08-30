@@ -1,0 +1,109 @@
+# Node
+node_modules/
+dist/
+frontend/dist/
+backend/node_modules/
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+venv/
+uploads/
+cdn-data/
+
+# VSCode
+.vscode/
+
+# Docker
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Others
+.env.local
+.env.*.local
+
+# Frontend build
+frontend/build/
+frontend/.next/
+
+# Backend build
+backend/.pytest_cache/
+backend/.mypy_cache/
+
+# Nginx
+nginx/logs/
+
+# Code
+.vscode
+Codex.md
+
+# ==== Security & secrets (prevent accidental leaks) ====
+# Private keys and certificates
+id_rsa
+id_rsa.*
+id_dsa
+id_ecdsa
+id_ed25519
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local env/secret files
+.envrc
+*.secret
+secrets.*
+*.keystore
+
+# ==== Databases & dumps ====
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.bak
+*.sql
+*.sql.gz
+dump/
+backups/
+
+# ==== Coverage & reports ====
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+pytest.xml
+reports/
+
+# ==== Caches & temp ====
+.cache/
+.tmp/
+tmp/
+*.swp
+*.swo
+
+# ==== IDE ====
+.idea/
+*.iml
+
+# ==== Node debug logs ====
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==== Build artifacts (extra safety) ====
+build/
+
+# ==== Project management ====
+Project.md

@@ -1,0 +1,1280 @@
+@import "./styles/theme.css";
+@import "./styles/mobile.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全域過渡效果（改為僅色彩/陰影/透明度，避免輸入框 caret/選取異常） */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
+  transition-duration: 0.2s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 表單元素不套用過渡，避免輸入時 caret 抖動或失焦 */
+input, textarea, select, .form-control {
+  transition: none !important;
+}
+
+/* 主題切換動畫 */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 主題切換時的元素動畫 */
+.theme-transition * {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 主題切換動畫的響應式優化 */
+@media (prefers-reduced-motion: reduce) {
+  .theme-transition * {
+    transition: none !important;
+  }
+}
+
+/* 移動端主題切換優化 */
+@media (max-width: 640px) {
+  .theme-transition {
+    transition-duration: 0.2s;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* OPPO / Android 手機相容性與安全區處理 */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: transparent; background: var(--bg); min-height: 100dvh; }
+#root { min-height: 100dvh; }
+
+/* 動態視窗高度單位（避免 100vh 在行動瀏覽器被地址列壓縮） */
+.min-h-dvh { min-height: 100dvh; }
+.vh-screen { min-height: 100dvh; }
+
+/* 安全區工具（iPhone 瀏海 / Android 手勢導覽條） */
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.pl-safe { padding-left: max(env(safe-area-inset-left), 0px); }
+.pr-safe { padding-right: max(env(safe-area-inset-right), 0px); }
+
+/* 固定層級滾動與彈性捲動優化（避免背景誤捲動） */
+html, body { overscroll-behavior: none; }
+main, [data-scroll-container] { overscroll-behavior: contain; }
+
+/* 基礎 UI 元件（對齊主題變數） */
+.form-control {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.875rem; /* 更保守，避免行高裁切 */
+  min-height: 2.75rem;       /* 44px 觸控友善高度（不強制固定高度） */
+  line-height: 1.5;          /* 使用較自然的行高，避免不同平台裁切 */
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  outline: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+.form-control::placeholder { color: var(--muted); opacity: .9; }
+.form-control:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); border-color: var(--primary); }
+/* 更緊湊版：用於需要與相鄰輸入高度嚴格一致的場景（例如 FilterBar 的瀏覽範圍） */
+.form-control--compact {
+  padding-block: 0.375rem; /* 減少上下內距，避免視覺拉高 */
+  min-height: 2.5rem;      /* 稍微較小，實測更貼近各瀏覽器原生 select 高度 */
+  line-height: 1.25;       /* 壓低行高避免抬高外框 */
+}
+/* Normalize all selects to match input height and add custom arrow */
+select, select.form-control {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 2.25rem;
+  line-height: 1.5;           /* 與 input 對齊，避免文字被裁切 */
+  min-height: 2.75rem;        /* 與 input 一致的最小高度 */
+}
+/* select 的緊湊版（覆蓋預設） */
+select.form-control--compact {
+  padding-right: 2rem;  /* 保留箭頭空間但更緊湊 */
+  min-height: 2.5rem;
+  line-height: 1.25;
+}
+select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 20 20' fill='%23888888'><path d='M5.5 7l4.5 5 4.5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 0.9rem;
+}
+input[type="color"].form-control { height: 2.5rem; padding: 0.25rem; }
+
+/* 文字溢出保護 */
+.prose, .prose-sm { overflow-wrap: anywhere; word-break: break-word; }
+
+/* 表格小螢幕可水平捲動 */
+.table-scroll { overflow-x: auto; }
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 1px solid color-mix(in srgb, var(--primary) 75%, transparent);
+}
+.btn-primary:hover { background: var(--primary-hover); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.5rem 1rem; border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--surface-hover); }
+
+.btn-danger {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.5rem 1rem; border-radius: 0.75rem;
+  background: var(--danger); color: #fff;
+  border: 1px solid color-mix(in srgb, var(--danger) 70%, transparent);
+}
+.btn-danger:hover { background: var(--danger-hover); }
+
+/* 新增優雅的動畫 */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+.animate-slide-down { animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+.animate-scale-in { animation: scaleIn 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* 移動端優化 - 分級響應式 */
+
+/* 超小屏幕（舊款手機，iPhone SE 等）*/
+@media (max-width: 375px) {
+  .container-mobile {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  /* 更緊湊的按鈕佈局 */
+  .mobile-reactions {
+    gap: 4px;
+  }
+  
+  .mobile-reactions button {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  
+  /* 文字大小調整 */
+  .mobile-text-adaptive {
+    font-size: 13px;
+  }
+  
+  /* 更小的圓角 */
+  .mobile-rounded {
+    border-radius: 8px;
+  }
+  
+  /* 超小屏幕專用間距 */
+  .mobile-spacing-xs {
+    padding: 8px;
+    margin: 4px;
+  }
+  
+  /* 更緊湊的卡片 */
+  .mobile-card-compact {
+    margin-bottom: 8px;
+    padding: 10px;
+  }
+  
+  /* 更小的按鈕 */
+  .mobile-btn-xs {
+    padding: 6px 10px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+  
+  /* 更緊湊的導航 */
+  .mobile-nav-xs {
+    padding: 8px;
+    gap: 6px;
+  }
+}
+
+/* 小屏手機（標準手機尺寸）*/
+@media (max-width: 640px) {
+  /* 確保點擊目標足夠大 */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* 改善觸控滾動體驗 */
+  .overflow-auto, .overflow-y-auto, .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* 避免文字過小 */
+  input, textarea, select {
+    font-size: 16px; /* 防止 iOS 縮放 */
+  }
+  
+  /* 移動端專用容器間距 */
+  .mobile-spacing {
+    padding: 12px;
+  }
+  
+  /* 移動端按鈕組 */
+  .mobile-button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  /* 移動端卡片間距 */
+  .mobile-card-spacing {
+    margin-bottom: 12px;
+  }
+  
+  /* 移動端文字優化 */
+  .mobile-text-sm {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  
+  .mobile-text-base {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  
+  /* 移動端間距優化 */
+  .mobile-gap-sm {
+    gap: 8px;
+  }
+  
+  .mobile-gap-base {
+    gap: 12px;
+  }
+  
+  /* 移動端按鈕優化 */
+  .mobile-btn-sm {
+    padding: 8px 12px;
+    font-size: 14px;
+    min-height: 40px;
+  }
+  
+  .mobile-btn-base {
+    padding: 10px 16px;
+    font-size: 16px;
+    min-height: 44px;
+  }
+  
+  /* 移動端輸入框優化 */
+  .mobile-input {
+    padding: 12px 16px;
+    font-size: 16px;
+    border-radius: 12px;
+  }
+  
+  /* 移動端卡片優化 */
+  .mobile-card {
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  
+  /* 移動端導航優化 */
+  .mobile-nav {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  
+  /* 移動端表單優化 */
+  .mobile-form {
+    gap: 16px;
+  }
+  
+  .mobile-form-group {
+    margin-bottom: 16px;
+  }
+  
+  /* 移動端列表優化 */
+  .mobile-list {
+    gap: 8px;
+  }
+  
+  .mobile-list-item {
+    padding: 12px;
+    border-radius: 12px;
+  }
+  
+  /* 移動端模態框優化 */
+  .mobile-modal {
+    padding: 20px;
+    border-radius: 16px;
+    margin: 16px;
+  }
+  
+  /* 移動端標籤優化 */
+  .mobile-label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  
+  /* 移動端提示文字優化 */
+  .mobile-helper {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+}
+
+/* 中等屏幕手機（大屏手機）*/
+@media (min-width: 641px) and (max-width: 768px) {
+  /* 平板導航優化 */
+  .tablet-nav {
+    gap: 4px;
+    padding: 8px 12px;
+  }
+  
+  .tablet-nav li a {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  .tablet-spacing {
+    padding: 16px;
+  }
+  
+  /* 更好的觸控體驗 */
+  button, a, [role="button"] {
+    min-height: 48px;
+  }
+  
+  /* 平板文字大小 */
+  .tablet-text-sm {
+    font-size: 15px;
+  }
+  
+  .tablet-text-base {
+    font-size: 17px;
+  }
+  
+  /* 平板間距 */
+  .tablet-gap {
+    gap: 16px;
+  }
+  
+  /* 平板按鈕 */
+  .tablet-btn {
+    padding: 12px 20px;
+    font-size: 16px;
+    min-height: 48px;
+  }
+  
+  /* 平板卡片 */
+  .tablet-card {
+    padding: 20px;
+    border-radius: 16px;
+  }
+}
+
+/* 橫屏手機優化 */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* 減少垂直間距 */
+  .landscape-compact {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  
+  /* 更緊湊的導航 */
+  .mobile-nav-compact {
+    padding: 8px 12px;
+  }
+  
+  /* 橫屏文字優化 */
+  .landscape-text {
+    font-size: 14px;
+    line-height: 1.3;
+  }
+  
+  /* 橫屏按鈕優化 */
+  .landscape-btn {
+    padding: 6px 12px;
+    min-height: 36px;
+  }
+  
+  /* 橫屏卡片優化 */
+  .landscape-card {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+}
+
+/* 高 DPI 屏幕優化 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  /* 更清晰的邊框 */
+  .border-crisp {
+    border-width: 0.5px;
+  }
+  
+  /* 更清晰的文字 */
+  .text-crisp {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* 觸控設備優化 */
+@media (hover: none) and (pointer: coarse) {
+  /* 更大的觸控目標 */
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+  
+  /* 觸控友好的間距 */
+  .touch-spacing {
+    gap: 12px;
+  }
+  
+  /* 觸控友好的按鈕 */
+  .touch-btn {
+    padding: 12px 16px;
+    font-size: 16px;
+    border-radius: 12px;
+  }
+  
+  /* 觸控友好的輸入框 */
+  .touch-input {
+    padding: 16px;
+    font-size: 16px;
+    border-radius: 12px;
+  }
+  
+  /* 觸控友好的滾動 */
+  .touch-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+}
+
+/* OPPO Reno 13F 專用優化 (6.67 英寸, 2400×1080) */
+@media (min-width: 400px) and (max-width: 480px) and (min-height: 800px) {
+  /* 大屏手機專用容器 */
+  .oppo-container {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 0 16px;
+  }
+  
+  /* 更大的文字尺寸 */
+  .oppo-text-lg {
+    font-size: 18px;
+    line-height: 1.6;
+  }
+  
+  .oppo-text-xl {
+    font-size: 20px;
+    line-height: 1.5;
+  }
+  
+  /* 更大的間距 */
+  .oppo-spacing-lg {
+    padding: 20px;
+    margin: 16px;
+  }
+  
+  .oppo-gap-lg {
+    gap: 16px;
+  }
+  
+  /* 更大的按鈕 */
+  .oppo-btn-lg {
+    padding: 14px 20px;
+    font-size: 18px;
+    min-height: 52px;
+    border-radius: 14px;
+  }
+  
+  /* 更大的卡片 */
+  .oppo-card-lg {
+    padding: 20px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+  
+  /* 更大的輸入框 */
+  .oppo-input-lg {
+    padding: 18px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的導航 */
+  .oppo-nav-lg {
+    padding: 16px 20px;
+    gap: 16px;
+  }
+  
+  /* 更大的圖標 */
+  .oppo-icon-lg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .oppo-icon-xl {
+    width: 28px;
+    height: 28px;
+  }
+  
+  /* 更大的頭像 */
+  .oppo-avatar-lg {
+    width: 48px;
+    height: 48px;
+  }
+  
+  /* 更大的反應按鈕 */
+  .oppo-reaction-lg {
+    padding: 10px 16px;
+    font-size: 16px;
+    min-height: 48px;
+    border-radius: 12px;
+  }
+  
+  /* 更大的留言區域 */
+  .oppo-comment-lg {
+    padding: 20px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+  
+  /* 更大的貼文卡片 */
+  .oppo-post-lg {
+    padding: 24px;
+    border-radius: 18px;
+    margin-bottom: 20px;
+  }
+  
+  /* 更大的浮動按鈕 */
+  .oppo-fab-lg {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
+    font-size: 20px;
+  }
+  
+  /* 更大的模態框 */
+  .oppo-modal-lg {
+    padding: 24px;
+    border-radius: 20px;
+    margin: 20px;
+  }
+  
+  /* 更大的表單 */
+  .oppo-form-lg {
+    gap: 20px;
+  }
+  
+  .oppo-form-group-lg {
+    margin-bottom: 20px;
+  }
+  
+  /* 更大的標籤 */
+  .oppo-label-lg {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+  
+  /* 更大的提示文字 */
+  .oppo-helper-lg {
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  
+  /* 更大的列表 */
+  .oppo-list-lg {
+    gap: 12px;
+  }
+  
+  .oppo-list-item-lg {
+    padding: 16px;
+    border-radius: 14px;
+  }
+  
+  /* 更大的分頁 */
+  .oppo-pagination-lg {
+    gap: 12px;
+  }
+  
+  .oppo-pagination-btn-lg {
+    padding: 12px 16px;
+    font-size: 16px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+  
+  /* 更大的搜索框 */
+  .oppo-search-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的過濾器 */
+  .oppo-filter-lg {
+    padding: 12px 16px;
+    font-size: 16px;
+    border-radius: 12px;
+    min-height: 48px;
+  }
+  
+  /* 更大的通知 */
+  .oppo-notification-lg {
+    padding: 16px 20px;
+    border-radius: 14px;
+    font-size: 16px;
+  }
+  
+  /* 更大的工具提示 */
+  .oppo-tooltip-lg {
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
+  
+  /* 更大的進度條 */
+  .oppo-progress-lg {
+    height: 8px;
+    border-radius: 4px;
+  }
+  
+  /* 更大的分割線 */
+  .oppo-divider-lg {
+    margin: 20px 0;
+    height: 2px;
+  }
+  
+  /* 更大的徽章 */
+  .oppo-badge-lg {
+    padding: 6px 12px;
+    font-size: 14px;
+    border-radius: 12px;
+  }
+  
+  /* 更大的標籤組 */
+  .oppo-tag-group-lg {
+    gap: 12px;
+  }
+  
+  .oppo-tag-lg {
+    padding: 8px 16px;
+    font-size: 16px;
+    border-radius: 12px;
+  }
+  
+  /* 更大的圖片預覽 */
+  .oppo-image-lg {
+    border-radius: 16px;
+  }
+  
+  /* 更大的視頻播放器 */
+  .oppo-video-lg {
+    border-radius: 16px;
+  }
+  
+  /* 更大的音頻播放器 */
+  .oppo-audio-lg {
+    padding: 16px;
+    border-radius: 14px;
+  }
+  
+  /* 更大的文件上傳 */
+  .oppo-upload-lg {
+    padding: 24px;
+    border-radius: 16px;
+    min-height: 120px;
+  }
+  
+  /* 更大的拖拽區域 */
+  .oppo-drag-lg {
+    padding: 32px;
+    border-radius: 18px;
+    min-height: 160px;
+  }
+  
+  /* 更大的載入動畫 */
+  .oppo-loading-lg {
+    width: 48px;
+    height: 48px;
+  }
+  
+  /* 更大的錯誤提示 */
+  .oppo-error-lg {
+    padding: 20px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+  
+  /* 更大的成功提示 */
+  .oppo-success-lg {
+    padding: 20px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+  
+  /* 更大的警告提示 */
+  .oppo-warning-lg {
+    padding: 20px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+  
+  /* 更大的信息提示 */
+  .oppo-info-lg {
+    padding: 20px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+  
+  /* 更大的確認對話框 */
+  .oppo-confirm-lg {
+    padding: 24px;
+    border-radius: 18px;
+    max-width: 400px;
+  }
+  
+  /* 更大的選擇器 */
+  .oppo-select-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的複選框 */
+  .oppo-checkbox-lg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  /* 更大的單選框 */
+  .oppo-radio-lg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  /* 更大的開關 */
+  .oppo-switch-lg {
+    width: 56px;
+    height: 32px;
+  }
+  
+  /* 更大的滑塊 */
+  .oppo-slider-lg {
+    height: 8px;
+  }
+  
+  .oppo-slider-thumb-lg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  /* 更大的日期選擇器 */
+  .oppo-date-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的時間選擇器 */
+  .oppo-time-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的顏色選擇器 */
+  .oppo-color-lg {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+  
+  /* 更大的文件選擇器 */
+  .oppo-file-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的範圍選擇器 */
+  .oppo-range-lg {
+    height: 8px;
+  }
+  
+  .oppo-range-thumb-lg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  /* 更大的多選框 */
+  .oppo-multiselect-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的自動完成 */
+  .oppo-autocomplete-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的密碼輸入框 */
+  .oppo-password-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的數字輸入框 */
+  .oppo-number-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的電話輸入框 */
+  .oppo-tel-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的郵箱輸入框 */
+  .oppo-email-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的網址輸入框 */
+  .oppo-url-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+  
+  /* 更大的搜索輸入框 */
+  .oppo-search-input-lg {
+    padding: 16px 20px;
+    font-size: 18px;
+    border-radius: 14px;
+    min-height: 56px;
+  }
+}
+
+/* 深色模式移動端優化 */
+@media (prefers-color-scheme: dark) {
+  .mobile-dark-optimized {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+  
+  .mobile-dark-text {
+    color: var(--fg);
+  }
+  
+  .mobile-dark-input {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--fg);
+  }
+}
+
+/* 減少動態偏好優化 */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-reduced-motion {
+    transition: none;
+    animation: none;
+  }
+  
+  .mobile-reduced-motion * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* 背景圖 + 單層遮罩（亮/暗） */
+body { background: var(--bg); color: var(--fg); min-height:100dvh; }
+
+/* 統一表單欄位樣式（隨主題變換） */
+.form-control {
+  width: 100%;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1.5px solid var(--border);
+  border-radius: 1rem; /* 更圓潤的設計 */
+  padding: 0.875rem 1rem; /* 更寬鬆的內邊距 */
+  background-clip: padding-box;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.form-control::placeholder { color: var(--muted); opacity: 0.8; }
+.form-control:focus { 
+  outline: none; 
+  border-color: var(--primary); 
+  box-shadow: 0 0 0 4px var(--primary-100), 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+.form-control:hover:not(:focus) {
+  border-color: var(--primary-600);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.form-control:disabled { 
+  background: var(--surface-hover); 
+  color: var(--muted); 
+  cursor: not-allowed; 
+  transform: none;
+}
+
+/* 全域輸入框樣式（未特別標記也跟隨主題） */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']):not([type='reset']),
+textarea,
+select {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background-clip: padding-box;
+}
+
+/* Color picker 細節調整：移除外框/黑框，與主題一致 */
+input[type="color"] {
+  border: none !important;
+  padding: 0;
+  background: transparent;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0.5rem; }
+/* Firefox */
+::-moz-color-swatch { border: none; }
+::-moz-color-swatch, ::-moz-focus-inner { border: 0; padding: 0; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.9; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-100); }
+
+/* 覆蓋瀏覽器自動填入的底色，維持與主題一致（Chrome/Safari） */
+input:-webkit-autofill,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--fg) !important;
+  box-shadow: 0 0 0px 1000px var(--surface) inset !important; /* 與主題表面一致 */
+  transition: background-color 9999s ease 0s !important; /* 避免閃爍 */
+  caret-color: var(--fg) !important;
+}
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-100), 0 0 0px 1000px var(--surface) inset !important;
+}
+
+/* 背景：依主題覆寫（可換成對應圖檔） */
+ :root[data-theme='beige'] body {background-image:
+  radial-gradient(circle at 40% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 60%),
+  linear-gradient(to bottom,rgba(250,248,243,0.42),rgba(248,245,238,0.34)),
+  url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+/* 海霧 (ocean) 輕藍層 */
+:root[data-theme='ocean'] body {background-image:linear-gradient(to bottom,rgba(220,238,248,0.68),rgba(205,230,242,0.68)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+/* 森雨 (forest) 淺綠層 */
+:root[data-theme='forest'] body {background-image:linear-gradient(to bottom,rgba(224,238,226,0.70),rgba(210,231,214,0.70)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+/* 暗暮/霧朦 (mist) 中性灰層 */
+:root[data-theme='mist'] body {background-image:linear-gradient(to bottom,rgba(238,240,242,0.66),rgba(226,229,232,0.66)),url(/images/bg-light.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+:root[data-theme='dark'] body {background-image:linear-gradient(to bottom,rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url(/images/bg-dark.jpg);background-size:cover;background-position:center;background-attachment:fixed;}
+
+/* 初始淡入避免 FOUC - 暫時停用以測試白畫面問題 */
+/* html { opacity:0; transition:opacity .4s ease; } */
+/* html.theme-ready { opacity:1; } */
+
+/* 自訂滾動條 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* 按鈕/文字雙格式：亮色 -> 深灰底白字；暗色 -> 淺灰底深色字 */
+.dual-btn {
+  background:#2E2F31; color:#FFFFFF; border:1px solid #2E2F31;
+}
+.dual-btn:hover { background:#1F2022; }
+.dual-text { color:#2E2F31; }
+
+/* 暗色主題的反向效果 */
+.dark .dual-btn, 
+[data-theme='dim'] .dual-btn, 
+[data-theme='dark'] .dual-btn {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 1px solid var(--primary);
+}
+.dark .dual-btn:hover, 
+[data-theme='dim'] .dual-btn:hover, 
+[data-theme='dark'] .dual-btn:hover { 
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+.dark .dual-text, 
+[data-theme='dim'] .dual-text, 
+[data-theme='dark'] .dual-text { color:#F5F5F5; }
+
+/* 簡易 tooltip */
+[data-tip] { position:relative; }
+[data-tip]:hover::after { content:attr(data-tip); position:absolute; top:100%; left:50%; transform:translate(-50%,6px); background:rgba(0,0,0,0.75); color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; white-space:nowrap; pointer-events:none; z-index:60; }
+
+/* text-fg utility */
+.text-fg { color: var(--fg); }
+
+/* 多行文字截斷 */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* 安全區域內邊距（適用於有瀏海的手機） */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-left { padding-left: env(safe-area-inset-left); }
+.safe-right { padding-right: env(safe-area-inset-right); }
+
+/* 簡化的設計組件 */
+
+/* 簡潔卡片設計 */
+.card-simple {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-soft);
+  transition: box-shadow 0.2s ease;
+}
+
+.card-simple:hover {
+  box-shadow: var(--shadow-medium);
+}
+
+/* 統一主題按鈕樣式 */
+.btn-primary {
+  background: var(--fg);
+  color: var(--bg);
+  border: 1px solid var(--fg);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  word-break: keep-all;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: var(--muted);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  word-break: keep-all;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: var(--surface-hover);
+  border-color: var(--fg);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-secondary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* 按鈕禁用狀態 */
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* 深色模式按鈕優化 */
+.dark .btn-primary,
+[data-theme='dark'] .btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.dark .btn-primary:hover,
+[data-theme='dark'] .btn-primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.dark .btn-secondary,
+[data-theme='dark'] .btn-secondary {
+  background: var(--button-secondary);
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.dark .btn-secondary:hover,
+[data-theme='dark'] .btn-secondary:hover {
+  background: var(--button-secondary-hover);
+  border-color: var(--muted);
+}
+
+/* 危險按鈕樣式 */
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  word-break: keep-all;
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+
+.btn-danger:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* 深色模式危險按鈕 */
+.dark .btn-danger,
+[data-theme='dark'] .btn-danger {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}
+
+.dark .btn-danger:hover,
+[data-theme='dark'] .btn-danger:hover {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+/* 防止按鈕文字垂直分字 */
+button, .btn-primary, .btn-secondary, .btn-danger {
+  white-space: nowrap;
+  word-break: keep-all;
+  hyphens: none;
+}

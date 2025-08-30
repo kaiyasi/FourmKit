@@ -1,0 +1,343 @@
+@import url('https://fonts.googleapis.com/css2?family=Huninn&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Birthstone&display=swap');
+
+/* 字體基礎 */
+:root {  --font-cjk:'Huninn','PingFang TC','Noto Sans TC','Microsoft JhengHei',system-ui,sans-serif;  --font-latin-decor:'Birthstone',cursive;  --font-mono:ui-monospace,'Fira Code',Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace; }
+
+/* 預設 (米白) - 完整配色方案 */
+:root[data-theme='beige'] {  
+  /* 基礎色彩 */
+  --bg: #F8F5EE; 
+  --fg: #1F2937; 
+  --muted: #6F757C; 
+  --border: #DCCFBD; 
+  
+  /* 表面色彩 */
+  --surface: #FFFFFF; 
+  --surface-hover: #F4F4F4; 
+  --surface-active: #E9E9E9; 
+  
+  /* 主要色彩 */
+  --primary: #1F2937; 
+  --primary-600: #111827; 
+  --primary-100: #F3F4F6; 
+  --primary-hover: #111827; 
+  --primary-foreground: #F8F5EE; 
+  
+  /* 危險色彩（Morandi Red） */
+  --danger: #B65C5C; 
+  --danger-hover: #A14E4E; 
+  --danger-bg: #F7EAEA;
+  --danger-border: #E9C5C5;
+  --danger-text: #7F3E3E;
+  
+  /* 成功色彩 */
+  --success: #059669; 
+  --success-hover: #047857; 
+  --success-bg: #F0FDF4;
+  --success-border: #BBF7D0;
+  --success-text: #166534;
+  
+  /* 警告色彩 */
+  --warning: #D97706; 
+  --warning-hover: #B45309; 
+  --warning-bg: #FFFBEB;
+  --warning-border: #FED7AA;
+  --warning-text: #92400E;
+  
+  /* 信息色彩 */
+  --info: #2563EB; 
+  --info-hover: #1D4ED8; 
+  --info-bg: #EFF6FF;
+  --info-border: #BFDBFE;
+  --info-text: #1E40AF;
+  
+  /* 導航色彩 */
+  --nav-bg: rgba(255,255,255,0.78); 
+  --nav-border: rgba(215,205,190,0.60); 
+  
+  /* 按鈕色彩 */
+  --button-secondary: #F1F1F1; 
+  --button-secondary-hover: #E6E6E6; 
+  
+  /* 陰影 */
+  --shadow-soft: 0 1px 3px rgba(0,0,0,0.055); 
+  --shadow-medium: 0 4px 12px rgba(0,0,0,0.09); 
+  
+  /* 特殊色彩 */
+  --accent: #7C3AED; 
+  --accent-hover: #6D28D9; 
+  --neutral: #6B7280; 
+  --neutral-hover: #9CA3AF; 
+}
+
+/* 海霧 (霧藍) - 完整配色方案 */
+:root[data-theme='ocean'] {  
+  /* 基礎色彩 */
+  --bg: #EEF5F8; 
+  --fg: #1E2F38; 
+  --muted: #56666E; 
+  --border: #BCD2DB; 
+  
+  /* 表面色彩 */
+  --surface: #FFFFFF; 
+  --surface-hover: #F4F7F9; 
+  --surface-active: #E9EFF2; 
+  
+  /* 主要色彩 */
+  --primary: #1E2F38; 
+  --primary-600: #0F1A1F; 
+  --primary-100: #E8F0F4; 
+  --primary-hover: #0F1A1F; 
+  --primary-foreground: #EEF5F8; 
+  
+  /* 危險色彩（Morandi Red） */
+  --danger: #B55E61; 
+  --danger-hover: #9E4F52; 
+  --danger-bg: #F5ECEC;
+  --danger-border: #E6C6C8;
+  --danger-text: #7A4345;
+  
+  /* 成功色彩 */
+  --success: #059669; 
+  --success-hover: #047857; 
+  --success-bg: #F0FDF4;
+  --success-border: #BBF7D0;
+  --success-text: #166534;
+  
+  /* 警告色彩 */
+  --warning: #D97706; 
+  --warning-hover: #B45309; 
+  --warning-bg: #FFFBEB;
+  --warning-border: #FED7AA;
+  --warning-text: #92400E;
+  
+  /* 信息色彩 */
+  --info: #2563EB; 
+  --info-hover: #1D4ED8; 
+  --info-bg: #EFF6FF;
+  --info-border: #BFDBFE;
+  --info-text: #1E40AF;
+  
+  /* 導航色彩 */
+  --nav-bg: rgba(255,255,255,0.80); 
+  --nav-border: rgba(185,205,215,0.60); 
+  
+  /* 按鈕色彩 */
+  --button-secondary: #ECF1F4; 
+  --button-secondary-hover: #E1E9EC; 
+  
+  /* 陰影 */
+  --shadow-soft: 0 1px 3px rgba(0,70,110,0.055); 
+  --shadow-medium: 0 4px 14px rgba(0,70,110,0.11); 
+  
+  /* 特殊色彩 */
+  --accent: #7C3AED; 
+  --accent-hover: #6D28D9; 
+  --neutral: #6B7280; 
+  --neutral-hover: #9CA3AF; 
+}
+
+/* 森雨 (霧綠) - 完整配色方案 */
+:root[data-theme='forest'] {  
+  /* 基礎色彩 */
+  --bg: #F1F6F1; 
+  --fg: #1F2B1F; 
+  --muted: #556358; 
+  --border: #C2D2C4; 
+  
+  /* 表面色彩 */
+  --surface: #FFFFFF; 
+  --surface-hover: #F3F6F3; 
+  --surface-active: #E7EDEA; 
+  
+  /* 主要色彩 */
+  --primary: #1F2B1F; 
+  --primary-600: #0F1510; 
+  --primary-100: #E8F0E8; 
+  --primary-hover: #0F1510; 
+  --primary-foreground: #F1F6F1; 
+  
+  /* 危險色彩（Morandi Red） */
+  --danger: #A85A5A; 
+  --danger-hover: #934D4D; 
+  --danger-bg: #F3E7E7;
+  --danger-border: #E2C0C0;
+  --danger-text: #6E3A3A;
+  
+  /* 成功色彩 */
+  --success: #059669; 
+  --success-hover: #047857; 
+  --success-bg: #F0FDF4;
+  --success-border: #BBF7D0;
+  --success-text: #166534;
+  
+  /* 警告色彩 */
+  --warning: #D97706; 
+  --warning-hover: #B45309; 
+  --warning-bg: #FFFBEB;
+  --warning-border: #FED7AA;
+  --warning-text: #92400E;
+  
+  /* 信息色彩 */
+  --info: #2563EB; 
+  --info-hover: #1D4ED8; 
+  --info-bg: #EFF6FF;
+  --info-border: #BFDBFE;
+  --info-text: #1E40AF;
+  
+  /* 導航色彩 */
+  --nav-bg: rgba(255,255,255,0.80); 
+  --nav-border: rgba(192,210,195,0.60); 
+  
+  /* 按鈕色彩 */
+  --button-secondary: #ECF2ED; 
+  --button-secondary-hover: #E1E9E3; 
+  
+  /* 陰影 */
+  --shadow-soft: 0 1px 3px rgba(20,80,40,0.065); 
+  --shadow-medium: 0 4px 14px rgba(20,80,40,0.13); 
+  
+  /* 特殊色彩 */
+  --accent: #7C3AED; 
+  --accent-hover: #6D28D9; 
+  --neutral: #6B7280; 
+  --neutral-hover: #9CA3AF; 
+}
+
+/* 霧朦 (灰白) - 完整配色方案 */
+:root[data-theme='mist'] {  
+  /* 基礎色彩 */
+  --bg: #F6F7F8; 
+  --fg: #1F2429; 
+  --muted: #667079; 
+  --border: #D3D9DD; 
+  
+  /* 表面色彩 */
+  --surface: #FFFFFF; 
+  --surface-hover: #F2F4F5; 
+  --surface-active: #E7EAED; 
+  
+  /* 主要色彩 */
+  --primary: #1F2429; 
+  --primary-600: #0F1214; 
+  --primary-100: #E8EAEC; 
+  --primary-hover: #0F1214; 
+  --primary-foreground: #F6F7F8; 
+  
+  /* 危險色彩（Morandi Red） */
+  --danger: #B26868; 
+  --danger-hover: #9C5959; 
+  --danger-bg: #F5ECEC;
+  --danger-border: #E6CACA;
+  --danger-text: #7A4747;
+  
+  /* 成功色彩 */
+  --success: #059669; 
+  --success-hover: #047857; 
+  --success-bg: #F0FDF4;
+  --success-border: #BBF7D0;
+  --success-text: #166534;
+  
+  /* 警告色彩 */
+  --warning: #D97706; 
+  --warning-hover: #B45309; 
+  --warning-bg: #FFFBEB;
+  --warning-border: #FED7AA;
+  --warning-text: #92400E;
+  
+  /* 信息色彩 */
+  --info: #2563EB; 
+  --info-hover: #1D4ED8; 
+  --info-bg: #EFF6FF;
+  --info-border: #BFDBFE;
+  --info-text: #1E40AF;
+  
+  /* 導航色彩 */
+  --nav-bg: rgba(255,255,255,0.82); 
+  --nav-border: rgba(205,210,214,0.60); 
+  
+  /* 按鈕色彩 */
+  --button-secondary: #EDF0F3; 
+  --button-secondary-hover: #E2E7EA; 
+  
+  /* 陰影 */
+  --shadow-soft: 0 1px 3px rgba(0,0,0,0.055); 
+  --shadow-medium: 0 4px 12px rgba(0,0,0,0.085); 
+  
+  /* 特殊色彩 */
+  --accent: #7C3AED; 
+  --accent-hover: #6D28D9; 
+  --neutral: #6B7280; 
+  --neutral-hover: #9CA3AF; 
+}
+
+/* 暗夜 (灰黑) - 完整暗色配色方案 */
+:root[data-theme='dark'] {  
+  /* 基礎色彩 */
+  --bg: #0A0A0A; 
+  --fg: #F5F5F5; 
+  --muted: #9CA3AF; 
+  --border: #374151; 
+  
+  /* 表面色彩 */
+  --surface: #1F1F1F; 
+  --surface-hover: #2D2D2D; 
+  --surface-active: #404040; 
+  
+  /* 主要色彩 */
+  --primary: #60A5FA; 
+  --primary-600: #3B82F6; 
+  --primary-100: #1E3A8A; 
+  --primary-hover: #3B82F6; 
+  --primary-foreground: #0A0A0A; 
+  
+  /* 危險色彩（Morandi Red - dark tuned） */
+  --danger: #D27A7A; 
+  --danger-hover: #BF6C6C; 
+  --danger-bg: #3A1F1F;
+  --danger-border: #6B3A3A;
+  --danger-text: #F2CACA;
+  
+  /* 成功色彩 */
+  --success: #10B981; 
+  --success-hover: #059669; 
+  --success-bg: #064E3B;
+  --success-border: #065F46;
+  --success-text: #6EE7B7;
+  
+  /* 警告色彩 */
+  --warning: #F59E0B; 
+  --warning-hover: #D97706; 
+  --warning-bg: #451A03;
+  --warning-border: #78350F;
+  --warning-text: #FCD34D;
+  
+  /* 信息色彩 */
+  --info: #3B82F6; 
+  --info-hover: #2563EB; 
+  --info-bg: #1E3A8A;
+  --info-border: #1E40AF;
+  --info-text: #93C5FD;
+  
+  /* 導航色彩 */
+  --nav-bg: rgba(31,31,31,0.95); 
+  --nav-border: rgba(55,65,81,0.6); 
+  
+  /* 按鈕色彩 */
+  --button-secondary: #374151; 
+  --button-secondary-hover: #4B5563; 
+  
+  /* 陰影 */
+  --shadow-soft: 0 1px 3px rgba(0,0,0,0.8); 
+  --shadow-medium: 0 4px 12px rgba(0,0,0,0.9); 
+  
+  /* 特殊色彩 */
+  --accent: #8B5CF6; 
+  --accent-hover: #7C3AED; 
+  --neutral: #6B7280; 
+  --neutral-hover: #9CA3AF; 
+}
+
+html,body,#root{height:100%}
+body{color:var(--fg); font-family:var(--font-cjk);}

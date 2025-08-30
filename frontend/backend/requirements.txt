@@ -1,0 +1,23 @@
+Flask==3.0.2
+flask-cors==4.0.0
+Flask-SocketIO==5.3.6
+flask-jwt-extended>=4.6
+bcrypt>=4.1
+eventlet==0.36.1
+SQLAlchemy==2.0.31
+bleach==6.2.0
+gunicorn==23.0.0
+psycopg[binary]==3.2.1
+python-dotenv>=1.0
+psycopg2-binary>=2.9
+alembic>=1.13
+Pillow==10.4.0
+python-magic==0.4.27
+redis>=5.0
+psutil>=5.9.0
+requests>=2.31.0
+html2text>=2024.2.26
+cryptography>=41.0.0
+
+
+# Using Python standard library urllib for Discord Webhook, no additional dependencies

@@ -1,0 +1,458 @@
+/**
+ * 備援註冊表單（無 Google 流程）
+ * 僅在極端情況下使用，email 可編輯但仍需通過網域檢查
+ */
+
+import { useState, useEffect, useMemo } from 'react'
+import { Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { validateEducationalEmail } from '@/utils/emailValidation'
+import { validatePassword, validatePasswordWithConfirmation, getPasswordRequirements } from '@/utils/passwordValidation'
+import { validateUsername } from '@/utils/usernameValidation'
+import { School, CUSTOM_SCHOOL_OPTION, findSchoolById } from '@/utils/schoolSelection'
+import { NewAuthAPI } from '@/services/authApi'
+
+interface FallbackRegistrationFormProps {
+  onSubmit: (data: {
+    email: string
+    username: string
+    password: string
+    schoolId: number | null
+    customSchoolRequested: boolean
+    customSchoolInfo?: {
+      name?: string
+      domain?: string
+      additionalInfo?: string
+    }
+  }) => Promise<void>
+  onCancel: () => void
+  loading?: boolean
+  error?: string
+}
+
+export default function FallbackRegistrationForm({
+  onSubmit,
+  onCancel,
+  loading = false,
+  error
+}: FallbackRegistrationFormProps) {
+  // 表單狀態
+  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [selectedSchoolId, setSelectedSchoolId] = useState<number | null>(null)
+  const [customSchoolRequested, setCustomSchoolRequested] = useState(false)
+  const [customSchoolName, setCustomSchoolName] = useState('')
+  const [customSchoolDomain, setCustomSchoolDomain] = useState('')
+  const [customSchoolInfo, setCustomSchoolInfo] = useState('')
+  
+  // UI 狀態
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [schools, setSchools] = useState<School[]>([])
+  const [schoolsLoading, setSchoolsLoading] = useState(true)
+  const [usernameChecking, setUsernameChecking] = useState(false)
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
+  
+  // 驗證結果
+  const emailValidation = useMemo(() => 
+    validateEducationalEmail(email), 
+    [email]
+  )
+  
+  const passwordValidation = useMemo(() => 
+    validatePasswordWithConfirmation(password, confirmPassword), 
+    [password, confirmPassword]
+  )
+  
+  const usernameValidation = useMemo(() => 
+    validateUsername(username), 
+    [username]
+  )
+  
+  const passwordRequirements = useMemo(() => 
+    getPasswordRequirements(), 
+    []
+  )
+
+  // 載入學校清單
+  useEffect(() => {
+    const loadSchools = async () => {
+      try {
+        const response = await NewAuthAPI.getSchools()
+        setSchools([...response.schools, CUSTOM_SCHOOL_OPTION])
+      } catch (error) {
+        console.error('Failed to load schools:', error)
+      } finally {
+        setSchoolsLoading(false)
+      }
+    }
+    
+    loadSchools()
+  }, [])
+
+  // 檢查使用者名稱可用性（防抖）
+  useEffect(() => {
+    if (!username || !usernameValidation.isValid) {
+      setUsernameAvailable(null)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setUsernameChecking(true)
+        const response = await NewAuthAPI.checkUsernameAvailability(username)
+        setUsernameAvailable(response.available)
+      } catch (error) {
+        console.error('Failed to check username availability:', error)
+        setUsernameAvailable(null)
+      } finally {
+        setUsernameChecking(false)
+      }
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [username, usernameValidation.isValid])
+
+  // 處理學校選擇變更
+  const handleSchoolChange = (schoolId: string) => {
+    const id = schoolId === '' ? null : parseInt(schoolId)
+    setSelectedSchoolId(id)
+    
+    if (id === CUSTOM_SCHOOL_OPTION.id) {
+      setCustomSchoolRequested(true)
+    } else {
+      setCustomSchoolRequested(false)
+      setCustomSchoolName('')
+      setCustomSchoolDomain('')
+      setCustomSchoolInfo('')
+    }
+  }
+
+  // 表單提交
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!emailValidation.valid ||
+        !passwordValidation.isValid || 
+        !usernameValidation.isValid || 
+        usernameAvailable === false) {
+      return
+    }
+
+    const formData = {
+      email: emailValidation.normalizedEmail!,
+      username: username.trim(),
+      password,
+      schoolId: selectedSchoolId === CUSTOM_SCHOOL_OPTION.id ? null : selectedSchoolId,
+      customSchoolRequested,
+      customSchoolInfo: customSchoolRequested ? {
+        name: customSchoolName.trim() || undefined,
+        domain: customSchoolDomain.trim() || undefined,
+        additionalInfo: customSchoolInfo.trim() || undefined
+      } : undefined
+    }
+
+    await onSubmit(formData)
+  }
+
+  const selectedSchool = selectedSchoolId ? findSchoolById(schools, selectedSchoolId) : null
+  const canSubmit = emailValidation.valid &&
+                   passwordValidation.isValid && 
+                   usernameValidation.isValid && 
+                   usernameAvailable === true && 
+                   !loading
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
+        {/* 標題與警告 */}
+        <div className="mb-6 text-center">
+          <h1 className="text-xl font-semibold">以學校 Email 註冊</h1>
+          <p className="text-sm text-muted mt-1">備援註冊方式</p>
+          
+          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              建議優先使用 Google 校園帳號註冊，可獲得更安全便利的體驗
+            </p>
+          </div>
+        </div>
+
+        {/* 錯誤提示 */}
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-danger-bg border border-danger-border text-danger-text">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-fg mb-2">
+              學校 Email *
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="student@university.edu.tw"
+              className={`form-control ${
+                email && !emailValidation.valid ? 'border-red-500' : ''
+              } ${
+                email && emailValidation.valid ? 'border-green-500' : ''
+              }`}
+              required
+              autoComplete="email"
+            />
+            {email && !emailValidation.valid && (
+              <p className="text-xs text-red-600 mt-1">
+                {emailValidation.error}
+              </p>
+            )}
+            <p className="text-xs text-muted mt-1">
+              僅接受 .edu 或 .edu.tw 結尾的學校信箱
+            </p>
+          </div>
+
+          {/* 學校選擇 */}
+          <div>
+            <label className="block text-sm font-medium text-fg mb-2">
+              學校 *
+            </label>
+            {schoolsLoading ? (
+              <div className="form-control bg-muted/30">載入中...</div>
+            ) : (
+              <select
+                value={selectedSchoolId?.toString() || ''}
+                onChange={(e) => handleSchoolChange(e.target.value)}
+                className="form-control"
+                required
+              >
+                <option value="">請選擇學校</option>
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name}
+                    {school.domain && ` (${school.domain})`}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* 學校 slug 顯示（唯讀） */}
+          {selectedSchool && selectedSchool.id !== CUSTOM_SCHOOL_OPTION.id && (
+            <div>
+              <label className="block text-sm font-medium text-fg mb-2">
+                學校代稱 (slug)
+              </label>
+              <input 
+                type="text"
+                value={selectedSchool.slug}
+                readOnly
+                className="form-control bg-muted/30 cursor-not-allowed"
+              />
+              <p className="text-xs text-muted mt-1">
+                系統自動分配，如有錯誤請於註冊後回報
+              </p>
+            </div>
+          )}
+
+          {/* 自訂學校資訊 */}
+          {customSchoolRequested && (
+            <div className="space-y-3 p-3 bg-muted/20 rounded-lg border border-border">
+              <div>
+                <label className="block text-sm font-medium text-fg mb-1">
+                  學校名稱
+                </label>
+                <input
+                  type="text"
+                  value={customSchoolName}
+                  onChange={(e) => setCustomSchoolName(e.target.value)}
+                  placeholder="請輸入學校全名"
+                  className="form-control"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-fg mb-1">
+                  學校網域
+                </label>
+                <input
+                  type="text"
+                  value={customSchoolDomain}
+                  onChange={(e) => setCustomSchoolDomain(e.target.value)}
+                  placeholder="例如：university.edu.tw"
+                  className="form-control"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-fg mb-1">
+                  補充資訊
+                </label>
+                <textarea
+                  value={customSchoolInfo}
+                  onChange={(e) => setCustomSchoolInfo(e.target.value)}
+                  placeholder="任何有助於我們新增學校的資訊..."
+                  className="form-control min-h-[60px]"
+                />
+              </div>
+              <p className="text-xs text-amber-600">
+                你可以先完成註冊，我們會通知管理員新增學校
+              </p>
+            </div>
+          )}
+
+          {/* 暱稱 */}
+          <div>
+            <label className="block text-sm font-medium text-fg mb-2">
+              暱稱 *
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="此為平台暱稱，請勿使用真名"
+                className={`form-control pr-10 ${
+                  username && !usernameValidation.isValid ? 'border-red-500' : ''
+                } ${
+                  username && usernameValidation.isValid && usernameAvailable === true ? 'border-green-500' : ''
+                } ${
+                  username && usernameValidation.isValid && usernameAvailable === false ? 'border-red-500' : ''
+                }`}
+                autoComplete="off"
+                required
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                {usernameChecking && (
+                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                )}
+                {!usernameChecking && username && usernameValidation.isValid && usernameAvailable === true && (
+                  <CheckCircle2 className="w-4 h-4 text-green-600" />
+                )}
+                {!usernameChecking && username && ((!usernameValidation.isValid) || usernameAvailable === false) && (
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                )}
+              </div>
+            </div>
+            {username && !usernameValidation.isValid && (
+              <p className="text-xs text-red-600 mt-1">
+                {usernameValidation.errors[0]}
+              </p>
+            )}
+            {username && usernameValidation.isValid && usernameAvailable === false && (
+              <p className="text-xs text-red-600 mt-1">
+                此暱稱已被使用，請選擇其他暱稱
+              </p>
+            )}
+          </div>
+
+          {/* 密碼 */}
+          <div>
+            <label className="block text-sm font-medium text-fg mb-2">
+              密碼 *
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="form-control pr-10"
+                required
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* 確認密碼 */}
+          <div>
+            <label className="block text-sm font-medium text-fg mb-2">
+              確認密碼 *
+            </label>
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="form-control pr-10"
+                required
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted"
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {confirmPassword && !passwordValidation.confirmationValidation.isValid && (
+              <p className="text-xs text-red-600 mt-1">
+                {passwordValidation.confirmationValidation.error}
+              </p>
+            )}
+          </div>
+
+          {/* 密碼規範檢查 */}
+          {password && (
+            <div className="p-3 bg-muted/20 rounded-lg">
+              <p className="text-sm font-medium text-fg mb-2">密碼規範：</p>
+              <ul className="space-y-1">
+                {passwordRequirements.map((requirement) => {
+                  const isValid = requirement.check(password)
+                  return (
+                    <li
+                      key={requirement.id}
+                      className={`text-xs flex items-center gap-2 ${
+                        isValid ? 'text-green-600' : 'text-muted'
+                      }`}
+                    >
+                      <div className={`w-3 h-3 rounded-full flex items-center justify-center ${
+                        isValid ? 'bg-green-100 text-green-600' : 'bg-muted/30'
+                      }`}>
+                        {isValid && <CheckCircle2 className="w-2 h-2" />}
+                      </div>
+                      {requirement.text}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* 提交按鈕 */}
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={loading}
+              className="flex-1 px-4 py-3 border border-border rounded-xl hover:bg-surface/80 disabled:opacity-50"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="flex-1 px-4 py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? '註冊中...' : '完成註冊'}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-4 text-xs text-muted text-center">
+          <p>註冊即表示您同意遵守平台使用規範</p>
+        </div>
+      </div>
+    </div>
+  )
+}
