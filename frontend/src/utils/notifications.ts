@@ -4,6 +4,7 @@ export type FkNotification = {
   text: string
   ts: number
   school?: string | null
+  user_id?: string | null  // 個人識別碼
   read?: boolean
 }
 
@@ -108,6 +109,7 @@ export function addNotification(n: Omit<FkNotification, 'id'|'ts'> & { ts?: numb
     type: n.type,
     text: n.text,
     school: n.school ?? null,
+    user_id: n.user_id ?? null,  // 添加用戶ID
     read: false,
   }
   const cur = readAll()
@@ -117,7 +119,7 @@ export function addNotification(n: Omit<FkNotification, 'id'|'ts'> & { ts?: numb
   try { _mirrorToCenter(n) } catch {}
 }
 
-export function listNotifications(filter?: { school?: string | null; type?: string; read?: boolean }) {
+export function listNotifications(filter?: { school?: string | null; type?: string; read?: boolean; user_id?: string | null }) {
   const items = readAll().slice().reverse() // 最新在前
   if (!filter) return items
   return items.filter(it => {
@@ -127,6 +129,11 @@ export function listNotifications(filter?: { school?: string | null; type?: stri
       if ((it.school || null) !== target) return false
     }
     if (filter.read !== undefined && Boolean(it.read) !== filter.read) return false
+    if (filter.user_id !== undefined) {
+      // 檢查通知是否與當前用戶相關
+      const target = (filter.user_id || null)
+      if ((it.user_id || null) !== target) return false
+    }
     return true
   })
 }

@@ -6,9 +6,10 @@ import { RefreshCw, AlertCircle, ChevronUp } from 'lucide-react'
 
 interface MobilePostListProps {
   injectedItems?: any[]
+  showAll?: boolean
 }
 
-export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
+export function MobilePostList({ injectedItems = [], showAll = false }: MobilePostListProps) {
   const [data, setData] = useState<PostListType | null>(null)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
@@ -22,7 +23,7 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const startYRef = useRef(0)
   const pullThreshold = 80
-  const perPage = 15
+  const perPage = showAll ? 1000 : 15  // 如果 showAll 為 true，則顯示大量貼文
   const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
   // 手機版搜尋/篩選
   const [kw, setKw] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_keyword')||'' }catch{ return '' }})
@@ -361,6 +362,12 @@ export function MobilePostList({ injectedItems = [] }: MobilePostListProps) {
 
       {/* 貼文列表 */}
       <div className="mobile-horizontal-padding mobile-vertical-padding pb-24">
+        {/* ForumKit 標題 */}
+        <div className="text-center mb-4">
+          <h1 className="text-2xl font-bold text-fg">ForumKit</h1>
+          <p className="text-sm text-muted">新世紀校園匿名平台</p>
+        </div>
+        
         {/* 手機版搜尋/篩選 */}
         <div className="mb-3">
           <button

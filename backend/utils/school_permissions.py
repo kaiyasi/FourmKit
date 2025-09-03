@@ -1,6 +1,6 @@
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy.orm import Session
-from models import User, Post, Comment, School
+from models import User, Post
 from flask import abort
 
 def get_user_school_permissions(user: User) -> dict:
@@ -169,19 +169,24 @@ def can_comment_on_post(user: User, post: Post) -> bool:
     
     return post.school_id in permissions['can_comment_on_schools']
 
-def can_moderate_content(user: User, content_school_id: Optional[int]) -> bool:
+def can_moderate_content(user: User, content_school_id: Optional[int], post: Optional['Post'] = None) -> bool:
     """
     檢查用戶是否可以審核指定學校的內容
     
     Args:
         user: 用戶對象
         content_school_id: 內容的學校ID，None表示跨校內容
+        post: 貼文對象（可選，用於檢查是否為公告）
     
     Returns:
         bool: 是否可以審核
     """
     if not user:
         return False
+    
+    # 如果是公告，只有 dev_admin 可以審核
+    if post and getattr(post, 'is_announcement', False):
+        return user.role == 'dev_admin'
     
     permissions = get_user_school_permissions(user)
     
@@ -208,7 +213,6 @@ def filter_posts_by_permissions(session: Session, user: User, base_query=None):
     Returns:
         過濾後的查詢
     """
-    from sqlalchemy.orm import Query
     from sqlalchemy import or_
     
     if base_query is None:

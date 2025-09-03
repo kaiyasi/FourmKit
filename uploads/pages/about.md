@@ -23,7 +23,6 @@ ForumKit 由 Serelix Studio 開發，提供安全、友善且高品質的校園�
 - 響應式介面，手機/平板/電腦皆可使用  
 - 即時通知與專用行動介面  
 
----
 
 ## 👤 登入機制與用途
 
@@ -39,7 +38,6 @@ ForumKit 由 Serelix Studio 開發，提供安全、友善且高品質的校園�
 - 接收通知、跨裝置同步、偏好設定  
 - 參與需要校籍驗證的專區或活動  
 
----
 
 ## 🔎 資料可見性與存取
 
@@ -59,7 +57,6 @@ ForumKit 由 Serelix Studio 開發，提供安全、友善且高品質的校園�
 - 權限最小化控管與稽核紀錄  
 - 使用者可依規定申請查詢、下載或刪除帳號資料（法規例外除外）  
 
----
 
 ## 🚀 主要功能
 
@@ -69,7 +66,6 @@ ForumKit 由 Serelix Studio 開發，提供安全、友善且高品質的校園�
 - 個人化主題與通知偏好  
 - 跨校交流與內容搜尋  
 
----
 
 ## 🎯 使用方式
 
@@ -79,7 +75,6 @@ ForumKit 由 Serelix Studio 開發，提供安全、友善且高品質的校園�
 4. 參與互動：留言回覆、檢舉內容、追蹤主題  
 5. 個人化：設定主題與通知偏好（需登入）  
 
----
 
 ## 💡 設計理念
 
@@ -88,7 +83,6 @@ ForumKit 平衡言論自由與責任：
 - 避免現實中的顧慮與標籤  
 - 維護友善討論氛圍與基本秩序  
 
----
 
 ## 🌟 社群準則
 
@@ -97,14 +91,19 @@ ForumKit 平衡言論自由與責任：
 - 匿名不等於免責，勿造謠或洩露隱私  
 - 遵守法律與校園規範  
 
----
 
 ## 📞 聯絡與支援
 
 - 平台內回報功能  
 - 開發團隊：Serelix Studio  
 - 技術支援：透過平台管理員或指定管道聯繫  
+- 官方 Discord 群組：[SerelixStudio_Discord](https://discord.gg/eRfGKepusP)
+- 工作室 IG：[SerelixStudio_IG](https://www.instagram.com/serelix_studio?igsh=eGM1anl3em1xaHZ6&utm_source=qr)
+- 工作室 Gmail：serelixstudio@gmail.com
+- 匿名平台 IG：[Forumkit_IG](https://www.instagram.com/forumkit.serelix?igsh=MThtNDRzMGZqMnRhdw%3D%3D&utm_source=qr)
+- 匿名平台 Gmail：forumkit.serelix@gmail.com
+
+
 
 > 個人身份資料不公開，僅在合法警方/司法調查請求下，由 Serelix Studio 授權人員依程序調閱最小必要資料。
 
----

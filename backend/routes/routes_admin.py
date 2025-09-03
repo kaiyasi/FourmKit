@@ -4,13 +4,13 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.authz import require_role
 from utils.notify import send_admin_event as notify_send_event
 from services.event_service import EventService
-from sqlalchemy.orm import Session
+from services.platform_event_service import platform_event_service
 from utils.db import get_session
-from models import User, UserRole, School, DeleteRequest, Post, Comment
+from models import User, UserRole, School, Post, Comment
+from models.events import SystemEvent
 from werkzeug.security import generate_password_hash
 from sqlalchemy import func, and_, or_, desc
-from datetime import datetime, timezone, timedelta
-from services.delete_service import DeleteService
+from datetime import datetime, timezone
 import hmac, hashlib, base64, os, uuid
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -26,8 +26,62 @@ def create_custom_room():
     description = (data.get('description') or '').strip() or '由總管理員建立'
     rid = f"custom:{uuid.uuid4().hex[:8]}"
     owner_id = get_jwt_identity()
-    _custom_rooms[rid] = { 'owner_id': owner_id, 'name': name, 'description': description, 'members': set() }
-    return jsonify({ 'ok': True, 'id': rid, 'name': name })
+    
+    try:
+        with get_session() as s:
+            # 在數據庫中創建聊天室
+            from models import ChatRoom
+            room = ChatRoom(
+                id=rid,
+                name=name,
+                description=description,
+                room_type="custom",
+                owner_id=owner_id,
+                is_active=True
+            )
+            s.add(room)
+            s.commit()
+            
+            # 在內存中創建聊天室
+            _custom_rooms[rid] = { 'owner_id': owner_id, 'name': name, 'description': description, 'members': set() }
+            
+            # 記錄創建事件
+            try:
+                from services.event_service import EventService
+                from utils.ratelimit import get_client_ip
+                current_user = s.query(User).get(owner_id)
+                
+                EventService.log_event(
+                    session=s,
+                    event_type="chat.room.created",
+                    title=f"創建自定義聊天室: {name}",
+                    description=f"管理員 {current_user.username if current_user else 'Unknown'} 創建了自定義聊天室",
+                    severity="medium",
+                    actor_id=owner_id,
+                    actor_name=current_user.username if current_user else 'Unknown',
+                    actor_role=current_user.role if current_user else 'unknown',
+                    target_type="chat_room",
+                    target_id=rid,
+                    target_name=name,
+                    metadata={
+                        "room_id": rid,
+                        "room_name": name,
+                        "description": description
+                    },
+                    client_ip=get_client_ip(),
+                    user_agent=request.headers.get('User-Agent'),
+                    is_important=False,
+                    send_webhook=True
+                )
+            except Exception as e:
+                print(f"記錄創建事件失敗: {e}")
+                pass  # 事件記錄失敗不影響主要功能
+            
+            return jsonify({ 'ok': True, 'id': rid, 'name': name })
+            
+    except Exception as e:
+        print(f"創建聊天室失敗: {e}")
+        return jsonify({ 'error': f'創建失敗: {str(e)}' }), 500
 
 @bp.delete('/chat-rooms/custom/<string:room_id>')
 @jwt_required()
@@ -36,44 +90,248 @@ def delete_custom_room(room_id: str):
     from app import _custom_rooms, _room_clients
     if not room_id or not room_id.startswith('custom:'):
         return jsonify({ 'error': 'INVALID_ROOM' }), 400
+    
     try:
-        _custom_rooms.pop(room_id, None)
-        # 清理線上清單
-        _room_clients.pop(room_id, None)
-    except Exception:
-        pass
+        with get_session() as s:
+            # 檢查聊天室是否存在於數據庫
+            from models import ChatRoom, ChatRoomMember
+            
+            # 先刪除所有成員記錄
+            s.query(ChatRoomMember).filter(ChatRoomMember.room_id == room_id).delete()
+            
+            # 刪除聊天室記錄
+            room = s.query(ChatRoom).filter(ChatRoom.id == room_id).first()
+            if room:
+                s.delete(room)
+            
+            s.commit()
+            
+            # 清理內存中的數據
+            _custom_rooms.pop(room_id, None)
+            _room_clients.pop(room_id, None)
+            
+            # 記錄刪除事件
+            try:
+                from services.event_service import EventService
+                from utils.ratelimit import get_client_ip
+                user_id = get_jwt_identity()
+                current_user = s.query(User).get(user_id)
+                
+                EventService.log_event(
+                    session=s,
+                    event_type="chat.room.deleted",
+                    title=f"刪除自定義聊天室: {room_id}",
+                    description=f"管理員 {current_user.username if current_user else 'Unknown'} 刪除了自定義聊天室",
+                    severity="medium",
+                    actor_id=user_id,
+                    actor_name=current_user.username if current_user else 'Unknown',
+                    actor_role=current_user.role if current_user else 'unknown',
+                    target_type="chat_room",
+                    target_id=room_id,
+                    target_name=room_id,
+                    metadata={
+                        "room_id": room_id,
+                        "room_name": room.name if room else room_id
+                    },
+                    client_ip=get_client_ip(),
+                    user_agent=request.headers.get('User-Agent'),
+                    is_important=False,
+                    send_webhook=True
+                )
+            except Exception as e:
+                print(f"記錄刪除事件失敗: {e}")
+                pass  # 事件記錄失敗不影響主要功能
+            
+    except Exception as e:
+        print(f"刪除聊天室失敗: {e}")
+        return jsonify({ 'error': f'刪除失敗: {str(e)}' }), 500
+    
     return jsonify({ 'ok': True, 'deleted': room_id })
 
 @bp.post('/chat-rooms/custom/<string:room_id>/members')
 @jwt_required()
-@require_role('dev_admin')
+@require_role('dev_admin', 'campus_admin')
 def add_custom_room_member(room_id: str):
-    from app import _custom_rooms
-    data = request.get_json(silent=True) or {}
+    """添加聊天室成員"""
     try:
-        target_id = int(data.get('user_id'))
-    except Exception:
-        return jsonify({ 'error': 'USER_ID_REQUIRED' }), 400
-    room = _custom_rooms.get(room_id)
-    if not room:
-        return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
-    members: set = room.setdefault('members', set())  # type: ignore
-    members.add(int(target_id))
-    return jsonify({ 'ok': True, 'room_id': room_id, 'user_id': target_id })
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+        
+        try:
+            target_id = int(data.get('user_id'))
+        except Exception:
+            return jsonify({ 'error': 'USER_ID_REQUIRED' }), 400
+        
+        with get_session() as s:
+            # 獲取當前用戶信息
+            current_user = s.query(User).get(user_id)
+            if not current_user:
+                return jsonify({ 'error': 'USER_NOT_FOUND' }), 404
+            
+            # 獲取目標用戶信息
+            target_user = s.query(User).get(target_id)
+            if not target_user:
+                return jsonify({ 'error': 'TARGET_USER_NOT_FOUND' }), 404
+            
+            # 檢查聊天室是否存在
+            from models import ChatRoom
+            room = s.query(ChatRoom).filter(ChatRoom.id == room_id).first()
+            if not room:
+                return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
+            
+            # 權限檢查：只有聊天室擁有者或 dev_admin 可以添加成員
+            if current_user.role != 'dev_admin' and room.owner_id != user_id:
+                return jsonify({ 'error': 'PERMISSION_DENIED' }), 403
+            
+            # 檢查用戶是否已經是成員
+            from models import ChatRoomMember
+            existing_member = s.query(ChatRoomMember).filter(
+                ChatRoomMember.room_id == room_id,
+                ChatRoomMember.user_id == target_id,
+                ChatRoomMember.is_active == True
+            ).first()
+            
+            if existing_member:
+                return jsonify({ 'error': 'USER_ALREADY_MEMBER' }), 400
+            
+            # 添加成員
+            member = ChatRoomMember(
+                room_id=room_id,
+                user_id=target_id,
+                is_active=True
+            )
+            s.add(member)
+            s.commit()
+            
+            # 記錄成員添加事件
+            try:
+                from services.event_service import EventService
+                from utils.ratelimit import get_client_ip
+                
+                EventService.log_event(
+                    session=s,
+                    event_type="chat.room.member.added",
+                    title=f"添加聊天室成員: {target_user.username}",
+                    description=f"管理員 {current_user.username} 將用戶 {target_user.username} 添加到聊天室「{room.name}」",
+                    severity="medium",
+                    actor_id=current_user.id,
+                    actor_name=current_user.username,
+                    actor_role=current_user.role,
+                    target_type="user",
+                    target_id=str(target_id),
+                    target_name=target_user.username,
+                    school_id=room.school_id,
+                    metadata={
+                        "room_id": room_id,
+                        "room_name": room.name,
+                        "target_user_id": target_id,
+                        "target_username": target_user.username,
+                        "target_role": target_user.role
+                    },
+                    client_ip=get_client_ip(),
+                    user_agent=request.headers.get('User-Agent'),
+                    is_important=False,
+                    send_webhook=True
+                )
+            except Exception as e:
+                print(f"記錄成員添加事件失敗: {e}")
+                pass  # 事件記錄失敗不影響主要功能
+            
+            return jsonify({ 'ok': True, 'room_id': room_id, 'user_id': target_id })
+    
+    except Exception as e:
+        return jsonify({ 'error': f'添加成員失敗: {str(e)}' }), 500
 
 @bp.delete('/chat-rooms/custom/<string:room_id>/members/<int:user_id>')
 @jwt_required()
-@require_role('dev_admin')
+@require_role('dev_admin', 'campus_admin')
 def remove_custom_room_member(room_id: str, user_id: int):
-    from app import _custom_rooms
-    room = _custom_rooms.get(room_id)
-    if not room:
-        return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
+    """移除聊天室成員"""
     try:
-        room.setdefault('members', set()).discard(int(user_id))  # type: ignore
-    except Exception:
-        pass
-    return jsonify({ 'ok': True, 'room_id': room_id, 'user_id': user_id, 'removed': True })
+        current_user_id = get_jwt_identity()
+        
+        with get_session() as s:
+            # 獲取當前用戶信息
+            current_user = s.query(User).get(current_user_id)
+            if not current_user:
+                return jsonify({ 'error': 'USER_NOT_FOUND' }), 404
+            
+            # 獲取目標用戶信息
+            target_user = s.query(User).get(user_id)
+            if not target_user:
+                return jsonify({ 'error': 'TARGET_USER_NOT_FOUND' }), 404
+            
+            # 檢查聊天室是否存在
+            from models import ChatRoom
+            room = s.query(ChatRoom).filter(ChatRoom.id == room_id).first()
+            if not room:
+                return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
+            
+            # 權限檢查：只有聊天室擁有者或 dev_admin 可以移除成員
+            if current_user.role != 'dev_admin' and room.owner_id != current_user_id:
+                return jsonify({ 'error': 'PERMISSION_DENIED' }), 403
+            
+            # 檢查用戶是否是成員
+            from models import ChatRoomMember
+            member = s.query(ChatRoomMember).filter(
+                ChatRoomMember.room_id == room_id,
+                ChatRoomMember.user_id == user_id,
+                ChatRoomMember.is_active == True
+            ).first()
+            
+            if not member:
+                return jsonify({ 'error': 'USER_NOT_MEMBER' }), 400
+            
+            # 移除成員（軟刪除）
+            member.is_active = False
+            s.commit()
+            
+            # 記錄成員移除事件
+            try:
+                from services.event_service import EventService
+                from utils.ratelimit import get_client_ip
+                
+                EventService.log_event(
+                    session=s,
+                    event_type="chat.room.member.removed",
+                    title=f"移除聊天室成員: {target_user.username}",
+                    description=f"管理員 {current_user.username} 將用戶 {target_user.username} 從聊天室「{room.name}」中移除",
+                    severity="medium",
+                    actor_id=current_user.id,
+                    actor_name=current_user.username,
+                    actor_role=current_user.role,
+                    target_type="user",
+                    target_id=str(user_id),
+                    target_name=target_user.username,
+                    school_id=room.school_id,
+                    metadata={
+                        "room_id": room_id,
+                        "room_name": room.name,
+                        "target_user_id": user_id,
+                        "target_username": target_user.username,
+                        "target_role": target_user.role
+                    },
+                    client_ip=get_client_ip(),
+                    user_agent=request.headers.get('User-Agent'),
+                    is_important=False,
+                    send_webhook=True
+                )
+            except Exception as e:
+                print(f"記錄成員移除事件失敗: {e}")
+                pass  # 事件記錄失敗不影響主要功能
+            
+            return jsonify({ 'ok': True, 'room_id': room_id, 'user_id': user_id, 'removed': True })
+    
+    except Exception as e:
+        return jsonify({ 'error': f'移除成員失敗: {str(e)}' }), 500
+
+
+# ---------------- Delete Requests Management ----------------
+
+
+
+
+
 
 def _can_moderate_comment(moderator: User, comment: Comment, session) -> bool:
     """檢查用戶是否有權限審核特定留言"""
@@ -83,7 +341,7 @@ def _can_moderate_comment(moderator: User, comment: Comment, session) -> bool:
     post = comment.post
     
     # 使用統一的權限檢查函數
-    return can_moderate_content(moderator, post.school_id)
+    return can_moderate_content(moderator, post.school_id, post)
 
 # 留言監控 API
 @bp.get('/comments/monitor')
@@ -123,7 +381,12 @@ def monitor_comments():
             elif current_user.role == 'cross_moderator':
                 # 跨校審核：只能看到跨校留言
                 query = query.join(User, Comment.author_id == User.id)
-                query = query.filter(User.school_id != Post.school_id)  # 作者和貼文不同學校
+                # 確保作者和貼文都有學校ID，且不同學校
+                query = query.filter(
+                    User.school_id.isnot(None),
+                    Post.school_id.isnot(None),
+                    User.school_id != Post.school_id
+                )
                 if current_user.school_id:
                     # 排除自己學校的跨校留言（避免利益衝突）
                     query = query.filter(User.school_id != current_user.school_id)
@@ -138,7 +401,12 @@ def monitor_comments():
             elif current_user.role == 'cross_admin':
                 # 跨校管理員：可以處理跨校內容
                 query = query.join(User, Comment.author_id == User.id)
-                query = query.filter(User.school_id != Post.school_id)  # 作者和貼文不同學校
+                # 確保作者和貼文都有學校ID，且不同學校
+                query = query.filter(
+                    User.school_id.isnot(None),
+                    Post.school_id.isnot(None),
+                    User.school_id != Post.school_id
+                )
                 
             # dev_admin 可以看所有內容，不需要額外過濾
             
@@ -166,7 +434,7 @@ def monitor_comments():
                 query = query.filter(Comment.content.ilike(f'%{keyword}%'))
             
             # 學校過濾
-            if school_slug:
+            if school_slug and school_slug != "__ALL__":
                 school = s.query(School).filter(School.slug == school_slug).first()
                 if school:
                     query = query.filter(Post.school_id == school.id)
@@ -192,10 +460,10 @@ def monitor_comments():
                 if author and author.school_id and post.school_id:
                     is_cross_school = author.school_id != post.school_id
                 
-                # 生成學校標籤：跨校不顯示，校內顯示 #XXXX(學校名稱)
+                # 生成學校標籤：跨校不顯示，校內顯示 #slug(學校名稱)
                 school_tag = None
                 if not is_cross_school and author_school:
-                    school_tag = f"#{author_school.code}({author_school.name})" if author_school.code else author_school.name
+                    school_tag = f"#{author_school.slug}({author_school.name})"
                 
                 items.append({
                     'id': comment.id,
@@ -234,6 +502,9 @@ def monitor_comments():
             })
             
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Comment monitor API error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
@@ -581,7 +852,7 @@ def get_comment_detail(comment_id: int):
             # 生成學校標籤
             school_tag = None
             if not is_cross_school and author_school:
-                school_tag = f"#{author_school.code}({author_school.name})" if author_school.code else author_school.name
+                school_tag = f"#{author_school.slug}({author_school.name})"
             
             return jsonify({
                 'ok': True,
@@ -734,6 +1005,77 @@ def delete_comment(comment_id: int):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# 刪文請求統計
+@bp.get('/delete-requests/stats')
+@jwt_required()
+@require_role('dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator')
+def get_delete_request_stats():
+    """獲取刪文請求統計"""
+    try:
+        from datetime import datetime
+        from sqlalchemy import and_
+        from models import DeleteRequest, Post
+        
+        with get_session() as s:
+            user_id = get_jwt_identity()
+            current_user = s.query(User).filter(User.id == user_id).first() if user_id else None
+            
+            # 今日統計
+            today = datetime.now().date()
+            today_start = datetime.combine(today, datetime.min.time())
+            today_end = datetime.combine(today, datetime.max.time())
+            
+            # 基礎查詢
+            base_query = s.query(DeleteRequest)
+            
+            # 根據用戶權限過濾
+            if current_user and current_user.role in ('campus_moderator',):
+                if not current_user.school_id:
+                    return jsonify({'error': 'campus moderator must have school_id'}), 403
+                base_query = base_query.join(Post).filter(Post.school_id == current_user.school_id)
+            
+            # 待審數量
+            pending_count = base_query.filter(DeleteRequest.status == 'pending').count()
+            
+            # 今日處理數量
+            today_processed = base_query.filter(
+                and_(
+                    DeleteRequest.reviewed_at >= today_start,
+                    DeleteRequest.reviewed_at <= today_end
+                )
+            ).count()
+            
+            # 今日核准數量
+            today_approved = base_query.filter(
+                and_(
+                    DeleteRequest.status == 'approved',
+                    DeleteRequest.reviewed_at >= today_start,
+                    DeleteRequest.reviewed_at <= today_end
+                )
+            ).count()
+            
+            # 今日拒絕數量
+            today_rejected = base_query.filter(
+                and_(
+                    DeleteRequest.status == 'rejected',
+                    DeleteRequest.reviewed_at >= today_start,
+                    DeleteRequest.reviewed_at <= today_end
+                )
+            ).count()
+            
+            return jsonify({
+                'ok': True,
+                'data': {
+                    'pending': pending_count,
+                    'today_processed': today_processed,
+                    'today_approved': today_approved,
+                    'today_rejected': today_rejected
+                }
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # 刪文請求查詢
 @bp.get('/delete-requests')
 @jwt_required()
@@ -820,7 +1162,7 @@ def approve_delete_request(rid: int):
 # 刪文請求審核（拒絕）
 @bp.post('/delete-requests/<int:rid>/reject')
 @jwt_required()
-@require_role('dev_admin', 'campus_admin', 'cross_admin')
+@require_role('dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator')
 def reject_delete_request(rid: int):
     from services.delete_service import DeleteService
     
@@ -902,7 +1244,7 @@ def admin_webhook_test():
 # ---- Users management ----
 @bp.get('/users')
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin")
 def list_users():
     q = (request.args.get('query') or '').strip().lower()
     limit = max(1, min(int(request.args.get('limit') or 100), 500))
@@ -913,14 +1255,11 @@ def list_users():
         actor_role = getattr(actor, 'role', None)
         actor_school_id = getattr(actor, 'school_id', None)
 
-        # 跨校管理員不可管理用戶
-        if actor_role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
+        # 僅 dev_admin 可以管理用戶
+        if actor_role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
 
         qry = s.query(User)
-        # 校內管理員：僅可檢視同校使用者
-        if actor_role == 'campus_admin' and actor_school_id:
-            qry = qry.filter(User.school_id == actor_school_id)
         if q:
             from sqlalchemy import or_, func
             qry = qry.filter(or_(func.lower(User.username).like(f"%{q}%"), func.lower(User.email).like(f"%{q}%")))
@@ -947,6 +1286,45 @@ def list_users():
             except Exception:
                 personal_id = f"u{u.id:08d}"
             
+            # 獲取用戶統計資訊
+            post_count = s.query(Post).filter(Post.author_id == u.id, Post.is_deleted == False).count()
+            comment_count = s.query(Comment).filter(Comment.author_id == u.id, Comment.is_deleted == False).count()
+            
+            # 獲取表符互動次數（如果存在相關模型）
+            emoji_reaction_count = 0
+            try:
+                from models import EmojiReaction
+                emoji_reaction_count = s.query(EmojiReaction).filter(EmojiReaction.user_id == u.id).count()
+            except ImportError:
+                pass  # 如果沒有 EmojiReaction 模型，就設為 0
+            
+            # 獲取最近的活動資訊
+            recent_events = s.query(SystemEvent).filter(
+                SystemEvent.actor_id == u.id
+            ).order_by(SystemEvent.created_at.desc()).limit(5).all()
+            
+            # 獲取最近的IP地址和Client_ID
+            recent_ips = []
+            client_ids = []
+            if recent_events:
+                for event in recent_events:
+                    if event.client_ip and event.client_ip not in recent_ips:
+                        recent_ips.append(event.client_ip)
+                    if event.client_id and event.client_id not in client_ids:
+                        client_ids.append(event.client_id)
+                recent_ips = recent_ips[:5]  # 最多顯示5個不同的IP
+                client_ids = client_ids[:3]  # 最多顯示3個不同的Client_ID
+            
+            # 獲取最後登入時間（從事件記錄中推斷）
+            last_activity = None
+            if recent_events:
+                last_activity = recent_events[0].created_at.isoformat()
+            
+            # 獲取用戶狀態資訊
+            is_premium = getattr(u, 'is_premium', False)
+            premium_until = getattr(u, 'premium_until', None)
+            premium_until_str = premium_until.isoformat() if premium_until else None
+            
             items.append({
                 'id': u.id,
                 'username': u.username,
@@ -956,13 +1334,88 @@ def list_users():
                 'school': school_info,
                 'created_at': u.created_at.isoformat() if getattr(u, 'created_at', None) else None,
                 'personal_id': personal_id,
+                'post_count': post_count,
+                'comment_count': comment_count,
+                'emoji_reaction_count': emoji_reaction_count,
+                'recent_ips': recent_ips,
+                'client_ids': client_ids,
+                'last_activity': last_activity,
+                'is_premium': is_premium,
+                'premium_until': premium_until_str,
             })
         return jsonify({ 'items': items, 'total': len(items) })
 
 
+@bp.get('/users/<int:uid>/activity')
+@jwt_required()
+@require_role("dev_admin")
+def get_user_activity(uid: int):
+    """獲取用戶詳細活動記錄"""
+    try:
+        limit = max(1, min(int(request.args.get('limit') or 50), 200))
+        offset = int(request.args.get('offset') or 0)
+        
+        with get_session() as s:
+            # 檢查用戶是否存在
+            user = s.get(User, uid)
+            if not user:
+                return jsonify({ 'msg': '用戶不存在' }), 404
+            
+            # 檢查權限
+            current_id = get_jwt_identity()
+            actor = s.get(User, current_id) if current_id else None
+            actor_role = getattr(actor, 'role', None)
+            actor_school_id = getattr(actor, 'school_id', None)
+            
+            # 僅 dev_admin 可以查看用戶活動
+            if actor_role != 'dev_admin':
+                return jsonify({ 'msg': '僅開發人員可以查看用戶活動' }), 403
+            
+            # 獲取用戶活動記錄
+            events = s.query(SystemEvent).filter(
+                SystemEvent.actor_id == uid
+            ).order_by(SystemEvent.created_at.desc()).offset(offset).limit(limit).all()
+            
+            # 格式化活動記錄
+            activities = []
+            for event in events:
+                try:
+                    activity = {
+                        'id': event.id,
+                        'event_type': event.event_type,
+                        'title': event.title,
+                        'description': event.description,
+                        'severity': event.severity,
+                        'client_ip': event.client_ip,
+                        'user_agent': event.user_agent,
+                        'created_at': event.created_at.isoformat() if event.created_at else None,
+                        'metadata': event.metadata_json or {}
+                    }
+                    activities.append(activity)
+                except Exception as e:
+                    print(f"格式化活動記錄失敗: {e}")
+                    continue
+            
+            # 獲取總數
+            total_count = s.query(SystemEvent).filter(SystemEvent.actor_id == uid).count()
+            
+            return jsonify({
+                'activities': activities,
+                'pagination': {
+                    'total': total_count,
+                    'limit': limit,
+                    'offset': offset,
+                    'has_more': offset + limit < total_count
+                }
+            })
+    except Exception as e:
+        print(f"獲取用戶活動記錄失敗: {e}")
+        return jsonify({ 'msg': '獲取活動記錄失敗' }), 500
+
+
 @bp.post('/users/<int:uid>/set_password')
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin")
 def set_user_password(uid: int):
     data = request.get_json(silent=True) or {}
     pwd = (data.get('password') or '').strip()
@@ -972,10 +1425,10 @@ def set_user_password(uid: int):
         u = s.get(User, uid)
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
-        # 跨校管理員不可管理用戶
+        # 僅 dev_admin 可以管理用戶
         actor = s.get(User, get_jwt_identity()) if get_jwt_identity() else None
-        if actor and actor.role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
+        if actor and actor.role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
         u.password_hash = generate_password_hash(pwd)
         
         # 生成個人識別碼並記錄管理員事件
@@ -1021,7 +1474,7 @@ def set_user_password(uid: int):
 
 @bp.post('/users/<int:uid>/role')
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin")
 def set_user_role(uid: int):
     data = request.get_json(silent=True) or {}
     role = (data.get('role') or '').strip()
@@ -1035,11 +1488,8 @@ def set_user_role(uid: int):
         u = s.get(User, uid)
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
-        if actor and actor.role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
-        if actor and actor.role == 'campus_admin':
-            if not actor.school_id or u.school_id != actor.school_id:
-                return jsonify({ 'msg': '無權限：僅能變更同校使用者' }), 403
+        if actor and actor.role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
         old_role = u.role
         u.role = role
         
@@ -1083,7 +1533,7 @@ def set_user_role(uid: int):
 
 @bp.post('/users/<int:uid>/email')
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin")
 def set_user_email(uid: int):
     data = request.get_json(silent=True) or {}
     email = (data.get('email') or '').strip().lower()
@@ -1096,11 +1546,8 @@ def set_user_email(uid: int):
         u = s.get(User, uid)
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
-        if actor and actor.role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
-        if actor and actor.role == 'campus_admin':
-            if not actor.school_id or u.school_id != actor.school_id:
-                return jsonify({ 'msg': '無權限：僅能變更同校使用者' }), 403
+        if actor and actor.role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
         # 檢查Email是否已被其他用戶使用
         existing = s.query(User).filter(User.email == email, User.id != uid).first()
         if existing:
@@ -1112,7 +1559,7 @@ def set_user_email(uid: int):
 
 @bp.post('/users/<int:uid>/school')
 @jwt_required()
-@require_role("dev_admin", "campus_admin", "cross_admin")
+@require_role("dev_admin")
 def set_user_school(uid: int):
     """設定用戶的學校綁定"""
     data = request.get_json(silent=True) or {}
@@ -1125,30 +1572,16 @@ def set_user_school(uid: int):
         u = s.get(User, uid)
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
-        # 跨校管理員不可管理用戶
-        if actor and actor.role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
+        if actor and actor.role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
         
         if school_slug:
             # 查找學校
             school = s.query(School).filter(School.slug == school_slug).first()
             if not school:
                 return jsonify({ 'msg': '學校不存在' }), 404
-            # 權限：
-            # - dev_admin 可任意綁定
-            # - campus_admin 只能綁到自己的學校，且僅能操作同校或未綁定的帳號
-            if actor and actor.role == 'campus_admin':
-                if not actor.school_id or school.id != actor.school_id:
-                    return jsonify({ 'msg': '無權限：只能綁定到自己學校' }), 403
-                if u.school_id and u.school_id != actor.school_id:
-                    return jsonify({ 'msg': '無權限：不可變更其他學校帳號' }), 403
             u.school_id = school.id
         else:
-            # 解除學校綁定
-            # - campus_admin 不可解除其他學校使用者的綁定
-            if actor and actor.role == 'campus_admin':
-                if not actor.school_id or u.school_id != actor.school_id:
-                    return jsonify({ 'msg': '無權限：不可解除其他學校帳號' }), 403
             u.school_id = None
         
         s.commit()
@@ -1185,7 +1618,7 @@ def set_user_school(uid: int):
 
 @bp.delete('/users/<int:uid>')
 @jwt_required()
-@require_role("dev_admin", "campus_admin")
+@require_role("dev_admin")
 def delete_user(uid: int):
     """刪除使用者：預設僅在無關聯資料時允許刪除。加上 ?force=1 可強制刪除並清理關聯資料。"""
     from models import Post, Comment, Media
@@ -1200,29 +1633,40 @@ def delete_user(uid: int):
         u = s.get(User, uid)
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
-        if actor and actor.role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
-        if actor and actor.role == 'campus_admin':
-            if not actor.school_id or u.school_id != actor.school_id:
-                return jsonify({ 'msg': '無權限：僅能刪除同校使用者' }), 403
+        if actor and actor.role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
         
         # 檢查關聯
         has_post = s.query(Post).filter(Post.author_id==uid).first() is not None
         has_comment = s.query(Comment).filter(Comment.author_id==uid).first() is not None
         has_media = s.query(Media).join(Post, Media.post_id==Post.id).filter(Post.author_id==uid).first() is not None
         
-        if (has_post or has_comment or has_media) and not force:
+        # 檢查公告關聯
+        from models import Announcement, AnnouncementRead
+        has_announcement = s.query(Announcement).filter(Announcement.created_by==uid).first() is not None
+        has_announcement_read = s.query(AnnouncementRead).filter(AnnouncementRead.user_id==uid).first() is not None
+        
+        # 檢查聊天記錄關聯
+        from models import ChatMessage, ChatRoom
+        has_chat_message = s.query(ChatMessage).filter(ChatMessage.user_id==uid).first() is not None
+        has_chat_room = s.query(ChatRoom).filter(ChatRoom.owner_id==uid).first() is not None
+        
+        if (has_post or has_comment or has_media or has_announcement or has_announcement_read or has_chat_message or has_chat_room) and not force:
             return jsonify({ 
                 'msg': '存在關聯資料，無法刪除（可加 ?force=1 強制刪除）',
                 'details': {
                     'has_posts': has_post,
                     'has_comments': has_comment, 
-                    'has_media': has_media
+                    'has_media': has_media,
+                    'has_announcements': has_announcement,
+                    'has_announcement_reads': has_announcement_read,
+                    'has_chat_messages': has_chat_message,
+                    'has_chat_rooms': has_chat_room
                 }
             }), 409
         
         # 強制刪除：清理關聯資料
-        if force and (has_post or has_comment or has_media):
+        if force and (has_post or has_comment or has_media or has_announcement or has_announcement_read or has_chat_message or has_chat_room):
             try:
                 # 1. 刪除用戶的所有留言
                 comments_deleted = s.query(Comment).filter(Comment.author_id == uid).count()
@@ -1239,7 +1683,23 @@ def delete_user(uid: int):
                 posts_deleted = s.query(Post).filter(Post.author_id == uid).count()
                 s.query(Post).filter(Post.author_id == uid).delete(synchronize_session=False)
                 
-                print(f"[DEBUG] 強制刪除用戶 {uid} 的關聯資料: posts={posts_deleted}, comments={comments_deleted}, media={media_deleted}")
+                # 4. 刪除用戶創建的公告
+                announcements_deleted = s.query(Announcement).filter(Announcement.created_by == uid).count()
+                s.query(Announcement).filter(Announcement.created_by == uid).delete(synchronize_session=False)
+                
+                # 5. 刪除用戶的公告閱讀記錄
+                announcement_reads_deleted = s.query(AnnouncementRead).filter(AnnouncementRead.user_id == uid).count()
+                s.query(AnnouncementRead).filter(AnnouncementRead.user_id == uid).delete(synchronize_session=False)
+                
+                # 6. 刪除用戶的聊天記錄
+                chat_messages_deleted = s.query(ChatMessage).filter(ChatMessage.user_id == uid).count()
+                s.query(ChatMessage).filter(ChatMessage.user_id == uid).delete(synchronize_session=False)
+                
+                # 7. 刪除用戶擁有的聊天室（軟刪除）
+                chat_rooms_deleted = s.query(ChatRoom).filter(ChatRoom.owner_id == uid).count()
+                s.query(ChatRoom).filter(ChatRoom.owner_id == uid).update({ChatRoom.is_active: False})
+                
+                print(f"[DEBUG] 強制刪除用戶 {uid} 的關聯資料: posts={posts_deleted}, comments={comments_deleted}, media={media_deleted}, announcements={announcements_deleted}, announcement_reads={announcement_reads_deleted}, chat_messages={chat_messages_deleted}, chat_rooms={chat_rooms_deleted}")
                 
             except Exception as e:
                 print(f"[ERROR] 清理用戶 {uid} 關聯資料時出錯: {e}")
@@ -1304,12 +1764,12 @@ def delete_user(uid: int):
         return jsonify({ 
             'ok': True, 
             'forced': force,
-            'cleaned_associations': force and (has_post or has_comment or has_media)
+            'cleaned_associations': force and (has_post or has_comment or has_media or has_announcement or has_announcement_read or has_chat_message or has_chat_room)
         })
 
 @bp.post('/users')
 @jwt_required()
-@require_role("dev_admin", "campus_admin")
+@require_role("dev_admin")
 def create_user():
     """建立新使用者。
     - dev_admin：可建立任一學校或跨校（未綁定）帳號
@@ -1331,21 +1791,14 @@ def create_user():
         # 權限與學校判定
         actor_id = get_jwt_identity()
         actor = s.get(User, actor_id) if actor_id else None
-        if actor and actor.role == 'cross_admin':
-            return jsonify({ 'msg': '跨校管理員不可管理用戶' }), 403
+        if actor and actor.role != 'dev_admin':
+            return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
         school_id = None
         if school_slug:
             sch = s.query(School).filter(School.slug == school_slug).first()
             if not sch:
                 return jsonify({'msg': '學校不存在'}), 404
             school_id = sch.id
-
-        if actor and actor.role == 'campus_admin':
-            # 必須建立在自己學校
-            if not actor.school_id:
-                return jsonify({'msg': '校內管理員未綁定學校，無法建立帳號'}), 403
-            if school_id is None or school_id != actor.school_id:
-                return jsonify({'msg': '無權限：僅能建立自己學校的帳號'}), 403
 
         # 檢查重複
         if s.query(User).filter(func.lower(User.username) == username.lower()).first():
@@ -1447,22 +1900,43 @@ def get_chat_rooms():
                 client_ids = list(_room_clients.get(room["id"], set()))
                 room["online_count"] = len(client_ids)
 
-            # dev_admin 附加自訂聊天室列表（記憶體）
+            # 添加自定義聊天室（從數據庫）
             try:
-                if role == "dev_admin":
-                    from app import _custom_rooms
-                    for rid, info in list(_custom_rooms.items()):
-                        client_ids = list(_room_clients.get(rid, set()))
+                from models import ChatRoom
+                custom_rooms = s.query(ChatRoom).filter(
+                    and_(
+                        ChatRoom.room_type == "custom",
+                        ChatRoom.is_active == True
+                    )
+                ).all()
+                
+                for room in custom_rooms:
+                    # 檢查用戶是否有權限訪問此聊天室
+                    can_access = False
+                    
+                    # dev_admin 可以訪問所有自定義聊天室
+                    if role == "dev_admin":
+                        can_access = True
+                    # campus_admin 只能訪問自己學校的聊天室或自己創建的聊天室
+                    elif role == "campus_admin":
+                        if room.owner_id == user_id or room.school_id == school_id:
+                            can_access = True
+                    
+                    if can_access:
+                        client_ids = list(_room_clients.get(room.id, set()))
                         available_rooms.append({
-                            "id": rid,
-                            "name": info.get("name") or f"自訂聊天室 {rid}",
-                            "description": info.get("description") or "由總管理員建立的自訂聊天室",
-                            "access_roles": ["dev_admin"],
-                            "school_specific": False,
+                            "id": room.id,
+                            "name": room.name,
+                            "description": room.description or "自定義聊天室",
+                            "access_roles": ["dev_admin", "campus_admin"],
+                            "school_specific": room.school_id is not None,
+                            "school_id": room.school_id,
                             "online_count": len(client_ids),
                             "custom": True,
+                            "owner_id": room.owner_id
                         })
-            except Exception:
+            except Exception as e:
+                print(f"載入自定義聊天室失敗: {e}")
                 pass
             
             return jsonify({
@@ -1494,10 +1968,9 @@ def get_chat_room_users(room_id: str):
             school_id = user.school_id
             
             # 聊天室權限檢查（支援動態校別聊天室）
-            is_campus_room = False
             target_school_id = None
             if room_id.startswith("admin_campus:"):
-                is_campus_room = True
+                # campus room 判斷作為條件分支使用
                 slug = room_id.split(":", 1)[1]
                 sch = s.query(School).filter(School.slug == slug).first()
                 if not sch:
@@ -1520,8 +1993,26 @@ def get_chat_room_users(room_id: str):
                 if room_id not in fixed_rooms:
                     # 自訂聊天室：僅 dev_admin 可存取
                     from app import _custom_rooms
+                    # 檢查內存中的自定義聊天室
                     if room_id not in _custom_rooms:
-                        return jsonify({"error": "ROOM_NOT_FOUND"}), 404
+                        # 如果內存中沒有，檢查數據庫中是否存在
+                        from models import ChatRoom
+                        db_room = s.query(ChatRoom).filter(
+                            and_(
+                                ChatRoom.id == room_id,
+                                ChatRoom.room_type == "custom",
+                                ChatRoom.is_active == True
+                            )
+                        ).first()
+                        if not db_room:
+                            return jsonify({"error": "ROOM_NOT_FOUND"}), 404
+                        # 如果數據庫中存在，重新初始化內存中的聊天室
+                        _custom_rooms[room_id] = {
+                            'owner_id': db_room.owner_id,
+                            'name': db_room.name,
+                            'description': db_room.description,
+                            'members': set()
+                        }
                     if role != "dev_admin":
                         return jsonify({"error": "ACCESS_DENIED"}), 403
                 else:
@@ -1768,3 +2259,354 @@ def notify_new_domain():
     except Exception as e:
         print(f"處理域名請求通知時出錯: {e}")
         return jsonify({"msg": "通知失敗"}), 500
+
+
+@bp.post("/chat-rooms/create")
+@jwt_required()
+@require_role("dev_admin", "campus_admin")
+def create_chat_room():
+    """創建新的聊天室"""
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json() or {}
+        
+        name = data.get("name", "").strip()
+        description = data.get("description", "").strip()
+        room_type = data.get("room_type", "public")
+        invite_targets = data.get("invite_targets", [])
+        
+        if not name:
+            return jsonify({"ok": False, "error": "聊天室名稱不能為空"}), 400
+        
+        with get_session() as s:
+            user = s.query(User).get(user_id)
+            if not user:
+                return jsonify({"ok": False, "error": "用戶不存在"}), 404
+            
+            # 生成唯一的房間ID
+            import uuid
+            room_id = f"custom:{uuid.uuid4().hex[:8]}"
+            
+            # 創建聊天室記錄
+            from models import ChatRoom
+            room = ChatRoom(
+                id=room_id,
+                name=name,
+                description=description or None,
+                room_type="custom",
+                owner_id=user_id,
+                school_id=user.school_id if user.role == "campus_admin" else None,
+                is_active=True
+            )
+            
+            s.add(room)
+            s.flush()
+            
+            # 處理邀請目標
+            invited_users = set()
+            
+            for target in invite_targets:
+                target_type = target.get("type")
+                target_id = target.get("id")
+                
+                if target_type == "role":
+                    # 邀請特定角色的所有用戶
+                    role_users = s.query(User).filter(User.role == target_id).all()
+                    for u in role_users:
+                        invited_users.add(u.id)
+                
+                elif target_type == "user":
+                    # 邀請特定用戶
+                    try:
+                        user_id_int = int(target_id)
+                        invited_users.add(user_id_int)
+                    except (ValueError, TypeError):
+                        continue
+                
+                elif target_type == "school":
+                    # 邀請特定學校的管理員和版主
+                    try:
+                        school_id_int = int(target_id)
+                        school_users = s.query(User).filter(
+                            and_(
+                                User.school_id == school_id_int,
+                                User.role.in_(["campus_admin", "campus_moderator"])
+                            )
+                        ).all()
+                        for u in school_users:
+                            invited_users.add(u.id)
+                    except (ValueError, TypeError):
+                        continue
+            
+            # 創建聊天室成員記錄
+            from models import ChatRoomMember
+            
+            # 添加創建者為成員
+            creator_member = ChatRoomMember(
+                room_id=room_id,
+                user_id=user_id,
+                is_active=True
+            )
+            s.add(creator_member)
+            
+            # 添加邀請的用戶為成員
+            for user_id_int in invited_users:
+                if user_id_int != user_id:  # 避免重複添加創建者
+                    member = ChatRoomMember(
+                        room_id=room_id,
+                        user_id=user_id_int,
+                        is_active=True
+                    )
+                    s.add(member)
+            
+            s.commit()
+            
+            # 記錄聊天室創建事件
+            try:
+                from services.event_service import EventService
+                from utils.ratelimit import get_client_ip
+                
+                # 準備邀請目標信息
+                invite_info = []
+                for target in invite_targets:
+                    target_type = target.get("type")
+                    target_name = target.get("name", "")
+                    if target_type == "role":
+                        invite_info.append(f"角色組: {target_name}")
+                    elif target_type == "user":
+                        invite_info.append(f"用戶: {target_name}")
+                    elif target_type == "school":
+                        invite_info.append(f"學校: {target_name}")
+                
+                EventService.log_event(
+                    session=s,
+                    event_type="chat.room.created",
+                    title=f"創建聊天室: {name}",
+                    description=f"管理員 {user.username} 創建了聊天室「{name}」\n"
+                               f"描述: {description or '無'}\n"
+                               f"類型: {room_type}\n"
+                               f"邀請目標: {', '.join(invite_info) if invite_info else '無'}",
+                    severity="medium",
+                    actor_id=user.id,
+                    actor_name=user.username,
+                    actor_role=user.role,
+                    target_type="chat_room",
+                    target_id=room_id,
+                    target_name=name,
+                    school_id=user.school_id,
+                    metadata={
+                        "room_id": room_id,
+                        "room_name": name,
+                        "room_description": description,
+                        "room_type": room_type,
+                        "invite_targets": invite_targets,
+                        "invited_users": list(invited_users),
+                        "invite_count": len(invited_users)
+                    },
+                    client_ip=get_client_ip(),
+                    user_agent=request.headers.get('User-Agent'),
+                    is_important=True,
+                    send_webhook=True
+                )
+            except Exception as e:
+                print(f"記錄聊天室創建事件失敗: {e}")
+                pass  # 事件記錄失敗不影響主要功能
+            
+            return jsonify({
+                "ok": True,
+                "room": {
+                    "id": room.id,
+                    "name": room.name,
+                    "description": room.description,
+                    "room_type": room.room_type,
+                    "owner_id": room.owner_id,
+                    "school_id": room.school_id,
+                    "invited_users": list(invited_users)
+                }
+            })
+    
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"創建聊天室失敗: {str(e)}"}), 500
+
+
+# 平台事件管理 API
+@bp.post('/platform/restart')
+@jwt_required()
+@require_role('dev_admin')
+def record_platform_restart():
+    """記錄平台重啟事件（僅 dev_admin）"""
+    try:
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', '管理員手動重啟')
+        
+        platform_event_service.record_platform_restarted(reason)
+        
+        return jsonify({
+            "ok": True,
+            "message": "平台重啟事件已記錄",
+            "reason": reason
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"記錄平台重啟事件失敗: {str(e)}"
+        }), 500
+
+
+@bp.post('/platform/stop')
+@jwt_required()
+@require_role('dev_admin')
+def record_platform_stop():
+    """記錄平台關閉事件（僅 dev_admin）"""
+    try:
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', '管理員手動關閉')
+        
+        platform_event_service.record_platform_stopped(reason)
+        
+        return jsonify({
+            "ok": True,
+            "message": "平台關閉事件已記錄",
+            "reason": reason
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"記錄平台關閉事件失敗: {str(e)}"
+        }), 500
+
+
+@bp.get('/platform/status')
+@jwt_required()
+@require_role('dev_admin')
+def get_platform_status():
+    """獲取平台狀態信息（僅 dev_admin）"""
+    try:
+        import os
+        import psutil
+        from datetime import datetime
+        
+        process = psutil.Process()
+        
+        # 獲取系統啟動時間
+        system_boot_time = datetime.fromtimestamp(psutil.boot_time())
+        system_uptime_seconds = int((datetime.now() - system_boot_time).total_seconds())
+        
+        # 獲取應用程序啟動時間
+        app_start_time = platform_event_service._start_time if hasattr(platform_event_service, '_start_time') else None
+        app_uptime_seconds = platform_event_service._get_uptime_seconds()
+        
+        status = {
+            "process_id": os.getpid(),
+            "system_start_time": system_boot_time.isoformat(),
+            "system_uptime_seconds": system_uptime_seconds,
+            "app_start_time": app_start_time.isoformat() if app_start_time else None,
+            "app_uptime_seconds": app_uptime_seconds,
+            "memory_usage_mb": round(process.memory_info().rss / 1024 / 1024, 2),
+            "cpu_percent": process.cpu_percent(),
+            "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+            "platform": os.name,
+            "current_time": datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            "ok": True,
+            "status": status
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"獲取平台狀態失敗: {str(e)}"
+        }), 500
+
+
+@bp.get("/posts")
+@jwt_required()
+@require_role("dev_admin", "campus_admin", "cross_admin")
+def get_admin_posts():
+    """管理員專用：獲取所有貼文（包括廣告、不同狀態）"""
+    try:
+        current_user_id = get_jwt_identity()
+        limit = min(100, max(1, int(request.args.get('limit', 50))))
+        
+        with get_session() as s:
+            current_user = s.get(User, current_user_id)
+            if not current_user:
+                return jsonify({"error": "用戶不存在"}), 404
+            
+            # 基礎查詢 - 管理員可以看到所有狀態的貼文
+            query = s.query(Post).filter(Post.is_deleted == False)
+            
+            # 根據角色過濾權限
+            if current_user.role == "campus_admin" and current_user.school_id:
+                # 校園管理員只能看到自己學校的貼文和廣告
+                query = query.filter(
+                    or_(
+                        Post.school_id == current_user.school_id,
+                        Post.is_advertisement == True,
+                        and_(Post.is_announcement == True, Post.school_id.is_(None))
+                    )
+                )
+            elif current_user.role == "cross_admin":
+                # 跨校管理員只能看到跨校貼文和廣告
+                query = query.filter(
+                    or_(
+                        Post.school_id.is_(None),
+                        Post.is_advertisement == True
+                    )
+                )
+            # dev_admin 可以看到所有貼文，不需要額外過濾
+            
+            # 按時間倒序，先置頂後普通
+            posts = query.order_by(Post.is_pinned.desc(), Post.id.desc()).limit(limit).all()
+            
+            # 轉換為響應格式
+            posts_data = []
+            for post in posts:
+                # 計算評論數量
+                comment_count = s.query(Comment).filter(
+                    Comment.post_id == post.id,
+                    Comment.is_deleted == False
+                ).count()
+                
+                # 計算點讚數量
+                try:
+                    from models import PostReaction
+                    like_count = s.query(PostReaction).filter(
+                        PostReaction.post_id == post.id,
+                        PostReaction.reaction_type == 'like'
+                    ).count()
+                except:
+                    like_count = 0
+                
+                post_data = {
+                    "id": post.id,
+                    "content": post.content[:200] + "..." if len(post.content) > 200 else post.content,
+                    "status": post.status,
+                    "is_announcement": bool(post.is_announcement),
+                    "is_advertisement": bool(post.is_advertisement),
+                    "created_at": post.created_at.isoformat(),
+                    "author": {
+                        "id": post.author.id if post.author else 0,
+                        "username": post.author.username if post.author else "未知用戶"
+                    },
+                    "school": {
+                        "name": post.school.name if post.school else "跨校"
+                    } if post.school_id else None,
+                    "comment_count": comment_count,
+                    "like_count": like_count,
+                    "excerpt": post.content[:100] + "..." if len(post.content) > 100 else post.content
+                }
+                posts_data.append(post_data)
+            
+            return jsonify({
+                "ok": True,
+                "posts": posts_data,
+                "total": len(posts_data)
+            })
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

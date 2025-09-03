@@ -1,16 +1,24 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import UploadArea from "./UploadArea";
 import { postFormData, HttpError } from "../lib/http";
 import { validatePost } from "../schemas/post";
 import AnonymousAccountDisplay from "./AnonymousAccountDisplay";
+import { canPublishAnnouncement, getRole } from "../utils/auth";
+import { useAuth } from "@/contexts/AuthContext";
+import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
+import { textToHtml } from '@/utils/safeHtml'
 
 export default function PostComposer({ token }: { token: string }) {
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [isAnnouncement, setIsAnnouncement] = useState(false);
+  const [announcementType, setAnnouncementType] = useState<'platform' | 'cross' | 'school'>('school');
   const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [isAd, setIsAd] = useState(false)
+  const { role } = useAuth()
   const mySchoolId = (() => { try { const v = localStorage.getItem('school_id'); return v ? Number(v) : null } catch { return null } })()
   const defaultSlug = (() => {
     try {
@@ -95,24 +103,34 @@ export default function PostComposer({ token }: { token: string }) {
         const fd = new FormData()
         fd.set('content', content.trim())
         if (finalSlug) fd.set('school_slug', finalSlug)
+        if (isAnnouncement) {
+          fd.set('is_announcement', 'true')
+          fd.set('announcement_type', announcementType)
+        }
+        if (isAd && role === 'dev_admin') fd.set('is_advertisement', 'true')
         try { console.log('[PostComposer] submit with files, school_slug =', finalSlug || '(cross)') } catch {}
         files.forEach(f => fd.append('files', f))
         const result = await postFormData("/api/posts/with-media", fd)
         const validatedPost = validatePost(result)
         setMsg("已送出，等待審核")
-        setContent(""); setFiles([])
+        setContent(""); setFiles([]); setIsAnnouncement(false)
         console.log('created:', validatedPost)
       } else {
         // 純文本發文
         const { postJSON } = await import('../lib/http')
         const payload: any = { content: content.trim() }
         if (finalSlug) payload.school_slug = finalSlug
+        if (isAnnouncement) {
+          payload.is_announcement = true
+          payload.announcement_type = announcementType
+        }
+        if (isAd && role === 'dev_admin') payload.is_advertisement = true
         try { console.log('[PostComposer] submit text only, school_slug =', finalSlug || '(cross)') } catch {}
         
         const result = await postJSON('/api/posts', payload)
         const validatedPost = validatePost(result)
         setMsg("已送出，等待審核")
-        setContent(""); setFiles([])
+        setContent(""); setFiles([]); setIsAnnouncement(false)
         console.log('created:', validatedPost)
       }
     } catch (e:any) {
@@ -140,6 +158,53 @@ export default function PostComposer({ token }: { token: string }) {
             <option key={s.id} value={s.slug}>{s.name}</option>
           ))}
         </select>
+        {/* 公告選項 - 依角色顯示不同選項 */}
+        {token && canPublishAnnouncement() && (
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isAnnouncement}
+                onChange={(e) => setIsAnnouncement(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span>公告貼文</span>
+            </label>
+            {isAnnouncement && (
+              <select
+                value={announcementType}
+                onChange={(e) => setAnnouncementType(e.target.value as any)}
+                className="form-control !w-auto text-sm"
+              >
+                {role === 'dev_admin' && (
+                  <>
+                    <option value="platform">全平台公告</option>
+                    <option value="cross">跨校公告</option>
+                    <option value="school">學校公告</option>
+                  </>
+                )}
+                {role === 'campus_admin' && (
+                  <option value="school">學校公告</option>
+                )}
+                {role === 'cross_admin' && (
+                  <option value="cross">跨校公告</option>
+                )}
+              </select>
+            )}
+          </div>
+        )}
+        {/* 廣告選項 - 僅 dev_admin */}
+        {token && role === 'dev_admin' && (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={isAd}
+              onChange={(e) => setIsAd(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            <span>廣告貼文</span>
+          </label>
+        )}
       </div>
       {/* 確認對話框：選擇發文範圍 */}
       {confirmOpen && (
@@ -163,6 +228,46 @@ export default function PostComposer({ token }: { token: string }) {
                 <span className="text-sm">跨校（全部）</span>
               </label>
             </div>
+            {/* 公告選項 - 依角色顯示不同選項 */}
+            {token && canPublishAnnouncement() && (
+              <div className="mb-3 p-3 rounded-xl bg-muted/20 border border-border">
+                <label className="flex items-center gap-2 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={isAnnouncement}
+                    onChange={(e) => setIsAnnouncement(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm">公告貼文</span>
+                </label>
+                {isAnnouncement && (
+                  <select
+                    value={announcementType}
+                    onChange={(e) => setAnnouncementType(e.target.value as any)}
+                    className="form-control text-sm mb-2"
+                  >
+                    {role === 'dev_admin' && (
+                      <>
+                        <option value="platform">全平台公告</option>
+                        <option value="cross">跨校公告</option>
+                        <option value="school">學校公告</option>
+                      </>
+                    )}
+                    {role === 'campus_admin' && (
+                      <option value="school">學校公告</option>
+                    )}
+                    {role === 'cross_admin' && (
+                      <option value="cross">跨校公告</option>
+                    )}
+                  </select>
+                )}
+                <p className="text-xs text-muted">
+                  {announcementType === 'platform' && '全平台公告將向所有用戶顯示'}
+                  {announcementType === 'cross' && '跨校公告將在跨校區域顯示'}
+                  {announcementType === 'school' && '學校公告將向對應學校用戶顯示'}
+                </p>
+              </div>
+            )}
             <div className="flex items-center justify-end gap-2">
               <button type="button" className="btn-ghost text-sm" onClick={()=>setConfirmOpen(false)}>取消</button>
               <button type="button" className="btn-primary text-sm" onClick={()=>doSubmit(targetSlug)}>確認送出</button>
@@ -172,6 +277,16 @@ export default function PostComposer({ token }: { token: string }) {
       )}
       <textarea className="form-control min-h-[140px]" placeholder="匿名分享你的想法..." value={content} onChange={(e) => setContent(e.target.value)}/>
       <UploadArea value={files} onChange={setFiles} maxCount={6} />
+
+      {/* 即時預覽（輕量）：轉義換行與連結，樣式與詳情頁一致 */}
+      {content.trim() && (
+        <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4 shadow-soft">
+          <div className="text-sm text-muted mb-2">預覽</div>
+          <div className="prose prose-sm max-w-none text-fg prose-rules">
+            <SafeHtmlContent html={textToHtml(content)} allowLinks={true} />
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted">{files.length} 個附件</div>

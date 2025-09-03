@@ -1,313 +1,597 @@
-import { useState, useEffect } from 'react'
-import { NavBar } from '@/components/layout/NavBar'
-import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { Search, Ticket, Clock, User, MessageCircle, ArrowLeft, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
+import { PageLayout } from '@/components/layout/PageLayout'
+import { 
+  Search,
+  AlertCircle,
+  CheckCircle2,
+  RefreshCw,
+  MessageCircle,
+  Clock,
+  User,
+  Tag,
+  Send,
+  ArrowLeft
+} from 'lucide-react'
 import { api } from '@/services/api'
 
-interface TrackedTicket {
-  ticket_number: string
+interface TicketDetail {
+  id: string
   subject: string
-  category: string
   status: string
+  category: string
   priority: string
+  submitter: string
   created_at: string
   updated_at: string
-  response_count: number
-  scope: string
-  replies?: Array<{
-    message: string
-    timestamp: string
-    by: string
+  last_activity_at: string
+  message_count: number
+  messages: Array<{
+    id: number
+    body: string
+    author_type: string
+    author_name: string
+    created_at: string
+    attachments?: any
   }>
 }
 
-interface TrackingResult {
-  ok: boolean
-  tracking_code?: string
-  tickets?: TrackedTicket[]
-  total_tickets?: number
-  msg?: string
-}
-
 export default function TicketTrackPage() {
-  const [trackingCode, setTrackingCode] = useState('')
-  const [searching, setSearching] = useState(false)
-  const [result, setResult] = useState<TrackingResult | null>(null)
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { id: ticketIdParam } = useParams()
+  const { isLoggedIn } = useAuth()
+  const [ticket, setTicket] = useState<TicketDetail | null>(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expandedTicket, setExpandedTicket] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [replyLoading, setReplyLoading] = useState(false)
+  // 登入者列表模式（無 token/無單號時顯示）
+  const [myTickets, setMyTickets] = useState<Array<{ id:string; subject:string; status:string; priority:string; last_activity_at:string }>>([])
+  const [myLoading, setMyLoading] = useState(false)
+  const reloadMyTickets = async () => {
+    try {
+      setMyLoading(true)
+      setError(null)
+      const resp = await api<{ ok:boolean; tickets: Array<{ id:string; subject:string; status:string; priority:string; last_activity_at:string }>}>(`/api/support/my-tickets?limit=100&_=${Date.now()}`)
+      const items = (resp?.tickets||[]).map(t=>({ id:t.id, subject:t.subject, status:t.status, priority:t.priority, last_activity_at:t.last_activity_at }))
+      setMyTickets(items)
+    } catch (e:any) {
+      setError(e?.message||'載入失敗')
+    } finally {
+      setMyLoading(false)
+    }
+  }
+  
+  // 追蹤表單狀態
+  const [trackForm, setTrackForm] = useState({
+    ticket_id: '',
+    email: ''
+  })
+
+  // 從 URL 參數獲取 token 和 ticket ID
+  const token = searchParams.get('token') || searchParams.get('sig')
+  const ticketId = ticketIdParam || searchParams.get('ticket_id')
 
   useEffect(() => {
-    const html = document.documentElement
-    if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
-    html.classList.add('theme-ready')
-    return () => html.classList.remove('theme-ready')
-  }, [])
+    if (ticketId) {
+      if (token) {
+        // 訪客模式：使用 token 訪問
+        fetchTicketByToken(ticketId, token)
+      } else if (isLoggedIn) {
+        // 登入用戶模式：直接訪問
+        fetchTicketByAuth(ticketId)
+      }
+    } else if (isLoggedIn) {
+      // 無 token/單號：載入我的工單列表（就地顯示，不跳頁）
+      ;(async () => {
+        try {
+          setMyLoading(true)
+          setError(null)
+          const resp = await api<{ ok:boolean; tickets: Array<{ id:string; subject:string; status:string; priority:string; last_activity_at:string }>}>(`/api/support/my-tickets?limit=100&_=${Date.now()}`)
+          const items = (resp?.tickets||[]).map(t=>({ id:t.id, subject:t.subject, status:t.status, priority:t.priority, last_activity_at:t.last_activity_at }))
+          setMyTickets(items)
+        } catch (e:any) {
+          setError(e?.message||'載入失敗')
+        } finally {
+          setMyLoading(false)
+        }
+      })()
+    }
+  }, [token, ticketId, isLoggedIn])
 
-  const handleSearch = async () => {
-    if (!trackingCode.trim()) {
-      setError('請輸入追蹤碼')
+  // 剛建立的工單提示（若列表暫時還沒刷新）
+  useEffect(() => {
+    if (!isLoggedIn || myTickets.length > 0) return
+    const lastId = localStorage.getItem('fk_last_ticket_id')
+    if (lastId) {
+      // 嘗試直接帶使用者進該單
+      try {
+        navigate(`/support/ticket/${lastId}`, { replace: false })
+      } catch {}
+    }
+  }, [isLoggedIn, myTickets.length])
+
+  const fetchTicketByToken = async (id: string, tokenParam: string) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/support/tickets/${id}?sig=${tokenParam}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setTicket(data.ticket)
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.msg || '無法載入工單')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchTicketByAuth = async (id: string) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/support/tickets/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setTicket(data.ticket)
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.msg || '無法載入工單')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleTrackTicket = async () => {
+    if (!trackForm.ticket_id && !trackForm.email) {
+      setError('請填寫工單編號或 Email')
       return
     }
 
-    setSearching(true)
+    setLoading(true)
     setError(null)
-    setResult(null)
 
     try {
-      const response = await api<TrackingResult>(`/api/support/track/${trackingCode.trim()}`, {
-        method: 'GET'
+      const response = await fetch('/api/support/guest/track', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(trackForm)
       })
 
-      if (response.ok && response.tickets) {
-        setResult(response)
-        if (response.tickets.length === 0) {
-          setError('此追蹤碼暫無工單記錄')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.tracking_url) {
+          window.location.href = data.tracking_url
         }
       } else {
-        setError(response.msg || '查詢失敗')
+        const errorData = await response.json()
+        throw new Error(errorData.msg || '追蹤工單失敗')
       }
-    } catch (e: any) {
-      setError(e.message || '查詢失敗，請稍後重試')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
     } finally {
-      setSearching(false)
+      setLoading(false)
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const statusMap: { [key: string]: { label: string, color: string } } = {
-      '開啟': { label: '開啟', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' },
-      '已指派': { label: '已指派', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200' },
-      '處理中': { label: '處理中', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' },
-      '等待回覆': { label: '等待回覆', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' },
-      '已解決': { label: '已解決', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200' },
-      '已關閉': { label: '已關閉', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-200' }
+  const handleReply = async () => {
+    if (!replyText.trim() || !ticket) {
+      return
     }
-    
-    const statusInfo = statusMap[status] || { label: status, color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-200' }
+
+    setReplyLoading(true)
+    setError(null)
+
+    try {
+      let response
+      if (token) {
+        // 訪客模式
+        response = await fetch(`/api/support/tickets/${ticket.id}/messages?sig=${token}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            body: replyText,
+            sig: token
+          })
+        })
+      } else if (isLoggedIn) {
+        // 登入用戶模式
+        const authToken = localStorage.getItem('token')
+        response = await fetch(`/api/support/tickets/${ticket.id}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            body: replyText
+          })
+        })
+      } else {
+        throw new Error('無法回覆：請登入或使用有效的追蹤連結')
+      }
+
+      if (response.ok) {
+        // 重新載入工單以顯示新回覆
+        if (token) {
+          fetchTicketByToken(ticket.id, token)
+        } else {
+          fetchTicketByAuth(ticket.id)
+        }
+        setReplyText('')
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.msg || '回覆失敗')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
+    } finally {
+      setReplyLoading(false)
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    const colors: { [key: string]: string } = {
+      'open': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+      'awaiting_admin': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+      'awaiting_user': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+      'resolved': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+      'closed': 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
+    }
+    return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
+  }
+
+  const getPriorityColor = (priority: string) => {
+    const colors: { [key: string]: string } = {
+      'low': 'text-green-600 dark:text-green-400',
+      'medium': 'text-yellow-600 dark:text-yellow-400',
+      'high': 'text-orange-600 dark:text-orange-400',
+      'urgent': 'text-red-600 dark:text-red-400'
+    }
+    return colors[priority] || 'text-gray-600 dark:text-gray-400'
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleString('zh-TW', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  // 顯示追蹤提示頁的條件：
+  // 1) token 與 ticketId 皆缺；或 2) 僅有 ticketId 但未登入（需要憑證）
+  if (!token && (!ticketId || !isLoggedIn)) {
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
-        {statusInfo.label}
-      </span>
+      <PageLayout pathname="/support/track" maxWidth="max-w-3xl">
+        <div className="max-w-md mx-auto pt-6 sm:pt-8 md:pt-10 p-4">
+          <div className="bg-surface border border-border rounded-lg p-6">
+            <div className="text-center mb-6">
+              <Search className="w-12 h-12 mx-auto text-muted mb-4" />
+              <h1 className="text-xl font-bold mb-1">追蹤工單</h1>
+              {isLoggedIn
+                ? <p className="text-muted">已登入，以下為您的工單列表。</p>
+                : <p className="text-muted">輸入工單編號或 Email 來查看工單狀態</p>}
+            </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600" />
+                <span className="text-sm text-red-600">{error}</span>
+              </div>
+            </div>
+          )}
+
+          {!isLoggedIn ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">工單編號</label>
+                <input
+                  type="text"
+                  placeholder="例如：SUP-ABC123"
+                  value={trackForm.ticket_id}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, ticket_id: e.target.value }))}
+                  className="w-full p-3 border border-border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Email 地址</label>
+                <input
+                  type="email"
+                  placeholder="提交工單時使用的 Email"
+                  value={trackForm.email}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full p-3 border border-border rounded-lg"
+                />
+              </div>
+
+              <button
+                onClick={handleTrackTicket}
+                disabled={loading}
+                className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    追蹤中...
+                  </div>
+                ) : (
+                  '追蹤工單'
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm text-muted">我的支援單</div>
+                <button
+                  className="px-2 py-1 text-xs rounded border hover:bg-surface"
+                  onClick={reloadMyTickets}
+                >
+                  重新整理
+                </button>
+              </div>
+              {myLoading ? (
+                <div className="text-center py-4 text-muted">載入我的支援單中…</div>
+              ) : myTickets.length === 0 ? (
+                <div className="text-center py-4 text-muted">{error ? error : '尚無支援單'}</div>
+              ) : (
+                <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+                  {myTickets.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => navigate(`/support/ticket/${t.id}`)}
+                      className="w-full text-left p-3 hover:bg-surface-hover transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium">{t.subject}</div>
+                        <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(t.status)}`}>{
+                          t.status === 'open' ? '開啟' : t.status === 'awaiting_user' ? '等待您的回覆' : t.status === 'awaiting_admin' ? '等待管理員處理' : t.status === 'resolved' ? '已解決' : '已關閉'
+                        }</span>
+                      </div>
+                      <div className="text-xs text-muted mt-1">#{t.id.slice(-6)} · 最後更新 {formatDate(t.last_activity_at)}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+            <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">如何找到工單編號？</h3>
+            <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+              <p>• 建立工單後會收到確認 Email，其中包含工單編號</p>
+              <p>• 工單編號格式為 SUP-XXXXXX</p>
+              <p>• Email 主旨通常包含工單編號</p>
+            </div>
+          </div>
+        </div>
+        </div>
+      </PageLayout>
     )
   }
 
-  const getPriorityBadge = (priority: string) => {
-    const priorityMap: { [key: string]: { label: string, color: string } } = {
-      'low': { label: '低', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
-      'medium': { label: '中', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' },
-      'high': { label: '高', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' },
-      'urgent': { label: '緊急', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' }
-    }
-    
-    const priorityInfo = priorityMap[priority] || { label: priority, color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-200' }
+  // 載入中
+  if (loading) {
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${priorityInfo.color}`}>
-        優先級：{priorityInfo.label}
-      </span>
+      <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">
+        <div className="flex justify-center py-12">
+          <RefreshCw className="w-6 h-6 animate-spin text-muted" />
+        </div>
+      </PageLayout>
     )
+  }
+
+  // 錯誤狀態
+  if (error && !ticket) {
+    return (
+      <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <span className="font-medium text-red-900">載入失敗</span>
+          </div>
+          <p className="text-red-700 mb-4">{error}</p>
+                       <button
+             onClick={() => navigate('/support')}
+             className="px-4 py-2 border border-red-300 rounded-lg text-red-700 hover:bg-red-100 transition-colors"
+           >
+                         <ArrowLeft className="w-4 h-4 mr-2" />
+             返回支援中心
+          </button>
+        </div>
+      </PageLayout>
+    )
+  }
+
+  // 顯示工單詳情
+  if (!ticket) {
+    return null
   }
 
   return (
-    <div className=\"min-h-screen\">
-      <NavBar pathname=\"/track\" />
-      <MobileBottomNav />
-      <main className=\"mx-auto max-w-4xl px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8\">
-        {/* 返回按鈕 */}
-        <div className=\"bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6\">
-          <div className=\"flex items-center gap-3 mb-2\">
-            <button onClick={() => window.history.back()} className=\"flex items-center gap-2 text-muted hover:text-fg transition-colors\">
-              <ArrowLeft className=\"w-4 h-4\" /> 返回
-            </button>
+    <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">
+      {/* 返回鍵區塊 */}
+      <div className="pt-4 pb-2">
+        <button
+          onClick={() => {
+            try {
+              if (window.history.length > 1) navigate(-1)
+              else navigate('/support')
+            } catch {
+              navigate('/support')
+            }
+          }}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-muted hover:text-fg hover:bg-surface-hover transition-colors"
+          title="返回"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="text-sm">返回</span>
+        </button>
+      </div>
+
+      <div className="max-w-4xl mx-auto p-0">
+      {/* 工單資訊標題 */}
+      <div className="bg-surface border border-border rounded-lg p-6 mb-6">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="font-mono text-lg font-bold text-primary">#{ticket.id.slice(-6)}</span>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(ticket.status)}`}>
+                {ticket.status === 'open' ? '開啟' :
+                 ticket.status === 'awaiting_user' ? '等待您的回覆' :
+                 ticket.status === 'awaiting_admin' ? '等待管理員處理' :
+                 ticket.status === 'resolved' ? '已解決' : '已關閉'}
+              </span>
+            </div>
+            <h1 className="text-xl font-bold mb-2">{ticket.subject}</h1>
           </div>
-          <h1 className=\"text-xl sm:text-2xl font-semibold dual-text\">工單追蹤</h1>
-          <p className=\"text-sm text-muted mt-1\">使用您的追蹤碼查詢工單處理進度</p>
+          
+          <div className="text-right">
+            <div className={`text-sm ${getPriorityColor(ticket.priority)} font-medium`}>
+              {ticket.priority === 'low' ? '低' : 
+               ticket.priority === 'medium' ? '中' : 
+               ticket.priority === 'high' ? '高' : '緊急'}優先級
+            </div>
+          </div>
         </div>
 
-        {/* 搜索區域 */}
-        <div className=\"bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6\">
-          <div className=\"space-y-4\">
-            <div>
-              <label className=\"block text-sm font-medium text-fg mb-2\">追蹤碼</label>
-              <div className=\"flex gap-3\">
-                <input
-                  type=\"text\"
-                  value={trackingCode}
-                  onChange={(e) => setTrackingCode(e.target.value)}
-                  placeholder=\"請輸入您的追蹤碼，例如：FK12345ABCDE\"
-                  className=\"form-control flex-1\"
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
+          <div className="flex items-center gap-2">
+            <Tag className="w-4 h-4" />
+            <span>分類：{ticket.category}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            <span>提交者：{ticket.submitter}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            <span>建立時間：{formatDate(ticket.created_at)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 錯誤訊息 */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+            <span className="text-sm text-red-600">{error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 對話記錄 */}
+      <div className="bg-surface border border-border rounded-lg">
+        <div className="p-4 border-b border-border">
+          <h2 className="font-semibold flex items-center gap-2">
+            <MessageCircle className="w-4 h-4" />
+            對話記錄 ({ticket.messages.length})
+          </h2>
+        </div>
+
+        <div className="divide-y divide-border">
+          {ticket.messages.map((message, index) => (
+            <div key={message.id} className="p-6">
+              <div className="flex items-start gap-4">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+                  message.author_type === 'admin' 
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                    : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
+                }`}>
+                  {message.author_name.charAt(0).toUpperCase()}
+                </div>
+                
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-medium">{message.author_name}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      message.author_type === 'admin' 
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
+                    }`}>
+                      {message.author_type === 'admin' ? '管理員' : '用戶'}
+                    </span>
+                    <span className="text-xs text-muted">{formatDate(message.created_at)}</span>
+                  </div>
+                  
+                  <div className="prose prose-sm max-w-none text-fg">
+                    <div className="whitespace-pre-wrap break-words">
+                      {message.body}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 回覆表單 */}
+        {ticket.status !== 'closed' && (
+          <div className="p-6 border-t border-border bg-surface/50">
+            <div className="space-y-4">
+              <label className="block text-sm font-medium">新增回覆</label>
+              <textarea
+                placeholder="輸入您的回覆..."
+                rows={4}
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                className="w-full p-3 border border-border rounded-lg resize-none"
+                maxLength={10000}
+              />
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-muted">{replyText.length}/10000</span>
                 <button
-                  onClick={handleSearch}
-                  disabled={searching}
-                  className=\"btn-primary px-4 py-2 flex items-center gap-2 whitespace-nowrap\"
+                  onClick={handleReply}
+                  disabled={!replyText.trim() || replyLoading}
+                  className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  <Search className={`w-4 h-4 ${searching ? 'animate-pulse' : ''}`} />
-                  {searching ? '搜索中...' : '查詢'}
+                  {replyLoading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      發送中...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Send className="w-4 h-4" />
+                      發送回覆
+                    </div>
+                  )}
                 </button>
               </div>
             </div>
-
-            {/* 使用說明 */}
-            <div className=\"bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4\">
-              <div className=\"flex items-start gap-3\">
-                <AlertCircle className=\"w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0\" />
-                <div className=\"text-sm\">
-                  <div className=\"font-medium text-blue-900 dark:text-blue-100 mb-1\">使用說明</div>
-                  <ul className=\"text-blue-800 dark:text-blue-200 space-y-1\">
-                    <li>• 追蹤碼通常以 \"FK\" 開頭，例如：FK12345ABCDE</li>
-                    <li>• 追蹤碼會在您提交工單後提供給您</li>
-                    <li>• 如果您是已登入用戶，可直接在支援頁面查看工單歷史</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            {error && (
-              <div className=\"bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4\">
-                <div className=\"flex items-center gap-3\">
-                  <AlertCircle className=\"w-5 h-5 text-red-600 dark:text-red-400\" />
-                  <span className=\"text-red-800 dark:text-red-200\">{error}</span>
-                </div>
-              </div>
-            )}
           </div>
-        </div>
-
-        {/* 搜索結果 */}
-        {result && result.tickets && result.tickets.length > 0 && (
-          <div className=\"bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft\">
-            <div className=\"flex items-center gap-3 mb-4\">
-              <Ticket className=\"w-5 h-5 text-primary\" />
-              <h2 className=\"text-lg font-semibold dual-text\">
-                找到 {result.total_tickets} 個工單
-              </h2>
-            </div>
-
-            <div className=\"space-y-4\">
-              {result.tickets.map((ticket, index) => (
-                <div key={ticket.ticket_number} className=\"border border-border rounded-xl overflow-hidden\">
-                  {/* 工單標題區域 */}
-                  <div className=\"p-4 bg-surface-hover cursor-pointer\" onClick={() => 
-                    setExpandedTicket(expandedTicket === ticket.ticket_number ? null : ticket.ticket_number)
-                  }>
-                    <div className=\"flex items-start justify-between gap-4\">
-                      <div className=\"flex-1\">
-                        <div className=\"flex items-center gap-3 mb-2\">
-                          <span className=\"font-mono text-sm text-primary font-medium\">
-                            #{ticket.ticket_number}
-                          </span>
-                          {getStatusBadge(ticket.status)}
-                          {getPriorityBadge(ticket.priority)}
-                        </div>
-                        
-                        <h3 className=\"text-base font-medium text-fg mb-2\">
-                          {ticket.subject}
-                        </h3>
-                        
-                        <div className=\"flex items-center gap-4 text-xs text-muted\">
-                          <div className=\"flex items-center gap-1\">
-                            <Clock className=\"w-3 h-3\" />
-                            提交於 {new Date(ticket.created_at).toLocaleString()}
-                          </div>
-                          <div className=\"flex items-center gap-1\">
-                            <User className=\"w-3 h-3\" />
-                            {ticket.scope}
-                          </div>
-                          {ticket.response_count > 0 && (
-                            <div className=\"flex items-center gap-1\">
-                              <MessageCircle className=\"w-3 h-3\" />
-                              {ticket.response_count} 個回覆
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className=\"text-xs text-muted\">
-                        分類：{ticket.category}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 展開的詳細內容 */}
-                  {expandedTicket === ticket.ticket_number && (
-                    <div className=\"border-t border-border bg-surface\">
-                      <div className=\"p-4\">
-                        <div className=\"space-y-4\">
-                          {/* 工單資訊 */}
-                          <div>
-                            <div className=\"text-sm text-muted mb-2\">最後更新：{new Date(ticket.updated_at).toLocaleString()}</div>
-                          </div>
-
-                          {/* 回覆列表 */}
-                          {ticket.replies && ticket.replies.length > 0 ? (
-                            <div>
-                              <h4 className=\"text-sm font-medium text-fg mb-3 flex items-center gap-2\">
-                                <MessageCircle className=\"w-4 h-4\" />
-                                回覆記錄 ({ticket.replies.length})
-                              </h4>
-                              <div className=\"space-y-3\">
-                                {ticket.replies.map((reply, replyIndex) => (
-                                  <div key={replyIndex} className=\"bg-surface-hover rounded-lg p-3\">
-                                    <div className=\"flex items-center justify-between mb-2\">
-                                      <div className=\"flex items-center gap-2\">
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                          reply.by === '管理員' 
-                                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
-                                            : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-200'
-                                        }`}>
-                                          {reply.by}
-                                        </span>
-                                      </div>
-                                      <span className=\"text-xs text-muted\">
-                                        {new Date(reply.timestamp).toLocaleString()}
-                                      </span>
-                                    </div>
-                                    <div className=\"text-sm text-fg whitespace-pre-wrap break-words\">
-                                      {reply.message}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className=\"text-center py-6 text-muted text-sm\">
-                              暫無回覆
-                            </div>
-                          )}
-
-                          {/* 工單狀態說明 */}
-                          {ticket.status === '已解決' && (
-                            <div className=\"bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3\">
-                              <div className=\"flex items-center gap-2 text-emerald-800 dark:text-emerald-200\">
-                                <CheckCircle className=\"w-4 h-4\" />
-                                <span className=\"text-sm font-medium\">此工單已解決</span>
-                              </div>
-                              <p className=\"text-xs text-emerald-700 dark:text-emerald-300 mt-1\">
-                                如果問題仍未解決，請提交新的工單。
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* 追蹤碼資訊 */}
-            <div className=\"mt-6 pt-4 border-t border-border\">
-              <div className=\"flex items-center justify-between text-sm text-muted\">
-                <span>追蹤碼：{result.tracking_code}</span>
-                <a href=\"/support\" className=\"flex items-center gap-1 text-primary hover:text-primary-dark transition-colors\">
-                  提交新工單 <ExternalLink className=\"w-3 h-3\" />
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
+                 )}
+      </div>
+      </div>
+    </PageLayout>
   )
 }

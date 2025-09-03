@@ -45,6 +45,12 @@ interface CommentStats {
   month: number
 }
 
+interface School {
+  id: number
+  slug: string
+  name: string
+}
+
 export default function AdminCommentsMonitorPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -70,8 +76,26 @@ export default function AdminCommentsMonitorPage() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
+  const [schools, setSchools] = useState<School[]>([])
+  const [schoolsLoading, setSchoolsLoading] = useState(true)
 
   const role = getRole()
+
+  const loadSchools = async () => {
+    try {
+      setSchoolsLoading(true)
+      const response = await fetch('/api/schools', { cache: 'no-store' })
+      if (!response.ok) return
+      const data = await response.json()
+      if (Array.isArray(data?.items)) {
+        setSchools(data.items)
+      }
+    } catch (error) {
+      console.error('載入學校列表失敗:', error)
+    } finally {
+      setSchoolsLoading(false)
+    }
+  }
 
   const loadComments = async () => {
     try {
@@ -247,6 +271,10 @@ export default function AdminCommentsMonitorPage() {
   }
 
   useEffect(() => {
+    loadSchools()
+  }, [])
+
+  useEffect(() => {
     loadComments()
     loadStats()
   }, [page, status, keyword, postId, school])
@@ -269,7 +297,7 @@ export default function AdminCommentsMonitorPage() {
     <div className="min-h-screen bg-base">
       <NavBar pathname="/admin/comments" />
       
-      <div className="container mx-auto px-4 py-6 max-w-7xl pt-20 sm:pt-24 md:pt-28">
+      <div className="container mx-auto px-4 py-6 max-w-7xl sm:pt-24 md:pt-28">
         <div className="flex flex-col gap-6">
           {/* 標題與刷新 */}
           <div className="flex items-center justify-between">
@@ -424,163 +452,207 @@ export default function AdminCommentsMonitorPage() {
                 
                 <div>
                   <label className="block text-sm font-medium text-muted mb-1">學校</label>
-                  <input
-                    type="text"
-                    value={school}
-                    onChange={(e) => setSchool(e.target.value)}
-                    placeholder="學校代碼"
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
+                  {schoolsLoading ? (
+                    <div className="w-full px-3 py-2 border border-border rounded-lg bg-muted/10 text-muted">
+                      載入中...
+                    </div>
+                  ) : (
+                    <select
+                      value={school}
+                      onChange={(e) => setSchool(e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    >
+                      <option value="">全部學校</option>
+                      <option value="cross">跨校</option>
+                      {schools.map(schoolItem => (
+                        <option key={schoolItem.slug} value={schoolItem.slug}>
+                          {schoolItem.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
           {/* 留言列表 */}
-          <div className="space-y-4">
-            {loading ? (
-              <div className="text-center py-8">
-                <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
-                <p className="text-muted">載入中...</p>
-              </div>
-            ) : comments.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-muted">沒有找到符合條件的留言</p>
-              </div>
-            ) : (
-              <>
-                {comments.map(comment => (
-                  <div key={comment.id} className="bg-surface border border-border rounded-xl p-6 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-medium text-fg">留言 #{comment.id}</span>
-                                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                             comment.status === 'pending' ? 'bg-warning-bg text-warning-text' :
-                             comment.status === 'approved' ? 'bg-success-bg text-success-text' :
-                             comment.status === 'rejected' ? 'bg-danger-bg text-danger-text' :
-                             comment.status === 'deleted' ? 'bg-muted/10 text-muted' :
-                             'bg-muted/10 text-muted'
-                           }`}>
-                             {comment.status === 'pending' ? '待檢查' :
-                              comment.status === 'approved' ? '正常' :
-                              comment.status === 'rejected' ? '違規' :
-                              comment.status === 'deleted' ? '已刪除' : '未知'}
-                           </span>
-                           <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
-                             {comment.post.school_name || '跨校'}
-                           </span>
-                        </div>
-                        <div className="text-xs text-muted mb-2">
-                          來源：{comment.post.school_name || '跨校'}{comment.author?.school_name ? ` · 作者：${comment.author.school_name}` : ''}
-                        </div>
-                         <div className="prose prose-sm max-w-none mb-3">
-                           <div className="text-fg whitespace-pre-line">
-                             {comment.content.length > 200 ? (
-                               <>
-                                 {comment.content.substring(0, 200)}...
-                                 <button
-                                   onClick={() => {
-                                     setShowDetailModal({ id: comment.id, content: comment.content })
-                                     loadDetail(comment.id)
-                                   }}
-                                   className="text-primary hover:text-primary-dark text-sm ml-2 underline"
-                                 >
-                                   查看完整內容
-                                 </button>
-                               </>
-                             ) : (
-                               comment.content
-                             )}
-                           </div>
-                         </div>
-                        
-                        <div className="flex items-center gap-4 text-xs text-muted">
-                          <span className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {comment.author.username}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Eye className="w-3 h-3" />
-                            貼文 #{comment.post.id}
-                          </span>
-                          {comment.created_at && (
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {new Date(comment.created_at).toLocaleString('zh-TW')}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-4">
+              {loading ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
+                  <p className="text-muted">載入中...</p>
+                </div>
+              ) : comments.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-muted">沒有找到符合條件的留言</p>
+                </div>
+              ) : (
+                <>
+                  {comments.map(comment => (
+                    <div
+                      key={comment.id}
+                      className={`bg-surface border border-border rounded-xl p-6 space-y-4 cursor-pointer transition-colors ${selectedComment?.id === comment.id ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-surface-hover'}`}
+                      onClick={() => {
+                        setSelectedComment(comment)
+                        loadDetail(comment.id)
+                      }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm font-medium text-fg">留言 #{comment.id}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              comment.status === 'pending' ? 'bg-warning-bg text-warning-text' :
+                              comment.status === 'approved' ? 'bg-success-bg text-success-text' :
+                              comment.status === 'rejected' ? 'bg-danger-bg text-danger-text' :
+                              comment.status === 'deleted' ? 'bg-muted/10 text-muted' :
+                              'bg-muted/10 text-muted'
+                            }`}>
+                              {comment.status === 'pending' ? '待檢查' :
+                               comment.status === 'approved' ? '正常' :
+                               comment.status === 'rejected' ? '違規' :
+                               comment.status === 'deleted' ? '已刪除' : '未知'}
                             </span>
-                          )}
+                            <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
+                              {comment.post.school_name || '跨校'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted mb-2">
+                            來源：{comment.post.school_name || '跨校'}{comment.author?.school_name ? ` · 作者：${comment.author.school_name}` : ''}
+                          </div>
+                          <div className="prose prose-sm max-w-none mb-3">
+                            <div className="text-fg whitespace-pre-line">
+                              {comment.content.length > 200 ? (
+                                <>
+                                  {comment.content.substring(0, 200)}...
+                                  <span className="text-primary text-sm ml-2 underline">查看詳情</span>
+                                </>
+                              ) : (
+                                comment.content
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-muted">
+                            <span className="flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              {comment.author.username}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Eye className="w-3 h-3" />
+                              貼文 #{comment.post.id}
+                            </span>
+                            {comment.created_at && (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {new Date(comment.created_at).toLocaleString('zh-TW')}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 ml-4">
-                                                                          {comment.status === 'pending' && (
-                           <>
-                             <button
-                               onClick={() => approveComment(comment.id)}
-                               disabled={busy === comment.id}
-                               className="btn-primary px-4 py-2 text-sm flex items-center gap-2"
-                             >
-                               <CheckCircle className="w-4 h-4" />
-                               標記正常
-                             </button>
-                             
-                             <button
-                               onClick={() => setShowRejectModal({ id: comment.id, content: comment.content })}
-                               disabled={busy === comment.id}
-                               className="btn-danger px-4 py-2 text-sm flex items-center gap-2"
-                             >
-                               <XCircle className="w-4 h-4" />
-                               標記違規
-                             </button>
-                           </>
-                         )}
-                         
-                         {comment.status !== 'deleted' && (
-                           <button
-                             onClick={() => setShowDeleteModal({ id: comment.id, content: comment.content })}
-                             disabled={busy === comment.id}
-                             className="btn-secondary px-4 py-2 text-sm flex items-center gap-2"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                             刪除
-                           </button>
-                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
-                
-                {/* 分頁 */}
-                {totalPages > 1 && (
-                  <div className="flex justify-center gap-2 mt-6">
-                    <button
-                      onClick={() => setPage(Math.max(1, page - 1))}
-                      disabled={page === 1}
-                      className="px-3 py-2 text-sm rounded-lg border dual-btn disabled:opacity-50"
-                    >
-                      上一頁
-                    </button>
-                    <span className="px-3 py-2 text-sm text-muted">
-                      第 {page} 頁，共 {totalPages} 頁
-                    </span>
-                    <button
-                      onClick={() => setPage(Math.min(totalPages, page + 1))}
-                      disabled={page === totalPages}
-                      className="px-3 py-2 text-sm rounded-lg border dual-btn disabled:opacity-50"
-                    >
-                      下一頁
-                    </button>
+                  ))}
+                  {totalPages > 1 && (
+                    <div className="flex justify-center gap-2 mt-2">
+                      <button
+                        onClick={() => setPage(Math.max(1, page - 1))}
+                        disabled={page === 1}
+                        className="px-3 py-2 text-sm rounded-lg border dual-btn disabled:opacity-50"
+                      >
+                        上一頁
+                      </button>
+                      <span className="px-3 py-2 text-sm text-muted">
+                        第 {page} 頁，共 {totalPages} 頁
+                      </span>
+                      <button
+                        onClick={() => setPage(Math.min(totalPages, page + 1))}
+                        disabled={page === totalPages}
+                        className="px-3 py-2 text-sm rounded-lg border dual-btn disabled:opacity-50"
+                      >
+                        下一頁
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="space-y-6">
+              <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+                <h2 className="text-lg font-semibold text-fg mb-4">留言詳情</h2>
+                {!selectedComment ? (
+                  <div className="text-center py-10 text-muted">請從左側選擇一則留言以檢視詳情</div>) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted"># {selectedComment.id}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        selectedComment.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                        selectedComment.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        selectedComment.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                        selectedComment.status === 'deleted' ? 'bg-gray-100 text-gray-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {selectedComment.status === 'pending' ? '待檢查' : selectedComment.status === 'approved' ? '正常' : selectedComment.status === 'rejected' ? '違規' : selectedComment.status === 'deleted' ? '已刪除' : '未知'}
+                      </span>
+                      {selectedComment.post?.school_name && (
+                        <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">{selectedComment.post.school_name}</span>
+                      )}
+                    </div>
+                    <div className="bg-surface-hover border border-border rounded-lg p-3">
+                      <div className="prose prose-sm max-w-none text-fg whitespace-pre-line">
+                        {detailData?.content || selectedComment.content}
+                      </div>
+                    </div>
+                    {detailData?.post && (
+                      <div>
+                        <div className="text-sm font-medium mb-1">所屬貼文 #{detailData.post.id}</div>
+                        <div className="bg-surface-hover border border-border rounded-lg p-3">
+                          <div className="prose prose-sm max-w-none text-fg" dangerouslySetInnerHTML={{ __html: detailData.post.content || '' }} />
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-2 pt-2 border-t border-border/60">
+                      {selectedComment.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => approveComment(selectedComment.id)}
+                            disabled={busy === selectedComment.id}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            標記正常
+                          </button>
+                          <button
+                            onClick={() => setShowRejectModal({ id: selectedComment.id, content: selectedComment.content })}
+                            disabled={busy === selectedComment.id}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                          >
+                            <XCircle className="w-4 h-4" />
+                            標記違規
+                          </button>
+                        </>
+                      )}
+                      {selectedComment.status !== 'deleted' && (
+                        <button
+                          onClick={() => setShowDeleteModal({ id: selectedComment.id, content: selectedComment.content })}
+                          disabled={busy === selectedComment.id}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-surface border border-border rounded-lg hover:bg-surface-hover"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          刪除
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
-              </>
-            )}
+              </div>
+            </div>
+          </div>
           </div>
         </div>
-      </div>
 
-             {/* 拒絕確認對話框 */}
+        {/* 拒絕確認對話框 */}
        {showRejectModal && (
          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
            <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">

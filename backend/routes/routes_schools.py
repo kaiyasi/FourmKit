@@ -1,5 +1,4 @@
 from flask import Blueprint, jsonify, request
-from sqlalchemy.orm import Session
 from utils.db import get_session
 from models import School, User, Post, Media, SchoolSetting, Comment
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -65,7 +64,6 @@ def get_school_settings(slug: str):
 
 @bp.put("/<string:slug>/settings")
 @jwt_required()
-@require_role("dev_admin")
 def update_school_settings(slug: str):
     """更新某校設定。校內管理員僅能更新自己學校；dev_admin 無限制。"""
     data = request.get_json(silent=True) or {}
@@ -99,9 +97,10 @@ def update_school_settings(slug: str):
         }
         print(f"[DEBUG] 學校設定更新權限檢查: {debug_info}")
         
-        if actor and actor.role == 'campus_moderator':
+        # 權限檢查：campus_moderator 和 campus_admin 只能編輯自己學校的設定
+        if actor and (actor.role == 'campus_moderator' or actor.role == 'campus_admin'):
             if not actor.school_id or int(actor.school_id) != int(sch.id):
-                debug_msg = f"權限檢查失敗: user_id={actor.id}, user_school_id={actor.school_id}, target_school_id={sch.id}, slug={slug}"
+                debug_msg = f"權限檢查失敗: user_id={actor.id}, user_role={actor.role}, user_school_id={actor.school_id}, target_school_id={sch.id}, slug={slug}"
                 print(f"[DEBUG] {debug_msg}")  # 伺服器日誌
                 _log_unauthorized(actor, 'update_school_settings', slug)
                 return jsonify({

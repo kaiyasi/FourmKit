@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { NavBar } from '@/components/layout/NavBar'
-import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { User, Shield, Bell, Save, Key, IdCard, Link as LinkIcon, Building2, BadgeCheck, Edit, AlertTriangle, LogOut, BellRing, Trash2, Eye, EyeOff } from 'lucide-react'
+import { PageLayout } from '@/components/layout/PageLayout'
+import { User, Shield, Bell, Save, Key, IdCard, Link as LinkIcon, Building2, BadgeCheck, Edit, AlertTriangle, LogOut, BellRing, Trash2, Eye, EyeOff, Crown } from 'lucide-react'
 import { listNotifications, clearNotifications, markNotificationRead, markAllNotificationsRead } from '@/utils/notifications'
 import { AccountAPI } from '@/services/api'
 import { getRole, isLoggedIn, getRoleDisplayName } from '@/utils/auth'
@@ -32,9 +31,8 @@ export default function SettingsPage() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const { pathname } = useLocation()
-  const { logout } = useAuth()
-  const role = getRole()
-  const isAdmin = ['admin', 'dev_admin', 'campus_admin', 'campus_moderator', 'cross_admin'].includes(role)
+  const { logout, role } = useAuth()
+  const isAdmin = role ? ['admin', 'dev_admin', 'campus_admin', 'campus_moderator', 'cross_admin'].includes(role) : false
   
   const [settings, setSettings] = useState<UserSettings>({})
   const [profile, setProfile] = useState<{ username:string; email:string; role:string; school?: { id:number; slug:string; name:string }|null; avatar_path?: string|null; auth_provider?: string; has_password?: boolean; personal_id?: string } | null>(null)
@@ -73,9 +71,27 @@ export default function SettingsPage() {
   useEffect(() => {
     const read = () => {
       const currentSlug = (localStorage.getItem('school_slug')||'') || null
-      const itemsAll = notifFilterSchoolOnly
-        ? listNotifications({ school: currentSlug })
-        : listNotifications()
+      const currentUserId = profile?.personal_id || null
+      const userRole = role
+      
+      // 根據用戶角色決定過濾條件
+      let filter: any = {}
+      
+      if (userRole === 'dev_admin') {
+        // dev_admin 可以看到所有通知，但根據學校過濾選項
+        if (notifFilterSchoolOnly) {
+          filter.school = currentSlug
+        }
+        // dev_admin 不需要 user_id 過濾，可以看到所有通知
+      } else {
+        // 其他用戶只能看到與自己相關的通知
+        filter.user_id = currentUserId
+        if (notifFilterSchoolOnly) {
+          filter.school = currentSlug
+        }
+      }
+      
+      const itemsAll = listNotifications(filter)
       setNotifs(itemsAll)
     }
     read()
@@ -86,7 +102,7 @@ export default function SettingsPage() {
       window.removeEventListener('fk_notifications_changed', onChanged as any)
       window.removeEventListener('fk_school_changed', onChanged as any)
     }
-  }, [notifFilterSchoolOnly])
+  }, [notifFilterSchoolOnly, profile])
 
   // 監聽學校切換，重新載入該校設定
   useEffect(() => {
@@ -109,7 +125,7 @@ export default function SettingsPage() {
       })
       // 依角色自動選擇學校（校內管理員/校內版主不可自選）
       try {
-        const r = getRole()
+        const r = role
         const userSchoolSlug = p?.school?.slug || ''
         if ((r === 'campus_admin' || r === 'campus_moderator') && userSchoolSlug) {
           const cur = (localStorage.getItem('school_slug')||'').trim()
@@ -149,7 +165,7 @@ export default function SettingsPage() {
   const getCurrentSchoolSlug = () => {
     // 角色強制：校內管理員/校內版主 → 永遠鎖定自己的學校
     try {
-      const r = getRole()
+              const r = role
       const forced = profile?.school?.slug || ''
       if ((r === 'campus_admin' || r === 'campus_moderator') && forced) {
         return forced
@@ -184,11 +200,11 @@ export default function SettingsPage() {
       } catch {
         setSchoolSettings({ announcement:'', allow_anonymous:true, min_post_chars:15 })
       }
-      // 權限：僅 dev_admin 可編輯學校設定（審核員與校內管理員唯讀）
-      const role = getRole()
+      // 權限：dev_admin 可編輯所有學校設定；campus_admin 可編輯自己學校設定
+              // role already available from useAuth
       const prof = overrideProfile || profile
       // 檢查當前用戶是否有權限編輯此學校設定
-      const editable = role === 'dev_admin'
+      const editable = role === 'dev_admin' || (role === 'campus_admin' && prof?.school?.slug === slug)
       setCanEditSchool(Boolean(editable))
       
       // 添加除錯資訊
@@ -199,13 +215,14 @@ export default function SettingsPage() {
         currentSlug: slug,
         schoolMetaId: currentSchoolMeta?.id,
         editable,
-        canEditSchoolBefore: canEditSchool
+        canEditSchoolBefore: canEditSchool,
+        comparison: role === 'campus_admin' && prof?.school?.slug === slug
       })
       
       if ((role === 'campus_admin' || role === 'campus_moderator') && !editable) {
         console.log('[DEBUG] 權限檢查失敗 - 詳細資訊:', {
           role,
-          reason: 'only dev_admin can edit school settings'
+          reason: role === 'campus_admin' ? 'campus_admin school slug mismatch' : 'only dev_admin can edit school settings'
         })
       }
     } catch {
@@ -256,40 +273,28 @@ export default function SettingsPage() {
 
   if (!isLoggedIn()) {
     return (
-      <div className="min-h-screen">
-        <NavBar pathname="/settings/profile" />
-        <MobileBottomNav />
-        <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
-          <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft text-center">
-            <Key className="w-12 h-12 mx-auto mb-4 text-muted" />
-            <h1 className="text-xl font-semibold dual-text mb-2">需要登入</h1>
-            <p className="text-muted">請先登入才能查看和修改設定。</p>
-          </div>
-        </main>
-      </div>
+      <PageLayout pathname="/settings/profile">
+        <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft text-center">
+          <Key className="w-12 h-12 mx-auto mb-4 text-muted" />
+          <h1 className="text-xl font-semibold dual-text mb-2">需要登入</h1>
+          <p className="text-muted">請先登入才能查看和修改設定。</p>
+        </div>
+      </PageLayout>
     )
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen">
-        <NavBar pathname={pathname} />
-        <MobileBottomNav />
-        <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
-          <div className="bg-surface border border-border rounded-2xl p-8 text-center text-muted">
-            載入中...
-          </div>
-        </main>
-      </div>
+      <PageLayout pathname={pathname}>
+        <div className="bg-surface border border-border rounded-2xl p-8 text-center text-muted">
+          載入中...
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="min-h-screen min-h-dvh">
-      <NavBar pathname={pathname} />
-      <MobileBottomNav />
-
-      <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+    <PageLayout pathname={pathname}>
         {/* 頁首 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
@@ -496,7 +501,7 @@ export default function SettingsPage() {
                 </label>
                 <label className="text-xs sm:text-sm text-muted flex items-center gap-2">
                   <input type="checkbox" checked={notifFilterSchoolOnly} onChange={e=>setNotifFilterSchoolOnly(e.target.checked)} />
-                  只顯示目前學校
+                  {role === 'dev_admin' ? '只顯示目前學校' : '只顯示目前學校'}
                 </label>
                 <button
                   className="px-2 py-1 text-xs sm:px-3 sm:py-2 sm:text-sm rounded-lg border hover:bg-surface shrink-0"
@@ -536,6 +541,11 @@ export default function SettingsPage() {
                     } catch {}
                     return slug
                   }
+                  
+                  // 為 dev_admin 添加詳細信息
+                  const isDevAdmin = role === 'dev_admin'
+                  const showUserInfo = isDevAdmin && n.user_id
+                  
                   return (
                   <div key={n.id} className="p-2 sm:p-3 bg-surface">
                     <div className="text-[11px] text-muted mb-1 flex flex-wrap items-center gap-2">
@@ -545,9 +555,14 @@ export default function SettingsPage() {
                       ) : (
                         <span className="text-muted">跨校</span>
                       )}
+                      {showUserInfo && (
+                        <span className="px-2 py-0.5 text-[11px] rounded bg-blue-100 border border-blue-200 text-blue-700">
+                          用戶: {n.user_id}
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-fg flex items-start sm:items-center justify-between gap-3 break-words">
-                      <span className="min-w-0 break-words">{n.text}</span>
+                      <span className="min-w-0 break-words block line-clamp-3 md-line-clamp-5">{n.text}</span>
                       <button className="text-xs px-2 py-1 rounded border hover:bg-surface shrink-0" onClick={()=> markNotificationRead(n.id)}>標為已讀</button>
                     </div>
                   </div>
@@ -579,7 +594,7 @@ export default function SettingsPage() {
                           <span className="text-muted">跨校</span>
                         )}
                       </div>
-                      <div className="text-sm text-fg break-words">{n.text}</div>
+                      <div className="text-sm text-fg break-words line-clamp-3 md-line-clamp-5">{n.text}</div>
                     </div>
                   ))}
                 </div>
@@ -631,10 +646,10 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-fg truncate" title={profile.username}>{profile.username}</div>
-                        {profile.auth_provider && (
+                        {profile.is_premium && (
                           <div className="flex items-center gap-1 text-xs text-muted">
-                            <BadgeCheck className="w-3 h-3 text-fg" />
-                            <span>已驗證</span>
+                            <Crown className="w-3 h-3 text-yellow-500" />
+                            <span className="text-yellow-600">已訂閱</span>
                           </div>
                         )}
                       </div>
@@ -898,7 +913,6 @@ export default function SettingsPage() {
             {saving ? '儲存中...' : '儲存設定'}
           </button>
         </div>
-      </main>
-    </div>
-  )
-}
+      </PageLayout>
+    )
+  }

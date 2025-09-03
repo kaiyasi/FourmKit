@@ -170,6 +170,12 @@ def _markdown_to_html(md: str) -> str:
     
     return html
 
+def _now_tz() -> datetime:
+    try:
+        return datetime.now(timezone.utc)
+    except Exception:
+        return datetime.utcnow().replace(tzinfo=timezone.utc)
+
 def _extract_school_slug(default_slug: str | None = None) -> str | None:
     """彈性取得 school_slug：JSON/form/header/query 多來源容錯。
     順序：
@@ -313,7 +319,7 @@ def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bo
 
 @bp.get("/list")
 def list_posts():
-    limit = max(min(int(request.args.get("limit", 20)), 100), 1)
+    limit = max(min(int(request.args.get("limit", 20)), 1000), 1)  # 增加最大值到 1000
     school_slug = (request.args.get("school") or "").strip() or None
     cross_only = (request.args.get("cross_only") or "").strip().lower() in {"1","true","yes"}
     show_all_schools = request.args.get("all_schools", "").strip().lower() in {'1', 'true', 'yes'}
@@ -335,7 +341,14 @@ def list_posts():
         elif school_slug:
             school = s.query(School).filter(School.slug==school_slug).first()
             if school:
-                q = q.filter(Post.school_id==school.id)
+                # 顯示本校貼文 + 全域內容（廣告、跨校/平台公告）
+                q = q.filter(
+                    sa.or_(
+                        Post.school_id==school.id,
+                        Post.is_advertisement==True,
+                        sa.and_(Post.is_announcement==True, Post.school_id.is_(None))
+                    )
+                )
             else:
                 q = q.filter(sa.text("1=0"))  # no results for unknown school
         
@@ -360,7 +373,21 @@ def list_posts():
                     # 如果權限檢查失敗，只顯示跨校貼文（保守處理）
                     q = q.filter(Post.school_id.is_(None))
         
-        q = q.order_by(Post.id.desc()).limit(limit)
+        # 檢查用戶是否為會員，會員不顯示廣告貼文
+        try:
+            from utils.auth import get_effective_user_id
+            uid = get_effective_user_id()
+            if uid:
+                user = s.query(User).get(uid)
+                if user and user.is_premium:
+                    # 會員用戶：過濾掉廣告貼文
+                    q = q.filter(Post.is_advertisement == False)
+        except Exception:
+            # 如果檢查失敗，不過濾（保守處理）
+            pass
+        
+        # 置頂貼文排在最前，然後按創建時間倒序
+        q = q.order_by(Post.is_pinned.desc(), Post.id.desc()).limit(limit)
         rows = q.all()
         items = []
         post_ids = [p.id for p in rows]
@@ -461,6 +488,7 @@ def list_posts():
             items.append({
                 "id": p.id,
                 "content": _markdown_to_html(p.content),
+                "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
                 "media_count": int(count_map.get(p.id, 0)),
                 "cover_path": cov_path,
@@ -469,8 +497,19 @@ def list_posts():
                 "school": school_info,
                 "school_name": school_name,
                 "comment_count": int((comment_map.get(p.id) if 'comment_map' in locals() else 0) or 0),
+                "is_pinned": bool(getattr(p, "is_pinned", False)),
+                "is_advertisement": bool(getattr(p, "is_advertisement", False)),
+                "is_announcement": bool(getattr(p, "is_announcement", False)),
+                "announcement_type": getattr(p, "announcement_type", None),
+                "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
             })
-        return jsonify({"items": items})
+        resp = jsonify({"items": items})
+        try:
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+        except Exception:
+            pass
+        return resp
 
 @bp.get("")
 def list_posts_compat():
@@ -484,7 +523,7 @@ def list_posts_compat():
     - 追加日期篩選 start/end（ISO 或 YYYY-MM-DD）
     """
     page = max(int(request.args.get("page", 1) or 1), 1)
-    per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 100)
+    per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 1000)  # 增加最大值到 1000
     school_slug = (request.args.get("school") or "").strip() or None
     show_all_schools = (request.args.get("all_schools") or "").strip().lower() in {"1", "true", "yes"}
     keyword = (request.args.get("q") or "").strip()
@@ -567,9 +606,21 @@ def list_posts_compat():
                 except Exception:
                     base = base.filter(Post.school_id.is_(None))
 
+        # 檢查用戶是否為會員，會員不顯示廣告貼文
+        try:
+            uid = get_effective_user_id()
+            if uid:
+                user = s.query(User).get(uid)
+                if user and user.is_premium:
+                    # 會員用戶：過濾掉廣告貼文
+                    base = base.filter(Post.is_advertisement == False)
+        except Exception:
+            # 如果檢查失敗，不過濾（保守處理）
+            pass
+
         total = base.count()
         rows = (
-            base.order_by(Post.created_at.desc(), Post.id.desc())
+            base.order_by(Post.is_pinned.desc(), Post.created_at.desc(), Post.id.desc())
                 .offset((page - 1) * per_page)
                 .limit(per_page)
                 .all()
@@ -665,6 +716,10 @@ def list_posts_compat():
                 "school": school_info,
                 "school_name": school_name,
                 "comment_count": int(comment_map.get(p.id, 0)),
+                "is_pinned": bool(getattr(p, "is_pinned", False)),
+                "is_advertisement": bool(getattr(p, "is_advertisement", False)),
+                "is_announcement": bool(getattr(p, "is_announcement", False)),
+                "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
             })
         return _wrap_ok({
             "items": items,
@@ -740,7 +795,14 @@ def get_post(pid: int):
             "school_id": (p.school_id or None),
             "school": school_info,
             "media": media_items,
+            "is_announcement": bool(getattr(p, "is_announcement", False)),
+            "announcement_type": getattr(p, "announcement_type", None),
+            "is_advertisement": bool(getattr(p, "is_advertisement", False)),
+            "is_pinned": bool(getattr(p, "is_pinned", False)),
+            "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
         })
+
+
 
 @bp.post("/create")
 @rate_limit(calls=5, per_seconds=60, by='client')
@@ -755,6 +817,9 @@ def create_post():
     data = request.get_json() or {}
     content = sanitize_content((data.get("content") or "").strip(), "markdown")
     school_slug = _extract_school_slug((data.get("school_slug") or "").strip())
+    is_announcement = bool(data.get("is_announcement", False))
+    announcement_type = data.get("announcement_type", "school") if is_announcement else None
+    want_advertisement = bool(data.get("is_advertisement", False))
     
     # 內容最小字數審核
     # 依學校（若有）載入內容規則覆寫
@@ -791,7 +856,44 @@ def create_post():
         if not can_post_to_school(user, target_school_id):
             return _wrap_err("PERMISSION_DENIED", "您沒有權限在該學校發文", 403)
         
-        p = Post(author_id=uid, content=content, status="pending", school_id=target_school_id)
+        # 廣告權限與旗標（僅 dev_admin / commercial 可選）
+        is_advertisement = False
+        if user and user.role in ['dev_admin', 'commercial'] and want_advertisement:
+            is_advertisement = True
+            target_school_id = None  # 廣告貼文一律跨校
+        
+        # 檢查公告權限
+        if is_announcement:
+            if user.role == 'dev_admin':
+                # dev_admin 可以發全平台、跨校、學校公告
+                if announcement_type not in ['platform', 'cross', 'school']:
+                    return _wrap_err("INVALID_ANNOUNCEMENT_TYPE", "無效的公告類型", 400)
+            elif user.role == 'campus_admin':
+                # campus_admin 只能發學校公告
+                if announcement_type != 'school':
+                    return _wrap_err("PERMISSION_DENIED", "campus_admin 只能發學校公告", 403)
+                if not target_school_id or (user.school_id and target_school_id != user.school_id):
+                    return _wrap_err("PERMISSION_DENIED", "campus_admin 只能在自己的學校發公告", 403)
+            elif user.role == 'cross_admin':
+                # cross_admin 只能發跨校公告
+                if announcement_type != 'cross':
+                    return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
+                if target_school_id is not None:
+                    return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
+            else:
+                return _wrap_err("PERMISSION_DENIED", "您沒有權限發布公告", 403)
+        
+        # 公告需要 dev_admin 審核，廣告直接核准發布，其餘仍走送審
+        initial_status = "approved" if is_advertisement else "pending"
+        p = Post(
+            author_id=uid, 
+            content=content, 
+            status=initial_status, 
+            school_id=target_school_id,
+            is_advertisement=is_advertisement,
+            is_announcement=is_announcement,
+            announcement_type=announcement_type
+        )
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
@@ -805,16 +907,35 @@ def create_post():
         
         # 記錄貼文發布事件
         try:
-            from utils.admin_events import log_user_action
+            from services.event_service import EventService
             u = s.query(User).filter(User.id == uid).first()
             if u:
-                log_user_action(
-                    event_type="post_created",
+                # 根據是否為公告選擇不同的事件類型
+                event_type = "content.announcement.created" if is_announcement else "content.post.created"
+                title = "公告發布" if is_announcement else "貼文發布"
+                description = f"用戶 {u.username} 發布了{'公告' if is_announcement else '貼文'} #{p.id}"
+                
+                EventService.log_event(
+                    session=s,
+                    event_type=event_type,
+                    title=title,
+                    description=description,
+                    severity="high" if is_announcement else "medium",
                     actor_id=u.id,
                     actor_name=u.username,
-                    action="發布貼文",
-                    target_id=p.id,
-                    target_type="貼文"
+                    actor_role=u.role,
+                    target_type="post",
+                    target_id=str(p.id),
+                    target_name=f"{'公告' if is_announcement else '貼文'} #{p.id}",
+                    school_id=target_school_id,  # 使用貼文的學校ID，不是用戶的學校ID
+                    metadata={
+                        "post_id": p.id,
+                        "content_length": len(content),
+                        "school_slug": school_slug if school_slug else None,
+                        "is_announcement": is_announcement
+                    },
+                    is_important=is_announcement,
+                    send_webhook=True
                 )
         except Exception:
             pass  # 事件記錄失敗不影響貼文發布
@@ -834,7 +955,7 @@ def upload_media():
     if not f or not is_allowed(f.filename): abort(422)
     # 大小與嗅探
     max_size_mb = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
-    max_bytes = max_size_mb * 1024 * 1024
+    _ = max_size_mb * 1024 * 1024
     try:
         f.stream.seek(0, os.SEEK_END)
         size = f.stream.tell(); f.stream.seek(0)
@@ -884,6 +1005,8 @@ def create_post_compat():
     data = request.get_json() or {}
     content = sanitize_content((data.get("content") or "").strip(), "markdown")
     school_slug = _extract_school_slug((data.get("school_slug") or "").strip())
+    is_announcement = bool(data.get("is_announcement", False))
+    announcement_type = data.get("announcement_type", "school") if is_announcement else None
     # 內容最小字數審核（僅限純文字發文；附檔案另一路由）
     from utils.db import get_session as _gs
     with _gs() as _s:
@@ -898,17 +1021,52 @@ def create_post_compat():
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
     with get_session() as s:
-        p = Post(author_id=uid, content=content, status="pending")
+        # 獲取用戶信息檢查是否為廣告帳號
+        user = s.query(User).get(uid)
+        want_ad = bool(data.get("is_advertisement", False))
+        is_advertisement = bool(user and user.role in ['dev_admin','commercial'] and want_ad)
+        
+        # 確定學校ID
+        target_school_id = None
+        if school_slug and not is_advertisement:
+            sch = s.query(School).filter(School.slug==school_slug).first()
+            if sch:
+                target_school_id = sch.id
+        
+        # 檢查公告權限
+        if is_announcement and user:
+            if user.role == 'dev_admin':
+                # dev_admin 可以發全平台、跨校、學校公告
+                if announcement_type not in ['platform', 'cross', 'school']:
+                    return _wrap_err("INVALID_ANNOUNCEMENT_TYPE", "無效的公告類型", 400)
+            elif user.role == 'campus_admin':
+                # campus_admin 只能發學校公告
+                if announcement_type != 'school':
+                    return _wrap_err("PERMISSION_DENIED", "campus_admin 只能發學校公告", 403)
+                if not target_school_id or (user.school_id and target_school_id != user.school_id):
+                    return _wrap_err("PERMISSION_DENIED", "campus_admin 只能在自己的學校發公告", 403)
+            elif user.role == 'cross_admin':
+                # cross_admin 只能發跨校公告
+                if announcement_type != 'cross':
+                    return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
+                if target_school_id is not None:
+                    return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
+            else:
+                return _wrap_err("PERMISSION_DENIED", "您沒有權限發布公告", 403)
+        
+        initial_status = "approved" if (is_announcement or is_advertisement) else "pending"
+        p = Post(
+            author_id=uid, 
+            content=content, 
+            status=initial_status,
+            school_id=target_school_id,
+            is_advertisement=is_advertisement,
+            is_announcement=is_announcement,
+            announcement_type=announcement_type
+        )
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
-        except Exception:
-            pass
-        try:
-            if school_slug:
-                sch = s.query(School).filter(School.slug==school_slug).first()
-                if sch:
-                    p.school_id = sch.id
         except Exception:
             pass
         s.add(p); s.flush(); s.refresh(p)
@@ -917,13 +1075,33 @@ def create_post_compat():
         try:
             u = s.query(User).get(uid)
             if u:
-                log_user_action(
-                    event_type="post_created",
-                    actor_id=int(u.id),
+                from services.event_service import EventService
+                # 根據是否為公告選擇不同的事件類型
+                event_type = "content.announcement.created" if is_announcement else "content.post.created"
+                title = "公告發布" if is_announcement else "貼文發布"
+                description = f"用戶 {u.username} 發布了{'公告' if is_announcement else '貼文'} #{p.id}"
+                
+                EventService.log_event(
+                    session=s,
+                    event_type=event_type,
+                    title=title,
+                    description=description,
+                    severity="high" if is_announcement else "medium",
+                    actor_id=u.id,
                     actor_name=u.username,
-                    action="提交貼文送審",
-                    target_id=int(p.id),
+                    actor_role=u.role,
                     target_type="post",
+                    target_id=str(p.id),
+                    target_name=f"{'公告' if is_announcement else '貼文'} #{p.id}",
+                    school_id=p.school_id,  # 使用貼文的學校ID
+                    metadata={
+                        "post_id": p.id,
+                        "content_length": len(content),
+                        "school_slug": school_slug if school_slug else None,
+                        "is_announcement": is_announcement
+                    },
+                    is_important=is_announcement,
+                    send_webhook=True
                 )
         except Exception:
             pass
@@ -970,7 +1148,9 @@ def create_post_compat():
     return _wrap_ok(payload, 201)
 
 @bp.post("/<int:pid>/delete_request")
+@rate_limit(calls=3, per_seconds=300, by='client')  # 5分鐘內最多3次請求
 def request_delete(pid: int):
+    """申請刪除貼文（廣告貼文不可申請刪除）"""
     """提交刪文請求（任何已知貼文皆可提交），需提供 reason。"""
     from services.delete_service import DeleteService
     
@@ -1023,6 +1203,9 @@ def create_post_with_media_compat():
 
     content = sanitize_content((request.form.get("content", "") or "").strip(), "markdown")
     school_slug = _extract_school_slug((request.form.get("school_slug") or "").strip())
+    is_announcement = bool(request.form.get("is_announcement", False))
+    announcement_type = request.form.get("announcement_type", "school") if is_announcement else None
+    want_advertisement = (str(request.form.get("is_advertisement", "")).lower() in {"1","true","yes","on"})
     # 若有附件上傳，允許空內容（略過最小字數審核）
 
     files = request.files.getlist("files")
@@ -1032,8 +1215,6 @@ def create_post_with_media_compat():
 
     # 與 /api/posts/upload 對齊：預設使用專案內 uploads 目錄，避免容器外 /data 權限問題
     upload_root = os.getenv("UPLOAD_ROOT", "uploads")
-    max_size_mb = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
-    max_bytes = max_size_mb * 1024 * 1024
 
     saved_any = False
     media_records = []  # 暫存媒體記錄
@@ -1082,21 +1263,55 @@ def create_post_with_media_compat():
     post_ip = get_client_ip()
     post_school_id = None
     
+    # 廣告權限與旗標（僅 dev_admin / commercial 可選）
+    is_advertisement = False
     try:
-        if school_slug:
-            with get_session() as s:
+        with get_session() as s:
+            user = s.query(User).get(uid)
+            is_advertisement = bool(user and user.role in ['dev_admin','commercial'] and want_advertisement)
+            
+            if school_slug and not is_advertisement:
                 sch = s.query(School).filter(School.slug==school_slug).first()
                 if sch:
                     post_school_id = sch.id
+                    
+            # 檢查公告權限
+            if is_announcement and user:
+                if user.role == 'dev_admin':
+                    # dev_admin 可以發全平台、跨校、學校公告
+                    if announcement_type not in ['platform', 'cross', 'school']:
+                        return _wrap_err("INVALID_ANNOUNCEMENT_TYPE", "無效的公告類型", 400)
+                elif user.role == 'campus_admin':
+                    # campus_admin 只能發學校公告
+                    if announcement_type != 'school':
+                        return _wrap_err("PERMISSION_DENIED", "campus_admin 只能發學校公告", 403)
+                    if not post_school_id or (user.school_id and post_school_id != user.school_id):
+                        return _wrap_err("PERMISSION_DENIED", "campus_admin 只能在自己的學校發公告", 403)
+                elif user.role == 'cross_admin':
+                    # cross_admin 只能發跨校公告
+                    if announcement_type != 'cross':
+                        return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
+                    if post_school_id is not None:
+                        return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
+                else:
+                    return _wrap_err("PERMISSION_DENIED", "您沒有權限發布公告", 403)
     except Exception:
         pass
     
     try:
         with get_session() as s:
-            p = Post(author_id=post_author_id, content=post_content, status="pending")
+            initial_status = "approved" if is_advertisement else "pending"
+            p = Post(
+                author_id=post_author_id, 
+                content=post_content, 
+                status=initial_status,
+                school_id=post_school_id,
+                is_advertisement=is_advertisement,
+                is_announcement=is_announcement,
+                announcement_type=announcement_type
+            )
             p.client_id = post_client_id
             p.ip = post_ip
-            p.school_id = post_school_id
             
             s.add(p)
             s.flush()
@@ -1107,14 +1322,28 @@ def create_post_with_media_compat():
             try:
                 u = s.query(User).get(post_author_id)
                 if u:
-                    log_user_action(
-                        event_type="post_created",
-                        actor_id=int(u.id),
+                    from services.event_service import EventService
+                    EventService.log_event(
+                        session=s,
+                        event_type="content.post.created",
+                        title="貼文發布（含媒體）",
+                        description=f"用戶 {u.username} 發布了含媒體的貼文 #{p.id}",
+                        severity="medium",
+                        actor_id=u.id,
                         actor_name=u.username,
-                        action="提交貼文送審（含媒體）",
-                        target_id=int(p.id),
+                        actor_role=u.role,
                         target_type="post",
-                        session=s
+                        target_id=str(p.id),
+                        target_name=f"貼文 #{p.id}",
+                        school_id=p.school_id,  # 使用貼文的學校ID
+                        metadata={
+                            "post_id": p.id,
+                            "content_length": len(post_content),
+                            "has_media": True,
+                            "school_slug": school_slug if school_slug else None
+                        },
+                        is_important=False,
+                        send_webhook=True
                     )
             except Exception:
                 pass
@@ -1200,3 +1429,140 @@ def create_post_with_media_compat():
         pass
 
     return _wrap_ok(payload, 201)
+
+
+
+
+
+@bp.post("/<int:post_id>/unpin")
+@bp.post("/<int:post_id>/unpin/")
+@rate_limit(10, 60)  # 每分鐘10次
+def unpin_post(post_id: int):
+    """取消置頂貼文（僅dev_admin可操作）"""
+    try:
+        from utils.auth import get_effective_user_id
+        uid = get_effective_user_id()
+        if not uid:
+            return _wrap_err("UNAUTHORIZED", "需要登入", 401)
+        
+        with get_session() as s:
+            user = s.query(User).get(uid)
+            if not user or user.role not in ['campus_admin', 'dev_admin']:
+                return _wrap_err("FORBIDDEN", "權限不足", 403)
+            
+            post = s.query(Post).filter(
+                and_(
+                    Post.id == post_id,
+                    Post.status == "approved",
+                    Post.is_deleted == False
+                )
+            ).first()
+            
+            if not post:
+                return _wrap_err("NOT_FOUND", "貼文不存在", 404)
+            
+            if not post.is_pinned:
+                # 冪等處理：已非置頂，視為成功
+                return _wrap_ok({
+                    "message": "已取消置頂",
+                    "post_id": post_id
+                })
+            
+            # 取消置頂
+            post.is_pinned = False
+            post.pinned_at = None
+            post.pinned_by = None
+            
+            s.commit()
+            log_user_action(
+                event_type="content.post.unpin",
+                actor_id=uid,
+                actor_name=(user.username if user else ""),
+                action=f"取消置頂貼文 #{post_id}",
+                target_id=post_id,
+                target_type="post",
+                session=s,
+            )
+            
+            return _wrap_ok({
+                "message": "已取消置頂",
+                "post_id": post_id
+            })
+    
+    except Exception as e:
+        return _wrap_err("DB_ERROR", f"操作失敗：{e}", 500)
+
+
+@bp.patch("/<int:post_id>/pin")
+@bp.patch("/<int:post_id>/pin/")
+@rate_limit(20, 60)  # 統一冪等端點
+def patch_pin(post_id: int):
+    """
+    統一入口：PATCH /api/posts/:id/pin
+    請求 JSON: { is_pinned: boolean }
+    規則：
+      - 僅 campus_admin、dev_admin 可操作
+      - 冪等：若目標狀態與現況相同，直接回 ok
+    """
+    try:
+        from utils.auth import get_effective_user_id
+        uid = get_effective_user_id()
+        if not uid:
+            return _wrap_err("UNAUTHORIZED", "需要登入", 401)
+
+        body = request.get_json(silent=True) or {}
+        desired = bool(body.get("is_pinned"))
+
+        with get_session() as s:
+            user = s.query(User).get(uid)
+            if not user or user.role not in ['campus_admin', 'dev_admin']:
+                return _wrap_err("FORBIDDEN", "權限不足", 403)
+
+            post = s.query(Post).filter(
+                and_(
+                    Post.id == post_id,
+                    Post.status == "approved",
+                    Post.is_deleted == False
+                )
+            ).first()
+
+            if not post:
+                return _wrap_err("NOT_FOUND", "貼文不存在", 404)
+
+            # 冪等：狀態一致直接成功
+            if bool(post.is_pinned) == desired:
+                return _wrap_ok({
+                    "message": ("貼文已置頂" if desired else "已取消置頂"),
+                    "post_id": post_id,
+                    "is_pinned": bool(post.is_pinned),
+                    "pinned_at": (post.pinned_at.isoformat() if getattr(post, 'pinned_at', None) else None),
+                })
+
+            # 寫入新狀態
+            post.is_pinned = desired
+            if desired:
+                post.pinned_at = datetime.now(timezone.utc)
+                post.pinned_by = uid
+            else:
+                post.pinned_at = None
+                post.pinned_by = None
+
+            s.commit()
+            log_user_action(
+                event_type=("content.post.pin" if desired else "content.post.unpin"),
+                actor_id=uid,
+                actor_name=(user.username if user else ""),
+                action=(f"置頂貼文 #{post_id}" if desired else f"取消置頂貼文 #{post_id}"),
+                target_id=post_id,
+                target_type="post",
+                session=s,
+            )
+
+            return _wrap_ok({
+                "message": ("貼文已置頂" if desired else "已取消置頂"),
+                "post_id": post_id,
+                "is_pinned": bool(post.is_pinned),
+                "pinned_at": (post.pinned_at.isoformat() if getattr(post, 'pinned_at', None) else None),
+            })
+    except Exception as e:
+        return _wrap_err("DB_ERROR", f"操作失敗：{e}", 500)

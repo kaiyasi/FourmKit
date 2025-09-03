@@ -2,9 +2,28 @@ import json, os
 from pathlib import Path
 from typing import Any, Dict
 
-# 依 Day1~Day4 設計：設定寫入容器可持久化目錄 /data（或經 CONFIG_DIR 覆寫）
-DATA_DIR = Path(os.getenv("CONFIG_DIR", "/data"))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+# 依 Day1~Day4 設計：設定寫入容器可持久化目錄（或經 CONFIG_DIR 覆寫）
+# 優先使用環境變數，其次使用當前目錄下的 data 資料夾，最後才使用 /data
+DEFAULT_CONFIG_DIR = os.getenv("CONFIG_DIR") or os.getenv("DATA_DIR") or os.getenv("FORUMKIT_DATA_DIR")
+
+if DEFAULT_CONFIG_DIR:
+    # 如果環境變數有設定，直接使用
+    DATA_DIR = Path(DEFAULT_CONFIG_DIR)
+else:
+    # 否則使用當前目錄下的 data 資料夾
+    current_dir = Path(__file__).parent.parent  # 回到 backend 目錄
+    DATA_DIR = current_dir / "data"
+
+# 確保目錄存在，但不要強制創建（避免權限問題）
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    # 如果沒有權限創建目錄，使用臨時目錄
+    import tempfile
+    DATA_DIR = Path(tempfile.gettempdir()) / "forumkit_data"
+    DATA_DIR.mkdir(exist_ok=True)
+    print(f"Warning: Using temporary directory for config: {DATA_DIR}")
+
 CONFIG_PATH = DATA_DIR / "config.json"
 
 DEFAULT_DATA: Dict[str, Any] = {

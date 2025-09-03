@@ -3,7 +3,7 @@ import os, sys, uuid, json, ssl, re, time
 from datetime import datetime, timezone
 from typing import Any, Tuple, cast, Dict, List, Optional
 from urllib import request as urlrequest
-from urllib.error import URLError, HTTPError
+from urllib.parse import quote
 from utils.notify import send_admin_event as notify_send_event
 from utils.notify import recent_admin_events
 from utils.notify import get_admin_webhook_url as _get_admin_hook
@@ -17,7 +17,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room  # type: ignore
 
 from utils.config_handler import load_config
 from utils.db import init_engine_session, get_db_health
-from utils.ticket import new_ticket_id
+# 支援功能已移除
 from utils.redis_health import get_redis_health
 from utils.single_admin import ensure_single_admin
 from routes.routes_posts import bp as posts_bp
@@ -27,13 +27,16 @@ from routes.routes_admin import bp as admin_bp
 from routes.routes_mode import bp as mode_bp
 from routes.routes_settings import bp as settings_bp
 from routes.routes_pages import bp as pages_bp
-from routes.routes_media_v2 import bp as media_v2_bp
 from routes.routes_media import bp as media_bp
 from routes.routes_account import bp as account_bp
 from routes.routes_moderation import bp as moderation_bp
-from routes.routes_instagram import bp as instagram_bp
 from routes.routes_abuse import bp as abuse_bp
+from routes.routes_chat import bp as chat_bp
+from routes.routes_announcements import bp as announcements_bp
 from routes.routes_support import bp as support_bp
+from routes.routes_support_admin import bp as support_admin_bp
+from routes.routes_admin_members import bp as admin_members_bp
+from routes.routes_cdn import bp as cdn_bp
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 
@@ -515,6 +518,16 @@ def create_app() -> Flask:
     
     print(f"[ForumKit] 啟動標識: {restart_id} (時間戳: {restart_timestamp})")
     
+    # 記錄平台啟動事件
+    try:
+        from services.platform_event_service import platform_event_service
+        from datetime import datetime
+        platform_event_service.set_start_time(datetime.now())
+        platform_event_service.record_platform_started(f"應用程序啟動 - 重啟ID: {restart_id}")
+        print("[ForumKit] 平台啟動事件已記錄")
+    except Exception as e:
+        print(f"[ForumKit] 記錄平台啟動事件失敗: {e}")
+    
     # 讓 jsonify 直接輸出 UTF-8，而非 \uXXXX 逃脫序列，
     # 避免前端在某些備援路徑顯示不可讀的 Unicode 轉義。
     app.config["JSON_AS_ASCII"] = False
@@ -590,6 +603,32 @@ def create_app() -> Flask:
     try:
         init_engine_session()
         print("[ForumKit] DB init ok")
+        
+        # 初始化自定義聊天室到內存中
+        try:
+            from models import ChatRoom
+            from utils.db import get_session
+            from sqlalchemy import and_
+            with get_session() as s:
+                custom_rooms = s.query(ChatRoom).filter(
+                    and_(
+                        ChatRoom.room_type == "custom",
+                        ChatRoom.is_active == True
+                    )
+                ).all()
+                
+                for room in custom_rooms:
+                    _custom_rooms[room.id] = {
+                        'owner_id': room.owner_id,
+                        'name': room.name,
+                        'description': room.description,
+                        'members': set()
+                    }
+                
+                print(f"[ForumKit] 已載入 {len(custom_rooms)} 個自定義聊天室到內存")
+        except Exception as e:
+            print(f"[ForumKit] 載入自定義聊天室失敗: {e}")
+            
     except Exception as e:
         print("[ForumKit] DB init fail:", e)
     
@@ -630,8 +669,7 @@ def create_app() -> Flask:
     def _start_user_webhook_feeder():
         import json as _json
         import traceback
-        from sqlalchemy.orm import Session
-        from models import Post, School, User
+        from models import Post, User
         from utils.db import get_session
         from utils.notify import post_discord
         try:
@@ -650,8 +688,22 @@ def create_app() -> Flask:
             return
 
         def _loop():
+            global r
             while True:
                 try:
+                    # 檢查Redis連接是否有效，如果無效則重新連接
+                    try:
+                        r.ping()
+                    except Exception:
+                        # 重新建立Redis連接
+                        try:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.ping()  # 測試新連接
+                        except Exception as e:
+                            print(f'[ForumKit] Redis reconnection failed: {e}')
+                            eventlet.sleep(30)  # 等待30秒後重試
+                            continue
+                    
                     items = r.hgetall('user:webhooks') or {}
                     if items:
                         with get_session() as s:  # type: Session
@@ -672,7 +724,7 @@ def create_app() -> Flask:
                                 kinds = conf.get('kinds') or {}
                                 wants_posts = bool(kinds.get('posts', True))
                                 wants_comments = bool(kinds.get('comments', False))
-                                wants_ann = bool(kinds.get('announcements', False))
+                                # announcements 設定目前未使用
 
                                 # 取最新貼文（審核通過）
                                 if wants_posts:
@@ -866,8 +918,7 @@ def create_app() -> Flask:
         resp.headers["X-ForumKit-App"] = "backend"
         resp.headers["X-ForumKit-Build"] = APP_BUILD_VERSION
         resp.headers["Access-Control-Expose-Headers"] = "X-ForumKit-Ticket, X-Request-ID, X-ForumKit-Build"
-        if getattr(g, "ticket_id", None):
-            resp.headers["X-ForumKit-Ticket"] = g.ticket_id
+        # 支援功能已移除
         # 安全標頭（可用環境變數關閉）
         if os.getenv('SECURITY_HEADERS_DISABLED', '0') not in {'1','true','yes','on'}:
             resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
@@ -979,6 +1030,12 @@ def create_app() -> Flask:
         內容來源優先序：環境變數 → 變更檔 → 其他文件備援。
         """
         data = _parse_changelog()
+        try:
+            cfg = load_config() or {}
+            if cfg.get("mode") not in {"development", "test"}:
+                data.pop("debug_info", None)
+        except Exception:
+            pass
         return jsonify(data)
 
     @app.get("/api/status/integrations")
@@ -1084,14 +1141,31 @@ def create_app() -> Flask:
                 user_stats["total"] = s.query(User).count()
         except Exception:
             pass
-        return jsonify({
+        try:
+            cfg = load_config() or {}
+            debug_mode = cfg.get("mode") in {"development", "test"}
+        except Exception:
+            debug_mode = False
+
+        payload = {
             "ok": True,
             "admin_webhook": {"configured": configured, "host": host, "id_mask": tail},
-            "recent_admin_events": recent_admin_events(10),
-            "queue": queue,
-            "system": sysinfo,
-            "user_stats": user_stats,
-        })
+        }
+        if debug_mode:
+            payload.update({
+                "recent_admin_events": recent_admin_events(10),
+                "queue": queue,
+                "system": sysinfo,
+                "user_stats": user_stats,
+            })
+        else:
+            payload.update({
+                "recent_admin_events": [],
+                "queue": {"enabled": False, "size": 0},
+                "system": {},
+                "user_stats": user_stats,
+            })
+        return jsonify(payload)
 
     # 公告管理（管理員）
     @app.get('/api/admin/announcements')
@@ -1143,9 +1217,7 @@ def create_app() -> Flask:
     def color_vote() -> Response:  # noqa: F841
         """顏色搭配器 API：支援簡單票選與完整主題提案；若 Discord 失敗，回 local_only。"""
         try:
-            # 為此次請求產生處理單號
-            ticket_id = new_ticket_id("FKC")  # ForumKit Color
-            g.ticket_id = ticket_id
+                    # 支援功能已移除
 
             payload_raw: Any = request.get_json(force=True, silent=True) or {}
             payload = cast(dict[str, Any], payload_raw if isinstance(payload_raw, dict) else {})
@@ -1157,9 +1229,8 @@ def create_app() -> Flask:
                     return error("FK-COLOR-001", 400, "顏色選擇不能為空")[0]
                 res = notify_send_event(
                     kind="simple_choice",
-                    title=f"顏色投票 〔{ticket_id}〕",
-                    description=f"選擇：{choice}",
-                    ticket_id=ticket_id,
+                                    title=f"顏色投票",
+                description=f"選擇：{choice}",
                     ts=str(g.get('request_ts')),
                     request_id=str(g.get('request_id')),
                     source="/api/color_vote",
@@ -1167,16 +1238,17 @@ def create_app() -> Flask:
                 return jsonify({
                     "ok": True,
                     "type": "simple_choice",
-                    "ticket_id": ticket_id,
                     "delivery": "discord" if res.get("ok") else "local_only",
                     "status": res.get("status")
                 })
 
-            # v2：完整主題提案 - 只驗證主題色
+            # v2：完整主題提案 - 支援完整主題配置
             theme_name = str(payload.get("name") or "").strip()
             description = str(payload.get("description") or "").strip()
             colors_raw: Any = payload.get("colors") or {}
             colors: dict[str, str] = cast(dict[str, str], colors_raw if isinstance(colors_raw, dict) else {})
+            author = str(payload.get("author") or "匿名用戶").strip()
+            source = str(payload.get("source") or "color_vote").strip()
 
             if not theme_name:
                 return error("FK-COLOR-002", 400, "主題名稱不能為空")[0]
@@ -1187,22 +1259,97 @@ def create_app() -> Flask:
             if not colors or not colors.get("primary"):
                 return error("FK-COLOR-003", 400, "主題色不能為空")[0]
 
+            # 驗證顏色格式
             hex_pattern = re.compile(r'^#[0-9A-Fa-f]{6}$')
             primary_color_hex = colors.get("primary", "#3B82F6")
             if not hex_pattern.match(str(primary_color_hex)):
                 return error("FK-COLOR-006", 400, "主題色格式無效")[0]
 
-            primary_color_int = _hex_to_int(primary_color_hex)
+            _ = _hex_to_int(primary_color_hex)
 
+            # 構建 Discord embed 欄位（精簡版）
+            fields = [
+                {"name": "作者", "value": author, "inline": True},
+                {"name": "來源", "value": source, "inline": True},
+            ]
+
+            # 添加主要顏色信息
+            if colors.get("primary"):
+                fields.append({"name": "主色", "value": colors.get("primary", ""), "inline": True})
+            if colors.get("secondary"):
+                fields.append({"name": "輔助色", "value": colors.get("secondary", ""), "inline": True})
+            if colors.get("accent"):
+                fields.append({"name": "強調色", "value": colors.get("accent", ""), "inline": True})
+
+            # 添加背景和表面顏色
+            if colors.get("background"):
+                fields.append({"name": "背景色", "value": colors.get("background", ""), "inline": True})
+            if colors.get("surface"):
+                fields.append({"name": "表面色", "value": colors.get("surface", ""), "inline": True})
+            if colors.get("border"):
+                fields.append({"name": "邊框色", "value": colors.get("border", ""), "inline": True})
+
+            # 添加文字顏色
+            if colors.get("text"):
+                fields.append({"name": "文字色", "value": colors.get("text", ""), "inline": True})
+            if colors.get("textMuted"):
+                fields.append({"name": "次要文字", "value": colors.get("textMuted", ""), "inline": True})
+
+            # 添加功能顏色
+            if colors.get("success"):
+                fields.append({"name": "成功色", "value": colors.get("success", ""), "inline": True})
+            if colors.get("warning"):
+                fields.append({"name": "警告色", "value": colors.get("warning", ""), "inline": True})
+            if colors.get("error"):
+                fields.append({"name": "錯誤色", "value": colors.get("error", ""), "inline": True})
+
+            # 添加字體配置（簡化）
+            fonts_raw = payload.get("fonts") or {}
+            if isinstance(fonts_raw, dict):
+                font_info = []
+                if fonts_raw.get("heading"):
+                    font_info.append(f"標題: {fonts_raw.get('heading', '')[:20]}")
+                if fonts_raw.get("body"):
+                    font_info.append(f"內文: {fonts_raw.get('body', '')[:20]}")
+                if fonts_raw.get("mono"):
+                    font_info.append(f"等寬: {fonts_raw.get('mono', '')[:20]}")
+                if font_info:
+                    fields.append({"name": "字體", "value": " | ".join(font_info), "inline": False})
+
+            # 添加佈局配置
+            if payload.get("borderRadius"):
+                fields.append({"name": "圓角", "value": str(payload.get("borderRadius", "")), "inline": True})
+
+            # 添加間距配置（簡化顯示）
+            spacing_raw = payload.get("spacing") or {}
+            if isinstance(spacing_raw, dict) and spacing_raw:
+                spacing_text = f"xs:{spacing_raw.get('xs', '')} sm:{spacing_raw.get('sm', '')} md:{spacing_raw.get('md', '')}"
+                if spacing_text.strip():
+                    fields.append({"name": "間距", "value": spacing_text, "inline": True})
+
+            # 添加陰影配置（簡化顯示）
+            shadows_raw = payload.get("shadows") or {}
+            if isinstance(shadows_raw, dict) and shadows_raw:
+                shadow_count = len([v for v in shadows_raw.values() if v])
+                if shadow_count > 0:
+                    fields.append({"name": "陰影", "value": f"{shadow_count} 種配置", "inline": True})
+
+            # 添加動畫配置（簡化顯示）
+            animations_raw = payload.get("animations") or {}
+            if isinstance(animations_raw, dict) and animations_raw:
+                duration = animations_raw.get("duration", "")
+                if duration:
+                    fields.append({"name": "動畫", "value": duration, "inline": True})
+
+            # 調試：打印字段信息
+            print(f"[DEBUG] 主題提案字段數量: {len(fields)}")
+            print(f"[DEBUG] 字段內容: {fields}")
+            
             res = notify_send_event(
                 kind="theme_proposal",
-                title=f"主題提案：{theme_name} 〔{ticket_id}〕",
+                title=f"🎨 主題提案：{theme_name}",
                 description=description,
-                fields=[
-                    {"name": "主色", "value": colors.get("primary", ""), "inline": True},
-                    {"name": "輔助色", "value": colors.get("secondary", ""), "inline": True},
-                ],
-                ticket_id=ticket_id,
+                fields=fields,
                 ts=str(g.get('request_ts')),
                 request_id=str(g.get('request_id')),
                 source="/api/color_vote",
@@ -1211,80 +1358,16 @@ def create_app() -> Flask:
             if not res.get("ok"):
                 # second attempt already handled by send_event failure; return status only
                 res2 = res
-                return jsonify({"ok": True, "type": "theme_proposal", "ticket_id": ticket_id,
+                return jsonify({"ok": True, "type": "theme_proposal",
                                 "delivery": "discord" if res2.get("ok") else "local_only",
                                 "status": res2.get("status")})
 
-            return jsonify({"ok": True, "type": "theme_proposal", "ticket_id": ticket_id,
+            return jsonify({"ok": True, "type": "theme_proposal",
                             "delivery": "discord", "status": res.get("status")})
         except Exception as e:  # noqa: BLE001
             return error("FK-COLOR-EX", 500, "顏色投票處理失敗", hint=str(e))[0]
 
-    @app.route("/api/report", methods=["POST"])
-    def report_issue() -> Response:  # noqa: F841
-        """問題回報：送 Discord 並寫入站內事件（用於 /admin/support 顯示）。"""
-        try:
-            # 為此次請求產生處理單號
-            ticket_id = new_ticket_id("FKR")  # ForumKit Report
-            g.ticket_id = ticket_id
-
-            payload_raw: Any = request.get_json(force=True, silent=True) or {}
-            payload = cast(dict[str, Any], payload_raw if isinstance(payload_raw, dict) else {})
-
-            message = str(payload.get("message") or "").strip()
-            contact = str(payload.get("contact") or payload.get("email") or "").strip()
-            category = str(payload.get("category") or "一般回報").strip()
-
-            if len(message) < 5:
-                return error("FK-REPORT-001", 400, "回報內容太短，請補充細節", hint="message >= 5 chars")[0]
-
-            # 原始行為（XFF 或 remote_addr），並同時附上 CF 與服務端 IP
-            ip_raw = request.headers.get("X-Forwarded-For") or request.remote_addr or "-"
-            cf_ip = request.headers.get("CF-Connecting-IP") or "-"
-            srv_ip = request.remote_addr or "-"
-            ip_footer = f"raw={ip_raw}, cf={cf_ip}, srv={srv_ip}"
-
-            res = notify_send_event(
-                kind="issue_report",
-                title=f"問題回報：{category} 〔{ticket_id}〕",
-                description=message,
-                actor=(contact or "匿名"),
-                source=f"/api/report | {ip_footer}",
-                ticket_id=ticket_id,
-                ts=str(g.get('request_ts')),
-                request_id=str(g.get('request_id')),
-            )
-
-            # 同步寫入站內事件快取（供後台顯示）
-            try:
-                from utils.admin_events import log_admin_event
-                log_admin_event(
-                    event_type="issue_report",
-                    title=f"問題回報：{category}",
-                    description=message + (f"\n[email]={contact}" if contact else ""),
-                    actor_id=None,
-                    actor_name=(contact or None),
-                    target_id=None,
-                    target_type="support",
-                    severity="medium",
-                    metadata={
-                        "ticket_id": ticket_id,
-                        "ip": ip_raw,
-                        "cf_ip": cf_ip,
-                        "srv_ip": srv_ip,
-                    },
-                )
-            except Exception:
-                pass
-
-            if not res.get("ok"):
-                res2 = res
-                return jsonify({"ok": True, "ticket_id": ticket_id,
-                                "delivery": "discord" if res2.get("ok") else "local_only",
-                                "status": res2.get("status")})
-            return jsonify({"ok": True, "ticket_id": ticket_id, "delivery": "discord", "status": res.get("status")})
-        except Exception as e:  # noqa: BLE001
-            return error("FK-REPORT-EX", 500, "回報寄送失敗", hint=str(e))[0]
+    # 支援功能已移除
 
     @app.route("/api/progress", methods=["GET"])
     def get_progress() -> Response:  # noqa: F841
@@ -1303,12 +1386,10 @@ def create_app() -> Flask:
     # and moderation flow (pending/public). Use /api/posts/upload instead.
     app.register_blueprint(moderation_bp)
     app.register_blueprint(abuse_bp)
-    app.register_blueprint(support_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(account_bp)
     app.register_blueprint(media_bp)
-    app.register_blueprint(media_v2_bp)
-    app.register_blueprint(instagram_bp)
+    # 已合併到 /api/media，新增 /api/media/<id>/public 提供 v2 風格資料
     # 掛載 Google Auth blueprint
     try:
         from app.blueprints.auth_google import bp as google_auth_bp
@@ -1332,6 +1413,26 @@ def create_app() -> Flask:
         app.register_blueprint(events_bp)
     except Exception as _e:
         print('[ForumKit] routes_events not mounted:', _e)
+    
+    # 聊天記錄系統
+    app.register_blueprint(chat_bp)
+    
+    # 公告通知系統
+    app.register_blueprint(announcements_bp)
+    
+    # 支援工單系統
+    app.register_blueprint(support_bp)
+    app.register_blueprint(support_admin_bp)
+    
+    # Instagram 整合系統（暫時下架，將於 2.0.0 重新設計）
+    # app.register_blueprint(instagram_bp)
+    # app.register_blueprint(admin_instagram_bp)
+    
+    # 會員管理系統
+    app.register_blueprint(admin_members_bp)
+    
+    # CDN 靜態檔案服務
+    app.register_blueprint(cdn_bp)
 
     # ---- Realtime rooms debug APIs (for Day10 validation) ----
     from flask_jwt_extended import jwt_required
@@ -1402,14 +1503,37 @@ def create_app() -> Flask:
         else:
             code = 500
             msg = str(e)
+        
+        # 記錄詳細錯誤資訊
         app.logger.exception("Unhandled exception")  # 這行輸出完整 traceback 到容器 log
+        
+        # 根據錯誤類型提供不同的提示
+        hint = "請稍後再試或聯繫系統管理員"
+        if "psycopg2.errors.UndefinedColumn" in str(e):
+            hint = "數據庫結構需要更新，請聯繫管理員"
+        elif "psycopg2.errors" in str(e):
+            hint = "數據庫連接異常，請稍後再試"
+        elif "timeout" in str(e).lower():
+            hint = "請求超時，請檢查網路連接"
+        elif "connection" in str(e).lower():
+            hint = "網路連接異常，請檢查網路狀態"
+        
         return jsonify({
             "ok": False,
             "error": {
                 "code": code,
                 "message": msg,
-                "hint": "check backend logs",
-                "details": None
+                "hint": hint,
+                "details": {
+                    "error_type": type(e).__name__,
+                    "support_url": "/support?prefill=" + quote(json.dumps({
+                        "type": "system_error",
+                        "title": f"系統錯誤 {code}",
+                        "description": msg,
+                        "error_code": code,
+                        "error_details": str(e)[:200]  # 限制長度
+                    }))
+                }
             },
             "trace": {"request_id": g.get("request_id"), "ts": g.get("request_ts")}
         }), code
@@ -1428,9 +1552,12 @@ def create_app() -> Flask:
             "trace": {"request_id": g.get("request_id"), "ts": g.get("request_ts")}
         }), e.code
 
+    # 僅在測試/開發模式列出路由
     try:
-        routes_after = sorted(str(r) for r in app.url_map.iter_rules())  # type: ignore[attr-defined]
-        print(f"[ForumKit][routes] {routes_after}")
+        cfg_debug = (load_config() or {}).get("mode", "normal") in {"development", "test"}
+        if cfg_debug:
+            routes_after = sorted(str(r) for r in app.url_map.iter_rules())  # type: ignore[attr-defined]
+            print(f"[ForumKit][routes] {routes_after}")
     except Exception as ie:  # noqa: BLE001
         print(f"[ForumKit][routes] FAIL: {ie}")
 
@@ -1462,13 +1589,7 @@ def register_socketio_events():
         request_id = str(uuid.uuid4())
         request_ts = datetime.now(timezone.utc).isoformat()
         
-        # 詳細連線日誌
-        client_info = {
-            "sid": request.sid,
-            "remote_addr": request.remote_addr,
-            "user_agent": request.headers.get("User-Agent", ""),
-            "origin": request.headers.get("Origin", ""),
-        }
+        # 詳細連線日誌（如需可擴充使用 request 資訊）
         current_app.logger.info(f"[SocketIO] client connected: sid={request.sid} addr={request.remote_addr} ua='{request.headers.get('User-Agent', '')[:50]}...'")
         
         emit("hello", {"message": "connected", "request_id": request_id, "ts": request_ts, "sid": request.sid})
@@ -1695,10 +1816,159 @@ def register_socketio_events():
             "ts": payload.get("ts") or datetime.now(timezone.utc).isoformat(),
             "username": display_name,
         }
+        
+        # 保存聊天記錄到資料庫
+        try:
+            from services.chat_service import ChatService
+            from utils.db import get_session
+            
+            with get_session() as s:
+                user_info = _client_user.get(client_id) if client_id else None
+                ChatService.save_message(
+                    session=s,
+                    room_id=room,
+                    message=msg,
+                    user_id=user_info.get("user_id") if user_info else None,
+                    username=display_name,
+                    client_id=client_id,
+                    message_type="text"
+                )
+                s.commit()
+        except Exception as e:
+            print(f"[Chat] Failed to save message to database: {e}")
+        
         # 存入 backlog
         _room_msgs[room].append(payload_out)
         # 廣播到該房間
         emit("chat.message", payload_out, to=room)
+    
+    
+    # ==================== Support System Socket Events ====================
+    
+    @socketio.on("support.join_ticket")
+    def handle_support_join_ticket(payload):
+        """加入支援工單房間"""
+        try:
+            client_id = session.get('client_id')
+            if not client_id:
+                emit("error", {"msg": "未連接", "code": "NOT_CONNECTED"})
+                return
+            
+            ticket_public_id = str(payload.get("ticket_id", "")).strip()
+            if not ticket_public_id:
+                emit("error", {"msg": "工單ID不能為空", "code": "MISSING_TICKET_ID"})
+                return
+            
+            # 驗證權限（簡化版，實際應檢查用戶權限）
+            user_info = _client_user.get(client_id, {})
+            # user_id 預留：若需做更嚴謹 ACL，可在此使用
+            
+            # 構造房間名
+            room_name = f"support_ticket_{ticket_public_id}"
+            
+            # 加入房間
+            join_room(room_name)
+            
+            # 記錄到客戶端房間映射
+            if client_id not in _client_rooms:
+                _client_rooms[client_id] = set()
+            _client_rooms[client_id].add(room_name)
+            
+            emit("support.joined_ticket", {
+                "ticket_id": ticket_public_id,
+                "room": room_name,
+                "ts": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # 通知房間內其他人有新的觀察者
+            emit("support.user_watching", {
+                "ticket_id": ticket_public_id,
+                "user": user_info.get("display_name", "訪客"),
+                "ts": datetime.now(timezone.utc).isoformat()
+            }, to=room_name, include_self=False)
+            
+        except Exception as e:
+            print(f"[Support Socket] Join ticket error: {e}")
+            emit("error", {"msg": "加入工單房間失敗", "code": "JOIN_TICKET_FAILED"})
+    
+    
+    @socketio.on("support.leave_ticket")
+    def handle_support_leave_ticket(payload):
+        """離開支援工單房間"""
+        try:
+            client_id = session.get('client_id')
+            if not client_id:
+                return
+            
+            ticket_public_id = str(payload.get("ticket_id", "")).strip()
+            if not ticket_public_id:
+                return
+            
+            room_name = f"support_ticket_{ticket_public_id}"
+            
+            # 離開房間
+            leave_room(room_name)
+            
+            # 從客戶端房間映射中移除
+            if client_id in _client_rooms:
+                _client_rooms[client_id].discard(room_name)
+            
+            emit("support.left_ticket", {
+                "ticket_id": ticket_public_id,
+                "ts": datetime.now(timezone.utc).isoformat()
+            })
+            
+        except Exception as e:
+            print(f"[Support Socket] Leave ticket error: {e}")
+    
+    
+    @socketio.on("support.typing")
+    def handle_support_typing(payload):
+        """支援工單輸入狀態"""
+        try:
+            client_id = session.get('client_id')
+            if not client_id:
+                return
+            
+            ticket_public_id = str(payload.get("ticket_id", "")).strip()
+            is_typing = bool(payload.get("is_typing", False))
+            
+            if not ticket_public_id:
+                return
+            
+            user_info = _client_user.get(client_id, {})
+            room_name = f"support_ticket_{ticket_public_id}"
+            
+            # 廣播輸入狀態（不包含自己）
+            emit("support.user_typing", {
+                "ticket_id": ticket_public_id,
+                "user": user_info.get("display_name", "訪客"),
+                "is_typing": is_typing,
+                "ts": datetime.now(timezone.utc).isoformat()
+            }, to=room_name, include_self=False)
+            
+        except Exception as e:
+            print(f"[Support Socket] Typing error: {e}")
+    
+    
+    def broadcast_support_event(ticket_public_id: str, event_type: str, data: dict):
+        """廣播支援工單事件"""
+        try:
+            room_name = f"support_ticket_{ticket_public_id}"
+            event_data = {
+                "ticket_id": ticket_public_id,
+                "event_type": event_type,
+                "data": data,
+                "ts": datetime.now(timezone.utc).isoformat()
+            }
+            
+            socketio.emit("support.event", event_data, to=room_name)
+            
+            # 同時廣播到管理員房間
+            socketio.emit("support.admin_event", event_data, to="admin_support")
+            
+        except Exception as e:
+            print(f"[Support Socket] Broadcast error: {e}")
 
 
 # 別在模組層級呼叫 create_app()

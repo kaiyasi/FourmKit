@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import MobileUnderConstruction from '@/components/MobileUnderConstruction'
 import { getSocket } from '@/socket'
-import { ensurePostListener, ensureCommentListener, ensureAnnounceListener, ensureModerationListeners, ensureDeleteRequestListeners, ensureSupportListeners, ensureReactionListeners } from '@/services/realtime'
+import { ensurePostListener, ensureCommentListener, ensureAnnounceListener, ensureModerationListeners, ensureDeleteRequestListeners, ensureReactionListeners } from '@/services/realtime'
 import { addNotification } from '@/utils/notifications'
 import { getClientId, upsertByIdOrTemp, upsertSocketPayload } from '@/utils/client'
 import { NavBar } from '@/components/layout/NavBar'
@@ -19,13 +19,13 @@ import ChatPage from '@/pages/ChatPage'
 import AdminChatPage from '@/pages/admin/ChatPage'
 import PostDetailPage from '@/pages/PostDetailPage'
 import AdminCommentsMonitorPage from '@/pages/AdminCommentsMonitorPage'
-import AdminSupportPage from '@/pages/AdminSupportPage'
 import EventStatusCard from '@/components/admin/EventStatusCard'
-import ResizableSection from './components/ResizableSection'
+import ResizableSection from '@/components/ResizableSection'
 import { canSetMode, getUserId } from '@/utils/auth'
 import { useAuth } from '@/contexts/AuthContext'
-import ExternalAccountErrorPage from './pages/ExternalAccountErrorPage'
-import LoginRestrictedPage from './pages/LoginRestrictedPage'
+import ExternalAccountErrorPage from '@/pages/ExternalAccountErrorPage'
+import LoginRestrictedPage from '@/pages/LoginRestrictedPage'
+import { useAnnouncementNotifications } from '@/hooks/useAnnouncementNotifications'
 
 type PlatformMode = {
   mode: 'normal' | 'maintenance' | 'development' | 'test'
@@ -42,6 +42,10 @@ interface ProgressData { progress_items: ProgressItem[]; recent_updates: string[
 
 export default function App() {
   const { isLoggedIn } = useAuth()
+  
+  // 啟用公告通知整合
+  useAnnouncementNotifications()
+  
   /* ---------- 局部 CSS：740–820px 調整右欄 ---------- */
   const MidWidthCSS = () => (
     <style>{`
@@ -475,9 +479,8 @@ export default function App() {
     if (pathname === '/admin/comments') {
         return <AdminCommentsMonitorPage />
     }
-    if (pathname === '/admin/support') {
-        return <AdminSupportPage />
-    }
+    
+  // 支援功能已移除
 
   // 維護模式
   if (platform.mode === 'maintenance') {
@@ -494,7 +497,7 @@ export default function App() {
           <p className="text-sm text-muted mb-4">我們正在升級服務以提供更佳體驗，造成不便敬請見諒。</p>
           <p className="mb-4 whitespace-pre-wrap text-sm sm:text-base">{platform.maintenance_message || '維護作業進行中。'}</p>
           {platform.maintenance_until && <p className="text-sm text-muted mb-4 sm:mb-6">預計完成：{platform.maintenance_until}</p>}
-          <ReportForm />
+          {/* 支援功能已移除 */}
         </div>
       </div>
     )
@@ -762,7 +765,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <NavBar pathname={pathname} />
-      <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28">
+      <main className="mx-auto max-w-5xl px-3 sm:px-4 sm:pt-24 md:pt-28">
         <section className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 sm:mb-6">
           <div className="flex items-center justify-between gap-3 sm:gap-4 mb-4">
             <h1 className="text-xl sm:text-2xl font-semibold dual-text">ForumKit</h1>

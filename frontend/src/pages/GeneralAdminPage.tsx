@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { Search, Filter, CheckCircle, XCircle, Eye, Clock, User, Calendar, Download, RefreshCw, AlertTriangle, FileText, History, Trash2 } from 'lucide-react'
+import { Search, Filter, CheckCircle, XCircle, Eye, Clock, User, Calendar, Download, RefreshCw, AlertTriangle, FileText, History, Trash2, MessageSquareDot } from 'lucide-react'
 import { HttpError, getJSON } from '@/lib/http'
 import DesktopOnly from '@/components/ui/DesktopOnly'
 import ErrorPage from '@/components/ui/ErrorPage'
@@ -89,14 +89,15 @@ export default function GeneralAdminPage() {
   // 篩選狀態
   const [showFilters, setShowFilters] = useState(false)
   const [keyword, setKeyword] = useState('')
-  const [clientId, setClientId] = useState('')
-  const [ip, setIp] = useState('')
+  const [authorName, setAuthorName] = useState('')
+  const [source, setSource] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [schoolSlug, setSchoolSlug] = useState('')
   
   const [schools, setSchools] = useState<School[]>([])
   const [stats, setStats] = useState({ pending_posts: 0, processed_today: 0 })
+
 
   const role = getRole()
 
@@ -224,8 +225,8 @@ export default function GeneralAdminPage() {
   const buildQueryString = () => {
     const params = new URLSearchParams()
     if (keyword) params.append('q', keyword)
-    if (clientId) params.append('client_id', clientId)
-    if (ip) params.append('ip', ip)
+    if (authorName) params.append('author_name', authorName)
+    if (source) params.append('source', source)
     if (startDate) params.append('start_date', startDate)
     if (endDate) params.append('end_date', endDate)
     if (schoolSlug) params.append('school', schoolSlug)
@@ -256,6 +257,8 @@ export default function GeneralAdminPage() {
       } catch (e) {
         console.error('載入統計失敗:', e)
       }
+      
+
       
     } catch (e) {
       if (e instanceof HttpError) {
@@ -498,7 +501,7 @@ export default function GeneralAdminPage() {
     } else if (activeTab === 'delete_requests') {
       loadDeleteRequests()
     }
-  }, [activeTab, keyword, clientId, ip, startDate, endDate, schoolSlug, deleteRequestFilter])
+  }, [activeTab, keyword, authorName, source, startDate, endDate, schoolSlug, deleteRequestFilter])
 
   if (error) {
     return <ErrorPage title="管理後台載入失敗" message={error} />
@@ -552,17 +555,16 @@ export default function GeneralAdminPage() {
               </div>
             </div>
 
-            {/* 手機可見：聊天室快捷卡片（避免手機看不到入口） */}
+            {/* 聊天室快捷卡片 */}
             <div className="bg-surface border border-border rounded-xl p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-blue-700"><path d="M2.25 12a9.75 9.75 0 1117.19 6.03.75.75 0 00-.14.44v2.53a.75.75 0 01-1.28.53l-1.8-1.8a.75.75 0 00-.53-.22h-.24A9.72 9.72 0 012.25 12z"/></svg>
+                  <MessageSquareDot className="w-6 h-6 text-blue-700" />
                 </div>
-                <div className="flex-1">
-                  <div className="text-base font-semibold text-fg">管理員聊天室</div>
-                  <div className="text-sm text-muted">即時溝通（含自訂聊天室）</div>
+                <div>
+                  <div className="text-2xl font-bold text-fg">聊天室</div>
+                  <div className="text-sm text-muted">待處理請求</div>
                 </div>
-                <a href="/admin/chat" className="btn-secondary px-3 py-2 text-sm">進入</a>
               </div>
             </div>
           </div>
@@ -640,27 +642,32 @@ export default function GeneralAdminPage() {
                         />
                       </div>
                       
-                      <div>
-                        <label className="block text-sm font-medium text-muted mb-1">用戶端 ID</label>
-                        <input
-                          type="text"
-                          value={clientId}
-                          onChange={(e) => setClientId(e.target.value)}
-                          placeholder="client_xxx"
-                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-muted mb-1">IP 地址</label>
-                        <input
-                          type="text"
-                          value={ip}
-                          onChange={(e) => setIp(e.target.value)}
-                          placeholder="192.168.1.1"
-                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                      </div>
+                                             <div>
+                         <label className="block text-sm font-medium text-muted mb-1">作者名稱</label>
+                         <input
+                           type="text"
+                           value={authorName}
+                           onChange={(e) => setAuthorName(e.target.value)}
+                           placeholder="搜尋作者名稱..."
+                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                         />
+                       </div>
+                       
+                       <div>
+                         <label className="block text-sm font-medium text-muted mb-1">來源</label>
+                         <select
+                           value={source}
+                           onChange={(e) => setSource(e.target.value)}
+                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                         >
+                           <option value="">全部來源</option>
+                           <option value="cross">跨校</option>
+                           <option value="all">全部</option>
+                           {schools.map(school => (
+                             <option key={school.id} value={school.slug}>{school.name}</option>
+                           ))}
+                         </select>
+                       </div>
                       
                       <div>
                         <label className="block text-sm font-medium text-muted mb-1">開始日期</label>
@@ -745,13 +752,13 @@ export default function GeneralAdminPage() {
                                   {formatLocalMinute(post.created_at)}
                                 </span>
                               )}
-                              {post.client_id && (
+                              {role === 'dev_admin' && post.client_id && (
                                 <span className="flex items-center gap-1">
                                   <User className="w-3 h-3" />
                                   {post.client_id}
                                 </span>
                               )}
-                              {post.ip && (
+                              {role === 'dev_admin' && post.ip && (
                                 <span className="flex items-center gap-1">
                                   <Eye className="w-3 h-3" />
                                   {post.ip}
@@ -827,80 +834,91 @@ export default function GeneralAdminPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {auditLogs.map(log => (
-                      <div key={log.id} className="border border-border rounded-xl p-4 bg-surface/50">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            {(() => {
-                              const isApprove = (log.action || '').startsWith('approve') || log.action === 'approve' || log.action === 'override_approve'
-                              const label = log.action_display || (isApprove ? '核准' : '拒絕')
-                              return (
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${isApprove ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'}`}>
-                                  {label}
-                                </span>
-                              )
-                            })()}
-                            <span className="text-xs px-2 py-1 bg-muted/10 text-muted rounded">
-                              {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}
-                            </span>
-                            {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
-                              <span className="text-xs text-muted">
-                                {(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
-                              </span>
-                            )}
-                            {typeof log.source === 'string' && (
-                              <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
-                                來源：{log.source || '跨校'}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted">
-                            {formatLocalMinute(log.created_at)}
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2 text-sm">
-                            <User className="w-4 h-4 text-muted" />
-                            <span className="text-muted">審核者：</span>
-                            <span className="font-medium text-fg">
-                              {log.moderator || `ID: ${log.moderator_id}`}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => {
-                              if (selectedLog?.id === log.id) {
-                                setSelectedLog(null)
-                                setLogDetail(null)
-                              } else {
-                                setSelectedLog(log)
-                                loadLogDetail(log.target_id, log.target_type)
-                              }
-                            }}
-                            className="text-xs text-primary hover:text-primary-dark flex items-center gap-1"
-                          >
-                            <Eye className="w-3 h-3" />
-                            {selectedLog?.id === log.id ? '隱藏詳情' : '查看詳情'}
-                          </button>
-                        </div>
-                        
-                        {log.reason && (
-                          <div className="mb-2">
-                            <div className="text-xs text-muted mb-1">拒絕理由：</div>
-                            <div className="text-sm text-fg bg-surface-hover p-2 rounded border">
-                              {log.reason}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {log.details && (
-                          <div className="mb-2">
-                            <div className="text-xs text-muted mb-1">備註：</div>
-                            <div className="text-sm text-fg bg-surface-hover p-2 rounded border">
-                              {log.details}
-                            </div>
-                          </div>
-                        )}
+                                         {auditLogs.map(log => (
+                       <div key={log.id} className="border border-border rounded-xl p-4 bg-surface/50">
+                         {/* 主要資訊行 */}
+                         <div className="flex items-start justify-between mb-3">
+                           <div className="flex-1">
+                             <div className="flex items-center gap-2 mb-2">
+                               {(() => {
+                                 const isApprove = (log.action || '').startsWith('approve') || log.action === 'approve' || log.action === 'override_approve'
+                                 const label = log.action_display || (isApprove ? '核准' : '拒絕')
+                                 return (
+                                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${isApprove ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'}`}>
+                                     {label}
+                                   </span>
+                                 )
+                               })()}
+                               <span className="text-xs px-2 py-1 bg-muted/10 text-muted rounded">
+                                 {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}
+                               </span>
+                             </div>
+                             
+                             {/* 狀態變更 */}
+                             {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
+                               <div className="text-xs text-muted mb-1">
+                                 {(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
+                               </div>
+                             )}
+                             
+                             {/* 來源學校 */}
+                             {typeof log.source === 'string' && (
+                               <div className="text-xs text-muted mb-1">
+                                 來源：{log.source || '跨校'}
+                               </div>
+                             )}
+                           </div>
+                           
+                           <div className="text-xs text-muted text-right ml-4">
+                             {formatLocalMinute(log.created_at)}
+                           </div>
+                         </div>
+                         
+                         {/* 審核者資訊 */}
+                         <div className="flex items-center justify-between mb-3">
+                           <div className="flex items-center gap-2 text-sm">
+                             <User className="w-4 h-4 text-muted" />
+                             <span className="text-muted">審核者:</span>
+                             <span className="font-medium text-fg">
+                               {log.moderator || `ID: ${log.moderator_id}`}
+                             </span>
+                           </div>
+                           <button
+                             onClick={() => {
+                               if (selectedLog?.id === log.id) {
+                                 setSelectedLog(null)
+                                 setLogDetail(null)
+                               } else {
+                                 setSelectedLog(log)
+                                 loadLogDetail(log.target_id, log.target_type)
+                               }
+                             }}
+                             className="text-xs text-primary hover:text-primary-dark flex items-center gap-1"
+                           >
+                             <Eye className="w-3 h-3" />
+                             {selectedLog?.id === log.id ? '隱藏詳情' : '查看詳情'}
+                           </button>
+                         </div>
+                         
+                         {/* 拒絕理由 */}
+                         {log.reason && (
+                           <div className="mb-2">
+                             <div className="text-xs text-muted mb-1">原因:</div>
+                             <div className="text-sm text-fg bg-surface-hover p-2 rounded border">
+                               {log.reason}
+                             </div>
+                           </div>
+                         )}
+                         
+                         {/* 備註 */}
+                         {log.details && (
+                           <div className="mb-2">
+                             <div className="text-xs text-muted mb-1">備註:</div>
+                             <div className="text-sm text-fg bg-surface-hover p-2 rounded border">
+                               {log.details}
+                             </div>
+                           </div>
+                         )}
                         
                         {/* 詳情展開區域 */}
                         {selectedLog?.id === log.id && (

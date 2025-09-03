@@ -88,7 +88,8 @@ export default function NewAuthPage() {
               response.user.role as any,
               response.user.school_id,
               response.tokens.refresh_token,
-              response.user.username
+              response.user.username,
+              false
             )
             navigate('/')
             return
@@ -160,7 +161,8 @@ export default function NewAuthPage() {
           response.user.role as any,
           response.user.school_id,
           response.tokens.refresh_token,
-          response.user.username
+          response.user.username,
+          false
         )
         navigate('/')
       }
@@ -446,7 +448,7 @@ export default function NewAuthPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ paddingTop: 'var(--fk-navbar-offset, 0px)' }}>
       <NavBar pathname={location.pathname} />
 
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -466,7 +468,7 @@ export default function NewAuthPage() {
               <div className="text-sm">
                 {error}
                 <div className="mt-2">
-                  需要協助？<a href="/support" className="underline">留言給管理員</a>
+                  需要協助？請聯繫系統管理員
                 </div>
               </div>
             </div>

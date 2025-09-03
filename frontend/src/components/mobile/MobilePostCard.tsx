@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Clock, MessageSquare, Heart, Share, Copy, Check, MoreHorizontal, ExternalLink } from 'lucide-react'
+import { Clock, MessageSquare, Heart, Share, Copy, MoreHorizontal, ExternalLink, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Post } from '@/schemas/post'
 import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
@@ -13,7 +13,6 @@ interface MobilePostCardProps {
 
 export function MobilePostCard({ post, onReaction, onShare, schools = [] }: MobilePostCardProps) {
   const [showActions, setShowActions] = useState(false)
-  const [copiedLink, setCopiedLink] = useState(false)
   
   const haptic = (ms = 10) => { 
     try { 
@@ -40,10 +39,32 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
     try {
       const url = `${window.location.origin}/post/${post.id}`
       await navigator.clipboard.writeText(url)
-      setCopiedLink(true)
-      setTimeout(() => setCopiedLink(false), 2000)
     } catch (err) {
       console.warn('複製失敗:', err)
+    }
+  }
+
+  const handleDeleteRequest = async (postId: number, reason: string) => {
+    haptic(12)
+    try {
+      const response = await fetch(`/api/posts/${postId}/delete_request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify({ reason })
+      })
+
+      if (response.ok) {
+        alert('刪文請求已提交')
+      } else {
+        const errorData = await response.json()
+        alert(errorData.error || '提交失敗')
+      }
+    } catch (err) {
+      console.warn('刪文請求失敗:', err)
+      alert('提交失敗，請稍後再試')
     }
   }
 
@@ -59,21 +80,37 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
               <span className="text-xs font-semibold text-primary">
-                {(() => {
-                  const nameField = String((post as any).school_name || '').trim()
-                  const obj = (post as any).school as any
-                  const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
-                  const sidRaw = (post as any).school_id
-                  const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
-                  const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
-                  const name = nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
-                  return name ? name.charAt(0) : ''
-                })()}
+                                 {(() => {
+                   const nameField = String((post as any).school_name || '').trim()
+                   const obj = (post as any).school as any
+                   const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+                   const sidRaw = (post as any).school_id
+                   const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
+                   const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
+                   const name = (post as any).is_advertisement ? '廣告' : 
+                     (post as any).is_announcement ? (() => {
+                       const announcementType = (post as any).announcement_type
+                       switch(announcementType) {
+                         case 'platform': return '全平台公告'
+                         case 'cross': return '跨校公告'
+                         case 'school': return '學校公告'
+                         default: return '公告'
+                       }
+                     })() :
+                     nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
+                   return name ? name.charAt(0) : ''
+                 })()}
               </span>
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium dual-text truncate">
+                <span className={`text-sm font-medium truncate ${
+                  (post as any).is_announcement 
+                    ? 'text-rose-700 dark:text-rose-400' 
+                    : (post as any).is_advertisement
+                    ? 'text-blue-700 dark:text-blue-400'
+                    : 'dual-text'
+                }`}>
                   {(() => {
                     const nameField = String((post as any).school_name || '').trim()
                     const obj = (post as any).school as any
@@ -81,7 +118,8 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                     const sidRaw = (post as any).school_id
                     const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
                     const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
-                    const name = nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
+                    const name = (post as any).is_advertisement ? '廣告' : 
+                      nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
                     return name
                   })()}
                 </span>
@@ -115,21 +153,67 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
 
         {/* 媒體預覽 - 響應式網格 */}
         {post.cover_path && (
-          <div className="mb-3 rounded-xl overflow-hidden">
-            <img 
-              src={post.cover_path.startsWith('public/') 
-                ? `https://cdn.serelix.xyz/${post.cover_path.replace(/^public\//, '')}`
-                : post.cover_path.startsWith('media/')
-                  ? `https://cdn.serelix.xyz/${post.cover_path}`
-                  : post.cover_path
+          <div className="mb-3 rounded-xl overflow-hidden relative">
+            {/* 判斷是否為影片 */}
+            {(() => {
+              const isVideo = /\.(mp4|webm|mov)$/i.test(post.cover_path || '') || 
+                              (post.media_kind && post.media_kind === 'video')
+              
+              if (isVideo) {
+                return (
+                  <div className="w-full h-48 bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center relative group">
+                    <video 
+                      src={post.cover_path.startsWith('public/') 
+                        ? `https://cdn.serelix.xyz/${post.cover_path.replace(/^public\//, '')}`
+                        : post.cover_path.startsWith('media/')
+                          ? `https://cdn.serelix.xyz/${post.cover_path}`
+                          : post.cover_path
+                      }
+                      className="w-full h-full object-cover"
+                      preload="metadata"
+                      muted
+                    />
+                    {/* 播放圖標覆蓋層 */}
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                    </div>
+                    {/* 影片標識 */}
+                    <div className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded-md bg-red-600/90 text-white flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
+                      影片
+                    </div>
+                  </div>
+                )
+              } else {
+                return (
+                  <img 
+                    src={post.cover_path.startsWith('public/') 
+                      ? `https://cdn.serelix.xyz/${post.cover_path.replace(/^public\//, '')}`
+                      : post.cover_path.startsWith('media/')
+                        ? `https://cdn.serelix.xyz/${post.cover_path}`
+                        : post.cover_path
+                    }
+                    alt="貼文圖片"
+                    className="w-full h-48 object-cover"
+                    loading="lazy"
+                  />
+                )
               }
-              alt="貼文圖片"
-              className="w-full h-48 object-cover"
-              loading="lazy"
-            />
+            })()}
+            
             {post.media_count && post.media_count > 1 && (
               <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full">
-                {post.media_count} 張圖片
+                {(() => {
+                  const isVideo = /\.(mp4|webm|mov)$/i.test(post.cover_path || '') || 
+                                  (post.media_kind && post.media_kind === 'video')
+                  return isVideo ? `${post.media_count} 個檔案` : `${post.media_count} 張圖片`
+                })()}
               </div>
             )}
           </div>
@@ -147,43 +231,33 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                 {post.reaction_counts?.like || 0}
               </span>
             </button>
-            
-            <Link 
-              to={`/posts/${post.id}#comments`}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full text-muted hover:text-blue-500 hover:bg-blue-500/10 transition-all duration-200 mobile-touch-target active:scale-95"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                {post.comment_count || 0}
-              </span>
-            </Link>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={copyLink}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all ${
-                copiedLink ? 'bg-primary text-white shadow-sm' : 'bg-surface-hover hover:bg-surface-active text-muted hover:text-fg'
-              }`}
-              title="複製連結"
-            >
-              {copiedLink ? (
-                <Check className="w-4 h-4" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-              <span>{copiedLink ? '已複製' : '複製連結'}</span>
-            </button>
-
+          <div className="flex items-center gap-2 pr-1">
             <button
               onClick={() => setShowActions(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface-hover hover:bg-surface-active text-muted hover:text-fg transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface-hover hover:bg-surface-active text-muted hover:text-fg transition-all mr-1"
               title="更多操作"
             >
               <MoreHorizontal className="w-4 h-4" />
               <span>更多</span>
             </button>
           </div>
+        </div>
+
+
+
+        {/* 留言按鈕 */}
+        <div className="flex items-center justify-start pt-2">
+          <Link 
+            to={`/posts/${post.id}#comments`}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full text-muted hover:text-blue-500 hover:bg-blue-500/10 transition-all duration-200 mobile-touch-target active:scale-95"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              {post.comment_count || 0}
+            </span>
+          </Link>
         </div>
       </article>
 
@@ -207,22 +281,25 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
               <div className="px-4 pb-4 space-y-2">
                 <button
                   onClick={() => {
-                    onShare?.(post.id)
+                    const reason = prompt('請輸入刪文理由：')
+                    if (reason && reason.trim()) {
+                      handleDeleteRequest(post.id, reason.trim())
+                    }
                     setShowActions(false)
                   }}
                   className="w-full flex items-center gap-4 p-4 rounded-xl
                              bg-surface hover:bg-surface-hover border border-border
                              text-fg transition-all duration-200 mobile-touch-large"
                 >
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                    <Share className="w-5 h-5 text-primary" />
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                    <Trash2 className="w-5 h-5 text-red-500" />
                   </div>
                   <div className="text-left">
-                    <div className="font-medium">分享貼文</div>
-                    <div className="text-xs text-muted">透過系統分享功能</div>
+                    <div className="font-medium">刪文請求</div>
+                    <div className="text-xs text-muted">申請刪除此貼文</div>
                   </div>
                 </button>
-                
+
                 <button
                   onClick={() => {
                     copyLink()
@@ -236,7 +313,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                     <Copy className="w-5 h-5 text-primary" />
                   </div>
                   <div className="text-left">
-                    <div className="font-medium">複製連結</div>
+                    <div className="font-medium">貼文連結</div>
                     <div className="text-xs text-muted">將連結複製到剪貼簿</div>
                   </div>
                 </button>

@@ -66,7 +66,7 @@ export function useBadges(opts: UseBadgesOptions = {}) {
     try {
       s = getSocket()
       const onUpdate = (payload: any) => {
-        // Support two payload shapes:
+        // 支援功能已移除
         // 1) { path: string, count: number }
         // 2) { counts: Record<string, number> }
         if (payload && typeof payload === 'object') {

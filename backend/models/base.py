@@ -10,6 +10,7 @@ from utils.db import Base
 if TYPE_CHECKING:
     from .media import Media
     from .comments import Comment, PostReaction
+    from .support import SupportTicket, SupportMessage, SupportEvent, TicketWatcher
 
 class UserRole(str, enum.Enum):
     user = "user"                    # 一般用戶
@@ -18,6 +19,7 @@ class UserRole(str, enum.Enum):
     campus_admin = "campus_admin"      # 校內板主
     cross_admin = "cross_admin"        # 跨校板主
     dev_admin = "dev_admin"            # 開發人員
+    commercial = "commercial"          # 廣告專用帳號（統一為 commercial）
 
 class User(Base):
     __tablename__ = "users"
@@ -29,6 +31,10 @@ class User(Base):
     school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     avatar_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    
+    # 會員相關欄位
+    is_premium: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    premium_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 反向關係
     posts: Mapped[list["Post"]] = relationship("Post", foreign_keys="Post.author_id", back_populates="author")
@@ -39,14 +45,12 @@ class User(Base):
     deleted_media: Mapped[list["Media"]] = relationship("Media", foreign_keys="Media.deleted_by")
     reviewed_delete_requests: Mapped[list["DeleteRequest"]] = relationship("DeleteRequest", foreign_keys="DeleteRequest.reviewed_by", back_populates="reviewed_by_user")
     
-    # 工單系統關聯
-    submitted_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.submitter_id", back_populates="submitter")
+    # 支援工單系統關聯
+    submitted_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.user_id", back_populates="user")
     assigned_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.assigned_to", back_populates="assigned_user")
-    ticket_responses: Mapped[list["TicketResponse"]] = relationship("TicketResponse", back_populates="author")
-    identity_codes: Mapped[list["UserIdentityCode"]] = relationship("UserIdentityCode", back_populates="user")
-
-
-
+    support_messages: Mapped[list["SupportMessage"]] = relationship("SupportMessage", back_populates="author_user")
+    support_events: Mapped[list["SupportEvent"]] = relationship("SupportEvent", back_populates="actor")
+    watched_tickets: Mapped[list["TicketWatcher"]] = relationship("TicketWatcher", back_populates="user")
 class Post(Base):
     __tablename__ = "posts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -66,6 +70,18 @@ class Post(Base):
     delete_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     delete_request_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # 置頂相關欄位
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pinned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    
+    # 廣告貼文標記 (school_id=null 且作者具廣告權限時標記為廣告)
+    is_advertisement: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # 公告貼文標記
+    is_announcement: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    announcement_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # platform, cross, school
+
     delete_requests: Mapped[list["DeleteRequest"]] = relationship(
         back_populates="post", cascade="all, delete-orphan"
     )
@@ -73,12 +89,12 @@ class Post(Base):
     comments: Mapped[list["Comment"]] = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
     reactions: Mapped[list["PostReaction"]] = relationship("PostReaction", back_populates="post", cascade="all, delete-orphan")
     
-    # Instagram 關聯
-    instagram_posts: Mapped[list["InstagramPost"]] = relationship("InstagramPost", back_populates="post", cascade="all, delete-orphan")
+    # Instagram 關聯 (已移除，因為 models.instagram 不存在)
     
     # 明確指定外鍵關係
     author: Mapped["User"] = relationship("User", foreign_keys=[author_id], back_populates="posts")
     deleted_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[deleted_by], back_populates="deleted_posts")
+    pinned_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[pinned_by])
 
 class DeleteRequest(Base):
     __tablename__ = "delete_requests"

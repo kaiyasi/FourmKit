@@ -6,7 +6,6 @@ from utils.fsops import UPLOAD_ROOT
 from pathlib import Path
 import os
 from typing import Tuple
-from sqlalchemy.orm import Session
 from utils.db import get_session
 from models import User, School
 

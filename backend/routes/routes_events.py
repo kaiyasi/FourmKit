@@ -6,9 +6,8 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.authz import require_role
 from utils.db import get_session
-from models import SystemEvent, NotificationPreference, User
+from models import SystemEvent, User
 from services.event_service import EventService
-from typing import Dict, Any
 
 bp = Blueprint("events", __name__, url_prefix="/api/events")
 
@@ -215,7 +214,7 @@ def _get_category_display_name(category: str) -> str:
         "school": "學校管理",
         "system": "系統管理",
         "security": "安全事件",
-        "support": "支援服務",
+        # 支援功能已移除
         "moderation": "審核管理"
     }
     return names.get(category, category.title())
@@ -246,7 +245,9 @@ def get_notifications():
                 limit=10,
                 school_id=school_id,
                 important_only=True,
-                unread_only=True
+                unread_only=True,
+                current_user_id=current_user.id,
+                current_user_role=current_user.role
             )
             
             # 獲取最近的一般事件（未讀）
@@ -254,14 +255,18 @@ def get_notifications():
                 session=s,
                 limit=20,
                 school_id=school_id,
-                unread_only=True
+                unread_only=True,
+                current_user_id=current_user.id,
+                current_user_role=current_user.role
             )
             
             # 獲取統計數據
             stats = EventService.get_event_statistics(
                 session=s,
                 days=1,  # 今日統計
-                school_id=school_id
+                school_id=school_id,
+                current_user_id=current_user.id,
+                current_user_role=current_user.role
             )
             
             # 處理敏感信息
@@ -293,43 +298,3 @@ def get_notifications():
         return jsonify({"ok": False, "error": f"獲取通知失敗: {str(e)}"}), 500
 
 
-@bp.post("/test-event")
-@jwt_required()
-@require_role("dev_admin")
-def create_test_event():
-    """創建測試事件（僅開發人員）"""
-    try:
-        data = request.get_json() or {}
-        event_type = data.get("event_type", "system.test")
-        title = data.get("title", "測試事件")
-        description = data.get("description", "這是一個測試事件")
-        severity = data.get("severity", "low")
-        
-        user_id = get_jwt_identity()
-        
-        with get_session() as s:
-            user = s.get(User, user_id)
-            
-            # 創建測試事件
-            event = EventService.log_event(
-                session=s,
-                event_type=event_type,
-                title=title,
-                description=description,
-                severity=severity,
-                actor_id=user.id,
-                actor_name=user.username,
-                actor_role=user.role,
-                is_important=severity in ["high", "critical"],
-                send_webhook=True
-            )
-            
-            s.commit()
-            
-            return jsonify({
-                "ok": True,
-                "event": event.to_dict()
-            })
-    
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"創建測試事件失敗: {str(e)}"}), 500

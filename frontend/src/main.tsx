@@ -10,7 +10,7 @@ import AuthPage from './pages/AuthPage'
 import ModePage from './pages/ModePage'
 import SettingsPage from './pages/SettingsPage'
 import BoardsPage from './pages/BoardsPage'
-import GeneralAdminPage from './pages/GeneralAdminPage'
+import ModerationPage from './pages/admin/ModerationPage'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminCommentsMonitorPage from './pages/AdminCommentsMonitorPage'
 import MyViolationsPage from './pages/MyViolationsPage'
@@ -19,11 +19,15 @@ import AdminSchoolsPage from './pages/admin/SchoolsPage'
 import AdminIntegrationsPage from './pages/admin/IntegrationsPage'
 import AdminPagesEditor from './pages/admin/PagesEditor'
 import AdminChatPage from './pages/admin/ChatPage'
+import CreateChatRoomPage from './pages/admin/CreateChatRoomPage'
 import AdminEventsPage from './pages/admin/EventsPage'
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage'
-import InstagramPage from './pages/admin/InstagramPage'
+import AdminSupportPage from './pages/admin/AdminSupportPage'
+import PlatformStatusPage from './pages/admin/PlatformStatusPage'
+import MemberManagementPage from './pages/admin/MemberManagementPage'
 import SupportPage from './pages/SupportPage'
-import AdminSupportPage from './pages/AdminSupportPage'
+import MobileSupportPage from './pages/MobileSupportPage'
+import TicketTrackPage from './pages/TicketTrackPage'
 import AboutPage from './pages/AboutPage'
 import RulesPage from './pages/RulesPage'
 import Forbidden403 from './pages/Forbidden403'
@@ -60,7 +64,6 @@ const router = createBrowserRouter([
     { path: "/boards", element: <BoardsPage />, errorElement: <RouteError /> },
     { path: "/about", element: <AboutPage />, errorElement: <RouteError /> },
     { path: "/rules", element: <RulesPage />, errorElement: <RouteError /> },
-    { path: "/support", element: <SupportPage />, errorElement: <RouteError /> },
     { path: "/posts/:id", element: <PostDetailPage />, errorElement: <RouteError /> },
     { path: "/theme-designer", element: <ThemeDesignerPage />, errorElement: <RouteError /> },
 	{ path: "/403", element: <Forbidden403 />, errorElement: <RouteError /> },
@@ -98,7 +101,7 @@ const router = createBrowserRouter([
         path: "/admin/moderation",
         element: (
             <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator']}>
-                <GeneralAdminPage />
+                <ModerationPage />
             </RequireRoles>
         ),
         errorElement: <RouteError />,
@@ -145,15 +148,6 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
-        path: "/admin/instagram",
-        element: (
-            <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
-                <InstagramPage />
-            </RequireRoles>
-        ),
-        errorElement: <RouteError />,
-    },
-    {
         path: "/admin/pages",
         element: (
             <RequireRoles allow={['dev_admin','cross_admin','campus_admin']}>
@@ -171,15 +165,42 @@ const router = createBrowserRouter([
          ),
          errorElement: <RouteError />,
      },
+     {
+         path: "/admin/chat/create",
+         element: (
+             <RequireRoles allow={['dev_admin','campus_admin']}>
+                 <CreateChatRoomPage />
+             </RequireRoles>
+         ),
+         errorElement: <RouteError />,
+     },
     {
         path: "/admin/events",
         element: (
-            <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator']}>
+            <RequireRoles allow={['dev_admin']}>
                 <AdminEventsPage />
             </RequireRoles>
         ),
         errorElement: <RouteError />,
     },
+            {
+            path: "/admin/platform",
+            element: (
+                <RequireRoles allow={['dev_admin']}>
+                    <PlatformStatusPage />
+                </RequireRoles>
+            ),
+            errorElement: <RouteError />,
+        },
+        {
+            path: "/admin/members",
+            element: (
+                <RequireRoles allow={['dev_admin']}>
+                    <MemberManagementPage />
+                </RequireRoles>
+            ),
+            errorElement: <RouteError />,
+        },
     {
         path: "/admin/announcements",
         element: (
@@ -190,9 +211,34 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
+        path: "/support",
+        element: <SupportPage />,
+        errorElement: <RouteError />,
+    },
+    {
+        path: "/support/track",
+        element: <TicketTrackPage />,
+        errorElement: <RouteError />,
+    },
+    {
+        path: "/support/ticket/:id",
+        element: <TicketTrackPage />,
+        errorElement: <RouteError />,
+    },
+    {
+        path: "/mobile-support",
+        element: <MobileSupportPage />,
+        errorElement: <RouteError />,
+    },
+    {
+        path: "/ticket-track",
+        element: <TicketTrackPage />,
+        errorElement: <RouteError />,
+    },
+    {
         path: "/admin/support",
         element: (
-            <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
+            <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator']}>
                 <AdminSupportPage />
             </RequireRoles>
         ),

@@ -87,7 +87,7 @@ export default function DomainRestrictionPage({
           <div className="space-y-3">
             <button
               onClick={onContactAdmin}
-              className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary-hover flex items-center justify-center gap-2"
+              className="w-full px-4 py-3 bg-blue-600 dark:bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-700 dark:hover:bg-blue-600 flex items-center justify-center gap-2"
             >
               <Mail className="w-4 h-4" />
               {detectedSuffix ? `聯絡管理員（判定尾綴：${detectedSuffix}）` : '聯絡管理員'}

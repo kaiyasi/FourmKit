@@ -1,7 +1,7 @@
 from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from typing import Any
-from utils.ratelimit import unblock_ip, get_client_ip, is_ip_blocked
+from utils.ratelimit import unblock_ip, get_client_ip
 from utils.ratelimit import _redis, _redis_ok  # type: ignore
 from utils.ticket import new_ticket_id  # reuse ticket generator (avoids circular import)
 import os, json, time

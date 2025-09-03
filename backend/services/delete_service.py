@@ -6,8 +6,8 @@
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
-from models import Post, DeleteRequest, User, Media, Comment, ModerationLog
+from sqlalchemy import and_
+from models import Post, DeleteRequest, User, Media, Comment
 from utils.ratelimit import get_client_ip
 import os
 from pathlib import Path
@@ -42,6 +42,10 @@ class DeleteService:
             
             if not post:
                 return {"success": False, "error": "貼文不存在或已被刪除"}
+            
+            # 檢查是否為廣告貼文，廣告貼文不可申請刪除
+            if post.is_advertisement:
+                return {"success": False, "error": "廣告貼文不可申請刪除"}
             
             # 檢查是否已有待審核的刪文請求
             existing_request = s.query(DeleteRequest).filter(
@@ -116,6 +120,11 @@ class DeleteService:
             
             if not post:
                 return {"success": False, "error": "貼文不存在或已被刪除"}
+            
+            # 檢查權限：公告只能由 dev_admin 審理
+            moderator = s.query(User).filter(User.id == moderator_id).first()
+            if post.is_announcement and moderator and moderator.role != 'dev_admin':
+                return {"success": False, "error": "公告只能由系統管理員審理"}
             
             # 開始事務處理
             # 1. 更新刪文請求狀態
@@ -209,6 +218,14 @@ class DeleteService:
             
             if not delete_request:
                 return {"success": False, "error": "刪文請求不存在或已被處理"}
+            
+            # 查找貼文以檢查權限
+            post = s.query(Post).filter(Post.id == delete_request.post_id).first()
+            if post:
+                # 檢查權限：公告只能由 dev_admin 審理
+                moderator = s.query(User).filter(User.id == moderator_id).first()
+                if post.is_announcement and moderator and moderator.role != 'dev_admin':
+                    return {"success": False, "error": "公告只能由系統管理員審理"}
             
             # 更新刪文請求狀態
             delete_request.status = "rejected"

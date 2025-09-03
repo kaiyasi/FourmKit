@@ -13,28 +13,40 @@ export default {
           DEFAULT: 'var(--primary)', 
           600: 'var(--primary-600)', 
           100: 'var(--primary-100)',
-          hover: 'var(--primary-hover)'
+          hover: 'var(--primary-hover)',
+          foreground: 'var(--primary-foreground)'
         },
         success: { 
           DEFAULT: 'var(--success)', 
           hover: 'var(--success-hover)',
           bg: 'var(--success-bg)',
           border: 'var(--success-border)',
-          text: 'var(--success-text)'
+          text: 'var(--success-text)',
+          foreground: 'var(--success-foreground)'
         },
         warning: { 
           DEFAULT: 'var(--warning)', 
           hover: 'var(--warning-hover)',
           bg: 'var(--warning-bg)',
           border: 'var(--warning-border)',
-          text: 'var(--warning-text)'
+          text: 'var(--warning-text)',
+          foreground: 'var(--warning-foreground)'
         },
         danger: { 
           DEFAULT: 'var(--danger)', 
           hover: 'var(--danger-hover)',
           bg: 'var(--danger-bg)',
           border: 'var(--danger-border)',
-          text: 'var(--danger-text)'
+          text: 'var(--danger-text)',
+          foreground: 'var(--danger-foreground)'
+        },
+        destructive: { 
+          DEFAULT: 'var(--danger)', 
+          hover: 'var(--danger-hover)',
+          bg: 'var(--danger-bg)',
+          border: 'var(--danger-border)',
+          text: 'var(--danger-text)',
+          foreground: 'var(--danger-foreground)'
         },
         info: { 
           DEFAULT: 'var(--info)', 

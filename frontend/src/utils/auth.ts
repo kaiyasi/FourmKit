@@ -197,6 +197,13 @@ export function canAccessPageContent(): boolean {
   return ["dev_admin", "campus_admin", "cross_admin"].includes(role);
 }
 
+export function canAccessAnnouncements(): boolean {
+  const role = getRole();
+  // campus_admin, cross_admin, dev_admin 可以進入公告系統
+  // campus_moderator, cross_moderator 不能進入
+  return ["dev_admin", "campus_admin", "cross_admin"].includes(role);
+}
+
 export function canManageCrossSchool(): boolean {
   const role = getRole();
   return role === "dev_admin" || role === "cross_admin";
@@ -229,6 +236,11 @@ export function getUserId(): string | null {
     const sub = payload?.sub
     return (typeof sub === 'string' || typeof sub === 'number') ? String(sub) : null
   } catch { return null }
+}
+
+export function canPublishAnnouncement(): boolean {
+  const role = getRole();
+  return ["dev_admin", "campus_admin", "cross_admin"].includes(role);
 }
 
 export function getRoleDisplayName(role: Role): string {

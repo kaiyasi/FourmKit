@@ -1,4 +1,5 @@
-import { AlertTriangle, Ban, LockKeyhole, SearchX, ShieldAlert, Timer, WifiOff, ServerCrash, Home } from 'lucide-react'
+import { AlertTriangle, Ban, LockKeyhole, SearchX, ShieldAlert, Timer, WifiOff, ServerCrash, Home, LifeBuoy, RefreshCw, ArrowLeft } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 type Props = {
   status?: number
@@ -7,27 +8,103 @@ type Props = {
   hint?: string
   actionHref?: string
   actionText?: string
+  showSupport?: boolean
+  showRetry?: boolean
+  onRetry?: () => void
 }
 
-export default function ErrorPage({ status, title, message, hint, actionHref = '/', actionText = '回到首頁' }: Props) {
+export default function ErrorPage({ 
+  status, 
+  title, 
+  message, 
+  hint, 
+  actionHref = '/', 
+  actionText = '回到首頁',
+  showSupport = true,
+  showRetry = false,
+  onRetry
+}: Props) {
   const variant = pickVariant(status)
   const Icon = variant.icon
+  
+  // 構建支援頁面 URL，預填錯誤資訊
+  const supportUrl = `/support?prefill=${encodeURIComponent(JSON.stringify({
+    type: 'system_error',
+    title: `系統錯誤 ${status || '未知'}`,
+    description: message || '發生未知錯誤',
+    error_code: status,
+    error_details: hint
+  }))}`
+  
   return (
-    <div className="min-h-screen grid place-items-center p-6">
-      <div className="max-w-lg w-full rounded-2xl border border-border bg-surface p-6 shadow-soft text-center">
-        <div className={`mx-auto w-14 h-14 rounded-2xl ${variant.badgeBg} flex items-center justify-center mb-3`}>
-          <Icon className={`w-7 h-7 ${variant.badgeFg}`} />
+    <div className="min-h-screen grid place-items-center p-6 bg-gradient-to-br from-surface via-surface to-surface/50">
+      <div className="max-w-lg w-full rounded-2xl border border-border bg-surface/80 backdrop-blur-sm p-8 shadow-soft text-center">
+        {/* 錯誤圖標 */}
+        <div className={`mx-auto w-16 h-16 rounded-2xl ${variant.badgeBg} flex items-center justify-center mb-4 shadow-lg`}>
+          <Icon className={`w-8 h-8 ${variant.badgeFg}`} />
         </div>
-        <div className="text-sm text-muted mb-1">{status ? `錯誤代碼 ${status}` : '錯誤'}</div>
-        <h1 className="text-2xl font-bold dual-text mb-1">{title || variant.title}</h1>
-        {message && <p className="text-sm text-muted mb-2 whitespace-pre-wrap break-words">{message}</p>}
-        {hint && <p className="text-xs text-muted mb-4 whitespace-pre-wrap break-words">{hint}</p>}
-        <a 
-          href={actionHref} 
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border hover:bg-surface/80 text-sm"
-        >
-          <Home className="w-4 h-4" /> {actionText}
-        </a>
+        
+        {/* 錯誤代碼 */}
+        {status && (
+          <div className="text-sm text-muted mb-2 font-mono bg-muted/30 px-3 py-1 rounded-lg inline-block">
+            錯誤代碼 {status}
+          </div>
+        )}
+        
+        {/* 標題 */}
+        <h1 className="text-2xl font-bold dual-text mb-3">{title || variant.title}</h1>
+        
+        {/* 錯誤訊息 */}
+        {message && (
+          <div className="text-sm text-muted mb-4 p-3 bg-muted/20 rounded-lg border border-border/50">
+            <p className="whitespace-pre-wrap break-words">{message}</p>
+          </div>
+        )}
+        
+        {/* 提示資訊 */}
+        {hint && (
+          <div className="text-xs text-muted mb-6 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+            <p className="whitespace-pre-wrap break-words">{hint}</p>
+          </div>
+        )}
+        
+        {/* 操作按鈕 */}
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          {/* 主要操作 */}
+          <Link 
+            to={actionHref} 
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border hover:bg-surface/80 text-sm transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> {actionText}
+          </Link>
+          
+          {/* 重試按鈕 */}
+          {showRetry && onRetry && (
+            <button
+              onClick={onRetry}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border hover:bg-surface/80 text-sm transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" /> 重試
+            </button>
+          )}
+          
+          {/* 支援按鈕 */}
+          {showSupport && (
+            <Link 
+              to={supportUrl}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary/90 text-sm font-medium transition-colors shadow-sm"
+            >
+              <LifeBuoy className="w-4 h-4" /> 聯繫管理員
+            </Link>
+          )}
+        </div>
+        
+        {/* 額外提示 */}
+        {showSupport && (
+          <p className="text-xs text-muted mt-4">
+            如果問題持續發生，請聯繫系統管理員獲取協助
+          </p>
+        )}
       </div>
     </div>
   )

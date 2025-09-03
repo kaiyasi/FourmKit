@@ -1,6 +1,5 @@
 import io
 import os
-from PIL import Image
 
 
 def _fake_img_bytes():

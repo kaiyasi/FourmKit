@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AuthAPI, ModeAPI } from "@/services/api";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -18,12 +18,25 @@ export default function AuthPage() {
   const canPublicRegister = false; // 強制關閉傳統註冊入口
   const { pathname } = useLocation()
   const [showLoginPw, setShowLoginPw] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
+  const usernameRef = useRef<HTMLInputElement>(null)
 
   // 初始化主題 + 讀取登入模式（用於是否顯示註冊）
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
     html.classList.add('theme-ready')
+    
+    // 檢查是否有記住的登入資訊
+    const rememberedUsername = localStorage.getItem('remembered_username')
+    if (rememberedUsername) {
+      setRememberMe(true)
+      // 預填用戶名
+      if (usernameRef.current) {
+        usernameRef.current.value = rememberedUsername
+      }
+    }
+    
     // Google OAuth 回跳：從 fragment 拿取 token 並存入
     try {
       const h = window.location.hash || ''
@@ -94,11 +107,23 @@ export default function AuthPage() {
       return s || '登入失敗';
     }
     try {
+      const username = String(f.get("username")||"")
+      const password = String(f.get("password")||"")
+      
       const r = await AuthAPI.login({ 
-        username: String(f.get("username")||""), 
-        password: String(f.get("password")||"") 
+        username, 
+        password 
       });
-      login(r.access_token, r.role as any, r.school_id, r.refresh_token, String(f.get("username")||""));
+      
+      // 處理記住我的功能
+      if (rememberMe) {
+        localStorage.setItem('remembered_username', username)
+      } else {
+        localStorage.removeItem('remembered_username')
+      }
+      
+      // 傳入 rememberMe，決定是否將 username 永久寫入 localStorage（否則僅存於 sessionStorage）
+      login(r.access_token, r.role as any, r.school_id, r.refresh_token, username, rememberMe);
       nav("/"); // 登入後回首頁，由 Navbar 顯示後台入口
     } catch (e:any) { 
       setErr(toMessage(e)); 
@@ -110,7 +135,7 @@ export default function AuthPage() {
   // 傳統註冊已移除（統一走 Google OAuth）
 
   return (
-    <div className="min-h-screen grid place-items-center">
+    <div className="min-h-screen grid place-items-center" style={{ paddingTop: 'var(--fk-navbar-offset, 0px)' }}>
       <NavBar pathname={pathname} />
 
       <div className="w-full max-w-md p-6 md:p-8 bg-surface border border-border rounded-2xl shadow-soft backdrop-blur">
@@ -124,7 +149,7 @@ export default function AuthPage() {
           <div className="mb-4 p-3 rounded-lg bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-100 border border-rose-300 dark:border-rose-700">
             {err}
             <div className="mt-2 text-sm">
-              需要協助？<a href="/support" className="underline">留言給管理員</a>
+              需要協助？請聯繫系統管理員
             </div>
           </div>
         )}
@@ -132,7 +157,14 @@ export default function AuthPage() {
         <form onSubmit={onLogin} className="grid gap-4">
           <div className="grid gap-2">
             <label className="text-sm text-muted">帳號/Email</label>
-            <input name="username" placeholder="帳號/Email" className="form-control" autoComplete="username" required />
+            <input 
+              ref={usernameRef}
+              name="username" 
+              placeholder="帳號/Email" 
+              className="form-control" 
+              autoComplete="username" 
+              required 
+            />
           </div>
           <div className="grid gap-2">
             <label className="text-sm text-muted">密碼</label>
@@ -142,6 +174,20 @@ export default function AuthPage() {
                 {showLoginPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
+          </div>
+          
+          {/* 記住我選項 */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="remember-me"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="w-4 h-4 text-primary bg-surface-hover border-border rounded focus:ring-primary focus:ring-2"
+            />
+            <label htmlFor="remember-me" className="text-sm text-muted cursor-pointer">
+              記住我的帳號
+            </label>
           </div>
           <button 
             disabled={loading} 

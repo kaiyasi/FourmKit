@@ -8,7 +8,6 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
 )
-from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from utils.db import get_session
@@ -443,7 +442,7 @@ def google_callback():
 def google_callback_post():
     body = request.get_json(silent=True) or {}
     code = (body.get('code') or '').strip()
-    state = (body.get('state') or '').strip()  # 預留
+    _ = (body.get('state') or '').strip()  # 預留
 
     if not code:
         return jsonify({"success": False, "error": "缺少授權碼", "errorCode": "E_MISSING_CODE"}), 400
@@ -612,7 +611,59 @@ def validate_domain():
     email = (body.get('email') or '').strip().lower()
     valid = bool(is_valid_email_format(email) and is_allowed_edu_email(email))
     domain = extract_domain(email) if email else ''
-    return jsonify({"valid": valid, "domain": domain})
+    # 嘗試推斷 slug（不依賴外部套件，僅針對 .edu/.edu.tw）
+    slug_guess = None
+    canonical_guess = None
+    city_code = None
+    confidence = 'low'
+    try:
+      host = domain
+      if host.endswith('.edu.tw'):
+          parts = host.split('.')
+          rest = parts[:-2]
+          if len(rest) == 1:
+              # 大學樣式 ncku.edu.tw
+              slug_guess = rest[0]
+              canonical_guess = f"{slug_guess}.edu.tw"
+              confidence = 'medium'
+          elif len(rest) >= 2:
+              # K-12 樣式 <school>.<city>.edu.tw ，移除常見雜訊前綴
+              def strip_prefix(xs):
+                  useless = {'mail','mx','gs','o365','owa','webmail','imap','smtp','student','stud','std','alumni','staff','teacher','teachers'}
+                  ys = [x for x in xs if x]
+                  while ys and ys[0].lower() in useless:
+                      ys.pop(0)
+                  return ys
+              cleaned = strip_prefix(rest)
+              if len(cleaned) >= 2:
+                  slug_guess = cleaned[0]
+                  city_code = cleaned[-1]
+                  canonical_guess = f"{slug_guess}.{city_code}.edu.tw"
+                  confidence = 'high'
+      elif host.endswith('.edu'):
+          parts = host.split('.')
+          rest = parts[:-1]
+          def strip_prefix(xs):
+              useless = {'mail','mx','gs','o365','owa','webmail','imap','smtp','student','stud','std','alumni','staff','teacher','teachers'}
+              ys = [x for x in xs if x]
+              while ys and ys[0].lower() in useless:
+                  ys.pop(0)
+              return ys
+          cleaned = strip_prefix(rest)
+          if cleaned:
+              slug_guess = cleaned[-1]
+              canonical_guess = f"{slug_guess}.edu"
+              confidence = 'medium'
+    except Exception:
+        pass
+    return jsonify({
+        "valid": valid,
+        "domain": domain,
+        "slug_guess": slug_guess,
+        "canonical_guess": canonical_guess,
+        "city_code": city_code,
+        "confidence": confidence,
+    })
 
 @bp.post('/check-username')
 def check_username():

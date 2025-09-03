@@ -5,7 +5,6 @@ import hashlib
 import shutil
 from pathlib import Path
 from typing import Optional
-from werkzeug.utils import secure_filename
 
 # 跨平台的 magic 支援
 try:

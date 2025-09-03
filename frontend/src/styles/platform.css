@@ -1,0 +1,426 @@
+/* 平台特定樣式系統 */
+
+/* ===== 平台檢測變數 ===== */
+:root {
+  /* 平台斷點 */
+  --platform-mobile: 768px;
+  --platform-tablet: 1024px;
+  --platform-desktop: 1025px;
+  
+  /* 平台特定間距 */
+  --mobile-spacing: 16px;
+  --tablet-spacing: 20px;
+  --desktop-spacing: 24px;
+  
+  /* 平台特定圓角 */
+  --mobile-radius: 12px;
+  --tablet-radius: 16px;
+  --desktop-radius: 20px;
+  
+  /* 平台特定陰影 */
+  --mobile-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --tablet-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --desktop-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ===== 手機平台樣式 ===== */
+@media (max-width: 768px) {
+  /* 手機專用容器 */
+  .platform-mobile-container {
+    padding: var(--mobile-spacing);
+    border-radius: var(--mobile-radius);
+    box-shadow: var(--mobile-shadow);
+  }
+  
+  /* 手機專用卡片 */
+  .platform-mobile-card {
+    padding: 16px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* 手機專用按鈕 */
+  .platform-mobile-button {
+    min-height: 48px;
+    padding: 12px 16px;
+    font-size: 16px;
+    border-radius: 12px;
+    touch-action: manipulation;
+  }
+  
+  /* 手機專用輸入框 */
+  .platform-mobile-input {
+    padding: 12px 16px;
+    font-size: 16px;
+    border-radius: 12px;
+    min-height: 48px;
+  }
+  
+  /* 手機專用導航 */
+  .platform-mobile-nav {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  
+  /* 手機專用文字 */
+  .platform-mobile-text-sm {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  
+  .platform-mobile-text-base {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  
+  .platform-mobile-text-lg {
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  
+  /* 手機專用間距 */
+  .platform-mobile-gap-sm {
+    gap: 8px;
+  }
+  
+  .platform-mobile-gap-base {
+    gap: 12px;
+  }
+  
+  .platform-mobile-gap-lg {
+    gap: 16px;
+  }
+  
+  /* 手機專用佈局 */
+  .platform-mobile-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .platform-mobile-flex {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  /* 手機專用模態框 */
+  .platform-mobile-modal {
+    padding: 20px;
+    border-radius: 16px;
+    margin: 16px;
+  }
+  
+  /* 手機專用列表 */
+  .platform-mobile-list {
+    gap: 8px;
+  }
+  
+  .platform-mobile-list-item {
+    padding: 12px;
+    border-radius: 12px;
+  }
+}
+
+/* ===== 平板平台樣式 ===== */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* 平板專用容器 */
+  .platform-tablet-container {
+    padding: var(--tablet-spacing);
+    border-radius: var(--tablet-radius);
+    box-shadow: var(--tablet-shadow);
+  }
+  
+  /* 平板專用卡片 */
+  .platform-tablet-card {
+    padding: 20px;
+    margin-bottom: 16px;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+  
+  /* 平板專用按鈕 */
+  .platform-tablet-button {
+    min-height: 48px;
+    padding: 12px 20px;
+    font-size: 16px;
+    border-radius: 14px;
+  }
+  
+  /* 平板專用輸入框 */
+  .platform-tablet-input {
+    padding: 14px 18px;
+    font-size: 16px;
+    border-radius: 14px;
+    min-height: 48px;
+  }
+  
+  /* 平板專用導航 */
+  .platform-tablet-nav {
+    padding: 16px 20px;
+    gap: 16px;
+  }
+  
+  /* 平板專用文字 */
+  .platform-tablet-text-sm {
+    font-size: 15px;
+    line-height: 1.4;
+  }
+  
+  .platform-tablet-text-base {
+    font-size: 17px;
+    line-height: 1.5;
+  }
+  
+  .platform-tablet-text-lg {
+    font-size: 20px;
+    line-height: 1.4;
+  }
+  
+  /* 平板專用間距 */
+  .platform-tablet-gap-sm {
+    gap: 12px;
+  }
+  
+  .platform-tablet-gap-base {
+    gap: 16px;
+  }
+  
+  .platform-tablet-gap-lg {
+    gap: 20px;
+  }
+  
+  /* 平板專用佈局 */
+  .platform-tablet-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  
+  .platform-tablet-flex {
+    flex-direction: row;
+    gap: 16px;
+  }
+  
+  /* 平板專用模態框 */
+  .platform-tablet-modal {
+    padding: 24px;
+    border-radius: 20px;
+    margin: 20px;
+  }
+  
+  /* 平板專用列表 */
+  .platform-tablet-list {
+    gap: 12px;
+  }
+  
+  .platform-tablet-list-item {
+    padding: 16px;
+    border-radius: 16px;
+  }
+}
+
+/* ===== 桌面平台樣式 ===== */
+@media (min-width: 1025px) {
+  /* 桌面專用容器 */
+  .platform-desktop-container {
+    padding: var(--desktop-spacing);
+    border-radius: var(--desktop-radius);
+    box-shadow: var(--desktop-shadow);
+  }
+  
+  /* 桌面專用卡片 */
+  .platform-desktop-card {
+    padding: 24px;
+    margin-bottom: 20px;
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  /* 桌面專用按鈕 */
+  .platform-desktop-button {
+    min-height: 44px;
+    padding: 10px 18px;
+    font-size: 14px;
+    border-radius: 12px;
+  }
+  
+  /* 桌面專用輸入框 */
+  .platform-desktop-input {
+    padding: 10px 16px;
+    font-size: 14px;
+    border-radius: 12px;
+    min-height: 44px;
+  }
+  
+  /* 桌面專用導航 */
+  .platform-desktop-nav {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  
+  /* 桌面專用文字 */
+  .platform-desktop-text-sm {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  
+  .platform-desktop-text-base {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  
+  .platform-desktop-text-lg {
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  
+  /* 桌面專用間距 */
+  .platform-desktop-gap-sm {
+    gap: 8px;
+  }
+  
+  .platform-desktop-gap-base {
+    gap: 12px;
+  }
+  
+  .platform-desktop-gap-lg {
+    gap: 16px;
+  }
+  
+  /* 桌面專用佈局 */
+  .platform-desktop-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+  }
+  
+  .platform-desktop-flex {
+    flex-direction: row;
+    gap: 20px;
+  }
+  
+  /* 桌面專用模態框 */
+  .platform-desktop-modal {
+    padding: 32px;
+    border-radius: 24px;
+    margin: 24px;
+  }
+  
+  /* 桌面專用列表 */
+  .platform-desktop-list {
+    gap: 16px;
+  }
+  
+  .platform-desktop-list-item {
+    padding: 20px;
+    border-radius: 20px;
+  }
+}
+
+/* ===== 平台通用樣式 ===== */
+.platform-container {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-card {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-button {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-input {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-nav {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-text-sm {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-text-base {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-text-lg {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-gap-sm {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-gap-base {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-gap-lg {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-grid {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-flex {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-modal {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-list {
+  /* 根據平台自動應用樣式 */
+}
+
+.platform-list-item {
+  /* 根據平台自動應用樣式 */
+}
+
+/* ===== 響應式工具類 ===== */
+.platform-responsive {
+  /* 響應式容器 */
+}
+
+.platform-adaptive {
+  /* 自適應佈局 */
+}
+
+.platform-fluid {
+  /* 流體佈局 */
+}
+
+/* ===== 平台特定動畫 ===== */
+@media (max-width: 768px) {
+  .platform-mobile-animate {
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .platform-mobile-animate:active {
+    transform: scale(0.98);
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .platform-tablet-animate {
+    transition: all 0.3s ease-in-out;
+  }
+  
+  .platform-tablet-animate:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (min-width: 1025px) {
+  .platform-desktop-animate {
+    transition: all 0.3s ease-in-out;
+  }
+  
+  .platform-desktop-animate:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+}

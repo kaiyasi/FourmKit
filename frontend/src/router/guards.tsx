@@ -11,6 +11,6 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 export function RequireRoles({ children, allow }: { children: React.ReactNode; allow: Role[] }) {
   const { isLoggedIn, role } = useAuth();
   if (!isLoggedIn) return <Navigate to="/auth" replace />;
-  if (!allow.includes(role as Role)) return <Navigate to="/403" replace />;
+  if (!role || !allow.includes(role as Role)) return <Navigate to="/403" replace />;
   return <>{children}</>;
 }

@@ -6,7 +6,14 @@ interface AuthContextType {
   role: Role
   schoolId: number | null
   username: string | null
-  login: (token: string, role: Role, schoolId: number | null, refreshToken?: string, username?: string) => void
+  login: (
+    token: string,
+    role: Role,
+    schoolId: number | null,
+    refreshToken?: string,
+    username?: string,
+    rememberUsername?: boolean
+  ) => void
   logout: () => void
 }
 
@@ -17,13 +24,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoggedIn: isLoggedIn(),
     role: getRole(),
     schoolId: getSchoolId(),
-    username: localStorage.getItem('username')
+    // 先讀 localStorage（使用者有勾記住），否則退回 sessionStorage（僅本分頁／本次瀏覽）
+    username: localStorage.getItem('username') || sessionStorage.getItem('username')
   })
 
-  const login = (token: string, role: Role, schoolId: number | null, refreshToken?: string, username?: string) => {
+  const login = (
+    token: string,
+    role: Role,
+    schoolId: number | null,
+    refreshToken?: string,
+    username?: string,
+    rememberUsername?: boolean
+  ) => {
     saveSession(token, role, schoolId, refreshToken)
+    // 僅在勾選「記住我的帳號」時，才寫入 localStorage；否則寫入 sessionStorage
     if (username) {
-      localStorage.setItem('username', username)
+      try {
+        if (rememberUsername) {
+          sessionStorage.removeItem('username')
+          localStorage.setItem('username', username)
+        } else {
+          localStorage.removeItem('username')
+          sessionStorage.setItem('username', username)
+        }
+      } catch {}
     }
     setAuthState({
       isLoggedIn: true,
@@ -35,7 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearSession()
-    localStorage.removeItem('username')
+    // 清除兩邊的暱稱儲存，避免殘留
+    try { localStorage.removeItem('username') } catch {}
+    try { sessionStorage.removeItem('username') } catch {}
     setAuthState({
       isLoggedIn: false,
       role: 'guest',
@@ -52,7 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isLoggedIn: isLoggedIn(),
           role: getRole(),
           schoolId: getSchoolId(),
-          username: localStorage.getItem('username')
+          // 優先 localStorage，其次 sessionStorage
+          username: localStorage.getItem('username') || sessionStorage.getItem('username')
         })
       }
     }

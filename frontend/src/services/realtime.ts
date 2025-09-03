@@ -12,7 +12,7 @@ let commentListenerInstalled = false
 let announceListenerInstalled = false
 let moderationListenerInstalled = false
 let deleteReqListenerInstalled = false
-let supportListenerInstalled = false
+// 支援功能已移除
 let reactionListenerInstalled = false
 let postEventCount = 0
 
@@ -156,10 +156,4 @@ export function ensureDeleteRequestListeners(onCreated: (payload:any)=>void, onA
   deleteReqListenerInstalled = true
 }
 
-export function ensureSupportListeners(onReported: (payload:any)=>void) {
-  if (supportListenerInstalled) return
-  const s = getSocket()
-  s.off('support.reported')
-  s.on('support.reported', onReported)
-  supportListenerInstalled = true
-}
+// 支援功能已移除

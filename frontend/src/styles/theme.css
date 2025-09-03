@@ -30,6 +30,7 @@
   --danger-bg: #F7EAEA;
   --danger-border: #E9C5C5;
   --danger-text: #7F3E3E;
+  --danger-foreground: #FFFFFF;
   
   /* 成功色彩 */
   --success: #059669; 
@@ -37,6 +38,7 @@
   --success-bg: #F0FDF4;
   --success-border: #BBF7D0;
   --success-text: #166534;
+  --success-foreground: #FFFFFF;
   
   /* 警告色彩 */
   --warning: #D97706; 
@@ -44,6 +46,7 @@
   --warning-bg: #FFFBEB;
   --warning-border: #FED7AA;
   --warning-text: #92400E;
+  --warning-foreground: #FFFFFF;
   
   /* 信息色彩 */
   --info: #2563EB; 
@@ -104,6 +107,7 @@
   --success-bg: #F0FDF4;
   --success-border: #BBF7D0;
   --success-text: #166534;
+  --success-foreground: #FFFFFF;
   
   /* 警告色彩 */
   --warning: #D97706; 
@@ -111,6 +115,7 @@
   --warning-bg: #FFFBEB;
   --warning-border: #FED7AA;
   --warning-text: #92400E;
+  --warning-foreground: #FFFFFF;
   
   /* 信息色彩 */
   --info: #2563EB; 
@@ -171,6 +176,7 @@
   --success-bg: #F0FDF4;
   --success-border: #BBF7D0;
   --success-text: #166534;
+  --success-foreground: #FFFFFF;
   
   /* 警告色彩 */
   --warning: #D97706; 
@@ -178,6 +184,7 @@
   --warning-bg: #FFFBEB;
   --warning-border: #FED7AA;
   --warning-text: #92400E;
+  --warning-foreground: #FFFFFF;
   
   /* 信息色彩 */
   --info: #2563EB; 
@@ -238,6 +245,7 @@
   --success-bg: #F0FDF4;
   --success-border: #BBF7D0;
   --success-text: #166534;
+  --success-foreground: #FFFFFF;
   
   /* 警告色彩 */
   --warning: #D97706; 
@@ -245,6 +253,7 @@
   --warning-bg: #FFFBEB;
   --warning-border: #FED7AA;
   --warning-text: #92400E;
+  --warning-foreground: #FFFFFF;
   
   /* 信息色彩 */
   --info: #2563EB; 
@@ -298,6 +307,7 @@
   --danger-bg: #3A1F1F;
   --danger-border: #6B3A3A;
   --danger-text: #F2CACA;
+  --danger-foreground: #0A0A0A;
   
   /* 成功色彩 */
   --success: #10B981; 
@@ -305,6 +315,7 @@
   --success-bg: #064E3B;
   --success-border: #065F46;
   --success-text: #6EE7B7;
+  --success-foreground: #0A0A0A;
   
   /* 警告色彩 */
   --warning: #F59E0B; 
@@ -312,6 +323,7 @@
   --warning-bg: #451A03;
   --warning-border: #78350F;
   --warning-text: #FCD34D;
+  --warning-foreground: #0A0A0A;
   
   /* 信息色彩 */
   --info: #3B82F6; 

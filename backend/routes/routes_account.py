@@ -2,7 +2,6 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 import hmac, hashlib, base64, os
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from sqlalchemy.orm import Session
 from utils.db import get_session
 from models import User, School
 from PIL import Image
@@ -50,6 +49,8 @@ def get_profile():
             'auth_provider': auth_provider,
             'has_password': bool((u.password_hash or '').strip()),
             'personal_id': personal_id,
+            'is_premium': u.is_premium,
+            'premium_until': u.premium_until.isoformat() if u.premium_until else None,
         })
 
 

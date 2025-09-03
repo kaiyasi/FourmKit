@@ -17,6 +17,7 @@ redis>=5.0
 psutil>=5.9.0
 requests>=2.31.0
 html2text>=2024.2.26
+cryptography>=41.0.0
 
 
 # Using Python standard library urllib for Discord Webhook, no additional dependencies

@@ -11,7 +11,7 @@ export default function DesktopOnly({ children, minWidth = 1024, title = '此功
   if (!isMobile) return children
 
   return (
-    <main className="mx-auto max-w-xl px-4 pt-20 sm:pt-24 md:pt-28 pb-24">
+    <main className="mx-auto max-w-xl px-4 sm:pt-24 md:pt-28 pb-24">
       <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft text-center">
         <h1 className="text-lg font-semibold dual-text mb-2">{title}</h1>
         <p className="text-sm text-muted">{desc}</p>

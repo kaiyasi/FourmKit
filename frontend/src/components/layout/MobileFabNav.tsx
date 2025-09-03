@@ -3,7 +3,6 @@ import { Plus, Home, Newspaper, Info, ScrollText, LogIn, Settings, LayoutDashboa
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { Link } from 'react-router-dom'
 import { getRole, Role } from '@/utils/auth'
-import { useAuth } from '@/contexts/AuthContext'
 
 type Action = { to: string; label: string; icon: any; require?: (role: Role) => boolean }
 

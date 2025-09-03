@@ -1,7 +1,12 @@
-from datetime import datetime, timezone
+from __future__ import annotations
+from datetime import datetime
+from typing import TYPE_CHECKING, List
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, DateTime, func
 from utils.db import Base
+
+if TYPE_CHECKING:
+    from .support import SupportTicket
 
 
 class School(Base):
@@ -15,6 +20,6 @@ class School(Base):
     gmail_domain: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="學校專用 Gmail 網域")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # Instagram 關聯
-    instagram_accounts = relationship("InstagramAccount", back_populates="school", cascade="all, delete-orphan")
-    instagram_templates = relationship("InstagramTemplate", back_populates="school", cascade="all, delete-orphan")
+    # 支援工單關聯
+    support_tickets: Mapped[List["SupportTicket"]] = relationship("SupportTicket", back_populates="school")
+    # Instagram 整合關聯（已移除於 1.x）

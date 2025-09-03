@@ -8,6 +8,7 @@ import { Eye, EyeOff, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-rea
 import { validatePassword, validatePasswordWithConfirmation, getPasswordRequirements } from '@/utils/passwordValidation'
 import { validateUsername } from '@/utils/usernameValidation'
 import { School, CUSTOM_SCHOOL_OPTION, findSchoolById, suggestSchoolFromEmail } from '@/utils/schoolSelection'
+import { detectSchoolFromEmail } from '@/utils/schoolDetection'
 import { NewAuthAPI } from '@/services/authApi'
 
 interface QuickRegistrationFormProps {
@@ -58,6 +59,8 @@ export default function QuickRegistrationForm({
   const [slugReportRequested, setSlugReportRequested] = useState(false)
   const [usernameChecking, setUsernameChecking] = useState(false)
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
+  const [requestingSchool, setRequestingSchool] = useState(false)
+  const [requestSent, setRequestSent] = useState<null | 'ok' | 'fail'>(null)
   
   // 驗證結果
   const passwordValidation = useMemo(() => 
@@ -81,11 +84,16 @@ export default function QuickRegistrationForm({
       try {
         const response = await NewAuthAPI.getSchools()
         setSchools([...response.schools, CUSTOM_SCHOOL_OPTION])
-        // 自動建議學校
-        const suggested = suggestSchoolFromEmail(response.schools, googleEmail)
-        if (suggested) {
-          setSelectedSchoolId(suggested.id)
+        // 自動建議學校：先做網域偵測（slug/city），再回退到簡易匹配
+        const detect = detectSchoolFromEmail(googleEmail)
+        let preselect: School | null = null
+        if (detect.ok && detect.slug) {
+          preselect = response.schools.find(s => s.slug.toLowerCase() === detect.slug!.toLowerCase()) || null
         }
+        if (!preselect) {
+          preselect = suggestSchoolFromEmail(response.schools, googleEmail)
+        }
+        if (preselect) setSelectedSchoolId(preselect.id)
       } catch (error) {
         console.error('Failed to load schools:', error)
       } finally {
@@ -160,6 +168,34 @@ export default function QuickRegistrationForm({
       setTimeout(() => setSlugReportRequested(false), 3000)
     } catch (error) {
       console.error('Failed to report slug error:', error)
+    }
+  }
+
+  // 回報「找不到我的學校」：直接送出新增學校請求
+  const handleRequestNewSchool = async () => {
+    try {
+      setRequestingSchool(true)
+      setRequestSent(null)
+      const payload = {
+        userEmail: googleEmail,
+        schoolName: customSchoolName || undefined,
+        schoolDomain: customSchoolDomain || undefined,
+        additionalInfo: customSchoolInfo || undefined,
+      }
+      const r = await NewAuthAPI.requestSchool(payload)
+      setRequestSent(r.success ? 'ok' : 'fail')
+      if (r.success) {
+        // 清空輸入以避免重複誤送
+        setCustomSchoolName('')
+        setCustomSchoolDomain('')
+        setCustomSchoolInfo('')
+      }
+      setTimeout(()=> setRequestSent(null), 3500)
+    } catch {
+      setRequestSent('fail')
+      setTimeout(()=> setRequestSent(null), 3500)
+    } finally {
+      setRequestingSchool(false)
     }
   }
 
@@ -252,6 +288,20 @@ export default function QuickRegistrationForm({
             <label className="block text-sm font-medium text-fg mb-2">
               學校 *
             </label>
+            {/* 偵測提示 */}
+            {(() => {
+              const d = detectSchoolFromEmail(googleEmail)
+              if (!d.ok) return null
+              return (
+                <div className="mb-2 text-xs text-muted">
+                  偵測到學校代稱：<span className="text-fg font-medium">{d.slug || '未知'}</span>
+                  {d.city_name || d.city_code ? (
+                    <>（{d.city_name || d.city_code}）</>
+                  ) : null}
+                  <span className="ml-1">推斷信心：{d.confidence}</span>
+                </div>
+              )
+            })()}
             {schoolsLoading ? (
               <div className="form-control bg-muted/30">載入中...</div>
             ) : (
@@ -346,6 +396,18 @@ export default function QuickRegistrationForm({
               <p className="text-xs text-amber-600">
                 你可以先完成註冊，我們會通知管理員新增學校
               </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRequestNewSchool}
+                  disabled={requestingSchool}
+                  className="px-3 py-2 rounded-lg border border-border hover:bg-surface/80 text-sm disabled:opacity-50"
+                >
+                  {requestingSchool ? '送出中…' : '回報新增學校'}
+                </button>
+                {requestSent === 'ok' && <span className="text-xs text-green-600">已送出，管理員會儘速處理</span>}
+                {requestSent === 'fail' && <span className="text-xs text-rose-600">送出失敗，稍後重試</span>}
+              </div>
             </div>
           )}
 

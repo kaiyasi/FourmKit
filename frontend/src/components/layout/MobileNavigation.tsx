@@ -34,9 +34,9 @@ interface NavItem {
 
 export function MobileNavigation() {
   const [menuOpen, setMenuOpen] = useState(false)
-  const { isLoggedIn, logout } = useAuth()
+  const { isLoggedIn, logout, role } = useAuth()
   const location = useLocation()
-  const role = isLoggedIn ? getRole() : 'guest'
+  const currentRole = isLoggedIn ? (role || 'guest') : 'guest'
 
   const haptic = (ms = 10) => {
     try { 
@@ -47,13 +47,19 @@ export function MobileNavigation() {
   const isActive = (path: string) => location.pathname === path
 
   // 主要底部導航（統一規格）：貼文 / 版規(或後台) / 發文 / 設定(未登入為登入)
-  const isAdmin = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(role)
+  const isAdmin = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(currentRole)
   const primaryNav: NavItem[] = [
     { to: '/boards', label: '貼文', icon: MessageSquare, primary: true },
     isAdmin 
       ? { to: '/admin', label: '後台', icon: Shield, primary: true }
       : { to: '/rules', label: '版規', icon: ScrollText, primary: true },
     { to: '/create', label: '發文', icon: PlusCircle, primary: true },
+    // dev_admin 顯示事件，其他管理員顯示支援
+    currentRole === 'dev_admin'
+      ? { to: '/admin/events', label: '事件', icon: Activity, primary: true }
+      : isAdmin
+        ? { to: '/admin/support', label: '支援', icon: HelpCircle, primary: true }
+        : { to: isLoggedIn ? '/settings/profile' : '/auth', label: isLoggedIn ? '設定' : '登入', icon: Settings, primary: true },
     { to: isLoggedIn ? '/settings/profile' : '/auth', label: isLoggedIn ? '設定' : '登入', icon: Settings, primary: true },
   ]
 
@@ -62,11 +68,10 @@ export function MobileNavigation() {
     { to: '/about', label: '關於我們', icon: Info },
     { to: '/rules', label: '版規', icon: ScrollText },
     { to: '/admin/comments', label: '留言監控', icon: MessageSquare, require: r => ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(r) },
-    { to: '/admin/events', label: '事件日誌', icon: Activity, require: r => ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(r) },
-    { to: '/admin/support', label: '用戶回報', icon: HelpCircle, require: r => ['dev_admin','campus_admin','cross_admin'].includes(r) },
+    { to: '/admin/events', label: '事件日誌', icon: Activity, require: r => r === 'dev_admin' },
     { to: '/mode', label: '模式管理', icon: Wrench, require: r => r === 'dev_admin' },
     { to: '/settings', label: '應用設定', icon: Settings, require: r => r !== 'guest' },
-  ].filter(item => !item.require || item.require(role))
+  ].filter(item => !item.require || item.require(currentRole))
 
   // 認證操作
   const authAction: NavItem = isLoggedIn

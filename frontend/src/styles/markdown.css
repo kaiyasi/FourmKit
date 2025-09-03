@@ -65,6 +65,14 @@
   color: var(--fg) !important;
 }
 
+/* 發文預覽：去除卡片左側多餘空白，與內容齊平 */
+.preview-prose .prose {
+  margin-left: 0 !important;
+}
+.preview-prose {
+  padding-left: 0.75rem !important; /* 與內文標題對齊，縮小左側空白 */
+}
+
 .prose em {
   font-style: italic !important;
   color: var(--fg) !important;

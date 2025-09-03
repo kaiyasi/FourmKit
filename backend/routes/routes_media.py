@@ -1,19 +1,12 @@
 from flask import Blueprint, request, jsonify, abort, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from sqlalchemy.orm import Session
-from models import Media, Post, User, School
+from models import Media, User
 from utils.db import get_session
-from utils.authz import require_role
-from utils.fsops import UPLOAD_ROOT, ensure_within
-from utils.upload_utils import validate_file_type, validate_file_size
+from utils.fsops import UPLOAD_ROOT
 from utils.upload_utils import generate_unique_filename, save_upload_chunk, merge_chunks
 from utils.upload_utils import resolve_or_publish_public_media
-import os
 import mimetypes
 from pathlib import Path
-from datetime import datetime
-import hashlib
-import json
 
 bp = Blueprint("media", __name__, url_prefix="/api/media")
 
@@ -83,7 +76,7 @@ def upload_media():
             unique_name = generate_unique_filename(file_name, file_hash)
             
             # 保存分塊
-            chunk_path = save_upload_chunk(file, unique_name, chunk_index, user_id)
+            _ = save_upload_chunk(file, unique_name, chunk_index, user_id)
             
             # 如果是最後一個分塊，合併所有分塊
             if chunk_index == total_chunks - 1:
@@ -168,6 +161,30 @@ def get_media_public_url(media_id: int):
         if not rel or not rel.startswith('public/'):
             abort(404)
         return jsonify({"url": f"/uploads/{rel}"})
+
+
+@bp.get("/<int:media_id>/public")
+def get_media_public_meta(media_id: int):
+    """回傳核准媒體的公開 URL 與精簡中繼資料（合併 v2 行為）。
+    響應：{ id, url, mime, size, file_type }
+    """
+    with get_session() as s:
+        m = s.query(Media).get(media_id)
+        if not m:
+            abort(404)
+        if (m.status or "").lower() != "approved":
+            abort(403)
+        rel = resolve_or_publish_public_media(m.path or "", int(m.id), getattr(m, "mime_type", None))
+        if not rel or not rel.startswith("public/"):
+            abort(404)
+        url = f"/uploads/{rel}"
+        return jsonify({
+            "id": m.id,
+            "url": url,
+            "mime": getattr(m, "mime_type", None),
+            "size": getattr(m, "file_size", None),
+            "file_type": getattr(m, "file_type", None),
+        })
 
 @bp.get("/<int:media_id>/file")
 def serve_media_file(media_id):

@@ -2,7 +2,6 @@ from __future__ import annotations
 import os
 from typing import Optional
 from werkzeug.security import generate_password_hash
-from sqlalchemy.orm import Session
 
 from models import User
 from utils.db import get_session

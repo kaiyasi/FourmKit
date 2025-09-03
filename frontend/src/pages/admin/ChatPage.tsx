@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getRole, getSchoolId, isLoggedIn } from '@/utils/auth'
 import ChatPanel from '@/components/ChatPanel'
-import { Building2, Users, MessageSquare, ArrowLeft, Shield, Globe, Code, Loader2, User, Eye } from 'lucide-react'
+import { Building2, Users, MessageSquare, ArrowLeft, Shield, Globe, Code, Loader2, User, Eye, Plus, Settings, MoreVertical } from 'lucide-react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
@@ -34,9 +34,56 @@ export default function AdminChatPage() {
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
   const [showOnlineUsers, setShowOnlineUsers] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [roomName, setRoomName] = useState('')
-  const [roomDesc, setRoomDesc] = useState('')
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false)
+
+  // 載入聊天室列表
+  const loadRooms = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const response = await fetch('/api/admin/chat-rooms', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const rooms = data.rooms.map((room: any) => ({
+          id: room.id,
+          name: room.name,
+          description: room.description,
+          icon: getRoomIcon(room.id),
+          accessRoles: room.access_roles,
+          schoolSpecific: room.school_specific,
+          onlineCount: room.online_count || 0
+        }))
+        setAvailableRooms(rooms)
+
+        // 依身份自動選擇房間：校內管理員/校內版主 → 默認選自己學校的管理員聊天室
+        if (rooms.length > 0) {
+          const role = String(data.user_role || '').trim()
+          const schoolId = Number(data.user_school_id || 0) || null
+          let picked: string | null = null
+          if ((role === 'campus_admin' || role === 'campus_moderator') && schoolId) {
+            const m = (data.rooms || []).find((r: any) => r.school_specific && Number(r.school_id || 0) === schoolId)
+            if (m) picked = m.id
+          }
+          if (!picked) picked = rooms[0]?.id || null
+          if (picked && picked !== selectedRoom) setSelectedRoom(picked)
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        setError(errorData.error || '無法載入聊天室列表')
+      }
+    } catch (error) {
+      console.error('Error fetching chat rooms:', error)
+      setError('網路連線錯誤，請稍後再試')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -44,56 +91,7 @@ export default function AdminChatPage() {
       return
     }
 
-    // 從後端 API 獲取可用的聊天室
-    const fetchChatRooms = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        
-        const response = await fetch('/api/admin/chat-rooms', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          const rooms = data.rooms.map((room: any) => ({
-            id: room.id,
-            name: room.name,
-            description: room.description,
-            icon: getRoomIcon(room.id),
-            accessRoles: room.access_roles,
-            schoolSpecific: room.school_specific,
-            onlineCount: room.online_count || 0
-          }))
-          setAvailableRooms(rooms)
-
-          // 依身份自動選擇房間：校內管理員/校內版主 → 默認選自己學校的管理員聊天室
-          if (rooms.length > 0) {
-            const role = String(data.user_role || '').trim()
-            const schoolId = Number(data.user_school_id || 0) || null
-            let picked: string | null = null
-            if ((role === 'campus_admin' || role === 'campus_moderator') && schoolId) {
-              const m = (data.rooms || []).find((r: any) => r.school_specific && Number(r.school_id || 0) === schoolId)
-              if (m) picked = m.id
-            }
-            if (!picked) picked = rooms[0]?.id || null
-            if (picked && picked !== selectedRoom) setSelectedRoom(picked)
-          }
-        } else {
-          const errorData = await response.json().catch(() => ({}))
-          setError(errorData.error || '無法載入聊天室列表')
-        }
-      } catch (error) {
-        console.error('Error fetching chat rooms:', error)
-        setError('網路連線錯誤，請稍後再試')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchChatRooms()
+    loadRooms()
   }, [navigate])
 
   // 當選擇的聊天室改變時，載入線上用戶
@@ -128,6 +126,13 @@ export default function AdminChatPage() {
       if (response.ok) {
         const data = await response.json()
         setOnlineUsers(data.online_users || [])
+      } else if (response.status === 404) {
+        // 如果聊天室不存在，清空選擇並重新載入聊天室列表
+        console.warn('Chat room not found, clearing selection')
+        setSelectedRoom('')
+        setOnlineUsers([])
+        // 重新載入聊天室列表
+        loadRooms()
       } else {
         console.error('Failed to load online users')
       }
@@ -138,9 +143,28 @@ export default function AdminChatPage() {
     }
   }
 
+  // 點擊外部關閉設定選單
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element
+      if (!target.closest('.settings-menu')) {
+        setShowSettingsMenu(false)
+      }
+    }
+
+    if (showSettingsMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showSettingsMenu])
+
   // 根據聊天室 ID 獲取對應的圖標
   const getRoomIcon = (roomId: string) => {
     if (roomId.startsWith('admin_campus:')) return Building2
+    if (roomId.startsWith('custom:')) return MessageSquare
     switch (roomId) {
       case 'admin_global':
         return Globe
@@ -167,46 +191,7 @@ export default function AdminChatPage() {
 
   const selectedRoomData = availableRooms.find(room => room.id === selectedRoom)
 
-  const canCreateRoom = role === 'dev_admin'
-
-  const createRoom = async () => {
-    if (!canCreateRoom) return
-    try {
-      setCreating(true)
-      const payload: any = {}
-      if (roomName.trim()) payload.name = roomName.trim()
-      if (roomDesc.trim()) payload.description = roomDesc.trim()
-      const r = await fetch('/api/admin/chat-rooms/custom', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')||''}` },
-        body: JSON.stringify(payload)
-      })
-      if (!r.ok) throw new Error(await r.text())
-      setRoomName('')
-      setRoomDesc('')
-      // 重新載入房間
-      const response = await fetch('/api/admin/chat-rooms', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
-      })
-      if (response.ok) {
-        const data = await response.json()
-        const rooms = data.rooms.map((room: any) => ({
-          id: room.id,
-          name: room.name,
-          description: room.description,
-          icon: getRoomIcon(room.id),
-          accessRoles: room.access_roles,
-          schoolSpecific: room.school_specific,
-          onlineCount: room.online_count || 0
-        }))
-        setAvailableRooms(rooms)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setCreating(false)
-    }
-  }
+  const canCreateRoom = role === 'dev_admin' || role === 'campus_admin'
 
   const deleteRoom = async () => {
     if (!canCreateRoom || !selectedRoom.startsWith('custom:')) return
@@ -218,22 +203,12 @@ export default function AdminChatPage() {
       })
       if (!r.ok) throw new Error(await r.text())
       setSelectedRoom('')
-      // 重新載入
-      const response = await fetch('/api/admin/chat-rooms', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } })
-      if (response.ok) {
-        const data = await response.json()
-        const rooms = data.rooms.map((room: any) => ({
-          id: room.id,
-          name: room.name,
-          description: room.description,
-          icon: getRoomIcon(room.id),
-          accessRoles: room.access_roles,
-          schoolSpecific: room.school_specific,
-          onlineCount: room.online_count || 0
-        }))
-        setAvailableRooms(rooms)
-      }
-    } catch (e) { console.error(e) }
+      // 重新載入聊天室列表
+      await loadRooms()
+    } catch (e) { 
+      console.error('刪除聊天室失敗:', e)
+      alert('刪除聊天室失敗，請稍後再試')
+    }
   }
 
   const addMember = async () => {
@@ -248,7 +223,12 @@ export default function AdminChatPage() {
       })
       if (!r.ok) throw new Error(await r.text())
       alert('已加入成員')
-    } catch (e) { console.error(e) }
+      // 重新載入線上用戶列表
+      await loadOnlineUsers()
+    } catch (e) { 
+      console.error('添加成員失敗:', e)
+      alert('添加成員失敗，請稍後再試')
+    }
   }
 
   const removeMember = async () => {
@@ -262,7 +242,12 @@ export default function AdminChatPage() {
       })
       if (!r.ok) throw new Error(await r.text())
       alert('已移除成員')
-    } catch (e) { console.error(e) }
+      // 重新載入線上用戶列表
+      await loadOnlineUsers()
+    } catch (e) { 
+      console.error('移除成員失敗:', e)
+      alert('移除成員失敗，請稍後再試')
+    }
   }
 
   if (!isLoggedIn()) {
@@ -313,17 +298,18 @@ export default function AdminChatPage() {
             {/* 聊天室列表側邊欄 */}
             <div className="lg:col-span-1">
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-                <h3 className="font-semibold text-fg mb-4">聊天室列表</h3>
-                {canCreateRoom && (
-                  <div className="mb-4 p-3 rounded-xl border border-border bg-surface-hover">
-                    <div className="text-sm font-medium mb-2">建立自訂聊天室（僅 dev_admin）</div>
-                    <div className="grid gap-2">
-                      <input value={roomName} onChange={e=>setRoomName(e.target.value)} placeholder="名稱（可留空）" className="form-control" />
-                      <input value={roomDesc} onChange={e=>setRoomDesc(e.target.value)} placeholder="描述（可留空）" className="form-control" />
-                      <button onClick={createRoom} disabled={creating} className="btn-primary px-3 py-2 w-full">{creating? '建立中…' : '建立聊天室'}</button>
-                    </div>
-                  </div>
-                )}
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-fg">聊天室列表</h3>
+                  {canCreateRoom && (
+                    <button
+                      onClick={() => navigate('/admin/chat/create')}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      建立聊天室
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-2">
                   {availableRooms.length === 0 ? (
                     <div className="text-center py-8">
@@ -377,33 +363,74 @@ export default function AdminChatPage() {
                 <div className="space-y-4">
                   {/* 聊天面板 */}
                   <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
-                    <div className="p-4 border-b border-border">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-primary/10">
-                            <selectedRoomData.icon className="w-5 h-5 text-primary" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-fg">{selectedRoomData.name}</h3>
-                            <p className="text-sm text-muted">{selectedRoomData.description}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setShowOnlineUsers(!showOnlineUsers)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80 transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                          {showOnlineUsers ? '隱藏' : '顯示'}線上用戶
-                        </button>
-                        {canCreateRoom && selectedRoom.startsWith('custom:') && (
-                          <div className="flex items-center gap-2">
-                            <button onClick={addMember} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80">加入成員</button>
-                            <button onClick={removeMember} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80">移除成員</button>
-                            <button onClick={deleteRoom} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-red-500/10 text-red-600">刪除聊天室</button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                                         <div className="p-4 border-b border-border">
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-3">
+                           <div className="p-2 rounded-lg bg-primary/10">
+                             <selectedRoomData.icon className="w-5 h-5 text-primary" />
+                           </div>
+                           <div>
+                             <h3 className="font-semibold text-fg">{selectedRoomData.name}</h3>
+                             <p className="text-sm text-muted">{selectedRoomData.description}</p>
+                           </div>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <button
+                             onClick={() => setShowOnlineUsers(!showOnlineUsers)}
+                             className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80 transition-colors"
+                           >
+                             <Eye className="w-4 h-4" />
+                             {showOnlineUsers ? '隱藏' : '顯示'}線上用戶
+                           </button>
+                           {canCreateRoom && selectedRoom.startsWith('custom:') && (
+                             <div className="relative settings-menu">
+                               <button
+                                 onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                                 className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border hover:bg-surface/80 transition-colors"
+                               >
+                                 <Settings className="w-4 h-4" />
+                                 設定
+                                 <MoreVertical className="w-3 h-3" />
+                               </button>
+                               {showSettingsMenu && (
+                                 <div className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 min-w-48">
+                                   <div className="p-2">
+                                     <button
+                                       onClick={() => {
+                                         addMember()
+                                         setShowSettingsMenu(false)
+                                       }}
+                                       className="w-full text-left px-3 py-2 text-sm rounded hover:bg-surface-hover transition-colors"
+                                     >
+                                       加入成員
+                                     </button>
+                                     <button
+                                       onClick={() => {
+                                         removeMember()
+                                         setShowSettingsMenu(false)
+                                       }}
+                                       className="w-full text-left px-3 py-2 text-sm rounded hover:bg-surface-hover transition-colors"
+                                     >
+                                       移除成員
+                                     </button>
+                                     <div className="border-t border-border my-1"></div>
+                                     <button
+                                       onClick={() => {
+                                         deleteRoom()
+                                         setShowSettingsMenu(false)
+                                       }}
+                                       className="w-full text-left px-3 py-2 text-sm rounded hover:bg-red-500/10 text-red-600 transition-colors"
+                                     >
+                                       刪除聊天室
+                                     </button>
+                                   </div>
+                                 </div>
+                               )}
+                             </div>
+                           )}
+                         </div>
+                       </div>
+                     </div>
                     <ChatPanel 
                       room={selectedRoom} 
                       title={selectedRoomData.name}

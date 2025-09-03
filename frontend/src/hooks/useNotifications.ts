@@ -23,6 +23,8 @@ interface NotificationState {
   notifications: Notification[]
   unreadCount: number
   showBadge: boolean
+  showCount: boolean // 是否顯示數字徽章
+  lastNotificationTime: number // 最後通知時間，用於10秒倒計時
 }
 
 const NOTIFICATION_STORAGE_KEY = 'forumkit_notifications'
@@ -32,7 +34,9 @@ export function useNotifications() {
   const [state, setState] = useState<NotificationState>({
     notifications: [],
     unreadCount: 0,
-    showBadge: false
+    showBadge: false,
+    showCount: false,
+    lastNotificationTime: 0
   })
 
   // 從 localStorage 載入通知
@@ -42,16 +46,25 @@ export function useNotifications() {
       if (stored) {
         const notifications = JSON.parse(stored) as Notification[]
         const unreadCount = notifications.filter(n => !n.read).length
-        setState({
+        const now = Date.now()
+        const lastNotificationTime = state.lastNotificationTime || now
+        
+        // 檢查是否在10秒內有新通知
+        const showCount = (now - lastNotificationTime) < 10000 && unreadCount > 0
+        
+        setState(prev => ({
+          ...prev,
           notifications: notifications.slice(0, MAX_NOTIFICATIONS),
           unreadCount,
-          showBadge: unreadCount > 0
-        })
+          showBadge: unreadCount > 0,
+          showCount,
+          lastNotificationTime
+        }))
       }
     } catch (error) {
       console.warn('Failed to load notifications:', error)
     }
-  }, [])
+  }, [state.lastNotificationTime])
 
   // 儲存通知到 localStorage
   const saveNotifications = useCallback((notifications: Notification[]) => {
@@ -71,6 +84,8 @@ export function useNotifications() {
       read: false
     }
 
+    const now = Date.now()
+
     setState(prev => {
       const notifications = [newNotification, ...prev.notifications].slice(0, MAX_NOTIFICATIONS)
       const unreadCount = notifications.filter(n => !n.read).length
@@ -80,9 +95,19 @@ export function useNotifications() {
       return {
         notifications,
         unreadCount,
-        showBadge: unreadCount > 0
+        showBadge: unreadCount > 0,
+        showCount: true, // 新通知時顯示數字徽章
+        lastNotificationTime: now
       }
     })
+
+    // 10秒後自動變為紅點
+    setTimeout(() => {
+      setState(prev => ({
+        ...prev,
+        showCount: false
+      }))
+    }, 10000)
 
     return newNotification.id
   }, [saveNotifications])
@@ -98,9 +123,11 @@ export function useNotifications() {
       saveNotifications(notifications)
       
       return {
+        ...prev,
         notifications,
         unreadCount,
-        showBadge: unreadCount > 0
+        showBadge: unreadCount > 0,
+        showCount: false // 標記已讀後不再顯示數字徽章
       }
     })
   }, [saveNotifications])
@@ -112,9 +139,11 @@ export function useNotifications() {
       saveNotifications(notifications)
       
       return {
+        ...prev,
         notifications,
         unreadCount: 0,
-        showBadge: false
+        showBadge: false,
+        showCount: false // 標記所有已讀後不再顯示數字徽章
       }
     })
   }, [saveNotifications])
@@ -128,20 +157,24 @@ export function useNotifications() {
       saveNotifications(notifications)
       
       return {
+        ...prev,
         notifications,
         unreadCount,
-        showBadge: unreadCount > 0
+        showBadge: unreadCount > 0,
+        showCount: unreadCount > 0 && (Date.now() - prev.lastNotificationTime) < 10000
       }
     })
   }, [saveNotifications])
 
   // 清除所有通知
   const clearAll = useCallback(() => {
-    setState({
+    setState(prev => ({
+      ...prev,
       notifications: [],
       unreadCount: 0,
-      showBadge: false
-    })
+      showBadge: false,
+      showCount: false
+    }))
     saveNotifications([])
   }, [saveNotifications])
 
@@ -241,6 +274,7 @@ export function useNotifications() {
     notifications: state.notifications,
     unreadCount: state.unreadCount,
     showBadge: state.showBadge,
+    showCount: state.showCount,
     addNotification,
     addAuthNotification,
     addModerationNotification,

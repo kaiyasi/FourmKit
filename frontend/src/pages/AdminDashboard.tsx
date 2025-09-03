@@ -1,13 +1,25 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { canSetMode, getRole, getRoleDisplayName } from '@/utils/auth'
-import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, Instagram } from 'lucide-react'
-import { MessageSquareDot } from 'lucide-react'
+import { canSetMode, getRole, getRoleDisplayName, canAccessAnnouncements } from '@/utils/auth'
+import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown } from 'lucide-react'
+import { MobileAdminDashboard } from '@/components/mobile/admin'
 
 export default function AdminDashboard() {
   const role = getRole()
+  const [isMobile, setIsMobile] = useState(false)
+
+  // 檢測螢幕尺寸
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    checkScreenSize()
+    window.addEventListener('resize', checkScreenSize)
+    return () => window.removeEventListener('resize', checkScreenSize)
+  }, [])
 
   useEffect(() => {
     const html = document.documentElement
@@ -28,6 +40,11 @@ export default function AdminDashboard() {
     </Link>
   )
 
+  // 如果是手機螢幕，使用手機版介面
+  if (isMobile) {
+    return <MobileAdminDashboard />
+  }
+
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin" />
@@ -43,24 +60,42 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <Card to="/admin/moderation" title="審核管理" desc="查看待審、詳情預覽、批次核准/退件、日誌匯出" icon={ShieldCheck} />
+          <Card to="/admin/moderation" title="審核管理" desc="待審核貼文、今日已處理、待處理請求" icon={ShieldCheck} />
           <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋與 CSV 匯出" icon={MessagesSquare} />
-          {/* 聊天室快捷卡片（手機也可見） */}
-          <Card to="/admin/chat" title="管理員聊天室" desc="即時溝通（支援自訂聊天室）" icon={MessageSquareDot} />
+          {/* 聊天室快捷卡片 */}
+          <Card to="/admin/chat" title="聊天室" desc="待處理請求、即時溝通、支援自訂聊天室" icon={MessageSquareDot} />
+          {/* 客服管理卡片 - 三個 _admin 可操作，其他管理角色唯讀 */}
+          {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') ? (
+            <Card to="/admin/support" title="客服管理" desc="支援單審核、狀態管理、訊息回覆與統計報表" icon={LifeBuoy} />
+          ) : ['campus_moderator', 'cross_moderator'].includes(role || '') ? (
+            <Card to="/admin/support" title="客服管理" desc="支援單審核、狀態管理、訊息回覆與統計報表" icon={LifeBuoy} disabled={true} />
+          ) : null}
           <Card to="/mode" title="模式管理" desc="維護/開發/測試/正常模式切換與規則設定" icon={Wrench} disabled={!canSetMode()} />
 
-          {/* Instagram 連動管理 */}
-          {['dev_admin','campus_admin','cross_admin'].includes(role) && (
-            <Card to="/admin/instagram" title="Instagram 連動" desc="帳號管理、模板設計、排程設定、發送記錄" icon={Instagram} />
-          )}
+                {/* 事件記錄卡片 - 僅 dev_admin 可見 */}
+      {role === 'dev_admin' && (
+        <Card to="/admin/events" title="事件記錄" desc="系統事件日誌、操作記錄、審計追蹤" icon={Activity} />
+      )}
+
+      {/* 平台狀態卡片 - 僅 dev_admin 可見 */}
+              {role === 'dev_admin' && (
+          <Card to="/admin/platform" title="平台狀態" desc="平台運行狀態、系統資源監控、重啟記錄" icon={Server} />
+        )}
+        {role === 'dev_admin' && (
+          <Card to="/admin/members" title="會員管理" desc="會員訂閱管理、廣告貼文審核、用戶狀態管理" icon={Crown} />
+        )}
 
           {/* 系統管理面板 */}
-          <Card to="/admin/users" title="使用者管理" desc="檢視與搜尋、重設密碼、角色指派" icon={Users} />
+          {role === 'dev_admin' ? (
+            <Card to="/admin/users" title="使用者管理" desc="檢視與搜尋、重設密碼、角色指派" icon={Users} />
+          ) : ['campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator'].includes(role || '') ? (
+            <Card to="/admin/users" title="使用者管理" desc="檢視與搜尋、重設密碼、角色指派" icon={Users} disabled={true} />
+          ) : null}
           <Card to="/admin/schools" title="學校管理" desc="清單、新增、重新命名" icon={Building2} />
           <Card to="/admin/integrations" title="整合狀態" desc="Webhook/Redis/心跳服務概況" icon={Network} />
           <Card to="/admin/pages" title="頁面內容（Markdown）" desc="關於/版規 的維護與即時預覽" icon={LayoutDashboard} />
-          <Card to="/admin/support" title="使用者回報/聯絡" desc="查看最近的狀況回報、快速聯絡回覆" icon={MessagesSquare} />
-          <Card to="/admin/announcements" title="公告發佈" desc="發布系統公告，同步送往 Webhook 與訂閱" icon={Wrench} />
+          {/* 公告發佈入口移除：公告改由一般發文流程勾選「公告貼文」並依角色控制範圍 */}
+          {/* Instagram 整合已移除 */}
         </div>
       </main>
     </div>

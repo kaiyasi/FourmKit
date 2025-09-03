@@ -12,6 +12,12 @@ export interface Post {
   // 學校資訊（改為顯示學校名稱用）
   school_id?: number | null;
   school?: { id: number; slug: string; name: string } | null;
+  // 公告和廣告相關欄位
+  is_announcement?: boolean;
+  is_advertisement?: boolean;
+  announcement_type?: string | null;
+  is_pinned?: boolean;
+  pinned_at?: string | null;
 }
 
 export interface PostList {
@@ -48,6 +54,12 @@ export function validatePost(obj: any): Post {
     school: (obj.school && typeof obj.school === 'object' && typeof obj.school.id === 'number')
       ? { id: obj.school.id, slug: String(obj.school.slug || ''), name: String(obj.school.name || obj.school.slug || '') }
       : (obj.school === null ? null : undefined),
+    // 公告和廣告相關欄位
+    is_announcement: typeof obj.is_announcement === 'boolean' ? obj.is_announcement : undefined,
+    is_advertisement: typeof obj.is_advertisement === 'boolean' ? obj.is_advertisement : undefined,
+    announcement_type: typeof obj.announcement_type === 'string' ? obj.announcement_type : (obj.announcement_type === null ? null : undefined),
+    is_pinned: typeof obj.is_pinned === 'boolean' ? obj.is_pinned : undefined,
+    pinned_at: typeof obj.pinned_at === 'string' ? obj.pinned_at : (obj.pinned_at === null ? null : undefined),
   };
 }
 

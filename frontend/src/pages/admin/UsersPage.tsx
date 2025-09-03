@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft } from 'lucide-react'
+import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User } from 'lucide-react'
 import { formatLocalMinute } from '@/utils/time'
 import { getRoleDisplayName } from '@/utils/auth'
 
@@ -18,6 +18,14 @@ interface User {
   }
   created_at: string
   personal_id: string
+  post_count: number
+  comment_count: number
+  emoji_reaction_count: number
+  recent_ips: string[]
+  client_ids: string[]
+  last_activity?: string
+  is_premium: boolean
+  premium_until?: string
 }
 
 interface NewUser {
@@ -49,6 +57,8 @@ export default function AdminUsersPage() {
     password: '',
     role: 'user'
   })
+  const [showActivityModal, setShowActivityModal] = useState<{ user: User, activities: any[] } | null>(null)
+  const [loadingActivities, setLoadingActivities] = useState(false)
 
   useEffect(() => {
     const html = document.documentElement
@@ -58,12 +68,12 @@ export default function AdminUsersPage() {
   }, [])
 
   const roles = [
-    { value: 'user', label: '一般用戶' },
-    { value: 'campus_moderator', label: '校內審核' },
-    { value: 'cross_moderator', label: '跨校審核' },
-    { value: 'campus_admin', label: '校內板主' },
-    { value: 'cross_admin', label: '跨校板主' },
-    { value: 'dev_admin', label: '開發人員' },
+    { value: 'user', label: '一般用戶', icon: UserCheck, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+    { value: 'campus_moderator', label: '校內審核', icon: Shield, color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+    { value: 'cross_moderator', label: '跨校審核', icon: Shield, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+    { value: 'campus_admin', label: '校內板主', icon: Crown, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+    { value: 'cross_admin', label: '跨校板主', icon: Crown, color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+    { value: 'dev_admin', label: '開發人員', icon: Crown, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
   ]
 
   const [schools, setSchools] = useState([
@@ -275,6 +285,69 @@ export default function AdminUsersPage() {
 
   useEffect(() => { load() }, [])
 
+  const getRoleInfo = (role: string) => {
+    return roles.find(r => r.value === role) || roles[0]
+  }
+
+  // 解析用戶代理字串，提取重要資訊
+  const parseUserAgent = (userAgent: string) => {
+    try {
+      // 基本資訊提取
+      const browser = userAgent.includes('Chrome') ? 'Chrome' :
+                     userAgent.includes('Firefox') ? 'Firefox' :
+                     userAgent.includes('Safari') ? 'Safari' :
+                     userAgent.includes('Edge') ? 'Edge' :
+                     userAgent.includes('Opera') ? 'Opera' : 'Unknown'
+      
+      const os = userAgent.includes('Windows') ? 'Windows' :
+                 userAgent.includes('Mac') ? 'macOS' :
+                 userAgent.includes('Linux') ? 'Linux' :
+                 userAgent.includes('Android') ? 'Android' :
+                 userAgent.includes('iOS') ? 'iOS' : 'Unknown'
+      
+      // 提取版本號
+      const browserVersion = userAgent.match(/(Chrome|Firefox|Safari|Edge|Opera)\/(\d+)/)?.[2] || 'Unknown'
+      
+      // 提取系統版本
+      const osVersion = userAgent.match(/(Windows NT|Mac OS X|Linux|Android|iPhone OS)\s*([\d._]+)/)?.[2] || 'Unknown'
+      
+      return {
+        browser,
+        browserVersion,
+        os,
+        osVersion,
+        full: userAgent
+      }
+    } catch (e) {
+      return {
+        browser: 'Unknown',
+        browserVersion: 'Unknown',
+        os: 'Unknown',
+        osVersion: 'Unknown',
+        full: userAgent
+      }
+    }
+  }
+
+  const loadUserActivity = async (user: User) => {
+    try {
+      setLoadingActivities(true)
+      const response = await fetch(`/api/admin/users/${user.id}/activity`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')||''}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setShowActivityModal({ user, activities: data.activities })
+      } else {
+        setMessage('載入活動記錄失敗')
+      }
+    } catch (error) {
+      setMessage('載入活動記錄失敗')
+    } finally {
+      setLoadingActivities(false)
+    }
+  }
+
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/users" />
@@ -324,11 +397,12 @@ export default function AdminUsersPage() {
           <div className="flex flex-col lg:flex-row gap-4">
             {/* 搜尋框 */}
             <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted" />
               <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="搜尋用戶名或電子郵件"
-                className="w-full px-4 py-2 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                className="form-control flex-1 pl-10"
               />
             </div>
             
@@ -353,134 +427,197 @@ export default function AdminUsersPage() {
         </div>
 
         {/* 用戶清單 */}
-        <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {loading ? (
-            <div className="p-8 text-center text-muted">
+            <div className="col-span-full p-8 text-center text-muted">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-3"></div>
               載入中...
             </div>
+          ) : items.length === 0 ? (
+            <div className="col-span-full p-8 text-center text-muted">
+              <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              {query ? '找不到符合條件的用戶' : '尚無用戶資料'}
+            </div>
           ) : (
-            <div className="divide-y divide-border">
-              {items.length === 0 ? (
-                <div className="p-8 text-center text-muted">
-                  <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  {query ? '找不到符合條件的用戶' : '尚無用戶資料'}
-                </div>
-              ) : (
-                items.map((user) => (
-                  <div key={user.id} className="p-4 hover:bg-surface-hover transition-colors">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                      {/* 用戶資訊 */}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                            <span className="text-primary font-semibold text-lg">
-                              {user.username.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-fg truncate">{user.username}</div>
-                            <div className="text-sm text-muted truncate">{user.email}</div>
-                            <div className="text-xs text-muted font-mono bg-surface-hover px-2 py-1 rounded mt-1 inline-block">
-                              ID: {user.personal_id}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-3 text-sm">
-                          <span className="px-2 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-                            {getRoleDisplayName(user.role as any) || user.role}
+            items.map((user) => {
+              const roleInfo = getRoleInfo(user.role)
+              const RoleIcon = roleInfo.icon
+              
+              return (
+                <div key={user.id} className="bg-surface border border-border rounded-2xl p-4 shadow-soft hover:shadow-medium transition-all duration-200 hover:scale-[1.02] flex flex-col h-full">
+                  {/* 用戶頭像和基本資訊 */}
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary font-semibold text-lg">
+                        {user.username.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-fg truncate text-lg flex items-center gap-2">
+                        {user.username}
+                        {user.is_premium && (
+                          <span className="inline-flex items-center" title={`會員 ${user.premium_until ? `至 ${formatLocalMinute(user.premium_until)}` : '永久'}`}>
+                            <Star className="w-4 h-4 text-amber-500 fill-current" />
                           </span>
-                          <span className="text-muted">
-                            註冊於 {formatLocalMinute(user.created_at)}
-                          </span>
-                        </div>
+                        )}
                       </div>
-                      
-                      {/* 操作按鈕 */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* 權限下拉選單 */}
-                        <select
-                          value={user.role}
-                          onChange={(e) => updateUserRole(user.id, e.target.value)}
-                          className="form-control text-sm min-w-[140px]"
-                          title="調整權限"
-                        >
-                          {roles.map(role => (
-                            <option key={role.value} value={role.value}>
-                              {role.label}
-                            </option>
-                          ))}
-                        </select>
-                        
-                        {/* 學校綁定下拉選單 */}
-                        <select
-                          value={user.school?.slug || ''}
-                          onChange={(e) => updateUserSchool(user.id, e.target.value)}
-                          className="form-control text-sm min-w-[140px]"
-                          title="學校綁定"
-                        >
-                          {schools.map(school => (
-                            <option key={school.value} value={school.value}>
-                              {school.label}
-                            </option>
-                          ))}
-                        </select>
-                        
-                        {/* Email 管理 */}
-                        <button
-                          onClick={async () => {
-                            const newEmail = prompt(`為 ${user.username} 設定新 Email`, user.email)
-                            if (!newEmail || newEmail === user.email) return
-                            await updateUserEmail(user.id, newEmail)
-                          }}
-                          className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-sm whitespace-nowrap"
-                          title="修改 Email"
-                        >
-                          <Mail className="w-3 h-3" />
-                          Email
-                        </button>
-                        
-                        {/* 密碼管理 */}
-                        <button
-                          onClick={async () => {
-                            const p = prompt(`為 ${user.username} 設定新密碼（至少 8 碼）`)
-                            if (!p) return
-                            try {
-                              await fetch(`/api/admin/users/${user.id}/set_password`, {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  'Authorization': `Bearer ${localStorage.getItem('token')||''}`
-                                },
-                                body: JSON.stringify({ password: p })
-                              })
-                              setMessage('密碼更新成功')
-                            } catch {
-                              setMessage('密碼更新失敗')
-                            }
-                          }}
-                          className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-sm whitespace-nowrap"
-                          title="重設密碼"
-                        >
-                          <Key className="w-3 h-3" />
-                          密碼
-                        </button>
-                        
-                        {/* 刪除用戶 */}
-                        <button
-                          onClick={() => deleteUser(user.id)}
-                          className="px-3 py-1.5 text-sm rounded-lg border text-red-600 border-red-300 hover:bg-red-50 transition-colors"
-                          title="刪除用戶"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      <div className="text-sm text-muted truncate flex items-center gap-1 mt-1">
+                        <Mail className="w-3 h-3" />
+                        {user.email}
+                      </div>
+                      <div className="text-xs text-muted font-mono bg-surface-hover px-2 py-1 rounded mt-2 inline-block">
+                        ID: {user.personal_id}
                       </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                  
+                  {/* 角色標籤 */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${roleInfo.color}`}>
+                      <RoleIcon className="w-3 h-3 inline mr-1" />
+                      {roleInfo.label}
+                    </span>
+                  </div>
+                  
+                  {/* 學校資訊 */}
+                  <div className="flex items-center gap-2 text-sm text-muted mb-3">
+                    <Building2 className="w-3 h-3" />
+                    {user.school?.name || '無'}
+                  </div>
+                  
+                  {/* 用戶統計資訊 */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="flex items-center gap-1 text-xs text-muted">
+                      <FileText className="w-3 h-3" />
+                      {user.post_count} 篇貼文
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-muted">
+                      <MessageSquare className="w-3 h-3" />
+                      {user.comment_count} 則留言
+                    </div>
+                  </div>
+                  
+
+                  
+                  {/* 最近活動 */}
+                  <div className="flex items-center gap-1 text-xs text-muted mb-3">
+                    <Activity className="w-3 h-3" />
+                    最後活動 {user.last_activity ? formatLocalMinute(user.last_activity) : '無記錄'}
+                  </div>
+                  
+                  {/* 註冊時間 */}
+                  <div className="flex items-center gap-2 text-sm text-muted mb-4">
+                    <Calendar className="w-3 h-3" />
+                    註冊於 {formatLocalMinute(user.created_at)}
+                  </div>
+                  
+                  {/* IP地址資訊 */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1 text-xs text-muted mb-1">
+                      <Globe className="w-3 h-3" />
+                      最新IP地址：
+                    </div>
+                    <div className="text-xs font-mono bg-surface-hover px-2 py-1 rounded">
+                      {user.recent_ips.length > 0 ? 
+                        `${user.recent_ips[0]}${user.recent_ips.length > 1 ? `(+${user.recent_ips.length - 1}個)` : ''}` : 
+                        '無記錄'
+                      }
+                    </div>
+                  </div>
+                  
+                  {/* 操作按鈕 - 使用 flex-1 確保按鈕等寬並對齊底部 */}
+                  <div className="space-y-2 mt-auto">
+                    {/* 角色調整 */}
+                    <select
+                      value={user.role}
+                      onChange={(e) => updateUserRole(user.id, e.target.value)}
+                      className="form-control text-sm w-full"
+                      title="調整權限"
+                    >
+                      {roles.map(role => (
+                        <option key={role.value} value={role.value}>
+                          {role.label}
+                        </option>
+                      ))}
+                    </select>
+                    
+                    {/* 學校綁定 */}
+                    <select
+                      value={user.school?.slug || ''}
+                      onChange={(e) => updateUserSchool(user.id, e.target.value)}
+                      className="form-control text-sm w-full"
+                      title="學校綁定"
+                    >
+                      {schools.map(school => (
+                        <option key={school.value} value={school.value}>
+                          {school.label}
+                        </option>
+                      ))}
+                    </select>
+                    
+                    {/* 快速操作按鈕 */}
+                    <div className="flex gap-1 pt-2">
+                      <button
+                        onClick={() => loadUserActivity(user)}
+                        className="flex-1 btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                        title="查看詳細資訊"
+                        disabled={loadingActivities}
+                      >
+                        <Activity className="w-3 h-3" />
+                        詳細資訊
+                      </button>
+                      
+                      <button
+                        onClick={async () => {
+                          const newEmail = prompt(`為 ${user.username} 設定新 Email`, user.email)
+                          if (!newEmail || newEmail === user.email) return
+                          await updateUserEmail(user.id, newEmail)
+                        }}
+                        className="flex-1 btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                        title="修改 Email"
+                      >
+                        <Mail className="w-3 h-3" />
+                        Email
+                      </button>
+                      
+                      <button
+                        onClick={async () => {
+                          const p = prompt(`為 ${user.username} 設定新密碼（至少 8 碼）`)
+                          if (!p) return
+                          try {
+                            await fetch(`/api/admin/users/${user.id}/set_password`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${localStorage.getItem('token')||''}`
+                              },
+                              body: JSON.stringify({ password: p })
+                            })
+                            setMessage('密碼更新成功')
+                          } catch {
+                            setMessage('密碼更新失敗')
+                          }
+                        }}
+                        className="flex-1 btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                        title="重設密碼"
+                      >
+                        <Key className="w-3 h-3" />
+                        密碼
+                      </button>
+                      
+                      <button
+                        onClick={() => deleteUser(user.id)}
+                        className="flex-1 px-2 py-1.5 text-xs rounded-lg border text-red-600 border-red-300 hover:bg-red-50 transition-colors flex items-center justify-center gap-1"
+                        title="刪除用戶"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
           )}
         </div>
       </main>
@@ -593,6 +730,225 @@ export default function AdminUsersPage() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 詳細資訊模態框 */}
+      {showActivityModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-6xl max-h-[90vh] shadow-dramatic overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold dual-text flex items-center gap-2">
+                {showActivityModal.user.username}
+                {showActivityModal.user.is_premium && (
+                  <span className="inline-flex items-center" title={`會員 ${showActivityModal.user.premium_until ? `至 ${formatLocalMinute(showActivityModal.user.premium_until)}` : '永久'}`}>
+                    <Star className="w-5 h-5 text-amber-500 fill-current" />
+                  </span>
+                )}
+                的詳細資訊
+              </h2>
+              <button
+                onClick={() => setShowActivityModal(null)}
+                className="p-1 rounded-lg hover:bg-surface-hover transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* 用戶基本資訊卡片 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div className="bg-surface-hover rounded-xl p-4 border border-border">
+                <h3 className="font-semibold text-fg mb-3 flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  基本資訊
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted">用戶名：</span>
+                    <span className="font-medium">{showActivityModal.user.username}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Email：</span>
+                    <span className="font-medium">{showActivityModal.user.email}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">個人ID：</span>
+                    <span className="font-mono text-xs">{showActivityModal.user.personal_id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">角色：</span>
+                    <span className="font-medium">{getRoleInfo(showActivityModal.user.role).label}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">學校：</span>
+                    <span className="font-medium">{showActivityModal.user.school?.name || '無'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">註冊時間：</span>
+                    <span className="font-medium">{formatLocalMinute(showActivityModal.user.created_at)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">最後活動：</span>
+                    <span className="font-medium">{showActivityModal.user.last_activity ? formatLocalMinute(showActivityModal.user.last_activity) : '無記錄'}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-surface-hover rounded-xl p-4 border border-border">
+                <h3 className="font-semibold text-fg mb-3 flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  統計資訊
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted">發文次數：</span>
+                    <span className="font-medium">{showActivityModal.user.post_count} 篇</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">留言次數：</span>
+                    <span className="font-medium">{showActivityModal.user.comment_count} 則</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">表符互動：</span>
+                    <span className="font-medium">{showActivityModal.user.emoji_reaction_count} 次</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">會員狀態：</span>
+                    <span className="font-medium">
+                      {showActivityModal.user.is_premium ? 
+                        `會員 ${showActivityModal.user.premium_until ? `至 ${formatLocalMinute(showActivityModal.user.premium_until)}` : '永久'}` : 
+                        '一般用戶'
+                      }
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">IP地址數量：</span>
+                    <span className="font-medium">{showActivityModal.user.recent_ips.length} 個</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">設備數量：</span>
+                    <span className="font-medium">{showActivityModal.user.client_ids.length} 個</span>
+                  </div>
+                </div>
+                
+                {/* IP地址列表 */}
+                <div className="mt-4">
+                  <h4 className="font-medium text-fg mb-2 flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    IP地址記錄
+                  </h4>
+                  <div className="space-y-1">
+                    {showActivityModal.user.recent_ips.length > 0 ? (
+                      showActivityModal.user.recent_ips.map((ip, index) => (
+                        <div key={index} className="text-xs font-mono bg-surface px-2 py-1 rounded border">
+                          {ip}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted bg-surface px-2 py-1 rounded border">
+                        無記錄
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Client_ID 列表 */}
+                <div className="mt-4">
+                  <h4 className="font-medium text-fg mb-2 flex items-center gap-1">
+                    <Activity className="w-3 h-3" />
+                    設備識別碼
+                  </h4>
+                  <div className="space-y-1">
+                    {showActivityModal.user.client_ids.length > 0 ? (
+                      showActivityModal.user.client_ids.map((client_id, index) => (
+                        <div key={index} className="text-xs font-mono bg-surface px-2 py-1 rounded border">
+                          {client_id}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted bg-surface px-2 py-1 rounded border">
+                        無記錄
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="overflow-y-auto max-h-[60vh] space-y-3">
+              {showActivityModal.activities.length === 0 ? (
+                <div className="text-center text-muted py-8">
+                  暫無活動記錄
+                </div>
+              ) : (
+                showActivityModal.activities.map((activity) => (
+                  <div key={activity.id} className="bg-surface-hover rounded-lg p-3 border border-border">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <div className="font-medium text-fg">{activity.title}</div>
+                        <div className="text-sm text-muted mt-1">{activity.description}</div>
+                      </div>
+                      <div className="text-xs text-muted ml-2">
+                        {formatLocalMinute(activity.created_at)}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-1 text-muted">
+                        <Globe className="w-3 h-3" />
+                        IP: {activity.client_ip || '無記錄'}
+                      </div>
+                      <div className="flex items-center gap-1 text-muted">
+                        <Activity className="w-3 h-3" />
+                        <span className="truncate" title={activity.user_agent || '無記錄'}>
+                          {activity.user_agent || '無記錄'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* 用戶代理詳細資訊 */}
+                    {activity.user_agent && (
+                      <div className="mt-2 p-2 bg-surface rounded border border-border/50">
+                        <div className="text-xs font-medium text-muted mb-1">用戶代理：</div>
+                        {(() => {
+                          const uaInfo = parseUserAgent(activity.user_agent)
+                          return (
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-muted">瀏覽器：</span>
+                                  <span className="font-medium">{uaInfo.browser} {uaInfo.browserVersion}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted">作業系統：</span>
+                                  <span className="font-medium">{uaInfo.os} {uaInfo.osVersion}</span>
+                                </div>
+                              </div>
+                              <details className="text-xs">
+                                <summary className="cursor-pointer text-muted hover:text-fg">完整用戶代理字串</summary>
+                                <div className="mt-1 p-2 bg-surface-hover rounded font-mono text-muted break-all">
+                                  {uaInfo.full}
+                                </div>
+                              </details>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    )}
+                    
+                    {activity.metadata && Object.keys(activity.metadata).length > 0 && (
+                      <div className="mt-2 p-2 bg-surface rounded border border-border/50">
+                        <div className="text-xs font-medium text-muted mb-1">詳細資訊：</div>
+                        <pre className="text-xs text-muted overflow-x-auto">
+                          {JSON.stringify(activity.metadata, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

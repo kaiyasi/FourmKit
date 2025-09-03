@@ -1,327 +1,794 @@
-import { useEffect, useState } from 'react'
-import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { MobileSupportForm } from '@/components/mobile/MobileSupportForm'
-import { MobileTicketCard } from '@/components/mobile/MobileTicketCard'
-import { ArrowLeft, Plus, Search, Ticket, MessageSquare } from 'lucide-react'
-import { useAuth } from '@/contexts/AuthContext'
-import { AccountAPI, api } from '@/services/api'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { 
+  MessageCircle, 
+  Plus, 
+  Search, 
+  Filter,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  ArrowLeft,
+  Send,
+  Paperclip,
+  X
+} from 'lucide-react'
+import { MobileTicketCard } from '../components/mobile/MobileTicketCard'
+
+interface Ticket {
+  id: string
+  subject: string
+  status: string
+  category: string
+  priority: string
+  created_at: string
+  last_activity_at: string
+  message_count: number
+  ticket_id?: string
+  response_count?: number
+  scope?: string
+  is_urgent?: boolean
+  handler?: string
+  replies?: Array<{
+    message: string
+    timestamp: string
+    by: string
+    author?: string
+  }>
+}
+
+interface CreateTicketData {
+  subject: string
+  body: string
+  category: string
+  priority: string
+  email?: string
+}
 
 export default function MobileSupportPage() {
-  const { isLoggedIn } = useAuth()
-  const [activeTab, setActiveTab] = useState<'submit' | 'track' | 'history'>('submit')
-  const [personalId, setPersonalId] = useState<string | null>(null)
-  const [mySchool, setMySchool] = useState<{ slug: string; name: string } | null>(null)
-  
-  // 提交工單相關狀態
-  const [submitting, setSubmitting] = useState(false)
-  const [submitResult, setSubmitResult] = useState<'ok' | 'err' | null>(null)
-  const [submitMsg, setSubmitMsg] = useState('')
+  const navigate = useNavigate()
+  const [currentView, setCurrentView] = useState<'list' | 'create' | 'track'>('list')
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
 
-  // 追蹤工單相關狀態
-  const [trackingCode, setTrackingCode] = useState('')
-  const [trackingResult, setTrackingResult] = useState<any>(null)
-  const [trackingError, setTrackingError] = useState<string | null>(null)
-  const [searching, setSearching] = useState(false)
+  // Create ticket form state
+  const [createForm, setCreateForm] = useState<CreateTicketData>({
+    subject: '',
+    body: '',
+    category: 'other',
+    priority: 'medium',
+    email: ''
+  })
+  const [createStep, setCreateStep] = useState(1)
+  const [submitLoading, setSubmitLoading] = useState(false)
 
-  // 歷史工單相關狀態
-  const [myTickets, setMyTickets] = useState<any[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
+  // Track ticket state
+  const [trackForm, setTrackForm] = useState({
+    ticket_id: '',
+    email: ''
+  })
+
+  // 附件上傳相關狀態
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+
+  // 使用 useMemo 優化字數計算，避免不必要的重新渲染
+  const subjectLength = useMemo(() => createForm.subject.length, [createForm.subject])
+  const bodyLength = useMemo(() => createForm.body.length, [createForm.body])
+
+  // 檔案處理函數
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    setSelectedFiles(prev => [...prev, ...files])
+  }
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  // 拖拉處理函數
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    setSelectedFiles(prev => [...prev, ...files])
+  }
 
   useEffect(() => {
-    const html = document.documentElement
-    if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
-    html.classList.add('theme-ready')
-    return () => html.classList.remove('theme-ready')
+    // 檢查登入狀態
+    const token = localStorage.getItem('access_token')
+    setIsLoggedIn(!!token)
+    
+    if (token) {
+      fetchMyTickets()
+    }
   }, [])
 
-  // 獲取用戶資訊
-  useEffect(() => {
-    if (isLoggedIn) {
-      (async () => {
-        try {
-          const profile = await AccountAPI.profile()
-          const pid = profile?.personal_id || ''
-          setPersonalId(pid || null)
-          const school = profile?.school ? { slug: profile.school.slug, name: profile.school.name } : null
-          setMySchool(school)
-        } catch {}
-      })()
-    }
-  }, [isLoggedIn])
-
-  // 加載歷史工單
-  const loadMyTickets = async () => {
-    if (!isLoggedIn) return
-    
-    setLoadingHistory(true)
+  const fetchMyTickets = async () => {
+    setLoading(true)
+    setError(null)
     try {
-      const response = await api<{ ok: boolean; items: any[] }>('/api/support/my?limit=20')
-      if (response.ok) {
-        setMyTickets(response.items || [])
-      }
-    } catch (error) {
-      console.error('Failed to load tickets:', error)
-    } finally {
-      setLoadingHistory(false)
-    }
-  }
-
-  useEffect(() => {
-    if (activeTab === 'history' && isLoggedIn) {
-      loadMyTickets()
-    }
-  }, [activeTab, isLoggedIn])
-
-  const handleSubmit = async (data: any) => {
-    setSubmitting(true)
-    setSubmitResult(null)
-    setSubmitMsg('')
-
-    try {
-      const response = await api<{ ok: boolean; msg?: string; details?: any }>('/api/support/report', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      })
-
-      if (response.ok) {
-        const details = response.details
-        let successMsg = response.msg || '已送出！我們會盡快回覆'
-        if (details) {
-          const category = details.category || '一般問題'
-          const method = details.contact_method || (isLoggedIn ? '站內通知' : 'Email')
-          const trackingCode = details.tracking_code
-          successMsg = `✅ ${successMsg}\\n類別：${category}\\n回覆方式：${method}`
-          if (trackingCode) {
-            successMsg += `\\n追蹤碼：${trackingCode}`
-          }
+      const token = localStorage.getItem('access_token')
+      const response = await fetch('/api/support/my-tickets', {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
-        
-        setSubmitResult('ok')
-        setSubmitMsg(successMsg)
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setTickets(data.tickets || [])
       } else {
-        throw new Error(response.msg || '提交失敗')
+        throw new Error('載入支援單失敗')
       }
-    } catch (e: any) {
-      setSubmitResult('err')
-      setSubmitMsg(e?.message || '提交失敗，請稍後再試')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
     } finally {
-      setSubmitting(false)
+      setLoading(false)
     }
   }
 
-  const handleTrack = async () => {
-    if (!trackingCode.trim()) {
-      setTrackingError('請輸入追蹤碼')
+  const handleCreateTicket = async () => {
+    if (!createForm.subject.trim() || !createForm.body.trim()) {
+      setError('請填寫主題和內容')
       return
     }
 
-    setSearching(true)
-    setTrackingError(null)
-    setTrackingResult(null)
+    if (!isLoggedIn && !createForm.email) {
+      setError('請填寫聯絡 Email')
+      return
+    }
+
+    setSubmitLoading(true)
+    setError(null)
 
     try {
-      const response = await api<any>(`/api/support/track/${trackingCode.trim()}`)
+      const token = localStorage.getItem('access_token')
       
-      if (response.ok && response.tickets) {
-        setTrackingResult(response)
-        if (response.tickets.length === 0) {
-          setTrackingError('此追蹤碼暫無工單記錄')
+      // 如果有附件，使用 FormData；否則使用 JSON
+      let response: Response
+      
+      if (selectedFiles.length > 0) {
+        // 使用 FormData 上傳附件
+        const formData = new FormData()
+        formData.append('subject', createForm.subject)
+        formData.append('body', createForm.body)
+        formData.append('category', createForm.category)
+        formData.append('priority', createForm.priority)
+        if (!isLoggedIn) {
+          formData.append('email', createForm.email || '')
+        }
+        
+        // 添加附件
+        selectedFiles.forEach((file, index) => {
+          formData.append(`attachments`, file)
+        })
+
+        const headers: Record<string, string> = {}
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
+        response = await fetch('/api/support/tickets', {
+          method: 'POST',
+          headers,
+          body: formData
+        })
+      } else {
+        // 沒有附件，使用 JSON
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        }
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
+        response = await fetch('/api/support/tickets', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            ...createForm,
+            email: isLoggedIn ? undefined : createForm.email
+          })
+        })
+      }
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        // 重置表單和附件
+        setCreateForm({
+          subject: '',
+          body: '',
+          category: 'other',
+          priority: 'medium',
+          email: ''
+        })
+        setSelectedFiles([])
+        setCreateStep(1)
+        
+        // 顯示成功訊息
+        alert(isLoggedIn ? '支援單已成功建立！' : '支援單已建立！請查看 Email 中的追蹤連結。')
+        
+        // 如果已登入，重新載入支援單列表
+        if (isLoggedIn) {
+          setCurrentView('list')
+          fetchMyTickets()
+        } else {
+          setCurrentView('track')
         }
       } else {
-        setTrackingError(response.msg || '查詢失敗')
+        const errorData = await response.json()
+        throw new Error(errorData.msg || '建立支援單失敗')
       }
-    } catch (e: any) {
-      setTrackingError(e.message || '查詢失敗，請稍後重試')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
     } finally {
-      setSearching(false)
+      setSubmitLoading(false)
     }
   }
 
-  return (
-    <div className=\"min-h-screen bg-bg pb-20\">
-      <MobileBottomNav />
-      
-      {/* 頂部導航 */}
-      <div className=\"bg-surface border-b border-border sticky top-0 z-10\">
-        <div className=\"flex items-center justify-between p-4\">
-          <button onClick={() => window.history.back()} className=\"flex items-center gap-2 text-muted hover:text-fg transition-colors\">
-            <ArrowLeft className=\"w-5 h-5\" /> 返回
-          </button>
-          <h1 className=\"text-lg font-semibold text-fg\">客服支援</h1>
-          <div className=\"w-10\"></div>
-        </div>
-        
-        {/* 標籤頁 */}
-        <div className=\"flex border-t border-border\">
-          <button
-            onClick={() => setActiveTab('submit')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'submit'
-                ? 'text-primary border-b-2 border-primary bg-primary/5'
-                : 'text-muted hover:text-fg'
-            }`}
-          >
-            <Plus className=\"w-4 h-4\" />
-            提交工單
-          </button>
-          <button
-            onClick={() => setActiveTab('track')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'track'
-                ? 'text-primary border-b-2 border-primary bg-primary/5'
-                : 'text-muted hover:text-fg'
-            }`}
-          >
-            <Search className=\"w-4 h-4\" />
-            追蹤工單
-          </button>
-          {isLoggedIn && (
+  const handleTrackTicket = async () => {
+    if (!trackForm.ticket_id || !trackForm.email) {
+      setError('請填寫支援單編號和 Email')
+      return
+    }
+
+    setSubmitLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/support/guest/track', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(trackForm)
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.tracking_url) {
+          window.location.href = data.tracking_url
+        }
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.msg || '追蹤支援單失敗')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知錯誤')
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
+  const filteredTickets = tickets.filter(ticket => {
+    const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus
+    const matchesSearch = !searchQuery || 
+      ticket.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ticket.id.toLowerCase().includes(searchQuery.toLowerCase())
+    
+    return matchesStatus && matchesSearch
+  })
+
+  const renderTopBar = () => (
+    <div className="sticky top-0 bg-surface/80 backdrop-blur-md border-b border-border z-10">
+      {/* 手機安全區域留空 */}
+      <div className="pt-safe-top" />
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          {currentView !== 'list' && (
             <button
-              onClick={() => setActiveTab('history')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'history'
-                  ? 'text-primary border-b-2 border-primary bg-primary/5'
-                  : 'text-muted hover:text-fg'
-              }`}
+              onClick={() => setCurrentView('list')}
+              className="p-3 hover:bg-surface-2 rounded-lg transition-colors touch-manipulation active:scale-95"
+              type="button"
             >
-              <Ticket className=\"w-4 h-4\" />
-              我的工單
+              <ArrowLeft className="w-5 h-5" />
             </button>
           )}
+          <h1 className="text-lg font-semibold text-fg">
+            {currentView === 'list' && '我的支援'}
+            {currentView === 'create' && '提交支援單'}
+            {currentView === 'track' && '追蹤支援單'}
+          </h1>
+        </div>
+        
+        {currentView === 'list' && (
+          <button
+            onClick={fetchMyTickets}
+            disabled={loading}
+            className="p-3 hover:bg-surface-2 rounded-lg transition-colors disabled:opacity-50 touch-manipulation active:scale-95"
+            type="button"
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderBottomNav = () => (
+    <div className="sticky bottom-0 bg-surface/80 backdrop-blur-md border-t border-border">
+      <div className="flex items-center justify-around py-3">
+        <button
+          onClick={() => {
+            setCurrentView('list')
+            setError(null) // 清除錯誤
+          }}
+          className={`flex flex-col items-center gap-1 p-3 rounded-lg transition-all duration-200 touch-manipulation active:scale-95 ${
+            currentView === 'list' ? 'text-primary bg-primary/10' : 'text-muted hover:text-fg hover:bg-surface-hover'
+          }`}
+          type="button"
+        >
+          <MessageCircle className="w-5 h-5" />
+          <span className="text-xs font-medium">我的支援單</span>
+        </button>
+        
+        <button
+          onClick={() => {
+            setCurrentView('create')
+            setError(null) // 清除錯誤
+            setCreateStep(1) // 重置步驟
+          }}
+          className={`flex flex-col items-center gap-1 p-3 rounded-lg transition-all duration-200 touch-manipulation active:scale-95 ${
+            currentView === 'create' ? 'text-primary bg-primary/10' : 'text-muted hover:text-fg hover:bg-surface-hover'
+          }`}
+          type="button"
+        >
+          <Plus className="w-5 h-5" />
+          <span className="text-xs font-medium">新支援單</span>
+        </button>
+        
+        {!isLoggedIn && (
+          <button
+            onClick={() => {
+              setCurrentView('track')
+              setError(null) // 清除錯誤
+            }}
+            className={`flex flex-col items-center gap-1 p-3 rounded-lg transition-all duration-200 touch-manipulation active:scale-95 ${
+              currentView === 'track' ? 'text-primary bg-primary/10' : 'text-muted hover:text-fg hover:bg-surface-hover'
+            }`}
+            type="button"
+          >
+            <Search className="w-5 h-5" />
+            <span className="text-xs font-medium">追蹤</span>
+          </button>
+        )}
+      </div>
+      {/* 手機底部安全區域留空 */}
+      <div className="pb-safe-bottom" />
+    </div>
+  )
+
+  const renderTicketList = () => (
+    <div className="flex flex-col h-full">
+      {/* 搜尋和篩選 */}
+      <div className="p-4 space-y-3">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="搜尋支援單..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2 bg-surface border border-border rounded-lg mobile-input text-base"
+          />
+        </div>
+        
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {['all', 'open', 'awaiting_user', 'awaiting_admin', 'resolved', 'closed'].map(status => (
+            <button
+              key={status}
+              onClick={() => setFilterStatus(status)}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                filterStatus === status 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-surface-hover text-muted hover:text-fg'
+              }`}
+            >
+              {status === 'all' ? '全部' : 
+               status === 'open' ? '開啟' :
+               status === 'awaiting_user' ? '等待回覆' :
+               status === 'awaiting_admin' ? '等待處理' :
+               status === 'resolved' ? '已解決' : '已關閉'}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 內容區域 */}
-      <div className=\"p-4\">
-        {/* 提交工單 */}
-        {activeTab === 'submit' && (
-          <div>
-            <div className=\"mb-4\">
-              <h2 className=\"text-base font-medium text-fg mb-1\">提交新工單</h2>
-              <p className=\"text-sm text-muted\">遇到問題或有建議？告訴我們吧！</p>
+      {/* 支援單列表 */}
+      <div className="flex-1 px-4 pb-4">
+        {error && (
+          <div className="mb-4 p-3 bg-danger-bg border border-danger-border rounded-lg">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-danger-text" />
+              <span className="text-sm text-danger-text">{error}</span>
             </div>
-            <MobileSupportForm
-              isLoggedIn={isLoggedIn}
-              personalId={personalId}
-              mySchool={mySchool}
-              onSubmit={handleSubmit}
-              isSubmitting={submitting}
-              result={submitResult}
-              message={submitMsg}
-            />
           </div>
         )}
 
-        {/* 追蹤工單 */}
-        {activeTab === 'track' && (
-          <div>
-            <div className=\"mb-4\">
-              <h2 className=\"text-base font-medium text-fg mb-1\">追蹤工單進度</h2>
-              <p className=\"text-sm text-muted\">使用追蹤碼查看工單狀態</p>
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <RefreshCw className="w-6 h-6 animate-spin text-muted" />
+          </div>
+        ) : filteredTickets.length === 0 ? (
+          <div className="text-center py-8">
+            <MessageCircle className="w-12 h-12 mx-auto text-muted mb-3" />
+            <p className="text-sm text-muted">
+              {tickets.length === 0 ? '尚無支援單記錄' : '沒有符合條件的支援單'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredTickets.map(ticket => (
+              <MobileTicketCard 
+                key={ticket.id}
+                ticket={{
+                  ...ticket,
+                  ticket_id: ticket.id,
+                  response_count: ticket.message_count || 0,
+                  scope: '我的支援單',
+                  updated_at: ticket.last_activity_at || ticket.created_at
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderCreateForm = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 p-4">
+        {error && (
+          <div className="mb-4 p-3 bg-danger-bg border border-danger-border rounded-lg">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-danger-text" />
+              <span className="text-sm text-danger-text">{error}</span>
             </div>
-            
-            <div className=\"space-y-4\">
-              <div>
-                <label className=\"block text-sm font-medium text-fg mb-2\">追蹤碼</label>
-                <div className=\"flex gap-2\">
-                  <input
-                    type=\"text\"
-                    value={trackingCode}
-                    onChange={(e) => setTrackingCode(e.target.value)}
-                    placeholder=\"FK12345ABCDE\"
-                    className=\"form-control flex-1\"
-                    onKeyDown={(e) => e.key === 'Enter' && handleTrack()}
-                  />
-                  <button
-                    onClick={handleTrack}
-                    disabled={searching}
-                    className=\"btn-primary px-4 py-2 flex items-center gap-1 whitespace-nowrap\"
-                  >
-                    <Search className={`w-4 h-4 ${searching ? 'animate-pulse' : ''}`} />
-                    {searching ? '搜索中' : '查詢'}
-                  </button>
-                </div>
+          </div>
+        )}
+
+        {/* 步驟指示器 */}
+        <div className="flex items-center justify-between mb-6">
+          {[1, 2, 3].map(step => (
+            <div key={step} className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step === createStep ? 'bg-primary text-primary-foreground' :
+                step < createStep ? 'bg-success text-success-foreground' :
+                'bg-surface-hover text-muted'
+              }`}>
+                {step < createStep ? <CheckCircle2 className="w-4 h-4" /> : step}
               </div>
-
-              {trackingError && (
-                <div className=\"bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3\">
-                  <div className=\"text-sm text-red-800 dark:text-red-200\">{trackingError}</div>
-                </div>
+              {step < 3 && (
+                <div className={`flex-1 h-0.5 mx-2 ${
+                  step < createStep ? 'bg-success' : 'bg-surface-hover'
+                }`} />
               )}
+            </div>
+          ))}
+        </div>
 
-              {trackingResult && trackingResult.tickets && (
-                <div className=\"space-y-3\">
-                  <div className=\"text-sm text-muted\">
-                    找到 {trackingResult.total_tickets} 個工單
-                  </div>
-                  {trackingResult.tickets.map((ticket: any, index: number) => (
-                    <MobileTicketCard key={`${ticket.ticket_number}-${index}`} ticket={{
-                      ticket_id: ticket.ticket_number,
-                      subject: ticket.subject,
-                      category: ticket.category,
-                      status: ticket.status,
-                      priority: ticket.priority,
-                      created_at: ticket.created_at,
-                      updated_at: ticket.updated_at,
-                      response_count: ticket.response_count,
-                      scope: ticket.scope,
-                      replies: ticket.replies
-                    }} />
+        {createStep === 1 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium mb-4">1. 基本資訊</h2>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">問題分類</label>
+              <select
+                value={createForm.category}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, category: e.target.value }))}
+                className="w-full p-3 border border-border rounded-lg"
+              >
+                <option value="technical">技術問題</option>
+                <option value="account">帳戶問題</option>
+                <option value="feature">功能建議</option>
+                <option value="bug">錯誤回報</option>
+                <option value="abuse">濫用檢舉</option>
+                <option value="other">其他問題</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">優先級</label>
+              <select
+                value={createForm.priority}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, priority: e.target.value }))}
+                className="w-full p-3 border border-border rounded-lg"
+              >
+                <option value="low">低優先級</option>
+                <option value="medium">中優先級</option>
+                <option value="high">高優先級</option>
+                <option value="urgent">緊急</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">問題主題</label>
+              <input
+                type="text"
+                placeholder="請簡要描述您的問題"
+                value={createForm.subject}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, subject: e.target.value }))}
+                className="w-full p-3 border border-border rounded-lg mobile-input text-base"
+                maxLength={500}
+              />
+                                 <p className="text-xs text-muted mt-1">{subjectLength}/500</p>
+            </div>
+          </div>
+        )}
+
+        {createStep === 2 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium mb-4">2. 詳細描述</h2>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">問題詳情</label>
+              <textarea
+                placeholder="請詳細描述您遇到的問題，包括：&#10;- 具體的錯誤訊息&#10;- 重現步驟&#10;- 預期行為&#10;- 實際行為"
+                rows={8}
+                value={createForm.body}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, body: e.target.value }))}
+                className="w-full p-3 border border-border rounded-lg bg-surface resize-none mobile-input text-base"
+                maxLength={10000}
+              />
+                                 <p className="text-xs text-muted mt-1">{bodyLength}/10000</p>
+            </div>
+
+            <div className="bg-info-bg border border-info-border p-3 rounded-lg">
+              <h3 className="text-sm font-medium text-info-text mb-1">💡 提示</h3>
+              <p className="text-xs text-info-text">
+                提供詳細資訊能幫助我們更快解決您的問題。可以包含截圖、錯誤訊息或操作步驟。
+              </p>
+            </div>
+          </div>
+        )}
+
+        {createStep === 3 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium mb-4">3. 提交確認</h2>
+            
+            {!isLoggedIn && (
+              <div>
+                <label className="block text-sm font-medium mb-2">聯絡 Email *</label>
+                <input
+                  type="email"
+                  placeholder="用於接收工單更新通知"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full p-3 border border-border rounded-lg mobile-input text-base"
+                />
+                <p className="text-xs text-muted mt-1">
+                  我們會將支援單追蹤連結發送到這個 Email 地址
+                </p>
+              </div>
+            )}
+
+            {/* 附件上傳 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">附件（可選）</label>
+              <div 
+                className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                  isDragOver 
+                    ? 'border-primary bg-primary/5' 
+                    : 'border-border'
+                }`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx,.txt"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  id="mobile-file-upload"
+                />
+                <label htmlFor="mobile-file-upload" className="cursor-pointer">
+                  <Paperclip className="w-8 h-8 mx-auto mb-2 text-muted" />
+                  <p className="text-sm text-muted mb-1">點擊上傳檔案或拖拽檔案到此處</p>
+                  <p className="text-xs text-muted">支援圖片、PDF、Word 文件等格式，單檔最大 10MB</p>
+                </label>
+              </div>
+              
+              {/* 已選擇的檔案列表 */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm font-medium">已選擇的檔案：</p>
+                  {selectedFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-surface-hover rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Paperclip className="w-4 h-4 text-muted" />
+                        <span className="text-sm">{file.name}</span>
+                        <span className="text-xs text-muted">({formatFileSize(file.size)})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(index)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
             </div>
-          </div>
-        )}
 
-        {/* 我的工單 */}
-        {activeTab === 'history' && isLoggedIn && (
-          <div>
-            <div className=\"flex items-center justify-between mb-4\">
-              <div>
-                <h2 className=\"text-base font-medium text-fg mb-1\">我的工單</h2>
-                <p className=\"text-sm text-muted\">您提交的工單列表</p>
+            <div className="bg-surface-hover p-4 rounded-lg">
+              <h3 className="font-medium mb-2">支援單摘要</h3>
+              <div className="space-y-2 text-sm text-muted">
+                <div><strong>分類：</strong>{createForm.category}</div>
+                <div><strong>優先級：</strong>{createForm.priority}</div>
+                <div><strong>主題：</strong>{createForm.subject}</div>
+                <div><strong>內容：</strong>{createForm.body.substring(0, 100)}...</div>
+                {selectedFiles.length > 0 && (
+                  <div><strong>附件：</strong>{selectedFiles.length} 個檔案</div>
+                )}
               </div>
-              <button
-                onClick={loadMyTickets}
-                disabled={loadingHistory}
-                className=\"text-primary hover:text-primary-dark text-sm font-medium\"
-              >
-                {loadingHistory ? '載入中...' : '刷新'}
-              </button>
             </div>
-
-            {loadingHistory ? (
-              <div className=\"text-center py-8 text-muted\">
-                <MessageSquare className=\"w-8 h-8 mx-auto mb-2 animate-pulse\" />
-                <div>載入中...</div>
-              </div>
-            ) : myTickets.length === 0 ? (
-              <div className=\"text-center py-8 text-muted\">
-                <Ticket className=\"w-8 h-8 mx-auto mb-2\" />
-                <div className=\"text-sm\">暫無工單記錄</div>
-              </div>
-            ) : (
-              <div className=\"space-y-3\">
-                {myTickets.map((ticket, index) => (
-                  <MobileTicketCard key={`${ticket.ticket_id}-${index}`} ticket={ticket} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 未登入用戶的歷史工單提示 */}
-        {activeTab === 'history' && !isLoggedIn && (
-          <div className=\"text-center py-8 text-muted\">
-            <Ticket className=\"w-8 h-8 mx-auto mb-2\" />
-            <div className=\"text-sm mb-2\">請登入以查看您的工單歷史</div>
-            <a href=\"/auth\" className=\"text-primary hover:text-primary-dark text-sm font-medium\">
-              立即登入
-            </a>
           </div>
         )}
       </div>
+
+      {/* 底部按鈕 */}
+      <div className="p-4 border-t border-border bg-surface">
+        <div className="flex gap-3">
+          {createStep > 1 && (
+            <button
+              onClick={() => {
+                setCreateStep(prev => prev - 1)
+                setError(null) // 清除錯誤
+              }}
+              className="flex-1 py-4 border border-border rounded-lg text-center font-medium hover:bg-surface-hover transition-all duration-200 touch-manipulation active:scale-95 min-h-[44px]"
+              type="button"
+            >
+              上一步
+            </button>
+          )}
+          
+          <button
+            onClick={() => {
+              if (createStep < 3) {
+                if (createStep === 1 && (!createForm.subject.trim() || !createForm.category)) {
+                  setError('請填寫問題主題和選擇分類')
+                  return
+                }
+                if (createStep === 2 && !createForm.body.trim()) {
+                  setError('請填寫問題詳情')
+                  return
+                }
+                setError(null)
+                setCreateStep(prev => prev + 1)
+              } else {
+                handleCreateTicket()
+              }
+            }}
+            disabled={submitLoading}
+            className="flex-1 py-4 bg-primary text-primary-foreground rounded-lg text-center font-medium hover:bg-primary/90 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation active:scale-95 min-h-[44px]"
+            type="button"
+          >
+            {submitLoading ? (
+              <div className="flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>提交中...</span>
+              </div>
+            ) : (
+              createStep < 3 ? '下一步' : '提交支援單'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderTrackForm = () => (
+    <div className="max-w-md mx-auto p-6">
+      <div className="bg-surface border border-border rounded-lg p-6">
+        <div className="text-center mb-6">
+          <Search className="w-12 h-12 mx-auto text-muted mb-4" />
+          <h1 className="text-xl font-bold mb-2">追蹤支援單</h1>
+          <p className="text-muted">輸入支援單編號或 Email 來查看工單狀態</p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-danger-bg border border-danger-border rounded-lg">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-danger-text" />
+              <span className="text-sm text-danger-text">{error}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">支援單編號</label>
+            <input
+              type="text"
+              placeholder="例如：SUP-ABC123"
+              value={trackForm.ticket_id}
+              onChange={(e) => setTrackForm(prev => ({ ...prev, ticket_id: e.target.value }))}
+              className="w-full p-3 border border-border rounded-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Email 地址</label>
+            <input
+              type="email"
+              placeholder="提交支援單時使用的 Email"
+              value={trackForm.email}
+              onChange={(e) => setTrackForm(prev => ({ ...prev, email: e.target.value }))}
+              className="w-full p-3 border border-border rounded-lg"
+            />
+          </div>
+
+          <button
+            onClick={handleTrackTicket}
+            disabled={submitLoading || !trackForm.ticket_id.trim() || !trackForm.email.trim()}
+            className="w-full py-4 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation active:scale-95 min-h-[44px]"
+            type="button"
+          >
+            {submitLoading ? (
+              <div className="flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>追蹤中...</span>
+              </div>
+            ) : (
+              '追蹤支援單'
+            )}
+          </button>
+        </div>
+
+        <div className="mt-6 p-4 bg-info-bg border border-info-border rounded-lg">
+          <h3 className="text-sm font-medium text-info-text mb-2">如何找到支援單編號？</h3>
+          <div className="text-xs text-info-text space-y-1">
+            <p>• 建立支援單後會收到確認 Email，其中包含支援單編號</p>
+            <p>• 支援單編號格式為 SUP-XXXXXX</p>
+            <p>• Email 主旨通常包含支援單編號</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="h-screen flex flex-col bg-background mobile-full-height">
+      {renderTopBar()}
+      
+      <div className="flex-1 overflow-y-auto mobile-scroll-smooth">
+        {currentView === 'list' && renderTicketList()}
+        {currentView === 'create' && renderCreateForm()}
+        {currentView === 'track' && renderTrackForm()}
+      </div>
+
+      {renderBottomNav()}
     </div>
   )
 }

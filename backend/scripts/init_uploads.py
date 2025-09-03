@@ -2,7 +2,6 @@
 """初始化上傳目錄結構"""
 
 import os
-import sys
 
 def init_upload_dirs():
     """創建必要的上傳目錄結構"""

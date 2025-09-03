@@ -3,8 +3,7 @@ from typing import Iterable
 import os
 from flask import jsonify, request
 from flask_jwt_extended import (
-    jwt_required, get_jwt_identity, create_access_token, create_refresh_token,
-    verify_jwt_in_request
+    jwt_required, get_jwt_identity, verify_jwt_in_request
 )
 from models import User, UserRole
 from utils.db import get_db
@@ -24,6 +23,26 @@ def get_current_user() -> User | None:
         return db.query(User).filter_by(username=ident).first()
     finally:
         db.close()
+
+
+def get_role() -> str | None:
+    """獲取當前用戶的角色"""
+    user = get_current_user()
+    return user.role if user else None
+
+
+def require_role(*roles: str):
+    """要求特定角色的裝飾器"""
+    def decorator(fn):
+        @wraps(fn)
+        @jwt_required()
+        def wrapper(*args, **kwargs):
+            user = get_current_user()
+            if not user or user.role not in roles:
+                return jsonify({"error": "權限不足"}), 403
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def _is_dev_bypass_enabled() -> bool:

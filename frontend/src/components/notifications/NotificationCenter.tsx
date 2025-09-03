@@ -56,15 +56,22 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
   useEffect(() => {
     if (!isOpen) return
 
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node
-      const panel = panelRef.current
-      const anchor = anchorRef.current
+      const handleClickOutside = (event: MouseEvent) => {
+    const target = event.target as Node
+    const panel = panelRef.current
+    const anchor = anchorRef.current
 
-      if (panel && !panel.contains(target) && anchor && !anchor.contains(target)) {
-        onClose()
-      }
+    if (panel && !panel.contains(target) && anchor && !anchor.contains(target)) {
+      onClose()
     }
+  }
+
+  // 點擊通知項目時標記為已讀
+  const handleNotificationClick = (notification: Notification) => {
+    if (!notification.read) {
+      markAsRead(notification.id)
+    }
+  }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -125,13 +132,13 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
   return (
     <div
       ref={panelRef}
-      className="fixed top-16 right-4 w-80 max-w-[calc(100vw-2rem)] bg-surface border border-border rounded-xl shadow-lg z-50 max-h-[80vh] flex flex-col overflow-hidden"
+      className="fixed top-20 md:top-16 right-2 md:right-4 w-[calc(100vw-1rem)] md:w-80 max-w-[calc(100vw-1rem)] md:max-w-[calc(100vw-2rem)] bg-surface border border-border rounded-xl shadow-lg z-50 max-h-[calc(100vh-8rem)] md:max-h-[80vh] flex flex-col overflow-hidden"
     >
       {/* 標題欄 */}
-      <div className="flex items-center justify-between p-4 border-b border-border bg-surface/80 backdrop-blur">
+      <div className="flex items-center justify-between p-3 md:p-4 border-b border-border bg-surface/80 backdrop-blur">
         <div className="flex items-center gap-2">
-          <Bell className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold text-fg">通知中心</h3>
+          <Bell className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+          <h3 className="font-semibold text-fg text-sm md:text-base">通知中心</h3>
           {unreadCount > 0 && (
             <span className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded-full">
               {unreadCount}
@@ -140,19 +147,19 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
         </div>
         <button
           onClick={onClose}
-          className="text-muted hover:text-fg transition-colors"
+          className="text-muted hover:text-fg transition-colors p-1"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* 篩選與操作欄 */}
-      <div className="p-3 border-b border-border bg-muted/20">
-        <div className="flex items-center justify-between mb-2">
+      <div className="p-1.5 md:p-2 border-b border-border bg-muted/20">
+        <div className="flex items-center justify-between mb-1 gap-2">
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as any)}
-            className="text-xs border border-border rounded px-2 py-1 bg-surface"
+            className="text-xs border border-border rounded-full px-2.5 py-1 bg-surface flex-1 md:flex-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all duration-200"
           >
             <option value="all">全部</option>
             <option value="unread">未讀</option>
@@ -164,27 +171,29 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
             <option value="system">系統</option>
           </select>
           
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-shrink-0">
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="text-xs text-primary hover:underline flex items-center gap-1"
+                className="text-xs text-primary hover:underline flex items-center gap-1 whitespace-nowrap"
               >
                 <Check className="w-3 h-3" />
-                全部已讀
+                <span className="hidden sm:inline">全部已讀</span>
+                <span className="sm:hidden">已讀</span>
               </button>
             )}
             {notifications.length > 0 && (
               <button
                 onClick={handleClearAll}
-                className={`text-xs flex items-center gap-1 transition-colors ${
+                className={`text-xs flex items-center gap-1 transition-colors whitespace-nowrap ${
                   isConfirmingClear 
                     ? 'text-red-600 font-medium' 
                     : 'text-muted hover:text-fg'
                 }`}
               >
                 <Trash2 className="w-3 h-3" />
-                {isConfirmingClear ? '確認清空？' : '清空全部'}
+                <span className="hidden sm:inline">{isConfirmingClear ? '確認清空？' : '清空全部'}</span>
+                <span className="sm:hidden">{isConfirmingClear ? '確認' : '清空'}</span>
               </button>
             )}
           </div>
@@ -210,14 +219,14 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                 <div
                   key={notification.id}
                   className={`
-                    p-3 hover:bg-muted/20 cursor-pointer transition-colors relative
+                    p-2 md:p-3 hover:bg-muted/20 cursor-pointer transition-colors relative
                     ${!notification.read ? 'bg-primary/5' : ''}
                   `}
                   onClick={() => handleNotificationClick(notification)}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-2 md:gap-3">
                     <div className="flex-shrink-0 mt-0.5">
-                      <IconComponent className={`w-4 h-4 ${
+                      <IconComponent className={`w-3 h-3 md:w-4 md:h-4 ${
                         notification.icon === 'success' ? 'text-green-600' :
                         notification.icon === 'warning' ? 'text-amber-600' :
                         notification.icon === 'error' ? 'text-red-600' :
@@ -251,11 +260,11 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                         })()}
                       </div>
                       
-                      <h4 className="text-sm font-medium text-fg mb-1 leading-tight">
+                      <h4 className="text-xs md:text-sm font-medium text-fg mb-1 leading-tight">
                         {notification.title}
                       </h4>
                       
-                      <p className="text-sm text-muted leading-relaxed line-clamp-2">
+                      <p className="text-xs md:text-sm text-muted leading-relaxed line-clamp-2">
                         {notification.message}
                       </p>
                       
@@ -275,7 +284,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                             e.stopPropagation()
                             markAsRead(notification.id)
                           }}
-                          className="text-muted hover:text-primary transition-colors"
+                          className="text-muted hover:text-primary transition-colors p-1"
                           title="標記為已讀"
                         >
                           <Check className="w-3 h-3" />
@@ -286,7 +295,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                           e.stopPropagation()
                           removeNotification(notification.id)
                         }}
-                        className="text-muted hover:text-red-600 transition-colors"
+                        className="text-muted hover:text-red-600 transition-colors p-1"
                         title="刪除通知"
                       >
                         <X className="w-3 h-3" />
@@ -316,7 +325,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
 
       {/* 底部說明 */}
       {notifications.length > 0 && (
-        <div className="p-3 border-t border-border bg-muted/20">
+        <div className="p-2 md:p-3 border-t border-border bg-muted/20">
           <p className="text-xs text-muted text-center">
             顯示最近 {notifications.length} 則通知
           </p>

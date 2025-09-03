@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { Palette, Save, Upload, Download, Eye, Sparkles, Home } from 'lucide-react'
-import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { NavBar } from '@/components/layout/NavBar'
+import { PageLayout } from '@/components/layout/PageLayout'
 
 interface ThemeConfig {
   name: string
@@ -86,7 +85,7 @@ const defaultTheme: ThemeConfig = {
 }
 
 export default function ThemeDesignerPage() {
-  const { isLoggedIn, user } = useAuth()
+  const { isLoggedIn, username } = useAuth()
   const navigate = useNavigate()
   const [theme, setTheme] = useState<ThemeConfig>(defaultTheme)
   const [activeTab, setActiveTab] = useState<'colors' | 'typography' | 'layout' | 'effects'>('colors')
@@ -179,39 +178,48 @@ export default function ThemeDesignerPage() {
 
   const submitToPlatform = async () => {
     try {
-      const webhookUrl = process.env.REACT_APP_DISCORD_WEBHOOK_URL || localStorage.getItem('discord_webhook_url')
-      if (!webhookUrl) {
-        alert('未設定 Discord Webhook，無法提交到平台')
-        return
-      }
-
+      // 使用統一的平台 API 提交主題提案
       const payload = {
-        embeds: [{
-          title: "🎨 新主題提交",
-          description: `用戶提交了新的主題設計`,
-          color: parseInt(theme.colors.primary.replace('#', ''), 16),
-          fields: [
-            { name: "主題名稱", value: theme.name, inline: true },
-            { name: "作者", value: user?.username || "匿名用戶", inline: true },
-            { name: "說明", value: theme.description || "無說明", inline: false },
-            { name: "主色調", value: theme.colors.primary, inline: true },
-            { name: "輔助色", value: theme.colors.secondary, inline: true },
-            { name: "強調色", value: theme.colors.accent, inline: true }
-          ],
-          timestamp: new Date().toISOString(),
-          footer: { text: "ForumKit 主題設計工具 by Serelix Studio" }
-        }],
-        content: `\`\`\`json\n${JSON.stringify(theme, null, 2)}\n\`\`\``
+        name: theme.name,
+        description: theme.description || "由主題設計工具創建的主題",
+        colors: {
+          primary: theme.colors.primary,
+          secondary: theme.colors.secondary,
+          accent: theme.colors.accent,
+          background: theme.colors.background,
+          surface: theme.colors.surface,
+          text: theme.colors.text,
+          textMuted: theme.colors.textMuted,
+          border: theme.colors.border,
+          success: theme.colors.success,
+          warning: theme.colors.warning,
+          error: theme.colors.error
+        },
+        fonts: theme.fonts,
+        borderRadius: theme.borderRadius,
+        spacing: theme.spacing,
+        shadows: theme.shadows,
+        animations: theme.animations,
+        author: user?.username || "匿名用戶",
+        source: "theme_designer"
       }
 
-      await fetch(webhookUrl, {
+      const response = await fetch('/api/color_vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
 
-      alert('主題已提交給開發團隊審核！')
+      const result = await response.json()
+      
+      if (result.ok) {
+        const deliveryStatus = result.delivery === 'discord' ? '已成功發送到 Discord' : '已儲存到本地'
+        alert(`主題已提交給開發團隊審核！\n狀態：${deliveryStatus}`)
+      } else {
+        alert(`提交失敗：${result.error || '未知錯誤'}`)
+      }
     } catch (e) {
+      console.error('主題提交失敗:', e)
       alert('提交失敗，請檢查網路連線')
     }
   }
@@ -273,11 +281,7 @@ export default function ThemeDesignerPage() {
   )
 
   return (
-    <div className="min-h-screen min-h-dvh">
-      <NavBar pathname="/theme-designer" />
-      <MobileBottomNav />
-
-      <main className="mx-auto max-w-5xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+    <PageLayout pathname="/theme-designer" maxWidth="max-w-5xl">
         {/* 頁首卡片 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
@@ -503,7 +507,7 @@ export default function ThemeDesignerPage() {
                 className="btn-ghost w-full px-4 py-2 flex items-center justify-center gap-2"
               >
                 <Upload className="w-4 h-4" />
-                提交給平台
+                提交給平台 Webhook
               </button>
               
               <div className="flex gap-2">
@@ -558,16 +562,15 @@ export default function ThemeDesignerPage() {
             {/* 使用說明 */}
             <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
               <h3 className="font-medium text-fg mb-2">使用說明</h3>
-              <ul className="text-sm text-muted space-y-1">
-                <li>• 修改設定後點擊「即時預覽」查看效果</li>
-                <li>• 登入用戶可將主題儲存至個人資料</li>
-                <li>• 「提交給平台」會將主題發送給開發團隊</li>
-                <li>• 可匯出主題檔案分享給其他用戶</li>
-              </ul>
+                             <ul className="text-sm text-muted space-y-1">
+                 <li>• 修改設定後點擊「即時預覽」查看效果</li>
+                 <li>• 登入用戶可將主題儲存至個人資料</li>
+                 <li>• 「提交給平台 Webhook」會將完整主題配置（顏色、字體、間距、陰影、動畫）發送給開發團隊審核</li>
+                 <li>• 可匯出主題檔案分享給其他用戶</li>
+               </ul>
             </div>
           </div>
         </div>
-      </main>
-    </div>
-  )
-}
+      </PageLayout>
+    )
+  }

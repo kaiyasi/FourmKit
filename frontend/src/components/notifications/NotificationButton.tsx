@@ -19,7 +19,7 @@ export default function NotificationButton({
   showLabel = false,
   size = 'md' 
 }: NotificationButtonProps) {
-  const { unreadCount, showBadge } = useNotifications()
+  const { unreadCount, showBadge, showCount } = useNotifications()
   const [isOpen, setIsOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
@@ -57,29 +57,30 @@ export default function NotificationButton({
       >
         <Bell className={`${iconSizes[size]} text-muted hover:text-fg transition-colors`} />
         
-        {/* 紅點通知徽章 */}
+        {/* 通知徽章 */}
         {showBadge && (
           <div className="absolute -top-1 -right-1">
-            {unreadCount > 0 && unreadCount < 10 ? (
-              // 顯示具體數字（小於 10）
-              <div className="
-                w-5 h-5 bg-red-500 text-white text-xs font-bold 
-                rounded-full flex items-center justify-center
-                shadow-sm animate-pulse
-              ">
-                {unreadCount}
-              </div>
-            ) : unreadCount >= 10 ? (
-              // 顯示 9+ 
-              <div className="
-                px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold 
-                rounded-full flex items-center justify-center
-                shadow-sm animate-pulse min-w-[1.25rem]
-              ">
-                9+
-              </div>
+            {showCount && unreadCount > 0 ? (
+              // 顯示數字徽章（10秒內）
+              unreadCount < 10 ? (
+                <div className="
+                  w-5 h-5 bg-red-500 text-white text-xs font-bold 
+                  rounded-full flex items-center justify-center
+                  shadow-sm animate-pulse
+                ">
+                  {unreadCount}
+                </div>
+              ) : (
+                <div className="
+                  px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold 
+                  rounded-full flex items-center justify-center
+                  shadow-sm animate-pulse min-w-[1.25rem]
+                ">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </div>
+              )
             ) : (
-              // 只顯示紅點
+              // 10秒後顯示紅點
               <div className="
                 w-3 h-3 bg-red-500 rounded-full 
                 shadow-sm animate-pulse
@@ -89,7 +90,7 @@ export default function NotificationButton({
         )}
 
         {/* 有新通知時的呼吸光暈效果 */}
-        {showBadge && (
+        {showBadge && showCount && (
           <div className="absolute inset-0 rounded-full bg-primary/10 animate-ping" />
         )}
       </button>
@@ -98,7 +99,7 @@ export default function NotificationButton({
       {showLabel && (
         <span className="ml-2 text-sm text-muted">
           通知
-          {unreadCount > 0 && (
+          {showCount && unreadCount > 0 && (
             <span className="ml-1 text-primary font-medium">
               ({unreadCount})
             </span>

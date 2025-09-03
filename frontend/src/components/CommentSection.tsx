@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { 
-  MessageCircle, 
+  MessageCircle,
   Send, 
   ThumbsUp, 
   ThumbsDown, 
@@ -10,8 +10,7 @@ import {
   MoreHorizontal,
   Loader2,
   AlertTriangle,
-  Trash2,
-  X
+  Trash2
 } from 'lucide-react'
 import { getRole, getRoleDisplayName } from '@/utils/auth'
 
@@ -73,14 +72,13 @@ export default function CommentSection({
   const [newComment, setNewComment] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [showComments, setShowComments] = useState(false)
+
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [total, setTotal] = useState(initialTotal || 0)
   const [error, setError] = useState<string | null>(null)
-  const [deleteRequesting, setDeleteRequesting] = useState(false)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [deleteReason, setDeleteReason] = useState('')
+
+
   
   // 貼文反應狀態
   const [reactionStats, setReactionStats] = useState<PostReactionStats>(initialReactionStats)
@@ -88,6 +86,7 @@ export default function CommentSection({
   const [reactLoading, setReactLoading] = useState<string | null>(null)
   
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const commentsContainerRef = useRef<HTMLDivElement>(null)
   const role = getRole()
   const isLoggedIn = !!localStorage.getItem('token') && role !== 'guest'
   const currentUserId = localStorage.getItem('token') ? (() => {
@@ -105,17 +104,26 @@ export default function CommentSection({
       setLoading(true)
       setError(null)
       
-      const response = await fetch(`/api/posts/${postId}/comments?page=${pageNum}&limit=20`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')||''}`
-        }
-      })
+      // 僅在有 token 時才附上 Authorization，避免空 Bearer 造成干擾
+      const token = localStorage.getItem('token') || ''
+      const headers: Record<string, string> = {}
+      if (token.trim()) headers['Authorization'] = `Bearer ${token}`
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 15000)
+      const response = await fetch(`/api/posts/${postId}/comments?page=${pageNum}&limit=20&_=${Date.now()}`,
+        { headers, signal: controller.signal, cache: 'no-store' as RequestCache })
+      clearTimeout(timer)
       
       if (!response.ok) {
         throw new Error('載入留言失敗')
       }
       
-      const data = await response.json()
+      const data = await response.json().catch(()=>({ ok: false, comments: [], pagination: { total: 0, has_next: false } }))
+      
+      // 檢查 API 響應是否成功
+      if (!data.ok) {
+        throw new Error(data.error || '載入留言失敗')
+      }
       
       if (append) {
         setComments(prev => [...prev, ...data.comments])
@@ -126,9 +134,9 @@ export default function CommentSection({
       setTotal(data.pagination.total)
       setHasMore(data.pagination.has_next)
       setPage(pageNum)
-    } catch (error) {
+    } catch (error: any) {
       console.error('載入留言失敗:', error)
-      setError('載入留言失敗，請稍後再試')
+      setError(error?.name === 'AbortError' ? '載入逾時，請重試' : '載入留言失敗，請稍後再試')
     } finally {
       setLoading(false)
     }
@@ -278,36 +286,7 @@ export default function CommentSection({
     }
   }
 
-  // 刪文請求
-  const handleDeleteRequest = async () => {
-    if (!deleteReason.trim()) {
-      setError('請輸入刪文理由')
-      return
-    }
-    setDeleteRequesting(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/posts/${postId}/delete_request`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')||''}`
-        },
-        body: JSON.stringify({ reason: deleteReason.trim() })
-      })
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || '申請失敗')
-      }
-      setShowDeleteDialog(false)
-      setDeleteReason('')
-      setError('已送出刪文申請')
-    } catch (error: any) {
-      setError(error.message || '申請失敗，請稍後再試')
-    } finally {
-      setDeleteRequesting(false)
-    }
-  }
+
   const deleteComment = async (commentId: number) => {
     if (!confirm('確定要刪除此留言嗎？')) return
     
@@ -333,6 +312,7 @@ export default function CommentSection({
     }
   }
 
+
   // 自動調整 textarea 高度
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNewComment(e.target.value)
@@ -344,15 +324,41 @@ export default function CommentSection({
 
 
   useEffect(() => {
-    if (showComments) {
-      loadComments(1)
-    }
-  }, [showComments, postId])
+    loadComments(1)
+  }, [postId])
+
+  // 守門員：若長時間仍在載入，顯示逾時提示避免卡在 spinner
+  useEffect(() => {
+    if (!loading) return
+    const t = setTimeout(() => {
+      setLoading(false)
+      setError(prev => prev || '載入逾時，請點擊重試')
+    }, 12000)
+    return () => clearTimeout(t)
+  }, [loading])
 
   // 初始載入貼文反應統計
   useEffect(() => {
     loadPostReactions()
   }, [postId])
+
+  // Scroll-based auto-loading for comments
+  useEffect(() => {
+    const container = commentsContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      
+      // Load more when user is near bottom (200px threshold)
+      if (scrollHeight - scrollTop - clientHeight < 200 && hasMore && !loading) {
+        loadComments(page + 1, true)
+      }
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [page, hasMore, loading])
 
   // 清除錯誤訊息
   useEffect(() => {
@@ -406,83 +412,11 @@ export default function CommentSection({
         
         {/* 右側按鈕群 */}
         <div className="flex items-center gap-2">
-          {/* 刪文請求按鈕 - 所有用戶都可以申請 */}
-          {isLoggedIn && (
-            <button
-              onClick={() => setShowDeleteDialog(true)}
-              disabled={deleteRequesting}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors text-sm disabled:opacity-50"
-            >
-              <Trash2 className="w-4 h-4" />
-              {deleteRequesting ? '處理中...' : '刪文請求'}
-            </button>
-          )}
           {extraActions}
-      {/* 刪文理由輸入 Dialog */}
-      {showDeleteDialog && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-md border border-border relative animate-fadein">
-            <button
-              className="absolute top-3 right-3 text-muted hover:text-fg transition-colors"
-              onClick={() => setShowDeleteDialog(false)}
-              disabled={deleteRequesting}
-              aria-label="關閉"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-xl font-bold mb-4 text-red-700 flex items-center gap-2">
-              <Trash2 className="w-5 h-5" />
-              申請刪除貼文
-            </h2>
-            <div className="mb-3">
-              <label className="block text-sm font-medium mb-1 text-muted">刪除理由</label>
-              <textarea
-                className="w-full border rounded-lg p-2 text-sm focus:ring focus:border-primary min-h-[60px]"
-                rows={3}
-                placeholder="請輸入刪除理由..."
-                value={deleteReason}
-                onChange={e => setDeleteReason(e.target.value)}
-                disabled={deleteRequesting}
-                maxLength={300}
-              />
-              <div className="text-xs text-muted mt-1 text-right">{deleteReason.length}/300</div>
-            </div>
-            {error && (
-              <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" />
-                <span>{error}</span>
-              </div>
-            )}
-            <div className="flex gap-3 justify-end mt-4">
-              <button
-                className="px-4 py-2 rounded-lg bg-muted text-white font-semibold hover:bg-fg/80 transition-colors"
-                onClick={() => setShowDeleteDialog(false)}
-                disabled={deleteRequesting}
-              >取消</button>
-              <button
-                className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold shadow hover:bg-red-700 transition-colors disabled:opacity-50"
-                onClick={handleDeleteRequest}
-                disabled={deleteRequesting || !deleteReason.trim()}
-              >{deleteRequesting ? '送出中...' : '送出申請'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-          
-          {/* 留言按鈕 */}
-          <button
-            onClick={() => setShowComments(!showComments)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-hover hover:bg-surface-active text-muted hover:text-fg transition-all"
-          >
-            <MessageCircle className="w-4 h-4" />
-            <span>留言</span>
-            {total > 0 && <span className="font-medium">{total}</span>}
-          </button>
         </div>
       </div>
-
       {/* 留言區 */}
-      {showComments && (
+      {(
         <div className="space-y-4">
           {/* 發布留言 */}
           {isLoggedIn ? (
@@ -537,10 +471,20 @@ export default function CommentSection({
           ) : comments.length === 0 ? (
             <div className="text-center py-8">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 text-muted opacity-50" />
-              <p className="text-muted">暫無留言，來搶沙發吧！</p>
+              <p className="text-muted">
+                {error ? error : '暫無留言，來搶沙發吧！'}
+              </p>
+              {error && (
+                <button
+                  className="mt-2 px-3 py-1.5 text-xs rounded border hover:bg-surface"
+                  onClick={() => loadComments(1)}
+                >
+                  重試
+                </button>
+              )}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div ref={commentsContainerRef} className="space-y-3 max-h-96 overflow-y-auto">
               {comments.map((comment) => (
                 <div key={comment.id} className="bg-surface border border-border rounded-xl p-4">
                   <div className="flex justify-between items-start mb-2">
@@ -556,7 +500,7 @@ export default function CommentSection({
                     
                     {/* 刪除按鈕 - 作者本人或管理員可刪除 */}
                     {(currentUserId === comment.author_id || 
-                      ['dev_admin', 'campus_admin', 'cross_admin'].includes(role)) && (
+                      (role && ['dev_admin', 'campus_admin', 'cross_admin'].includes(role))) && (
                       <button
                         onClick={() => deleteComment(comment.id)}
                         className="p-1 text-muted hover:text-red-600 transition-colors"
@@ -599,23 +543,18 @@ export default function CommentSection({
                 </div>
               ))}
               
-              {/* 載入更多 */}
-              {hasMore && (
-                <div className="text-center">
-                  <button
-                    onClick={() => loadComments(page + 1, true)}
-                    disabled={loading}
-                    className="btn-secondary px-4 py-2 text-sm"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        載入中...
-                      </>
-                    ) : (
-                      '載入更多留言'
-                    )}
-                  </button>
+              {/* Auto-loading indicator */}
+              {loading && hasMore && (
+                <div className="text-center py-4">
+                  <Loader2 className="w-4 h-4 animate-spin mx-auto text-primary" />
+                  <p className="text-muted text-xs mt-1">載入更多留言中...</p>
+                </div>
+              )}
+              
+              {/* End indicator */}
+              {!hasMore && comments.length > 5 && (
+                <div className="text-center py-4">
+                  <p className="text-muted text-xs">已顯示所有留言</p>
                 </div>
               )}
             </div>

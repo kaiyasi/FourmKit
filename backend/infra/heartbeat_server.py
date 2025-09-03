@@ -1,6 +1,5 @@
 import socket
 import threading
-import os
 
 def start_heartbeat_server(host="0.0.0.0", port=12007):
     """

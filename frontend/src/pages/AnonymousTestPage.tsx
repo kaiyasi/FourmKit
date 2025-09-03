@@ -23,7 +23,7 @@ export default function AnonymousTestPage() {
       <NavBar pathname="/anonymous-test" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-4xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-4xl px-3 sm:px-4 sm:pt-24 md:pt-28 pb-8">
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <h1 className="text-xl sm:text-2xl font-semibold dual-text">匿名帳號測試</h1>
           <p className="text-sm text-muted mt-1">測試不同狀態下的匿名帳號顯示</p>

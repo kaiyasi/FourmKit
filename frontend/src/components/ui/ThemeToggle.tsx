@@ -55,13 +55,22 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
       // 標記已就緒避免 FOUC
       requestAnimationFrame(()=> {
         document.documentElement.classList.add('theme-ready');
-        // 添加主題切換動畫類
-        document.documentElement.classList.add('theme-transition');
-        setTimeout(() => {
-          document.documentElement.classList.remove('theme-transition');
-        }, 300);
       });
-    },[theme]);
+    },[]);
+
+  // 只在主題真正改變時添加過渡動畫
+  const [prevTheme, setPrevTheme] = useState<ThemeName | null>(null);
+  
+  useEffect(() => {
+    if (prevTheme && prevTheme !== theme) {
+      // 添加主題切換動畫類
+      document.documentElement.classList.add('theme-transition');
+      setTimeout(() => {
+        document.documentElement.classList.remove('theme-transition');
+      }, 300);
+    }
+    setPrevTheme(theme);
+  }, [theme, prevTheme]);
 
   return (
       <button

@@ -4,12 +4,12 @@ import { api } from '@/services/api';
 import io from 'socket.io-client';
 import { NavBar } from '@/components/layout/NavBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
-import { ArrowLeft, CheckCircle, XCircle, FileText, Image, Clock, User, MessageSquare, ThumbsUp, Filter, Search, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowUp, CheckCircle, XCircle, FileText, Image, Clock, User, MessageSquare, ThumbsUp, Filter, Search, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface ModerationItem {
   id: number;
-  type: 'post' | 'media';
+  type: 'post' | 'media' | 'delete_request';
   content?: string;
   excerpt?: string;
   file_name?: string;
@@ -27,10 +27,14 @@ interface ModerationItem {
   client_id?: string;
   ip?: string;
   comment_count?: number;
+  processing?: boolean; // 手機版用：標記項目是否正在處理中
   like_count?: number;
   post_id?: number;
   path?: string;
   preview_url?: string;
+  // 刪文請求特有欄位
+  reason?: string;
+  requester_ip?: string;
 }
 
 interface ModerationLog {
@@ -41,7 +45,7 @@ interface ModerationLog {
   old_status: string;
   new_status: string;
   reason?: string;
-  moderator?: {
+  moderator?: string | {
     id: number;
     username: string;
   };
@@ -56,6 +60,7 @@ interface ModerationLog {
 export default function ModerationPage() {
   const { role } = useAuth();
   const isDev = (role === 'dev_admin');
+  const canModerate = ['dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator'].includes(role || '');
   const [items, setItems] = useState<ModerationItem[]>([]);
   const [logs, setLogs] = useState<ModerationLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -183,22 +188,56 @@ export default function ModerationPage() {
   const fetchQueue = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, value.toString());
-      });
-      
-      console.log('🔍 呼叫審核隊列 API...');
-      const response = await api(`/api/moderation/queue?${params}`);
-      console.log('📥 API 回應:', response);
-      console.log('📊 response.ok:', response.ok);
-      console.log('📊 response.data:', response.data);
-      
-      if (response.ok) {
-        console.log('✅ 設定項目:', response.data.items || []);
-        setItems(response.data.items || []);
+      // 如果是刪文請求類型，使用獨立的 API 端點
+      if (filters.type === 'delete_request') {
+        const params = new URLSearchParams();
+        if (filters.status) params.append('status', filters.status);
+        
+        console.log('🔍 呼叫刪文請求 API...');
+        try {
+          const response = await api(`/api/admin/delete-requests?${params}`);
+          console.log('📥 刪文請求 API 回應:', response);
+          
+          // 將刪文請求轉換為審核項目格式（容錯不同回傳格式）
+          const deleteRequests = (response as any)?.data?.items || (response as any)?.items || [];
+          const convertedItems = deleteRequests.map((req: any) => ({
+            id: req.id,
+            type: 'delete_request' as const,
+            content: req.reason,
+            excerpt: req.reason,
+            status: req.status,
+            created_at: req.created_at,
+            author: req.post_author_name ? { username: req.post_author_name } : undefined,
+            school_name: req.post_school_name,
+            client_id: req.requester_ip,
+            ip: req.requester_ip,
+            post_id: req.post_id,
+            reason: req.reason,
+            requester_ip: req.requester_ip
+          }));
+          console.log('✅ 設定刪文請求項目:', convertedItems);
+          setItems(convertedItems);
+        } catch (error) {
+          console.log('❌ 刪文請求 API 回應不正確:', error);
+        }
       } else {
-        console.log('❌ API 回應不正確');
+        // 一般貼文和媒體審核
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value) params.append(key, value.toString());
+        });
+        
+        console.log('🔍 呼叫審核隊列 API...');
+        try {
+          const response = await api(`/api/moderation/queue?${params}`);
+          console.log('📥 API 回應:', response);
+          
+          const list = (response as any)?.data?.items || (response as any)?.items || (response as any)?.posts || [];
+          console.log('✅ 設定項目:', list);
+          setItems(list);
+        } catch (error) {
+          console.log('❌ API 回應不正確:', error);
+        }
       }
     } catch (error) {
       console.error('❌ Failed to fetch queue:', error);
@@ -209,23 +248,34 @@ export default function ModerationPage() {
 
   // 獲取審核日誌
   const fetchLogs = useCallback(async () => {
-    if (!isDev) return; // 僅 dev_admin 取用
+    if (!canModerate) return; // 僅有審核權限者可取用
     try {
-      const response = await api('/api/moderation/logs?per_page=50');
-      if (response.ok) {
-        setLogs(response.data.logs || []);
+      try {
+        const response = await api('/api/moderation/logs?per_page=50');
+        console.log('🔍 審核日誌 API 回應:', response);
+        const logs = (response as any)?.data?.logs || (response as any)?.logs || (response as any)?.items || [];
+        console.log('📋 日誌項目數量:', logs.length || 0);
+        if (logs.length > 0) {
+          console.log('📝 第一筆日誌資料:', logs[0]);
+          console.log('👤 第一筆的 moderator:', logs[0]?.moderator);
+        }
+        setLogs(logs);
+      } catch (error) {
+        console.error('Failed to fetch logs:', error);
       }
     } catch (error) {
       console.error('Failed to fetch logs:', error);
     }
-  }, [isDev]);
+  }, [canModerate]);
 
   // 獲取統計
   const fetchStats = useCallback(async () => {
     try {
-      const response = await api('/api/moderation/stats');
-      if (response.ok) {
-        setStats(response.data.data);
+      try {
+        const response = await api('/api/moderation/stats');
+        setStats((response as any)?.data ?? response);
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
       }
     } catch (error) {
       console.error('Failed to fetch stats:', error);
@@ -237,9 +287,7 @@ export default function ModerationPage() {
     if (item.type === 'post') {
       try {
         const response = await api(`/api/moderation/post/${item.id}`);
-        if (response.ok) {
-          setItemDetail(response.data);
-        }
+        setItemDetail((response as any)?.data ?? response);
       } catch (error) {
         console.error('Failed to fetch post detail:', error);
       }
@@ -249,22 +297,32 @@ export default function ModerationPage() {
   // 核准內容
   const approveItem = useCallback(async (item: ModerationItem, reason?: string) => {
     try {
-      const response = await api('/api/moderation/approve', {
-        method: 'POST',
-        body: JSON.stringify({
-          type: item.type,
-          id: item.id,
-          reason: reason || ''
-        })
-      });
-      
-      if (response.ok) {
-        await fetchQueue();
-        await fetchLogs();
-        await fetchStats();
-        setSelectedItem(null);
-        setItemDetail(null);
+      if (item.type === 'delete_request') {
+        // 刪文請求使用獨立的 API 端點
+        await api(`/api/admin/delete-requests/${item.id}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({
+            note: reason || ''
+          })
+        });
+      } else {
+        // 一般貼文和媒體審核
+        await api('/api/moderation/approve', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: item.type,
+            id: item.id,
+            reason: reason || ''
+          })
+        });
       }
+      
+      // API 成功時會自動拋出錯誤，所以這裡不需要檢查 response.ok
+      await fetchQueue();
+      await fetchLogs();
+      await fetchStats();
+      setSelectedItem(null);
+      setItemDetail(null);
     } catch (error) {
       console.error('Failed to approve item:', error);
     }
@@ -273,22 +331,32 @@ export default function ModerationPage() {
   // 拒絕內容
   const rejectItem = useCallback(async (item: ModerationItem, reason: string) => {
     try {
-      const response = await api('/api/moderation/reject', {
-        method: 'POST',
-        body: JSON.stringify({
-          type: item.type,
-          id: item.id,
-          reason: reason
-        })
-      });
-      
-      if (response.ok) {
-        await fetchQueue();
-        await fetchLogs();
-        await fetchStats();
-        setSelectedItem(null);
-        setItemDetail(null);
+      if (item.type === 'delete_request') {
+        // 刪文請求使用獨立的 API 端點
+        await api(`/api/admin/delete-requests/${item.id}/reject`, {
+          method: 'POST',
+          body: JSON.stringify({
+            note: reason
+          })
+        });
+      } else {
+        // 一般貼文和媒體審核
+        await api('/api/moderation/reject', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: item.type,
+            id: item.id,
+            reason: reason
+          })
+        });
       }
+      
+      // API 成功時會自動拋出錯誤，所以這裡不需要檢查 response.ok
+      await fetchQueue();
+      await fetchLogs();
+      await fetchStats();
+      setSelectedItem(null);
+      setItemDetail(null);
     } catch (error) {
       console.error('Failed to reject item:', error);
     }
@@ -297,7 +365,7 @@ export default function ModerationPage() {
   // 否決決策（高級權限）
   const overrideDecision = useCallback(async (item: ModerationItem, action: 'approve' | 'reject', reason: string) => {
     try {
-      const response = await api('/api/moderation/override', {
+      await api('/api/moderation/override', {
         method: 'POST',
         body: JSON.stringify({
           type: item.type,
@@ -307,17 +375,52 @@ export default function ModerationPage() {
         })
       });
       
-      if (response.ok) {
-        await fetchQueue();
-        await fetchLogs();
-        await fetchStats();
-        setSelectedItem(null);
-        setItemDetail(null);
-      }
+      // API 成功時會自動拋出錯誤，所以這裡不需要檢查 response.ok
+      await fetchQueue();
+      await fetchLogs();
+      await fetchStats();
+      setSelectedItem(null);
+      setItemDetail(null);
     } catch (error) {
       console.error('Failed to override decision:', error);
     }
   }, [fetchQueue, fetchLogs, fetchStats]);
+
+  // 平台自訂對話框狀態
+  const [modal, setModal] = useState<{ kind: 'reject' | 'override_approve' | 'override_reject' | 'escalate'; item?: ModerationItem } | null>(null);
+  const [modalReason, setModalReason] = useState('');
+  const closeModal = () => { setModal(null); setModalReason(''); };
+  const submitModal = async () => {
+    if (!modal || !selectedItem) return;
+    const reason = (modalReason || '').trim();
+    // 理由必填
+    if (!reason) return;
+    if (modal.kind === 'reject') {
+      await rejectItem(selectedItem, reason);
+      closeModal();
+      return;
+    }
+    if (modal.kind === 'override_reject') {
+      await overrideDecision(selectedItem, 'reject', reason);
+      closeModal();
+      return;
+    }
+    if (modal.kind === 'override_approve') {
+      await overrideDecision(selectedItem, 'approve', reason);
+      closeModal();
+      return;
+    }
+    if (modal.kind === 'escalate') {
+      try {
+        await api('/api/moderation/escalate', {
+          method: 'POST',
+          body: JSON.stringify({ type: selectedItem.type, id: selectedItem.id, reason })
+        });
+      } catch (e) {}
+      closeModal();
+      return;
+    }
+  };
 
   // 初始化
   useEffect(() => {
@@ -428,43 +531,51 @@ export default function ModerationPage() {
             <div className="mb-4 p-3 bg-surface-hover rounded-lg">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <select
+                  className="form-control form-control--compact flex-1"
                   value={filters.type}
                   onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
-                  className="form-control text-sm"
                 >
-                  <option value="">所有類型</option>
                   <option value="post">貼文</option>
-                  <option value="media">媒體</option>
+                  <option value="delete_request">刪文</option>
                 </select>
-                
-                <select
-                  value={filters.status}
-                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                  className="form-control text-sm"
-                >
-                  <option value="pending">待審核</option>
-                  <option value="approved">已核准</option>
-                  <option value="rejected">已拒絕</option>
-                </select>
-                
-                {isDev && (
-                  <input
-                    type="text"
-                    placeholder="Client ID"
-                    value={filters.client_id}
-                    onChange={(e) => setFilters(prev => ({ ...prev, client_id: e.target.value }))}
-                    className="form-control text-sm"
-                  />
-                )}
-                
-                {isDev && (
-                  <input
-                    type="text"
-                    placeholder="IP 地址"
-                    value={filters.ip}
-                    onChange={(e) => setFilters(prev => ({ ...prev, ip: e.target.value }))}
-                    className="form-control text-sm"
-                  />
+                {/* 非 dev_admin 隱藏狀態/學校/使用者過濾，並強制為待審核 */}
+                {isDev ? (
+                  <>
+                    <select
+                      className="form-control form-control--compact flex-1"
+                      value={filters.status}
+                      onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                    >
+                      <option value="pending">待審核</option>
+                      <option value="approved">已核准</option>
+                      <option value="rejected">已拒絕</option>
+                    </select>
+                    <select
+                      className="form-control form-control--compact flex-1"
+                      value={filters.school}
+                      onChange={(e) => setFilters(prev => ({ ...prev, school: e.target.value }))}
+                    >
+                      <option value="">所有學校</option>
+                      <option value="cross">跨校</option>
+                      <option value="ncku">成功大學</option>
+                      <option value="nhsh">內湖高中</option>
+                      <option value="ntu">台灣大學</option>
+                    </select>
+                    <input
+                      className="form-control form-control--compact flex-1"
+                      type="text"
+                      placeholder="使用者"
+                      value={filters.client_id}
+                      onChange={(e) => setFilters(prev => ({ ...prev, client_id: e.target.value }))}
+                    />
+                  </>
+                ) : (
+                  <>
+                    {filters.status !== 'pending' && setTimeout(() => setFilters(prev => ({ ...prev, status: 'pending' })), 0)}
+                    {filters.school && setTimeout(() => setFilters(prev => ({ ...prev, school: '' })), 0)}
+                    {filters.client_id && setTimeout(() => setFilters(prev => ({ ...prev, client_id: '' })), 0)}
+                    <div className="text-xs text-muted sm:col-span-1 lg:col-span-3">僅顯示「待審核」且依權限自動套用審核範圍</div>
+                  </>
                 )}
               </div>
             </div>
@@ -473,14 +584,20 @@ export default function ModerationPage() {
             <div className="space-y-3">
               {items.length === 0 ? (
                 <div className="text-center py-8 text-muted">
-                  貼文已提交審核，通過後會在清單中顯示。
+                  {filters.type === 'delete_request' ? 
+                    '目前沒有待審核的刪文請求。' : 
+                    '貼文已提交審核，通過後會在清單中顯示。'}
                 </div>
               ) : (
                 items.map((item) => (
                   <div
                     key={`${item.type}-${item.id}`}
-                    className={`p-4 rounded-xl border border-border bg-surface-hover cursor-pointer transition-colors ${
-                      selectedItem?.id === item.id && selectedItem?.type === item.type ? 'ring-2 ring-primary' : ''
+                    className={`p-4 rounded-xl border border-border cursor-pointer transition-colors relative ${
+                      selectedItem?.id === item.id && selectedItem?.type === item.type 
+                        ? 'ring-2 ring-primary bg-primary/5' 
+                        : item.processing 
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' 
+                          : 'bg-surface-hover hover:bg-surface'
                     }`}
                     onClick={() => {
                       setSelectedItem(item);
@@ -489,17 +606,32 @@ export default function ModerationPage() {
                       }
                     }}
                   >
+                    {/* 處理中狀態指示器 */}
+                    {item.processing && (
+                      <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full shadow-md">
+                        <ArrowUp className="w-3 h-3 inline mr-1" />
+                        處理中
+                      </div>
+                    )}
+                    
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded-full ${
-                          item.type === 'post' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                          item.type === 'post' ? 'bg-blue-100 text-blue-800' : 
+                          item.type === 'delete_request' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                         }`}>
-                          {item.type === 'post' ? '貼文' : '媒體'}
+                          {item.type === 'post' ? '貼文' : 
+                           item.type === 'delete_request' ? '刪文請求' : '媒體'}
                         </span>
                         <span className="text-xs text-muted">#{item.id}</span>
                         {item.school_name && (
                           <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
                             {item.school_name}
+                          </span>
+                        )}
+                        {item.processing && (
+                          <span className="text-xs px-2 py-1 bg-blue-600 text-white rounded-full lg:hidden">
+                            👆 正在處理
                           </span>
                         )}
                       </div>
@@ -512,12 +644,24 @@ export default function ModerationPage() {
                     {item.type === 'post' ? (
                       <div>
                         <div className="mb-2 text-sm line-clamp-2" dangerouslySetInnerHTML={{ __html: item.excerpt || '' }} />
-                        {isDev && item.author && (
-                          <div className="text-xs text-muted mb-2">
-                            作者: {(item as any).author?.username || ''}
-                            {(item as any).author?.school_name && ` (${(item as any).author?.school_name})`}
+                        
+                        {/* 根據角色顯示不同資訊 */}
+                        {isDev ? (
+                          /* dev_admin 顯示作者/IP/Client_ID */
+                          <div className="text-xs text-muted mb-2 space-y-1">
+                            <div>作者: {(item as any).author?.username || '匿名用戶'}
+                              {(item as any).author?.school_name && ` (${(item as any).author?.school_name})`}
+                            </div>
+                            <div>IP: {item.ip || 'N/A'} | Client ID: {item.client_id || 'N/A'}</div>
+                          </div>
+                        ) : (
+                          /* 非 dev_admin 顯示來源/發文時間 */
+                          <div className="text-xs text-muted mb-2 space-y-1">
+                            <div>來源: {item.school_name || '跨校'}</div>
+                            <div>發文時間: {formatDate(item.created_at)}</div>
                           </div>
                         )}
+                        
                         <div className="flex items-center gap-4 text-xs text-muted">
                           <span className="flex items-center gap-1">
                             <MessageSquare className="w-3 h-3" />
@@ -529,15 +673,34 @@ export default function ModerationPage() {
                           </span>
                         </div>
                       </div>
+                    ) : item.type === 'delete_request' ? (
+                      <div>
+                        <div className="mb-2 text-sm">
+                          <strong>刪文理由：</strong>
+                          <div className="mt-1 p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-700">
+                            {item.reason || item.content}
+                          </div>
+                        </div>
+                        {item.post_id && (
+                          <div className="text-xs text-muted mb-2">
+                            目標貼文: #{item.post_id}
+                          </div>
+                        )}
+                        {item.requester_ip && (
+                          <div className="text-xs text-muted">
+                            請求者 IP: {item.requester_ip}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div>
                         <div className="mb-2 text-sm font-medium">{item.file_name}</div>
                         <div className="text-xs text-muted mb-2">
                           大小: {formatFileSize(item.file_size || 0)} | 類型: {item.file_type}
                         </div>
-                        {item.author && (
+                        {canModerate && item.author && (
                           <div className="text-xs text-muted mb-2">
-                            作者: {item.author.username}
+                            作者: {item.author.username || '匿名用戶'}
                             {item.author.school_name && ` (${item.author.school_name})`}
                           </div>
                         )}
@@ -553,11 +716,6 @@ export default function ModerationPage() {
                       </div>
                     )}
 
-                    {isDev && (
-                      <div className="text-xs text-muted mt-2">
-                        來源: {item.client_id ? `client_id=${item.client_id}` : 'client_id=-'} · {item.ip ? `IP=${item.ip}` : 'IP=-'}
-                      </div>
-                    )}
                   </div>
                 ))
               )}
@@ -566,39 +724,62 @@ export default function ModerationPage() {
 
           {/* 側邊欄 */}
           <div className="space-y-6">
-            {/* 統計 */}
-            {stats && (
-              <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-                <h3 className="text-lg font-semibold text-fg mb-4">統計</h3>
+            {/* 統計資訊 */}
+            <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+              <h2 className="text-lg font-semibold text-fg mb-4">統計資訊</h2>
+              {stats ? (
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">待審貼文</span>
-                    <span className="text-sm font-medium">{stats.pending.posts}</span>
+                    <span className="text-sm font-medium">{stats.pending?.posts || 0}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">待審媒體</span>
-                    <span className="text-sm font-medium">{stats.pending.media}</span>
+                    <span className="text-sm font-medium">{stats.pending?.media || 0}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">今日處理</span>
-                    <span className="text-sm font-medium">{stats.today.processed}</span>
+                    <span className="text-sm font-medium">{stats.today?.processed || 0}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">今日核准</span>
-                    <span className="text-sm font-medium text-green-600">{stats.today.approved}</span>
+                    <span className="text-sm font-medium text-green-600">{stats.today?.approved || 0}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">今日拒絕</span>
-                    <span className="text-sm font-medium text-red-600">{stats.today.rejected}</span>
+                    <span className="text-sm font-medium text-red-600">{stats.today?.rejected || 0}</span>
                   </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審貼文</span>
+                    <span className="text-sm font-medium">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審媒體</span>
+                    <span className="text-sm font-medium">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日處理</span>
+                    <span className="text-sm font-medium">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日核准</span>
+                    <span className="text-sm font-medium text-green-600">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日拒絕</span>
+                    <span className="text-sm font-medium text-red-600">0</span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* 選中項目詳情 */}
             {selectedItem && (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-                <h3 className="text-lg font-semibold text-fg mb-4">項目詳情</h3>
+                <h3 className="text-lg font-semibold text-fg mb-4">貼文詳情</h3>
                 
                 {selectedItem.type === 'post' && itemDetail ? (
                   <div className="space-y-3">
@@ -641,19 +822,14 @@ export default function ModerationPage() {
                     <>
                       <button
                         onClick={() => approveItem(selectedItem)}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-primary"
                       >
                         <CheckCircle className="w-4 h-4" />
                         核准
                       </button>
                       <button
-                        onClick={() => {
-                          const reason = prompt('請輸入拒絕原因:');
-                          if (reason) {
-                            rejectItem(selectedItem, reason);
-                          }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        onClick={() => setModal({ kind: 'reject', item: selectedItem })}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-danger"
                       >
                         <XCircle className="w-4 h-4" />
                         拒絕
@@ -661,18 +837,13 @@ export default function ModerationPage() {
                     </>
                   )}
                   
-                  {/* 已核准狀態的否決操作 */}
-                  {selectedItem.status === 'approved' && (
+                  {/* 已核准狀態的否決操作（僅 dev_admin 可用） */}
+                  {isDev && selectedItem.status === 'approved' && (
                     <div className="border-t pt-2 mt-2">
                       <div className="text-xs text-muted mb-2">否決操作</div>
                       <button
-                        onClick={() => {
-                          const reason = prompt('請輸入否決原因:');
-                          if (reason) {
-                            overrideDecision(selectedItem, 'reject', reason);
-                          }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                        onClick={() => setModal({ kind: 'override_reject', item: selectedItem })}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-danger"
                       >
                         <XCircle className="w-4 h-4" />
                         否決核准（下架）
@@ -680,68 +851,147 @@ export default function ModerationPage() {
                     </div>
                   )}
                   
-                  {/* 已拒絕狀態的否決操作 */}
-                  {selectedItem.status === 'rejected' && (
+                  {/* 已拒絕狀態的否決操作（僅 dev_admin 可用） */}
+                  {isDev && selectedItem.status === 'rejected' && (
                     <div className="border-t pt-2 mt-2">
                       <div className="text-xs text-muted mb-2">否決操作</div>
                       <button
-                        onClick={() => {
-                          const reason = prompt('請輸入否決原因:');
-                          if (reason) {
-                            overrideDecision(selectedItem, 'approve', reason);
-                          }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        onClick={() => setModal({ kind: 'override_approve', item: selectedItem })}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-primary"
                       >
                         <CheckCircle className="w-4 h-4" />
                         否決拒絕（恢復）
                       </button>
                     </div>
                   )}
+                  
+                  {/* 非 dev_admin 用戶的狀態顯示 */}
+                  {!isDev && (selectedItem.status === 'approved' || selectedItem.status === 'rejected') && (
+                    <div className="border-t pt-2 mt-2">
+                      <div className="text-xs text-muted mb-2">
+                        此項目已{selectedItem.status === 'approved' ? '核准' : '拒絕'}
+                      </div>
+                      <div className="text-sm text-muted p-3 bg-surface-hover rounded-lg">
+                        {selectedItem.status === 'approved' 
+                          ? '✅ 此內容已通過審核並發布' 
+                          : '❌ 此內容已被拒絕，不會公開顯示'
+                        }
+                        {!isDev && (
+                          <div className="text-xs mt-2 opacity-75">
+                            如需修改審核結果，請聯繫系統管理員
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* 審核日誌（僅 dev_admin 顯示） */}
-            {isDev && (
+            {/* 審核日誌（有審核權限者皆可顯示） */}
+            {canModerate && (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-                <h3 className="text-lg font-semibold text-fg mb-4">審核日誌</h3>
+                <h3 className="text-lg font-semibold text-fg mb-4">
+                  審核日誌
+                  {!isDev && (
+                    <span className="text-xs text-muted ml-2">（最近50筆）</span>
+                  )}
+                </h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {logs.map((log) => (
-                    <div key={log.id} className="p-2 bg-surface-hover rounded text-xs">
-                      <div className="flex items-center gap-2 mb-1">
-                        {(() => {
-                          const isApprove = (log.action || '').startsWith('approve') || log.action === 'approve' || log.action === 'override_approve'
-                          return <span className={`text-xs ${isApprove ? 'text-green-600' : 'text-red-600'}`}>●</span>
-                        })()}
-                        <span>
-                          {(log.action_display || (log.action === 'approve' ? '核准' : '拒絕'))}
-                          {' '}
-                          {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}
-                        </span>
-                        {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
-                          <span className="text-muted">
-                            {(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
-                          </span>
-                        )}
-                        {typeof log.source === 'string' && (
-                          <span className="text-primary/80">來源：{log.source || '跨校'}</span>
-                        )}
-                      </div>
-                      <div className="text-muted">
-                        審核員: {log.moderator?.username || log.id} · 時間: {formatDate(log.created_at)}
-                      </div>
-                      {log.reason && (
-                        <div className="text-muted mt-1">原因: {log.reason}</div>
-                      )}
+                  {logs.length === 0 ? (
+                    <div className="text-center py-8 text-muted">
+                      暫無審核記錄
                     </div>
-                  ))}
+                  ) : (
+                    logs.map((log) => (
+                      <div key={log.id} className="p-4 bg-surface-hover rounded-lg border border-border/50">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            {(() => {
+                              const isApprove = (log.action || '').startsWith('approve') || log.action === 'approve' || log.action === 'override_approve'
+                              return (
+                                <span className={`w-2 h-2 rounded-full ${isApprove ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                              )
+                            })()}
+                            <div>
+                              <div className="font-medium text-fg text-sm">
+                                {(log.action_display || (log.action === 'approve' ? '核准' : '拒絕'))}
+                                {' '}
+                                {log.target_type === 'post' ? '貼文' : '媒體'} #{log.target_id}
+                              </div>
+                              {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
+                                <div className="text-xs text-muted mt-1">
+                                  狀態變更：{(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted">
+                            {formatDate(log.created_at)}
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs">
+                            <User className="w-3 h-3" />
+                            <span className="text-muted">經手人：</span>
+                            <span className="text-fg font-medium">
+                              {typeof log.moderator === 'string' 
+                                ? log.moderator 
+                                : log.moderator?.username || '系統自動'}
+                            </span>
+                            {isDev && typeof log.source === 'string' && (
+                              <span className="text-primary/80 ml-2">來源：{log.source || '跨校'}</span>
+                            )}
+                          </div>
+                          
+                          {log.reason && (
+                            <div className="bg-surface border border-border rounded-md p-2">
+                              <div className="text-xs text-muted mb-1">審核原因：</div>
+                              <div className="text-sm text-fg">{log.reason}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
           </div>
         </div>
       </main>
+
+      {/* 平台自訂對話框：理由必填 */}
+      {modal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-fg mb-1">
+              {modal.kind === 'reject' && '拒絕內容'}
+              {modal.kind === 'override_reject' && '否決核准（下架）'}
+              {modal.kind === 'override_approve' && '否決拒絕（恢復）'}
+              {modal.kind === 'escalate' && '上報 dev_admin 覆核'}
+            </h3>
+            <p className="text-sm text-muted mb-4">請填寫理由（必填）。</p>
+            <textarea
+              value={modalReason}
+              onChange={(e) => setModalReason(e.target.value)}
+              placeholder="請輸入理由..."
+              className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+              rows={4}
+            />
+            <div className="flex items-center justify-between mt-3">
+              <div className={`text-xs ${modalReason.trim() ? 'text-muted' : 'text-rose-600'}`}>
+                {modalReason.trim() ? ' ' : '理由為必填'}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={closeModal} className="px-4 py-2 btn-secondary">取消</button>
+                <button onClick={submitModal} disabled={!modalReason.trim()} className="px-4 py-2 btn-primary disabled:opacity-50">送出</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -104,3 +104,91 @@ def init_socket_events(socketio: SocketIO) -> None:
             emit("error", {"code": "WS-ANN-401", "message": "未授權或內容無效"})
             return
         socketio.emit("announce", {"message": msg, "ts": _now_iso()}, to="global")
+
+    # ============ 支援工單系統 Socket 事件 ============
+
+    @socketio.on("support:join_ticket")
+    def on_support_join_ticket(data: Dict[str, Any] | None):
+        """加入工單房間以接收即時更新"""
+        data = data or {}
+        public_id = (data.get("public_id") or "").strip()
+        
+        if not public_id:
+            emit("error", {"code": "WS-SUPPORT-001", "message": "public_id 無效"})
+            return
+        
+        # 驗證用戶是否有權限存取此工單（簡化版，實際應檢查JWT或簽章）
+        ticket_room = f"support:ticket:{public_id}"
+        join_room(ticket_room)
+        emit("support:ticket_joined", {
+            "ticket_id": public_id,
+            "room": ticket_room,
+            "ts": _now_iso()
+        })
+
+    @socketio.on("support:leave_ticket")
+    def on_support_leave_ticket(data: Dict[str, Any] | None):
+        """離開工單房間"""
+        data = data or {}
+        public_id = (data.get("public_id") or "").strip()
+        
+        if not public_id:
+            emit("error", {"code": "WS-SUPPORT-002", "message": "public_id 無效"})
+            return
+        
+        ticket_room = f"support:ticket:{public_id}"
+        leave_room(ticket_room)
+        emit("support:ticket_left", {
+            "ticket_id": public_id,
+            "room": ticket_room,
+            "ts": _now_iso()
+        })
+
+    @socketio.on("support:typing")
+    def on_support_typing(data: Dict[str, Any] | None):
+        """工單打字指示器"""
+        data = data or {}
+        public_id = (data.get("public_id") or "").strip()
+        user_name = _trim(data.get("user_name") or "用戶", 40)
+        is_typing = bool(data.get("is_typing", False))
+        
+        if not public_id:
+            emit("error", {"code": "WS-SUPPORT-003", "message": "public_id 無效"})
+            return
+        
+        ticket_room = f"support:ticket:{public_id}"
+        # 廣播給房間內其他用戶（不包含發送者）
+        emit("support:user_typing", {
+            "ticket_id": public_id,
+            "user_name": user_name,
+            "is_typing": is_typing,
+            "ts": _now_iso()
+        }, room=ticket_room, include_self=False)
+
+    def broadcast_support_event(event_type: str, ticket_public_id: str, payload: Dict[str, Any]):
+        """廣播支援系統事件到相關房間"""
+        ticket_room = f"support:ticket:{ticket_public_id}"
+        
+        # 根據事件類型決定廣播範圍
+        event_data = {
+            "event_type": event_type,
+            "ticket_id": ticket_public_id,
+            "payload": payload,
+            "ts": _now_iso()
+        }
+        
+        # 廣播到工單房間
+        socketio.emit("support:event", event_data, room=ticket_room)
+        
+        # 特定事件也廣播到管理員房間
+        if event_type in ["ticket_created", "message_sent", "status_changed"]:
+            socketio.emit("support:admin_event", event_data, room="support:admins")
+
+    def broadcast_announcement(payload: Dict[str, Any]):
+        """廣播公告事件到所有在線用戶"""
+        try:
+            # 廣播到全域房間
+            socketio.emit("announcement", payload, to="global")
+            print(f"[INFO] Announcement broadcasted to global room: {payload.get('type', 'unknown')}")
+        except Exception as e:
+            print(f"[WARNING] Failed to broadcast announcement: {e}")

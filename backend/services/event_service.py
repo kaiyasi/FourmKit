@@ -3,11 +3,10 @@
 負責記錄和管理系統事件
 """
 
-import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
-from models import SystemEvent, NotificationPreference, User
+from models import SystemEvent
 from utils.notify import send_admin_event
 from utils.ratelimit import get_client_ip
 from flask import request
@@ -27,6 +26,26 @@ class EventService:
         "content.comment.approved": {"category": "content", "title": "留言核准"},
         "content.comment.rejected": {"category": "content", "title": "留言拒絕"},
         "content.comment.deleted": {"category": "content", "title": "留言刪除"},
+        "content.announcement.created": {"category": "announcement", "title": "公告發布"},
+        
+        # 聊天室管理
+        "chat.room.created": {"category": "chat", "title": "聊天室創建"},
+        "chat.room.deleted": {"category": "chat", "title": "聊天室刪除"},
+        "chat.room.member.added": {"category": "chat", "title": "聊天室成員加入"},
+        "chat.room.member.removed": {"category": "chat", "title": "聊天室成員移除"},
+        "chat.room.invitation.sent": {"category": "chat", "title": "聊天室邀請發送"},
+        
+        # 會員相關
+        "member.premium_status_changed": {"category": "member", "title": "會員狀態變更"},
+        "member.subscription_created": {"category": "member", "title": "會員訂閱創建"},
+        "member.subscription_cancelled": {"category": "member", "title": "會員訂閱取消"},
+        "member.subscription_expired": {"category": "member", "title": "會員訂閱過期"},
+        
+        # 廣告相關
+        "advertisement.created": {"category": "advertisement", "title": "廣告貼文創建"},
+        "advertisement.reviewed": {"category": "advertisement", "title": "廣告貼文審核"},
+        "advertisement.approved": {"category": "advertisement", "title": "廣告貼文核准"},
+        "advertisement.rejected": {"category": "advertisement", "title": "廣告貼文拒絕"},
         
         # 用戶管理
         "user.registered": {"category": "user", "title": "用戶註冊"},
@@ -47,6 +66,9 @@ class EventService:
         "system.mode_changed": {"category": "system", "title": "系統模式變更"},
         "system.settings_changed": {"category": "system", "title": "系統設定變更"},
         "system.maintenance": {"category": "system", "title": "系統維護"},
+        "system.platform_started": {"category": "system", "title": "平台啟動"},
+        "system.platform_stopped": {"category": "system", "title": "平台關閉"},
+        "system.platform_restarted": {"category": "system", "title": "平台重啟"},
         
         # 安全事件
         "security.failed_login": {"category": "security", "title": "登入失敗"},
@@ -55,9 +77,7 @@ class EventService:
         "security.unauthorized_access": {"category": "security", "title": "未授權訪問"},
         
         # 支援相關
-        "support.ticket_created": {"category": "support", "title": "支援請求"},
-        "support.ticket_replied": {"category": "support", "title": "支援回覆"},
-        "support.ticket_resolved": {"category": "support", "title": "問題解決"},
+            # 支援功能已移除
         
         # 刪除請求
         "moderation.delete_request_created": {"category": "moderation", "title": "刪文請求"},
@@ -220,7 +240,9 @@ class EventService:
         school_id: Optional[int] = None,
         unread_only: bool = False,
         important_only: bool = False,
-        include_hidden: bool = False
+        include_hidden: bool = False,
+        current_user_id: Optional[int] = None,
+        current_user_role: Optional[str] = None
     ) -> List[SystemEvent]:
         """
         獲取事件列表
@@ -261,6 +283,23 @@ class EventService:
         if not include_hidden:
             query = query.filter(SystemEvent.is_hidden == False)
         
+        # 根據用戶角色和個人識別碼過濾通知
+        if current_user_role and current_user_role != 'dev_admin':
+            # 非 dev_admin 用戶只能看到與自己相關的事件
+            if current_user_id:
+                # 顯示自己操作的事件或與自己相關的事件
+                query = query.filter(
+                    (SystemEvent.actor_id == current_user_id) |  # 自己操作的事件
+                    (SystemEvent.target_id == str(current_user_id)) |  # 以自己為目標的事件
+                    (SystemEvent.metadata_json.contains(f'"user_id":{current_user_id}')) |  # 元數據中包含自己ID
+                    (SystemEvent.metadata_json.contains(f'"target_user_id":{current_user_id}'))  # 目標用戶是自己
+                )
+            
+            # 校內管理員和版主只能看到自己學校的事件
+            if current_user_role in ['campus_admin', 'campus_moderator'] and school_id is not None:
+                query = query.filter(SystemEvent.school_id == school_id)
+        # dev_admin 可以看到所有事件，不需要額外過濾
+        
         # 按創建時間倒序排列
         query = query.order_by(SystemEvent.created_at.desc())
         
@@ -298,7 +337,9 @@ class EventService:
         cls,
         session: Session,
         days: int = 7,
-        school_id: Optional[int] = None
+        school_id: Optional[int] = None,
+        current_user_id: Optional[int] = None,
+        current_user_role: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         獲取事件統計
@@ -321,6 +362,22 @@ class EventService:
         
         if school_id is not None:
             query = query.filter(SystemEvent.school_id == school_id)
+        
+        # 根據用戶角色和個人識別碼過濾統計數據
+        if current_user_role and current_user_role != 'dev_admin':
+            # 非 dev_admin 用戶只能統計與自己相關的事件
+            if current_user_id:
+                query = query.filter(
+                    (SystemEvent.actor_id == current_user_id) |  # 自己操作的事件
+                    (SystemEvent.target_id == str(current_user_id)) |  # 以自己為目標的事件
+                    (SystemEvent.metadata_json.contains(f'"user_id":{current_user_id}')) |  # 元數據中包含自己ID
+                    (SystemEvent.metadata_json.contains(f'"target_user_id":{current_user_id}'))  # 目標用戶是自己
+                )
+            
+            # 校內管理員和版主只能統計自己學校的事件
+            if current_user_role in ['campus_admin', 'campus_moderator'] and school_id is not None:
+                query = query.filter(SystemEvent.school_id == school_id)
+        # dev_admin 可以統計所有事件，不需要額外過濾
         
         events = query.all()
         

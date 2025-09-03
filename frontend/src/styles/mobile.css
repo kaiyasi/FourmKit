@@ -36,12 +36,14 @@
   }
 
   /* 手機版安全區域 */
-  .mobile-safe-area-top {
+  .mobile-safe-area-top,
+  .pt-safe-top {
     padding-top: env(safe-area-inset-top);
   }
 
   .mobile-safe-area-bottom,
-  .safe-area-bottom {
+  .safe-area-bottom,
+  .pb-safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -78,6 +80,11 @@
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
+  }
+
+  /* 手機版頂部留白 - 避免 NavBar 擋住內容 */
+  .mobile-navbar-spacing {
+    padding-top: 88px !important; /* NavBar 總高度：16px (top) + 12px (py-3) + 48px (h-12) + 12px (py-3) */
   }
 
   /* 手機版底部導航漸入動畫 */
@@ -230,7 +237,7 @@
   }
 
   .mobile-bottom-spacing {
-    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
 
   .mobile-horizontal-padding {
