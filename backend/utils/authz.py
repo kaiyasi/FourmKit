@@ -9,6 +9,7 @@ def require_role(*roles: str):
             # 確保已驗證 JWT，否則 get_jwt 會拋錯
             verify_jwt_in_request()
             claims = get_jwt() or {}
+            
             if claims.get("role") not in roles:
                 # 嘗試記錄未授權嘗試（避免硬闖 /XXX）
                 try:

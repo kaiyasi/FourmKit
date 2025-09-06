@@ -12,7 +12,7 @@ import SettingsPage from './pages/SettingsPage'
 import BoardsPage from './pages/BoardsPage'
 import ModerationPage from './pages/admin/ModerationPage'
 import AdminDashboard from './pages/AdminDashboard'
-import AdminCommentsMonitorPage from './pages/AdminCommentsMonitorPage'
+import AdminCommentsMonitorPage from './pages/admin/AdminCommentsMonitorPage'
 import MyViolationsPage from './pages/MyViolationsPage'
 import AdminUsersPage from './pages/admin/UsersPage'
 import AdminSchoolsPage from './pages/admin/SchoolsPage'
@@ -22,11 +22,12 @@ import AdminChatPage from './pages/admin/ChatPage'
 import CreateChatRoomPage from './pages/admin/CreateChatRoomPage'
 import AdminEventsPage from './pages/admin/EventsPage'
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage'
-import AdminSupportPage from './pages/admin/AdminSupportPage'
-import PlatformStatusPage from './pages/admin/PlatformStatusPage'
+import AdminSupportPageNew from './pages/admin/AdminSupportPageNew'
+import ServerStatusPage from './pages/admin/ServerStatusPage'
+import ProjectStatusPage from './pages/admin/ProjectStatusPage'
 import MemberManagementPage from './pages/admin/MemberManagementPage'
-import SupportPage from './pages/SupportPage'
-import MobileSupportPage from './pages/MobileSupportPage'
+import InstagramPage from './pages/admin/InstagramPage'
+import ResponsiveSupportPage from './pages/ResponsiveSupportPage'
 import TicketTrackPage from './pages/TicketTrackPage'
 import AboutPage from './pages/AboutPage'
 import RulesPage from './pages/RulesPage'
@@ -148,6 +149,15 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
+        path: "/admin/instagram",
+        element: (
+            <RequireRoles allow={['dev_admin','admin']}>
+                <InstagramPage />
+            </RequireRoles>
+        ),
+        errorElement: <RouteError />,
+    },
+    {
         path: "/admin/pages",
         element: (
             <RequireRoles allow={['dev_admin','cross_admin','campus_admin']}>
@@ -187,7 +197,16 @@ const router = createBrowserRouter([
             path: "/admin/platform",
             element: (
                 <RequireRoles allow={['dev_admin']}>
-                    <PlatformStatusPage />
+                    <ServerStatusPage />
+                </RequireRoles>
+            ),
+            errorElement: <RouteError />,
+        },
+        {
+            path: "/admin/project",
+            element: (
+                <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
+                    <ProjectStatusPage />
                 </RequireRoles>
             ),
             errorElement: <RouteError />,
@@ -212,7 +231,7 @@ const router = createBrowserRouter([
     },
     {
         path: "/support",
-        element: <SupportPage />,
+        element: <ResponsiveSupportPage />,
         errorElement: <RouteError />,
     },
     {
@@ -226,11 +245,6 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
-        path: "/mobile-support",
-        element: <MobileSupportPage />,
-        errorElement: <RouteError />,
-    },
-    {
         path: "/ticket-track",
         element: <TicketTrackPage />,
         errorElement: <RouteError />,
@@ -239,7 +253,7 @@ const router = createBrowserRouter([
         path: "/admin/support",
         element: (
             <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator']}>
-                <AdminSupportPage />
+                <AdminSupportPageNew />
             </RequireRoles>
         ),
         errorElement: <RouteError />,

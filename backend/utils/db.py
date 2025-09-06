@@ -113,6 +113,9 @@ def get_db_health() -> dict:
     }
 
 def get_db() -> Generator:
+    global SessionLocal
+    if SessionLocal is None:
+        init_engine_session()
     db = SessionLocal()
     try:
         yield db
@@ -122,6 +125,9 @@ def get_db() -> Generator:
 from contextlib import contextmanager
 @contextmanager
 def get_session():
+    global SessionLocal
+    if SessionLocal is None:
+        init_engine_session()
     db = SessionLocal()
     try:
         yield db

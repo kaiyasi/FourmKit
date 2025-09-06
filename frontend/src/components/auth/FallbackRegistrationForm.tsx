@@ -91,7 +91,7 @@ export default function FallbackRegistrationForm({
     loadSchools()
   }, [])
 
-  // 檢查使用者名稱可用性（防抖）
+  // 檢查使用者名稱可用性（防抖處理 Debounce）
   useEffect(() => {
     if (!username || !usernameValidation.isValid) {
       setUsernameAvailable(null)

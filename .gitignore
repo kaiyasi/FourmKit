@@ -109,3 +109,191 @@ build/
 # ===== Project Files =====
 Codex.md
 Project.md
+CLAUDE.md
+.claude/
+AGENTS.md
+
+# ===== AI & Development Files =====
+# AI prompt and development files
+*.prompt
+*.ai
+*.claude
+*.gpt
+*.copilot
+prompts/
+ai-notes/
+development-notes/
+
+# ===== Test & Debug Files =====
+# Test files
+*test*.py
+*test*.js
+*test*.ts
+*test*.tsx
+test_*.py
+test_*.js
+test_*.ts
+test_*.tsx
+*_test.py
+*_test.js
+*_test.ts
+*_test.tsx
+
+# Debug files
+*debug*.py
+*debug*.js
+*debug*.ts
+*debug*.tsx
+debug_*.py
+debug_*.js
+debug_*.ts
+debug_*.tsx
+*_debug.py
+*_debug.js
+*_debug.ts
+*_debug.tsx
+
+# ===== Development & Demo Files =====
+# Demo and preview files
+*demo*.py
+*demo*.js
+*demo*.ts
+*demo*.tsx
+*preview*.py
+*preview*.js
+*preview*.ts
+*preview*.tsx
+*example*.py
+*example*.js
+*example*.ts
+*example*.tsx
+
+# HTML test files
+*test*.html
+*debug*.html
+*preview*.html
+*example*.html
+logo_test*.html
+api_*.html
+template_*.html
+
+# ===== Generated & Temporary Files =====
+# Generated images and media
+test_image_generator.jpg
+*_generated.*
+*_temp.*
+*_tmp.*
+
+# Font and asset test files
+*font*.py
+*logo*.py
+*install*.py
+*download*.py
+*simple*.py
+*quick*.py
+*final*.py
+*direct*.py
+
+# ===== Documentation & Guides =====
+# Development documentation
+*_GUIDE.md
+*_INTEGRATION.md
+*_USAGE.md
+*_EXAMPLES.md
+*_CURL_EXAMPLES.md
+*_SYSTEM.md
+*_API.md
+*_PREVIEW.md
+
+# ===== Environment & Virtual Environments =====
+# Python virtual environments
+discord_bot_env/
+venv/
+env/
+.venv/
+.env/
+
+# ===== Logs & Runtime Files =====
+# Log files
+*.log
+*.out
+*.err
+logs/
+*.pid
+
+# ===== Database Files =====
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ===== Media & Uploads =====
+# Generated media files
+uploads/
+cdn-data/
+media/
+static/uploads/
+
+# ===== Build & Distribution =====
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# ===== IDE & Editor Files =====
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ===== OS Generated Files =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===== Package Manager Files =====
+# npm
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Python
+Pipfile.lock
+poetry.lock
+
+# ===== Backup Files =====
+# Backup directories
+*_backup*/
+backup*/
+backups/
+*.bak
+*.backup
+*.old
+
+# ===== Migration Backups =====
+# Database migration backups
+migrations/versions_backup_*/

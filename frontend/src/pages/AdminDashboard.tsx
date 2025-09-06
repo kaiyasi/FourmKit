@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { canSetMode, getRole, getRoleDisplayName, canAccessAnnouncements } from '@/utils/auth'
-import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown } from 'lucide-react'
+import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3 } from 'lucide-react'
 import { MobileAdminDashboard } from '@/components/mobile/admin'
 
 export default function AdminDashboard() {
@@ -77,10 +77,15 @@ export default function AdminDashboard() {
         <Card to="/admin/events" title="事件記錄" desc="系統事件日誌、操作記錄、審計追蹤" icon={Activity} />
       )}
 
-      {/* 平台狀態卡片 - 僅 dev_admin 可見 */}
-              {role === 'dev_admin' && (
-          <Card to="/admin/platform" title="平台狀態" desc="平台運行狀態、系統資源監控、重啟記錄" icon={Server} />
-        )}
+      {/* 專案空間狀態卡片 - 三個 _admin 可見 */}
+      {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') && (
+        <Card to="/admin/project" title="專案空間狀態" desc="用戶活動、內容統計、整合服務狀態" icon={BarChart3} />
+      )}
+      
+      {/* 伺服器狀態卡片 - 僅 dev_admin 可見 */}
+      {role === 'dev_admin' && (
+        <Card to="/admin/platform" title="伺服器狀態" desc="系統資源、服務運行時間、技術指標" icon={Server} />
+      )}
         {role === 'dev_admin' && (
           <Card to="/admin/members" title="會員管理" desc="會員訂閱管理、廣告貼文審核、用戶狀態管理" icon={Crown} />
         )}
@@ -92,7 +97,14 @@ export default function AdminDashboard() {
             <Card to="/admin/users" title="使用者管理" desc="檢視與搜尋、重設密碼、角色指派" icon={Users} disabled={true} />
           ) : null}
           <Card to="/admin/schools" title="學校管理" desc="清單、新增、重新命名" icon={Building2} />
-          <Card to="/admin/integrations" title="整合狀態" desc="Webhook/Redis/心跳服務概況" icon={Network} />
+          <Card to="/admin/integrations" title="整合狀態" desc="平台監控（佇列 / 系統）" icon={Network} />
+          {/* 整合入口：Instagram（可用） / Discord（占位） */}
+          {role === 'dev_admin' && (
+            <Card to="/admin/instagram" title="Instagram 整合" desc="帳號綁定、模板、排程發佈" icon={LifeBuoy} />
+          )}
+          {role === 'dev_admin' ? (
+            <Card to="#" title="Discord 整合" desc="Webhook / Bot（開發中）" icon={LifeBuoy} disabled={true} />
+          ) : null}
           <Card to="/admin/pages" title="頁面內容（Markdown）" desc="關於/版規 的維護與即時預覽" icon={LayoutDashboard} />
           {/* 公告發佈入口移除：公告改由一般發文流程勾選「公告貼文」並依角色控制範圍 */}
           {/* Instagram 整合已移除 */}

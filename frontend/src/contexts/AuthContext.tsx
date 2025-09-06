@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoggedIn: isLoggedIn(),
     role: getRole(),
     schoolId: getSchoolId(),
-    // 先讀 localStorage（使用者有勾記住），否則退回 sessionStorage（僅本分頁／本次瀏覽）
+    // 優先讀取 localStorage（使用者有勾選記住），否則退回 sessionStorage（僅本分頁／本次瀏覽）
     username: localStorage.getItem('username') || sessionStorage.getItem('username')
   })
 
@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     rememberUsername?: boolean
   ) => {
     saveSession(token, role, schoolId, refreshToken)
-    // 僅在勾選「記住我的帳號」時，才寫入 localStorage；否則寫入 sessionStorage
+    // 僅在使用者勾選「記住我的帳號」時，才寫入 localStorage；否則寫入 sessionStorage
     if (username) {
       try {
         if (rememberUsername) {

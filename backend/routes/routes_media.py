@@ -6,6 +6,7 @@ from utils.fsops import UPLOAD_ROOT
 from utils.upload_utils import generate_unique_filename, save_upload_chunk, merge_chunks
 from utils.upload_utils import resolve_or_publish_public_media
 import mimetypes
+import time
 from pathlib import Path
 
 bp = Blueprint("media", __name__, url_prefix="/api/media")
@@ -66,6 +67,64 @@ def upload_media():
         if file_size > SIZE_LIMITS[file_type] * 1024 * 1024:
             return jsonify({"ok": False, "error": f"檔案太大，最大 {SIZE_LIMITS[file_type]}MB"}), 400
             
+        # 若沒有提供 post_id，視為「獨立資產上傳」（例如模板 Logo），使用 Logo 處理器
+        if not post_id:
+            from services.logo_handler import get_logo_handler, LogoError
+            
+            try:
+                logo_handler = get_logo_handler()
+                
+                # 根據文件類型決定上傳類別
+                upload_category = request.form.get('category', 'general')
+                identifier = request.form.get('identifier', f"asset_{int(time.time())}")
+                
+                if file_type == 'image':
+                    # 使用 Logo 處理器上傳
+                    result = logo_handler.upload_general_logo(
+                        category=upload_category,
+                        identifier=identifier,
+                        file_stream=file.stream,
+                        filename=file_name
+                    )
+                    
+                    return jsonify({
+                        "ok": True,
+                        "url": result['url'],
+                        "path": result['relative_path'],
+                        "info": {
+                            "width": result['width'],
+                            "height": result['height'],
+                            "size": result['file_size'],
+                            "format": result['format']
+                        },
+                        "message": "圖片資產已優化並保存"
+                    }), 200
+                else:
+                    # 非圖片文件，使用原始邏輯
+                    from pathlib import Path as _Path
+                    upload_root = _Path(UPLOAD_ROOT)
+                    target_dir = upload_root / 'public' / upload_category
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    unique_name = generate_unique_filename(file_name, file_hash)
+                    target_path = target_dir / unique_name
+                    file.save(str(target_path))
+                    return jsonify({
+                        "ok": True,
+                        "url": f"/uploads/public/{upload_category}/{unique_name}",
+                        "path": f"public/{upload_category}/{unique_name}",
+                        "message": "已儲存為公共資產"
+                    }), 200
+                    
+            except LogoError as e:
+                return jsonify({
+                    "ok": False, 
+                    "error": e.message,
+                    "code": e.code,
+                    "details": e.details
+                }), 400
+            except Exception as e:
+                return jsonify({"ok": False, "error": f"上傳處理失敗: {str(e)}"}), 500
+
         with get_session() as s:
             # 檢查用戶權限
             user = s.query(User).get(user_id)

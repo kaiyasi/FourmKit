@@ -19,5 +19,14 @@ requests>=2.31.0
 html2text>=2024.2.26
 cryptography>=41.0.0
 
+# Instagram Integration Dependencies
+celery>=5.3.4
+facebook-sdk>=3.1.0
+pillow-heif>=0.13.0
+python-barcode>=0.15.1
+qrcode>=7.4.2
 
 # Using Python standard library urllib for Discord Webhook, no additional dependencies
+
+# HTML→PNG rendering (optional)
+playwright==1.46.0

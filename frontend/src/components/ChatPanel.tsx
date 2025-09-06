@@ -48,7 +48,7 @@ export default function ChatPanel({ room, title, subtitle }: { room: string; tit
     e.preventDefault()
     const msg = text.trim()
     if (!msg) return
-    // 樂觀更新（避免等待伺服器回傳造成刷新感）
+    // 樂觀更新（Optimistic Update，避免等待伺服器回傳造成刷新感）
     const optimisticTs = new Date().toISOString()
     const optimistic: Msg = { room, message: msg, client_id: clientId, ts: optimisticTs }
     const k = `${optimistic.client_id}|${optimistic.ts}|${optimistic.message}`

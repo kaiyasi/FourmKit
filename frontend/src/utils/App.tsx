@@ -18,7 +18,10 @@ import ChatPanel from '@/components/ChatPanel'
 import ChatPage from '@/pages/ChatPage'
 import AdminChatPage from '@/pages/admin/ChatPage'
 import PostDetailPage from '@/pages/PostDetailPage'
-import AdminCommentsMonitorPage from '@/pages/AdminCommentsMonitorPage'
+import AdminCommentsMonitorPage from '@/pages/admin/AdminCommentsMonitorPage'
+import DiscordPage from '@/pages/admin/DiscordPage'
+import ProjectStatusPage from '@/pages/admin/ProjectStatusPage'
+import ServerStatusPage from '@/pages/admin/ServerStatusPage'
 import EventStatusCard from '@/components/admin/EventStatusCard'
 import ResizableSection from '@/components/ResizableSection'
 import { canSetMode, getUserId } from '@/utils/auth'
@@ -479,8 +482,23 @@ export default function App() {
     if (pathname === '/admin/comments') {
         return <AdminCommentsMonitorPage />
     }
+
+  // /admin/discord Discord 管理頁（需權限，後端保護）
+  if (pathname === '/admin/discord') {
+    return <DiscordPage />
+  }
+
+  // /admin/project 專案空間狀態頁（需權限，後端保護）
+  if (pathname === '/admin/project') {
+    return <ProjectStatusPage />
+  }
+
+  // /admin/platform 伺服器狀態頁（需權限，後端保護）
+  if (pathname === '/admin/platform') {
+    return <ServerStatusPage />
+  }
     
-  // 支援功能已移除
+    // 支援功能已移除
 
   // 維護模式
   if (platform.mode === 'maintenance') {

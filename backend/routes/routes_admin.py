@@ -476,7 +476,7 @@ def monitor_comments():
                     'deleted_by': comment.deleted_by,
                     'post': {
                         'id': post.id,
-                        'content': post.content,  # 完整內容
+                        'content': post.content[:200] + "..." if len(post.content) > 200 else post.content,
                         'status': post.status,
                         'school_name': post_school.name if post_school else None
                     },
@@ -1001,6 +1001,85 @@ def delete_comment(comment_id: int):
                 pass  # 通知發送失敗不影響主要功能
             
             return jsonify({'ok': True, 'message': '留言已刪除'})
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bp.post('/comments/<int:comment_id>/restore')
+@jwt_required()
+@require_role('dev_admin')  # 只有 dev_admin 可以重新上架
+def restore_comment(comment_id: int):
+    """重新上架留言（僅限 dev_admin）"""
+    try:
+        moderator_id = get_jwt_identity()
+        
+        if not moderator_id:
+            return jsonify({'error': 'unauthorized'}), 401
+        
+        with get_session() as s:
+            # 獲取當前用戶信息
+            current_user = s.query(User).filter(User.id == moderator_id).first()
+            if not current_user:
+                return jsonify({'error': 'user not found'}), 404
+            
+            # 檢查是否為 dev_admin
+            if current_user.role != 'dev_admin':
+                return jsonify({'error': 'insufficient permissions'}), 403
+            
+            # 獲取留言信息
+            comment = s.query(Comment).filter(Comment.id == comment_id).first()
+            if not comment:
+                return jsonify({'error': 'comment not found'}), 404
+            
+            if not comment.is_deleted:
+                return jsonify({'error': 'comment is not deleted'}), 400
+            
+            # 重新上架
+            comment.is_deleted = False
+            comment.deleted_at = None
+            comment.deleted_by = None
+            comment.updated_at = datetime.now(timezone.utc)
+            
+            # 寫入審核日誌
+            try:
+                s.execute(
+                    "INSERT INTO moderation_logs (target_type, target_id, action, old_status, new_status, reason, moderator_id) VALUES (:tt, :ti, :ac, :os, :ns, :rs, :mi)",
+                    {
+                        "tt": "comment", 
+                        "ti": comment.id, 
+                        "ac": "restore", 
+                        "os": "deleted", 
+                        "ns": comment.status, 
+                        "rs": "管理員重新上架", 
+                        "mi": moderator_id
+                    }
+                )
+            except Exception:
+                pass
+            
+            s.commit()
+            
+            # 發送管理員事件通知
+            try:
+                from utils.notify import send_admin_event
+                moderator_name = current_user.username if current_user else f"管理員({moderator_id})"
+                
+                send_admin_event(
+                    kind="comment_restored",
+                    title="留言已重新上架",
+                    description=f"開發管理員 {moderator_name} 重新上架了留言 #{comment_id}",
+                    actor=moderator_name,
+                    source="/api/admin/comments/restore",
+                    fields=[
+                        {"name": "留言ID", "value": str(comment_id), "inline": True},
+                        {"name": "操作", "value": "重新上架", "inline": True},
+                        {"name": "操作者", "value": "開發管理員", "inline": True}
+                    ]
+                )
+            except Exception:
+                pass  # 通知發送失敗不影響主要功能
+            
+            return jsonify({'ok': True, 'message': '留言已重新上架'})
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500

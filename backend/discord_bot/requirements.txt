@@ -1,0 +1,11 @@
+# Discord Bot 相關依賴
+discord.py>=2.3.0
+redis>=4.5.0
+cryptography>=40.0.0
+
+# 系統監控（可選）
+psutil>=5.9.0
+
+# 異步支援
+asyncio
+aioredis>=2.0.0

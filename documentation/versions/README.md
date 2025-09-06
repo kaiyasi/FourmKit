@@ -7,7 +7,7 @@
 ```
 documentation/versions/
 ├── README.md                           # 本文件 - 目錄說明
-├── VERSION_RECORD.md                   # 完整版本記錄 (V1.0.0 → V1.5.0)
+├── VERSION_RECORD.md                   # 完整版本記錄 (V1.0.0 → V1.6.0)
 ├── changelog.md                        # 變更日誌
 ├── CLEANUP_SUMMARY.md                  # 清理總結
 ├── V1.0.0.md                          # V1.0.0 版本詳細說明
@@ -16,6 +16,7 @@ documentation/versions/
 ├── V1.3.0.md                          # V1.3.0 版本詳細說明
 ├── V1.4.0.md                          # V1.4.0 版本詳細說明
 ├── V1.5.0.md                          # V1.5.0 版本詳細說明
+├── V1.6.0.md                          # V1.6.0 版本詳細說明
 ├── V1.4.0_to_V1.5.0_migration.md     # V1.4.0 → V1.5.0 升級指南
 └── [其他版本文件...]
 ```

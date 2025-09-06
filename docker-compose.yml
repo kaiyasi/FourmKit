@@ -47,9 +47,51 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
       OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
     volumes:
       - ./uploads:/data/uploads
     expose: ["80"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [ core ]
+
+  celery:
+    build: ./backend
+    command: celery -A services.celery_app.celery_app worker --loglevel=info -Q instagram,maintenance
+    environment:
+      DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
+      REDIS_URL: redis://redis:80/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      APP_MODE: ${APP_MODE}
+      UPLOAD_ROOT: /data/uploads
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      ENFORCE_SINGLE_ADMIN: ${ENFORCE_SINGLE_ADMIN}
+      SINGLE_ADMIN_USERNAME: ${SINGLE_ADMIN_USERNAME}
+      SINGLE_ADMIN_PASSWORD: ${SINGLE_ADMIN_PASSWORD}
+      ADMIN_NOTIFY_WEBHOOK: ${ADMIN_NOTIFY_WEBHOOK}
+    volumes:
+      - ./uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [ core ]
+
+  celery-beat:
+    build: ./backend
+    command: celery -A services.celery_app.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
+      REDIS_URL: redis://redis:80/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      APP_MODE: ${APP_MODE}
+      UPLOAD_ROOT: /data/uploads
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      ADMIN_NOTIFY_WEBHOOK: ${ADMIN_NOTIFY_WEBHOOK}
     depends_on:
       postgres:
         condition: service_healthy

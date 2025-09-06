@@ -13,8 +13,11 @@ import {
   Clock,
   Shield,
   ExternalLink,
-  ArrowLeft
+  ArrowLeft,
+  Instagram,
+  Settings
 } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface IntegrationStatus {
   ok?: boolean
@@ -57,10 +60,12 @@ interface IntegrationStatus {
 }
 
 export default function AdminIntegrationsPage() {
+  const { role, isLoggedIn } = useAuth()
   const [data, setData] = useState<IntegrationStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const isDevAdmin = isLoggedIn && role === 'dev_admin'
 
   useEffect(() => {
     const html = document.documentElement
@@ -175,8 +180,8 @@ export default function AdminIntegrationsPage() {
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold dual-text mb-2">系統整合狀態</h1>
-              <p className="text-sm text-muted">監控 Webhook、佇列服務和系統整合狀態</p>
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold dual-text mb-2">主機服務監控</h1>
+              <p className="text-sm text-muted">監控主機資源、資料庫、CDN 與平台指標</p>
             </div>
             
             <div className="flex items-center gap-3">
@@ -196,6 +201,8 @@ export default function AdminIntegrationsPage() {
                 <span className="sm:hidden">刷新</span>
               </button>
         </div>
+
+        {/* 整合服務管理：移除，改為 NAS 監控 */}
       </div>
         </div>
 
@@ -217,15 +224,15 @@ export default function AdminIntegrationsPage() {
                 <>
                   <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-green-600" />
                   <div>
-                    <h2 className="text-lg sm:text-xl font-semibold text-green-800">系統運行正常</h2>
-                    <p className="text-sm text-green-600">所有核心服務正常運作</p>
+                    <h2 className="text-lg sm:text-xl font-semibold text-green-800">NAS 運行正常</h2>
+                    <p className="text-sm text-green-600">核心服務運作正常</p>
                   </div>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 text-red-600" />
                   <div>
-                    <h2 className="text-lg sm:text-xl font-semibold text-red-800">系統異常</h2>
+                    <h2 className="text-lg sm:text-xl font-semibold text-red-800">NAS 異常</h2>
                     <p className="text-sm text-red-600">檢測到服務異常，請檢查詳細狀態</p>
                   </div>
                 </>
@@ -241,6 +248,8 @@ export default function AdminIntegrationsPage() {
           </div>
         ) : data ? (
           <>
+            {/* 快捷管理入口：移除，改為 NAS 監控 */}
+
             {/* 服務狀態卡片 */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               {/* Discord Webhook 狀態 */}
@@ -304,7 +313,7 @@ export default function AdminIntegrationsPage() {
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
                   <Activity className="w-5 h-5" />
-                  <h2 className="text-lg font-semibold dual-text">最近管理員事件</h2>
+                  <h2 className="text-lg font-semibold dual-text">後端狀態紀錄</h2>
                 </div>
               </div>
               
@@ -318,21 +327,28 @@ export default function AdminIntegrationsPage() {
                         }`}></div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-fg truncate">
-                            {event.kind === 'post_approved' && '貼文核准'}
-                            {event.kind === 'comment_approved' && '留言核准'}
-                            {event.kind === 'comment_rejected' && '留言拒絕'}
-                            {event.kind === 'comment_deleted' && '留言刪除'}
-                            {event.kind === 'delete_request_approved' && '刪文請求核准'}
-                            {event.kind === 'delete_request_rejected' && '刪文請求拒絕'}
-                            {event.kind === 'simple_choice' && '顏色投票'}
-                            {event.kind === 'theme_proposal' && '主題提案'}
-                            {event.kind || '管理員事件'}
+                            {event.title || event.kind || '系統事件'}
                           </div>
                           <div className="text-sm text-muted mt-1">
-                            {event.ok ? '操作成功' : `操作失敗: ${event.error || '未知錯誤'}`}
+                            {event.description || '無描述'}
                           </div>
+                          {event.actor && (
+                            <div className="text-xs text-muted mt-1">
+                              來源: {event.actor}
+                            </div>
+                          )}
+                          {event.target && (
+                            <div className="text-xs text-muted mt-1">
+                              服務: {event.target}
+                            </div>
+                          )}
+                          {event.error && (
+                            <div className="text-sm text-red-600 mt-1">
+                              {event.error}
+                            </div>
+                          )}
                           <div className="text-xs text-muted mt-2">
-                            {new Date(event.ts).toLocaleString()}
+                            {event.ts ? new Date(event.ts).toLocaleString() : '時間未知'}
                           </div>
                         </div>
                       </div>
@@ -341,11 +357,11 @@ export default function AdminIntegrationsPage() {
                 ) : (
                   <div className="text-center py-8 text-muted">
                     <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>近期無管理員事件記錄</p>
-                    <p className="text-xs mt-1">系統運行正常，無異常事件</p>
+                    <p>近期無系統狀態記錄</p>
+                    <p className="text-xs mt-1">所有服務運行正常，無異常事件</p>
                   </div>
-          )}
-        </div>
+                )}
+              </div>
             </div>
 
             {/* 主機運行狀況 */}

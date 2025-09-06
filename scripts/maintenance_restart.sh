@@ -3,7 +3,7 @@
 # 🚀 Serelix Studio ForumKit - 維護重啟腳本
 # ===============================================================================
 # 功能：前後端重建 -> 資料庫保留 -> 服務重啟 -> 健康檢查
-# 適用：維護環境，不動資料庫，僅重建前後端服務
+# 適用場景：維護環境，不動資料庫，僅重建前後端服務
 set -euo pipefail
 
 # ===============================================================================
@@ -136,23 +136,76 @@ protect_database() {
 # ===============================================================================
 # 🚀 前後端重建流程
 # ===============================================================================
+check_services_status() {
+    info "檢查服務當前狀態..."
+    
+    local running_services
+    running_services=$(docker compose ps --services --filter "status=running" 2>/dev/null || true)
+    
+    if [ -n "$running_services" ]; then
+        success "發現運行中的服務，將進行重啟"
+        return 0  # 有服務運行，需要重啟
+    else
+        info "未發現運行中的服務，將執行啟動流程"
+        return 1  # 沒有服務運行，需要啟動
+    fi
+}
+
 rebuild_services() {
     step "重建前後端服務"
     
-    info "停止現有服務..."
-    docker compose down --timeout 30
+    local is_restart=false
+    if check_services_status; then
+        is_restart=true
+        info "停止現有服務..."
+        docker compose down --timeout 30
+        success "服務已停止"
+    else
+        info "服務未運行，將直接啟動"
+    fi
     
-    success "服務已停止"
+    if [ "$is_restart" = true ]; then
+        info "清理舊的容器和網路..."
+        docker system prune -f --volumes
+        success "清理完成"
+    else
+        info "跳過清理步驟（首次啟動）"
+    fi
     
-    info "清理舊的容器和網路..."
-    docker system prune -f --volumes
+    info "清理前端舊版編譯產物 (frontend/dist)..."
+    if [ -d "$PROJECT_ROOT/frontend/dist" ]; then
+        rm -rf "$PROJECT_ROOT/frontend/dist"
+        success "已刪除 frontend/dist"
+    else
+        info "未發現 frontend/dist，略過"
+    fi
+
+    # 嘗試先行建置前端，避免 Nginx 找不到資產造成 500
+    step "前端建置 (生成 frontend/dist)"
+    if [ -f "$PROJECT_ROOT/frontend/package.json" ]; then
+        if command -v npm >/dev/null 2>&1; then
+            info "使用本機 npm 進行建置..."
+            (cd "$PROJECT_ROOT/frontend" && npm ci && npm run build)
+            # 確保檔案可被 Web 服務讀取
+            chmod -R a+r "$PROJECT_ROOT/frontend/dist" 2>/dev/null || true
+            success "本機前端建置完成"
+        else
+            info "本機缺少 npm，改用 Docker 建置（若有 frontend 服務）..."
+            docker compose build frontend || info "找不到 frontend 服務，略過映像建置"
+        fi
+    else
+        info "未找到 frontend/package.json，略過前端建置"
+    fi
     
-    success "清理完成"
-    
-    info "重建並啟動服務..."
-    docker compose up -d --build
-    
-    success "服務重建完成"
+    if [ "$is_restart" = true ]; then
+        info "重建並啟動服務..."
+        docker compose up -d --build
+        success "服務重建完成"
+    else
+        info "啟動服務..."
+        docker compose up -d --build
+        success "服務啟動完成"
+    fi
 }
 
 wait_for_services() {
@@ -176,6 +229,58 @@ wait_for_services() {
     done
     
     warning "服務啟動超時，繼續執行..."
+}
+
+# ===============================================================================
+# 🌐 安裝 HTML 渲染瀏覽器（Playwright Chromium）
+# ===============================================================================
+install_playwright_browsers() {
+    step "安裝 HTML 渲染瀏覽器 (Playwright Chromium)"
+
+    local targets=(backend celery celery-beat)
+    for svc in "${targets[@]}"; do
+        if docker compose ps "${svc}" 2>/dev/null | grep -q "Up"; then
+            info "為 ${svc} 檢查/安裝 Playwright Chromium..."
+            # 盡量不因安裝失敗中斷整體流程
+            if docker compose exec -T "${svc}" bash -lc "python -m playwright --version" >/dev/null 2>&1; then
+                docker compose exec -T "${svc}" bash -lc "python -m playwright install chromium || python -m playwright install --with-deps chromium" >/dev/null 2>&1 \
+                    && success "${svc}: Chromium 安裝/檢查完成" \
+                    || warning "${svc}: Chromium 安裝可能失敗，後續若渲染失敗請手動執行 'python -m playwright install chromium'"
+            else
+                warning "${svc}: 未找到 Playwright 指令，可能尚未更新映像或未安裝相依（requirements）。"
+            fi
+        else
+            info "跳過 ${svc}（未在運行）"
+        fi
+    done
+
+    info "如使用系統自帶瀏覽器，也可設定環境變數 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指向執行檔。"
+}
+
+# ===============================================================================
+# 🧩 安裝 Chromium 執行期相依套件（容器內）
+# ===============================================================================
+install_browser_runtime_deps() {
+    step "安裝 Chromium 執行期相依 (容器內 apt)"
+
+    local pkgs=(
+        libglib2.0-0 libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
+        libcups2 libatspi2.0-0 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+        libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 libdrm2 libexpat1 \
+        libxcb1 libx11-6 libxext6 ca-certificates
+    )
+
+    local targets=(backend celery celery-beat)
+    for svc in "${targets[@]}"; do
+        if docker compose ps "${svc}" 2>/dev/null | grep -q "Up"; then
+            info "為 ${svc} 安裝系統相依..."
+            docker compose exec -T "${svc}" bash -lc "apt-get update && apt-get install -y --no-install-recommends ${pkgs[*]} && rm -rf /var/lib/apt/lists/*" \
+                && success "${svc}: 執行期相依安裝完成" \
+                || warning "${svc}: 相依安裝失敗，請檢查網路或套件來源"
+        else
+            info "跳過 ${svc}（未在運行）"
+        fi
+    done
 }
 
 # ===============================================================================
@@ -258,7 +363,7 @@ show_summary() {
     printf "${CYAN}📋 執行摘要:${RESET}\n"
     printf "  • 資料庫保護完成\n"
     printf "  • 前後端服務重建\n"
-    printf "  • 服務重啟完成\n"
+    printf "  • 服務啟動/重啟完成\n"
     printf "  • 健康檢查執行\n"
     printf "  • 資料庫資料保留\n\n"
     
@@ -310,18 +415,33 @@ trap 'handle_error $LINENO' ERR
 main() {
     header
     
-    info "開始執行維護重啟流程..."
-    info "此腳本將重建前後端服務但保留資料庫資料"
+    # 檢查當前服務狀態
+    local running_services
+    running_services=$(docker compose ps --services --filter "status=running" 2>/dev/null | wc -l)
+    
+    if [ "$running_services" -gt 0 ]; then
+        info "開始執行維護重啟流程..."
+        info "此腳本將重建前後端服務但保留資料庫資料"
+    else
+        info "開始執行服務啟動流程..."
+        info "檢測到服務未運行，將執行啟動程序"
+    fi
     
     check_requirements
     protect_database
     rebuild_services
     wait_for_services
+    install_browser_runtime_deps
+    install_playwright_browsers
     health_check
     verify_services
     show_summary
     
-    printf "${GREEN}🎉 維護重啟成功完成！${RESET}\n\n"
+    if [ "$running_services" -gt 0 ]; then
+        printf "${GREEN}🎉 維護重啟成功完成！${RESET}\n\n"
+    else
+        printf "${GREEN}🎉 服務啟動成功完成！${RESET}\n\n"
+    fi
 }
 
 # 執行主程序

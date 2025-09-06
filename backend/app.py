@@ -42,7 +42,7 @@ from flask_jwt_extended import JWTManager
 
 APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.1.0")
 
-# 先建立未綁 app 的全域 socketio，在 create_app() 裡再 init_app
+# 先建立未綁定 app 的全域 socketio，在 create_app() 裡再 init_app
 socketio = SocketIO(
     cors_allowed_origins=[],  # 實際 origins 稍後在 init_app 指定
     async_mode="eventlet",
@@ -52,7 +52,7 @@ socketio = SocketIO(
     ping_timeout=60,
 )
 
-_events_registered = False  # 防重註冊旗標
+_events_registered = False  # 防止重複註冊的旗標
 
 
 def __brand_footer_text() -> str:
@@ -89,7 +89,7 @@ def _ws_allow(key: str, calls: int, per_seconds: int) -> bool:
     if dq is None:
         dq = deque()
         _ws_hits[key] = dq
-    # 清掉視窗外的
+    # 清除視窗外的項目
     while dq and now - dq[0] > per_seconds:
         dq.popleft()
     if len(dq) >= calls:
@@ -528,17 +528,20 @@ def create_app() -> Flask:
     except Exception as e:
         print(f"[ForumKit] 記錄平台啟動事件失敗: {e}")
     
+    # 使用 Google Fonts，無需預先下載字體
+    print("[ForumKit] 使用 Google Fonts 字體服務")
+    
     # 讓 jsonify 直接輸出 UTF-8，而非 \uXXXX 逃脫序列，
     # 避免前端在某些備援路徑顯示不可讀的 Unicode 轉義。
     app.config["JSON_AS_ASCII"] = False
     
-    # 把 Flask log 對齊 Gunicorn
+    # 將 Flask log 對齊 Gunicorn
     import logging
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
     app.logger.addHandler(handler)
     app.logger.setLevel(logging.DEBUG)
-    app.config["PROPAGATE_EXCEPTIONS"] = False  # 交給 errorhandler
+    app.config["PROPAGATE_EXCEPTIONS"] = False  # 交給 error handler 處理
     
     # 強制設定強密鑰，生產環境不使用預設值
     secret_key = os.getenv("SECRET_KEY")
@@ -924,7 +927,8 @@ def create_app() -> Flask:
             resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
             resp.headers.setdefault('X-Frame-Options', 'DENY')
             resp.headers.setdefault('Referrer-Policy', 'no-referrer')
-            resp.headers.setdefault('Permissions-Policy', "geolocation=(), microphone=(), camera=()")
+            if os.getenv('DISABLE_PERMISSIONS_POLICY', '0') not in {'1','true','yes','on'}:
+                resp.headers.setdefault('Permissions-Policy', "geolocation=(), microphone=(), camera=()")
             # CSP（簡化版，允許 self 資源與 data/blob 圖片、ws 連線）
             csp = os.getenv('CONTENT_SECURITY_POLICY') or \
                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " \
@@ -941,86 +945,105 @@ def create_app() -> Flask:
     # ---- REST ----
     @app.route("/api/healthz")
     def healthz():
-        """健康檢查端點（含 DB / Redis / CDN 真實狀態檢測）。"""
-        db = {}
-        redis = {}
-        cdn = {}
-        
-        # DB 健康檢查
+        """健康檢查端點（含 DB / Redis / CDN 真實狀態檢測）。
+        為避免 500 影響前端體驗，整體以 try/except 保底。
+        """
         try:
-            db = get_db_health()  # type: ignore[name-defined]
-        except Exception as e:
-            db = {"ok": False, "error": str(e)}
-        
-        # Redis 健康檢查
-        try:
-            redis = get_redis_health()  # type: ignore[name-defined]
-        except Exception as e:
-            redis = {"ok": False, "error": str(e)}
-        
-        # CDN 健康檢查（真實狀態檢測）
-        try:
-            import socket
-            import requests
-            host = os.getenv('CDN_HOST', '127.0.0.1')
-            port = int(os.getenv('CDN_PORT', '12002'))
-            
-            # 1. TCP 連線測試
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2.0)
-            tcp_ok = False
+            db: Dict[str, Any] = {}
+            redis: Dict[str, Any] = {}
+            cdn: Dict[str, Any] = {}
+
+            # DB 健康檢查
             try:
-                s.connect((host, port))
-                tcp_ok = True
-            finally:
-                try: s.close()
-                except Exception: pass
-            
-            # 2. HTTP 狀態測試
-            http_ok = False
-            http_status = None
+                db = get_db_health()  # type: ignore[name-defined]
+            except Exception as e:
+                db = {"ok": False, "error": str(e)}
+
+            # Redis 健康檢查
             try:
-                cdn_url = f"http://{host}:{port}"
-                response = requests.get(cdn_url, timeout=3)
-                http_ok = response.status_code < 500
-                http_status = response.status_code
-            except Exception:
-                pass
-            
-            # 3. 檔案服務測試
-            file_test_ok = False
+                redis = get_redis_health()  # type: ignore[name-defined]
+            except Exception as e:
+                redis = {"ok": False, "error": str(e)}
+
+            # CDN 健康檢查（真實狀態檢測）
             try:
-                test_url = f"http://{host}:{port}/test.txt"
-                response = requests.head(test_url, timeout=2)
-                file_test_ok = response.status_code in [200, 404]  # 404也是正常的，表示服務正常但檔案不存在
-            except Exception:
-                pass
-            
-            cdn = {
-                "ok": tcp_ok and http_ok,
-                "host": host,
-                "port": port,
-                "tcp_ok": tcp_ok,
-                "http_ok": http_ok,
-                "http_status": http_status,
-                "file_test_ok": file_test_ok,
-                "status": "OK" if (tcp_ok and http_ok) else "FAIL"
+                import socket  # type: ignore
+                import requests  # type: ignore
+                host = os.getenv('CDN_HOST', '127.0.0.1')
+                port = int(os.getenv('CDN_PORT', '12002'))
+
+                # 1. TCP 連線測試
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2.0)
+                tcp_ok = False
+                try:
+                    s.connect((host, port))
+                    tcp_ok = True
+                finally:
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
+
+                # 2. HTTP 狀態測試
+                http_ok = False
+                http_status = None
+                try:
+                    cdn_url = f"http://{host}:{port}"
+                    response = requests.get(cdn_url, timeout=3)
+                    http_ok = response.status_code < 500
+                    http_status = response.status_code
+                except Exception:
+                    pass
+
+                # 3. 檔案服務測試
+                file_test_ok = False
+                try:
+                    test_url = f"http://{host}:{port}/test.txt"
+                    response = requests.head(test_url, timeout=2)
+                    file_test_ok = response.status_code in [200, 404]
+                except Exception:
+                    pass
+
+                cdn = {
+                    "ok": bool(tcp_ok and http_ok),
+                    "host": host,
+                    "port": port,
+                    "tcp_ok": tcp_ok,
+                    "http_ok": http_ok,
+                    "http_status": http_status,
+                    "file_test_ok": file_test_ok,
+                    "status": "OK" if (tcp_ok and http_ok) else "FAIL",
+                }
+            except Exception as e:
+                cdn = {"ok": False, "error": str(e)}
+
+            payload = {
+                "ok": True,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "restart_id": app.config.get('RESTART_ID', 'unknown'),
+                "restart_timestamp": app.config.get('RESTART_TIMESTAMP', 0),
+                "uptime": int(time.time() - psutil.boot_time()) if 'psutil' in globals() else None,
+                "version": "1.0.0",
+                "environment": os.getenv('FLASK_ENV', 'production'),
+                "db": db,
+                "redis": redis,
+                "cdn": cdn,
             }
+            return jsonify(payload)
         except Exception as e:
-            cdn = {"ok": False, "error": str(e)}
-        
-        return jsonify({
-            "ok": True,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "restart_id": app.config.get('RESTART_ID', 'unknown'),
-            "restart_timestamp": app.config.get('RESTART_TIMESTAMP', 0),
-            "uptime": int(time.time() - psutil.boot_time()) if 'psutil' in globals() else None,
-            "version": "1.0.0",
-            "environment": os.getenv('FLASK_ENV', 'production'),
-            "db": db,
-            "redis": redis,
-            "cdn": cdn,
-        })
+            # 保底：任何未捕捉錯誤都以 200 回傳，避免前端爆紅
+            try:
+                err_msg = str(e)
+            except Exception:
+                err_msg = "internal error"
+            return jsonify({
+                "ok": False,
+                "error": err_msg,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "restart_id": app.config.get('RESTART_ID', 'unknown'),
+                "restart_timestamp": app.config.get('RESTART_TIMESTAMP', 0),
+            }), 200
 
 
     @app.route("/api/progress")
@@ -1037,135 +1060,6 @@ def create_app() -> Flask:
         except Exception:
             pass
         return jsonify(data)
-
-    @app.get("/api/status/integrations")
-    def status_integrations() -> Response:  # noqa: F841
-        """提供整合狀態（不含敏感資訊）。
-        - admin_webhook: 是否設定、Webhook 主機與遮罩識別。
-        - recent_admin_events: 最近投遞結果（最多 10 筆）。
-        - queue: 目前未啟用，先回固定資訊。
-        """
-        hook = (_get_admin_hook() or "").strip()
-        configured = bool(hook)
-        host = ""
-        tail = ""
-        try:
-            if hook:
-                # 解析主機名與最後一段 id（遮罩）
-                from urllib.parse import urlparse
-                u = urlparse(hook)
-                host = u.netloc
-                tail = (u.path.rsplit("/", 1)[-1] if "/" in u.path else u.path)
-                if len(tail) > 6:
-                    tail = tail[:3] + "…" + tail[-2:]
-        except Exception:
-            pass
-        # 系統資訊（best-effort）
-        sysinfo: dict[str, Any] = {}
-        try:
-            import platform, os as _os
-            sysinfo["hostname"] = platform.node()
-            sysinfo["platform"] = platform.platform()
-            try:
-                la = _os.getloadavg()
-                sysinfo["loadavg"] = {"1m": la[0], "5m": la[1], "15m": la[2]}
-            except Exception:
-                pass
-            try:
-                import psutil  # type: ignore
-                vm = psutil.virtual_memory()
-                sysinfo["memory"] = {"total": vm.total, "available": vm.available, "percent": vm.percent}
-                cpu = psutil.cpu_percent(interval=0.1)
-                sysinfo["cpu_percent"] = cpu
-                sysinfo["uptime"] = int(time.time() - psutil.boot_time())
-                
-                # 資料庫和CDN服務狀態檢查
-                try:
-                    # 資料庫服務狀態（檢查PostgreSQL連接）
-                    db_running = False
-                    try:
-                        from utils.db import get_db_health
-                        db_health = get_db_health()
-                        db_running = db_health.get("ok", False)
-                    except Exception:
-                        pass
-                    sysinfo["db_cpu_percent"] = 1.0 if db_running else None
-                    
-                    # CDN服務狀態（檢查Nginx HTTP連接）
-                    cdn_running = False
-                    try:
-                        import requests
-                        cdn_host = os.getenv('CDN_HOST', '127.0.0.1')
-                        cdn_port = int(os.getenv('CDN_PORT', '12002'))
-                        response = requests.get(f"http://{cdn_host}:{cdn_port}", timeout=2)
-                        cdn_running = response.status_code < 500
-                    except Exception:
-                        pass
-                    sysinfo["cdn_cpu_percent"] = 1.0 if cdn_running else None
-                except Exception:
-                    # 如果無法檢查服務，設為未知狀態
-                    sysinfo["db_cpu_percent"] = None
-                    sysinfo["cdn_cpu_percent"] = None
-                    
-            except Exception:
-                # 無 psutil 時以 /proc/meminfo 粗略估算
-                try:
-                    with open("/proc/meminfo","r") as f:
-                        mem = f.read()
-                    sysinfo["meminfo"] = mem.splitlines()[:5]
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # 佇列狀態：若能連到 Redis，回報 key 長度
-        queue = {"enabled": False, "size": 0}
-        try:
-            from urllib.parse import urlparse
-            import redis  # type: ignore
-            url = os.getenv("REDIS_URL")
-            if url:
-                u = urlparse(url)
-                r = redis.Redis(host=u.hostname, port=u.port or 6379, db=int((u.path or '/0').strip('/')), password=u.password, decode_responses=True)
-                key = os.getenv("FK_QUEUE_KEY", "fk:queue")
-                queue["size"] = int(r.llen(key) or 0)
-                queue["enabled"] = True
-        except Exception:
-            pass
-        
-        # 使用者統計
-        user_stats = {"total": 0}
-        try:
-            from models import User
-            from utils.db import get_session
-            with get_session() as s:
-                user_stats["total"] = s.query(User).count()
-        except Exception:
-            pass
-        try:
-            cfg = load_config() or {}
-            debug_mode = cfg.get("mode") in {"development", "test"}
-        except Exception:
-            debug_mode = False
-
-        payload = {
-            "ok": True,
-            "admin_webhook": {"configured": configured, "host": host, "id_mask": tail},
-        }
-        if debug_mode:
-            payload.update({
-                "recent_admin_events": recent_admin_events(10),
-                "queue": queue,
-                "system": sysinfo,
-                "user_stats": user_stats,
-            })
-        else:
-            payload.update({
-                "recent_admin_events": [],
-                "queue": {"enabled": False, "size": 0},
-                "system": {},
-                "user_stats": user_stats,
-            })
-        return jsonify(payload)
 
     # 公告管理（管理員）
     @app.get('/api/admin/announcements')
@@ -1375,6 +1269,95 @@ def create_app() -> Flask:
         # 嚴格模式：直接把 data 丟回去，前端自行依 error 判斷呈現
         return jsonify(data)
 
+    # ---- Support center placeholder (frontend under redesign) ----
+    @app.get("/support")
+    def support_placeholder() -> Response:  # noqa: F841
+        html = (
+            "<!doctype html><html lang='zh-TW'><head>"
+            "<meta charset='utf-8'/>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+            "<title>支援中心（開發中）</title>"
+            "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,'Noto Sans TC','Apple Color Emoji','Segoe UI Emoji';background:#f8f9fb;margin:0;padding:0;}"
+            ".wrap{max-width:720px;margin:8vh auto;padding:24px}"
+            ".card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:28px;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,.05)}"
+            ".title{font-size:22px;font-weight:700;margin:8px 0 6px;color:#111827}"
+            ".desc{color:#6b7280;margin-bottom:18px}"
+            ".btn{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none;margin:4px}"
+            ".primary{background:#2563eb;color:#fff}"
+            ".outline{border:1px solid #e5e7eb;color:#111827}"
+            "</style></head><body>"
+            "<div class='wrap'><div class='card'>"
+            "<div style='display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:14px;background:#e8f0ff;color:#2563eb;margin:auto'>🛠️</div>"
+            "<div class='title'>支援中心（開發中）</div>"
+            "<div class='desc'>我們正在重新設計支援介面，體驗將更直覺與一致。若有緊急問題，請先使用幫助中心。</div>"
+            "<div>"
+            "<a class='btn primary' href='/'>返回首頁</a>"
+            "<a class='btn outline' href='/help'>前往幫助中心</a>"
+            "</div></div></div></body></html>"
+        )
+        return Response(html, mimetype="text/html")
+
+    @app.get("/favicon.ico")
+    def favicon_placeholder() -> Response:  # noqa: F841
+        # 避免 500，回傳 204 No Content
+        return Response(status=204)
+
+    # Auth 占位，避免 500（前端路由未就緒時）
+    @app.get("/auth")
+    def auth_placeholder() -> Response:  # noqa: F841
+        html = (
+            "<!doctype html><html lang='zh-TW'><head>"
+            "<meta charset='utf-8'/>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+            "<title>登入 / 註冊（暫時不可用）</title>"
+            "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,'Noto Sans TC';background:#f8f9fb;margin:0;padding:0;}"
+            ".wrap{max-width:720px;margin:8vh auto;padding:24px}"
+            ".card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:28px;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,.05)}"
+            ".title{font-size:22px;font-weight:700;margin:8px 0 6px;color:#111827}"
+            ".desc{color:#6b7280;margin-bottom:18px}"
+            ".btn{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none;margin:4px}"
+            ".primary{background:#2563eb;color:#fff}"
+            ".outline{border:1px solid #e5e7eb;color:#111827}"
+            "</style></head><body>"
+            "<div class='wrap'><div class='card'>"
+            "<div style='display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:14px;background:#e8f0ff;color:#2563eb;margin:auto'>🔒</div>"
+            "<div class='title'>登入 / 註冊 暫時不可用</div>"
+            "<div class='desc'>系統維護中，請稍後再試。如需協助，請前往幫助中心。</div>"
+            "<div>"
+            "<a class='btn primary' href='/'>返回首頁</a>"
+            "<a class='btn outline' href='/help'>幫助中心</a>"
+            "</div></div></div></body></html>"
+        )
+        return Response(html, mimetype="text/html")
+
+    # Root 占位，避免 500：前端未就緒時提供基本首頁
+    @app.get("/")
+    def root_placeholder() -> Response:  # noqa: F841
+        html = (
+            "<!doctype html><html lang='zh-TW'><head>"
+            "<meta charset='utf-8'/>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+            "<title>ForumKit</title>"
+            "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,'Noto Sans TC';background:#f8f9fb;margin:0;padding:0;}"
+            ".wrap{max-width:760px;margin:10vh auto;padding:24px}"
+            ".card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:28px;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,.05)}"
+            ".title{font-size:22px;font-weight:700;margin:8px 0 6px;color:#111827}"
+            ".desc{color:#6b7280;margin-bottom:18px}"
+            ".btn{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none;margin:4px}"
+            ".primary{background:#2563eb;color:#fff}"
+            ".outline{border:1px solid #e5e7eb;color:#111827}"
+            "</style></head><body>"
+            "<div class='wrap'><div class='card'>"
+            "<div style='display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:14px;background:#e8f0ff;color:#2563eb;margin:auto'>✨</div>"
+            "<div class='title'>ForumKit</div>"
+            "<div class='desc'>前端部署建置中。您仍可瀏覽：支援中心與幫助中心。</div>"
+            "<div>"
+            "<a class='btn primary' href='/support'>支援中心</a>"
+            "<a class='btn outline' href='/help'>幫助中心</a>"
+            "</div></div></div></body></html>"
+        )
+        return Response(html, mimetype="text/html")
+
     # 掛載 API 藍圖
     app.register_blueprint(posts_bp)
     app.register_blueprint(auth_bp)
@@ -1420,6 +1403,8 @@ def create_app() -> Flask:
     # 公告通知系統
     app.register_blueprint(announcements_bp)
     
+    # Instagram 整合系統（已改為獨立 FastAPI 微服務，暫不在 Flask 內掛載）
+    
     # 支援工單系統
     app.register_blueprint(support_bp)
     app.register_blueprint(support_admin_bp)
@@ -1433,6 +1418,47 @@ def create_app() -> Flask:
     
     # CDN 靜態檔案服務
     app.register_blueprint(cdn_bp)
+
+    # Instagram 整合系統
+    try:
+        from routes.routes_instagram import bp as instagram_bp
+        app.register_blueprint(instagram_bp)
+        
+        # IG 統一系統路由
+        from routes.routes_ig_unified import bp as ig_unified_bp
+        app.register_blueprint(ig_unified_bp)
+        
+        # IG 模板預覽路由
+        from routes.routes_ig_template_preview import bp as ig_template_preview_bp
+        app.register_blueprint(ig_template_preview_bp)
+        
+        print('[ForumKit] Instagram routes mounted successfully')
+    except Exception as _e:
+        print('[ForumKit] Instagram routes not mounted:', _e)
+    
+    # 新的統一貼文圖片生成系統
+    try:
+        from routes.routes_post_images import bp as post_images_bp
+        app.register_blueprint(post_images_bp)
+        print('[ForumKit] Post images routes mounted successfully')
+    except Exception as _e:
+        print('[ForumKit] Post images routes not mounted:', _e)
+        # 後備：若 Instagram 模組無法掛載，提供健康檢查端點避免 404 噪音
+        try:
+            from flask import Blueprint
+            ig_stub_bp = Blueprint('instagram_stub', __name__, url_prefix='/api/instagram')
+
+            @ig_stub_bp.route('/_health', methods=['GET'])
+            def instagram_health_stub():  # noqa: F401
+                return jsonify({
+                    'success': False,
+                    'message': 'instagram module disabled or not mounted'
+                })
+
+            app.register_blueprint(ig_stub_bp)
+            print('[ForumKit] Instagram stub health route mounted at /api/instagram/_health')
+        except Exception as _e2:
+            print('[ForumKit] Failed to mount Instagram stub:', _e2)
 
     # ---- Realtime rooms debug APIs (for Day10 validation) ----
     from flask_jwt_extended import jwt_required

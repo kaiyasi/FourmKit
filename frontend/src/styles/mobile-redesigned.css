@@ -1,0 +1,535 @@
+/* 🎨 手機版重新設計樣式增強 */
+
+/* 漸層背景工具類 */
+.bg-gradient-support {
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.1) 0%, 
+    rgba(147, 51, 234, 0.1) 50%, 
+    rgba(236, 72, 153, 0.1) 100%);
+}
+
+.bg-gradient-admin {
+  background: linear-gradient(135deg, 
+    rgba(15, 23, 42, 0.05) 0%, 
+    rgba(30, 41, 59, 0.08) 50%, 
+    rgba(51, 65, 85, 0.05) 100%);
+}
+
+/* 玻璃擬態效果 */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.glass-effect-dark {
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 動態陰影 */
+.shadow-glow-blue {
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+}
+
+.shadow-glow-green {
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.3);
+}
+
+.shadow-glow-purple {
+  box-shadow: 0 4px 20px rgba(147, 51, 234, 0.3);
+}
+
+.shadow-glow-pink {
+  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.3);
+}
+
+/* 互動式按鈕效果 */
+.btn-interactive {
+  transform: translateY(0);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.btn-interactive:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 卡片懸停效果 */
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover:hover {
+  transform: scale(1.02);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* 手機版專用動畫 */
+@keyframes mobile-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mobile-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mobile-bounce {
+  0%, 20%, 53%, 80%, 100% {
+    animation-timing-function: cubic-bezier(0.215, 0.610, 0.355, 1.000);
+    transform: translateY(0);
+  }
+  40%, 43% {
+    animation-timing-function: cubic-bezier(0.755, 0.050, 0.855, 0.060);
+    transform: translateY(-5px);
+  }
+  70% {
+    animation-timing-function: cubic-bezier(0.755, 0.050, 0.855, 0.060);
+    transform: translateY(-2px);
+  }
+  90% {
+    transform: translateY(-1px);
+  }
+}
+
+.animate-mobile-slide-in {
+  animation: mobile-slide-in 0.6s ease-out;
+}
+
+.animate-mobile-scale-in {
+  animation: mobile-scale-in 0.4s ease-out;
+}
+
+.animate-mobile-bounce {
+  animation: mobile-bounce 1s ease-in-out;
+}
+
+/* 手機版響應式增強 */
+@media (max-width: 640px) {
+  /* 支援中心專用樣式 */
+  .support-header {
+    background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 50%, #EC4899 100%);
+    min-height: 200px;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .support-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIj4KPGcgZmlsbD0iIzAwMCIgZmlsbC1vcGFjaXR5PSIwLjEiPgo8Y2lyY2xlIGN4PSIzMCIgY3k9IjMwIiByPSI0Ii8+CjwvZz4KPC9nPgo8L3N2Zz4=') repeat;
+    opacity: 0.2;
+  }
+  
+  /* 後台專用樣式 */
+  .admin-header {
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #334155 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  
+  /* 卡片樣式增強 */
+  .mobile-card {
+    border-radius: 24px;
+    padding: 20px;
+    margin-bottom: 16px;
+    transition: all 0.3s ease;
+  }
+  
+  .mobile-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* 統計卡片 */
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+  }
+  
+  .stat-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* 按鈕增強 */
+  .mobile-btn {
+    min-height: 48px;
+    border-radius: 16px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  
+  .mobile-btn-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-600) 100%);
+    color: var(--primary-foreground);
+    border: none;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+  
+  .mobile-btn-primary:hover {
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+    transform: translateY(-1px);
+  }
+  
+  .mobile-btn-secondary {
+    background: var(--surface);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  
+  .mobile-btn-secondary:hover {
+    background: var(--surface-hover);
+    border-color: var(--primary);
+  }
+  
+  /* 輸入框增強 */
+  .mobile-input {
+    min-height: 48px;
+    border-radius: 16px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: all 0.2s ease;
+    font-size: 16px; /* 防止 iOS 縮放 */
+  }
+  
+  .mobile-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+  }
+  
+  /* 搜尋框樣式 */
+  .mobile-search {
+    position: relative;
+  }
+  
+  .mobile-search input {
+    padding-left: 48px;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+  }
+  
+  .mobile-search .search-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    z-index: 1;
+  }
+  
+  /* 篩選器樣式 */
+  .mobile-filter-tag {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  
+  .mobile-filter-tag.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: var(--primary);
+  }
+  
+  .mobile-filter-tag:hover {
+    background: var(--surface-hover);
+  }
+  
+  /* 狀態指示器 */
+  .status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  
+  .status-open {
+    background: rgba(251, 191, 36, 0.1);
+    color: #D97706;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+  }
+  
+  .status-resolved {
+    background: rgba(34, 197, 94, 0.1);
+    color: #059669;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+  }
+  
+  .status-closed {
+    background: rgba(107, 114, 128, 0.1);
+    color: #6B7280;
+    border: 1px solid rgba(107, 114, 128, 0.3);
+  }
+  
+  /* 優先級指示器 */
+  .priority-high {
+    color: #DC2626;
+  }
+  
+  .priority-medium {
+    color: #D97706;
+  }
+  
+  .priority-low {
+    color: #059669;
+  }
+  
+  /* 載入動畫 */
+  .mobile-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  
+  .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top: 3px solid var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  /* 空狀態樣式 */
+  .mobile-empty-state {
+    text-align: center;
+    padding: 60px 20px;
+  }
+  
+  .mobile-empty-state .icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    color: var(--muted);
+  }
+  
+  .mobile-empty-state h3 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--fg);
+  }
+  
+  .mobile-empty-state p {
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  
+  /* 通知樣式 */
+  .mobile-notification {
+    position: fixed;
+    top: env(safe-area-inset-top, 20px);
+    left: 16px;
+    right: 16px;
+    z-index: 1000;
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transform: translateY(-100px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .mobile-notification.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  
+  .mobile-notification-success {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: #059669;
+  }
+  
+  .mobile-notification-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #DC2626;
+  }
+  
+  .mobile-notification-warning {
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    color: #D97706;
+  }
+  
+  /* 浮動操作按鈕 */
+  .mobile-fab {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom) + 80px);
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-600) 100%);
+    color: var(--primary-foreground);
+    border: none;
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    transition: all 0.2s ease;
+  }
+  
+  .mobile-fab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.5);
+  }
+  
+  .mobile-fab:active {
+    transform: scale(0.95);
+  }
+}
+
+/* 平板優化 */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .tablet-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  
+  .tablet-card {
+    border-radius: 20px;
+    padding: 24px;
+  }
+}
+
+/* 深色模式增強 */
+@media (prefers-color-scheme: dark) {
+  .glass-effect {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .support-header {
+    background: linear-gradient(135deg, #1E293B 0%, #334155 50%, #475569 100%);
+  }
+  
+  .mobile-notification {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+}
+
+/* 高 DPI 螢幕優化 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .mobile-card {
+    border-width: 0.5px;
+  }
+  
+  .status-indicator {
+    border-width: 0.5px;
+  }
+  
+  .mobile-filter-tag {
+    border-width: 0.5px;
+  }
+}
+
+/* 橫屏優化 */
+@media (max-height: 500px) and (orientation: landscape) {
+  .support-header {
+    min-height: 120px;
+  }
+  
+  .mobile-card {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  
+  .mobile-empty-state {
+    padding: 30px 20px;
+  }
+  
+  .mobile-empty-state .icon {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* 可訪問性增強 */
+@media (prefers-reduced-motion: reduce) {
+  .btn-interactive,
+  .card-hover,
+  .mobile-card,
+  .mobile-fab {
+    transition: none !important;
+    animation: none !important;
+  }
+  
+  .animate-mobile-slide-in,
+  .animate-mobile-scale-in,
+  .animate-mobile-bounce {
+    animation: none !important;
+  }
+}
+
+/* 大字體支援 */
+@media (prefers-reduced-data: reduce) {
+  .glass-effect,
+  .glass-effect-dark {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  
+  .mobile-notification {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+}

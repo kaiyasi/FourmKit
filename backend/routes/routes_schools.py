@@ -278,31 +278,21 @@ def delete_school(sid: int):
 @jwt_required()
 @require_role("dev_admin", "campus_admin")
 def upload_school_logo(sid: int):
-    """上傳校徽（webp），存至 uploads/public/schools/{sid}/logo.webp，更新 logo_path。"""
-    fs = request.files.get('file')
-    if not fs or not fs.filename:
+    """上傳校徽，使用新的 Logo 處理系統"""
+    from services.logo_handler import get_logo_handler, LogoError
+    
+    # 檢查文件
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
         return jsonify({'msg': '缺少檔案'}), 400
 
-    try:
-        im = Image.open(fs.stream)
-        im = im.convert("RGB")
-        # 基本縮放：最大寬高 512，保留比例
-        im.thumbnail((512, 512))
-        root = os.getenv("UPLOAD_ROOT", "uploads")
-        dirp = os.path.join(root, "public", "schools", str(sid))
-        os.makedirs(dirp, exist_ok=True)
-        out_path = os.path.join(dirp, "logo.webp")
-        im.save(out_path, format="WEBP", quality=90, method=6)
-        rel = os.path.relpath(out_path, start=root).replace("\\", "/")  # e.g. public/schools/1/logo.webp
-    except Exception as e:
-        return jsonify({'msg': f'處理圖片失敗: {e}'}), 400
+    with get_session() as s:
+        # 檢查學校是否存在
+        school = s.get(School, sid)
+        if not school:
+            return jsonify({'msg': '學校不存在'}), 404
 
-    with get_session() as s:  # type: Session
-        sch = s.get(School, sid)
-        if not sch:
-            return jsonify({'msg': 'not found'}), 404
-
-        # 僅允許 dev_admin 或本校 campus_admin 上傳校徽
+        # 權限檢查
         try:
             uid = get_jwt_identity()
             actor = s.get(User, int(uid)) if uid is not None else None
@@ -311,13 +301,41 @@ def upload_school_logo(sid: int):
                     _log_unauthorized(actor, 'upload_school_logo', sid)
                     return jsonify({'msg': '僅能修改所屬學校的校徽'}), 403
         except Exception:
-            # 若無法驗證則拒絕（保守）
-            return jsonify({'msg': 'permission denied'}), 403
+            return jsonify({'msg': '權限驗證失敗'}), 403
 
-        # 更新並回應
-        sch.logo_path = rel
-        s.commit()
-        return jsonify({'ok': True, 'path': rel})
+        # 使用新的 Logo 處理器
+        try:
+            logo_handler = get_logo_handler()
+            result = logo_handler.upload_school_logo(
+                school_id=sid,
+                file_stream=uploaded_file.stream,
+                filename=uploaded_file.filename
+            )
+            
+            # 更新資料庫
+            school.logo_path = result['relative_path']
+            s.commit()
+            
+            return jsonify({
+                'ok': True, 
+                'path': result['relative_path'],
+                'url': result['url'],
+                'info': {
+                    'width': result['width'],
+                    'height': result['height'],
+                    'size': result['file_size'],
+                    'format': result['format']
+                }
+            })
+            
+        except LogoError as e:
+            return jsonify({
+                'msg': e.message,
+                'code': e.code,
+                'details': e.details
+            }), 400
+        except Exception as e:
+            return jsonify({'msg': f'上傳失敗: {str(e)}'}), 500
 
 
 @bp.get('/admin')
