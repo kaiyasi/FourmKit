@@ -282,17 +282,17 @@ export function MobileAdminSupport() {
             className="w-full px-3 py-2 border border-border rounded-lg bg-background resize-none text-sm"
           />
           
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <button
               onClick={() => setSelectedTicket(null)}
-              className="flex-1 py-2 text-sm font-medium text-muted border border-border rounded-lg"
+              className="flex-1 mobile-touch-target text-sm font-medium text-muted border border-border rounded-xl hover:bg-surface-hover transition-colors mobile-button-press"
             >
               取消
             </button>
             <button
               onClick={() => handleReply(selectedTicket.id)}
               disabled={!replyText.trim() || selectedTicket.processing}
-              className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg disabled:opacity-50"
+              className="flex-1 mobile-touch-target text-sm font-medium text-white bg-blue-600 rounded-xl disabled:opacity-50 hover:bg-blue-700 transition-colors mobile-button-press"
             >
               {selectedTicket.processing ? '發送中...' : '發送回覆'}
             </button>
@@ -454,24 +454,26 @@ export function MobileAdminSupport() {
               loading={ticket.processing}
               actions={
                 !ticket.processing && ticket.status === 'awaiting_admin' ? (
-                  <div className="flex gap-1">
+                  <div className="flex gap-2">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         setSelectedTicket(ticket)
                       }}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      className="mobile-touch-target flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-xl transition-colors dark:hover:bg-blue-900/20"
+                      title="回覆工單"
                     >
-                      <Send className="w-4 h-4" />
+                      <Send className="w-5 h-5" />
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         handleStatusChange(ticket.id, 'resolved')
                       }}
-                      className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      className="mobile-touch-target flex items-center justify-center text-green-600 hover:bg-green-50 rounded-xl transition-colors dark:hover:bg-green-900/20"
+                      title="標記已解決"
                     >
-                      <CheckCircle className="w-4 h-4" />
+                      <CheckCircle className="w-5 h-5" />
                     </button>
                   </div>
                 ) : undefined

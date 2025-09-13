@@ -8,8 +8,11 @@ from .comments import Comment, PostReaction, CommentReaction
 from .chat import ChatMessage, ChatRoom, ChatRoomMember
 from .announcement import Announcement, AnnouncementRead
 from .events import SystemEvent, NotificationPreference
-from .instagram import IGAccount, IGTemplate, IGPost, IGAccountStatus, PublishMode, PostStatus
 from .support import SupportTicket, SupportMessage
+from .social_publishing import (
+    SocialAccount, ContentTemplate, CarouselGroup, SocialPost, PublishingSettings,
+    PlatformType, AccountStatus, PublishTrigger, PostStatus, TemplateType
+)
 
 __all__ = [
     "User", "Post", "DeleteRequest", "UserRole",
@@ -18,6 +21,7 @@ __all__ = [
     "ChatMessage", "ChatRoom", "ChatRoomMember",
     "Announcement", "AnnouncementRead",
     "SystemEvent", "NotificationPreference",
-    "IGAccount", "IGTemplate", "IGPost", "IGAccountStatus", "PublishMode", "PostStatus",
     "SupportTicket", "SupportMessage",
+    "SocialAccount", "ContentTemplate", "CarouselGroup", "SocialPost", "PublishingSettings",
+    "PlatformType", "AccountStatus", "PublishTrigger", "PostStatus", "TemplateType",
 ]

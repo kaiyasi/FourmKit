@@ -6,8 +6,9 @@
 import os
 import signal
 import atexit
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+import pytz
 from utils.db import get_session
 from services.event_service import EventService
 
@@ -82,7 +83,7 @@ class PlatformEventService:
                     target_name="ForumKit Platform",
                     metadata={
                         "startup_reason": reason,
-                        "startup_time": datetime.now().isoformat(),
+                        "startup_time": datetime.now(pytz.timezone('Asia/Taipei')).isoformat(),
                         "process_id": os.getpid(),
                         "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}"
                     },
@@ -113,7 +114,7 @@ class PlatformEventService:
                     target_name="ForumKit Platform",
                     metadata={
                         "shutdown_reason": reason,
-                        "shutdown_time": datetime.now().isoformat(),
+                        "shutdown_time": datetime.now(pytz.timezone('Asia/Taipei')).isoformat(),
                         "process_id": os.getpid(),
                         "uptime_seconds": self._get_uptime_seconds()
                     },
@@ -143,7 +144,7 @@ class PlatformEventService:
                     target_name="ForumKit Platform",
                     metadata={
                         "restart_reason": reason,
-                        "restart_time": datetime.now().isoformat(),
+                        "restart_time": datetime.now(pytz.timezone('Asia/Taipei')).isoformat(),
                         "process_id": os.getpid(),
                         "uptime_seconds": self._get_uptime_seconds()
                     },
@@ -160,7 +161,12 @@ class PlatformEventService:
     def _get_uptime_seconds(self) -> Optional[int]:
         """獲取運行時間（秒）"""
         if hasattr(self, '_start_time'):
-            return int((datetime.now() - self._start_time).total_seconds())
+            current_time = datetime.now(pytz.timezone('Asia/Taipei'))
+            # 確保 _start_time 也有時區資訊
+            start_time = self._start_time
+            if start_time.tzinfo is None:
+                start_time = pytz.timezone('Asia/Taipei').localize(start_time)
+            return int((current_time - start_time).total_seconds())
         return None
     
     def set_start_time(self, start_time: datetime) -> None:

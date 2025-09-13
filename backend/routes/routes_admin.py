@@ -163,27 +163,24 @@ def add_custom_room_member(room_id: str):
             return jsonify({ 'error': 'USER_ID_REQUIRED' }), 400
         
         with get_session() as s:
-            # 獲取當前用戶信息
             current_user = s.query(User).get(user_id)
             if not current_user:
                 return jsonify({ 'error': 'USER_NOT_FOUND' }), 404
             
-            # 獲取目標用戶信息
             target_user = s.query(User).get(target_id)
             if not target_user:
                 return jsonify({ 'error': 'TARGET_USER_NOT_FOUND' }), 404
             
-            # 檢查聊天室是否存在
             from models import ChatRoom
             room = s.query(ChatRoom).filter(ChatRoom.id == room_id).first()
             if not room:
                 return jsonify({ 'error': 'ROOM_NOT_FOUND' }), 404
             
-            # 權限檢查：只有聊天室擁有者或 dev_admin 可以添加成員
+            # 僅擁有者或 dev_admin 可添加成員
             if current_user.role != 'dev_admin' and room.owner_id != user_id:
                 return jsonify({ 'error': 'PERMISSION_DENIED' }), 403
             
-            # 檢查用戶是否已經是成員
+            # 避免重複添加成員
             from models import ChatRoomMember
             existing_member = s.query(ChatRoomMember).filter(
                 ChatRoomMember.room_id == room_id,
@@ -683,7 +680,11 @@ def approve_comment(comment_id: int):
 @jwt_required()
 @require_role('dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator')
 def reject_comment(comment_id: int):
-    """拒絕留言"""
+    """
+    拒絕留言並通知作者
+    
+    執行權限檢查、狀態更新、事件記錄和 Socket 通知的完整流程
+    """
     try:
         moderator_id = get_jwt_identity()
         data = request.get_json(silent=True) or {}
@@ -693,32 +694,26 @@ def reject_comment(comment_id: int):
             return jsonify({'error': 'unauthorized'}), 401
         
         with get_session() as s:
-            # 獲取當前用戶信息
             current_user = s.query(User).filter(User.id == moderator_id).first()
             if not current_user:
                 return jsonify({'error': 'user not found'}), 404
             
-            # 獲取留言信息
             comment = s.query(Comment).filter(Comment.id == comment_id).first()
             if not comment:
                 return jsonify({'error': 'comment not found'}), 404
             
-            # 檢查權限
             if not _can_moderate_comment(current_user, comment, s):
                 return jsonify({'error': 'insufficient permissions'}), 403
-            comment = s.query(Comment).filter(Comment.id == comment_id).first()
-            if not comment:
-                return jsonify({'error': 'comment not found'}), 404
             
+            # 避免重複拒絕
             if comment.status == 'rejected':
                 return jsonify({'error': 'comment already rejected'}), 400
             
-            # 更新狀態
             old_status = comment.status
             comment.status = 'rejected'
             comment.updated_at = datetime.now(timezone.utc)
             
-            # 發送通知給留言作者
+            # Socket 即時通知違規留言作者
             try:
                 from socket_events import socketio
                 socketio.emit('comment_violation', {
@@ -2565,13 +2560,18 @@ def get_platform_status():
     try:
         import os
         import psutil
-        from datetime import datetime
+        from datetime import datetime, timezone
+        import pytz
         
         process = psutil.Process()
         
+        # 設定台北時區
+        taipei_tz = pytz.timezone('Asia/Taipei')
+        
         # 獲取系統啟動時間
-        system_boot_time = datetime.fromtimestamp(psutil.boot_time())
-        system_uptime_seconds = int((datetime.now() - system_boot_time).total_seconds())
+        system_boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=taipei_tz)
+        current_time = datetime.now(taipei_tz)
+        system_uptime_seconds = int((current_time - system_boot_time).total_seconds())
         
         # 獲取應用程序啟動時間
         app_start_time = platform_event_service._start_time if hasattr(platform_event_service, '_start_time') else None
@@ -2587,7 +2587,7 @@ def get_platform_status():
             "cpu_percent": process.cpu_percent(),
             "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
             "platform": os.name,
-            "current_time": datetime.now().isoformat()
+            "current_time": current_time.isoformat()
         }
         
         return jsonify({
@@ -2689,3 +2689,87 @@ def get_admin_posts():
             
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@bp.route('/posts/recent', methods=['GET'])
+@jwt_required()
+@require_role("dev_admin", "campus_admin", "cross_admin")
+def get_recent_posts():
+    """獲取最近的貼文用於模板預覽"""
+    try:
+        current_user_id = get_jwt_identity()
+        limit = min(20, max(1, int(request.args.get('limit', 5))))
+        
+        with get_session() as s:
+            current_user = s.get(User, current_user_id)
+            if not current_user:
+                return jsonify({"success": False, "error": "用戶不存在"}), 404
+            
+            # 基礎查詢 - 只獲取已發布的正常貼文
+            query = s.query(Post).filter(
+                Post.is_deleted == False,
+                Post.status == 'published'  # 只要已發布的
+            )
+            
+            # 根據管理員角色過濾權限
+            if current_user.role == "campus_admin" and current_user.school_id:
+                # 校園管理員只能看到自己學校的貼文
+                query = query.filter(Post.school_id == current_user.school_id)
+            elif current_user.role == "cross_admin":
+                # 跨校管理員看到所有學校的貼文
+                pass
+            # dev_admin 可以看到所有貼文
+            
+            # 按時間倒序獲取最近的貼文
+            posts = query.order_by(Post.created_at.desc()).limit(limit).all()
+            
+            # 轉換為響應格式
+            posts_data = []
+            for post in posts:
+                post_data = {
+                    "id": post.id,
+                    "title": getattr(post, 'title', '') or f"貼文 #{post.id}",
+                    "content": post.content or '',
+                    "created_at": post.created_at.isoformat(),
+                    "author": {
+                        "id": post.author.id if post.author else 0,
+                        "username": post.author.username if post.author else "匿名用戶"
+                    },
+                    "school": {
+                        "name": post.school.name if post.school else "跨校"
+                    } if post.school_id else None
+                }
+                posts_data.append(post_data)
+            
+            return jsonify({
+                "success": True,
+                "posts": posts_data,
+                "total": len(posts_data)
+            })
+            
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@bp.get('/schools')
+@jwt_required()
+@require_role("dev_admin", "campus_admin", "cross_admin")
+def get_schools_for_admin():
+    """獲取學校清單供管理員使用"""
+    try:
+        with get_session() as session:
+            schools = session.query(School).order_by(School.name.asc()).all()
+            schools_data = [
+                {
+                    "id": school.id,
+                    "name": school.name,
+                    "display_name": school.name,
+                    "slug": school.slug
+                }
+                for school in schools
+            ]
+            
+            return jsonify({
+                "success": True,
+                "schools": schools_data
+            })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

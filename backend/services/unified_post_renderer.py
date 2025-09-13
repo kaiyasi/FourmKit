@@ -101,7 +101,7 @@ class PostRenderer:
         # 獲取尺寸
         dimensions = self.SIZES[size]
         
-        # 使用 Playwright 渲染
+        # 使用 Pillow 渲染
         return self._html_to_image(html_content, dimensions, quality)
     
     def get_preview_data(self,
@@ -454,55 +454,55 @@ class PostRenderer:
         return f"data:{mime_type};base64,{base64_data}"
     
     def _html_to_image(self, html: str, dimensions: Dict, quality: int = 95) -> BytesIO:
-        """將 HTML 轉換為圖片"""
+        """使用 Pillow 將內容轉換為圖片（替代 Playwright）"""
         try:
-            from playwright.sync_api import sync_playwright
+            from services.pillow_renderer import PillowRenderer
             
-            with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
-                )
+            # 從 HTML 中提取文字內容（簡化版本）
+            import re
+            from html import unescape
+            
+            # 提取標題
+            title_match = re.search(r'<div class="title"[^>]*>(.*?)</div>', html, re.DOTALL)
+            title = unescape(re.sub(r'<[^>]+>', '', title_match.group(1))) if title_match else ""
+            
+            # 提取內容
+            content_match = re.search(r'<div class="content"[^>]*>.*?<div[^>]*>(.*?)</div>', html, re.DOTALL)
+            content_text = unescape(re.sub(r'<[^>]+>', '', content_match.group(1))) if content_match else ""
+            
+            # 提取作者
+            author_match = re.search(r'<span class="author"[^>]*>(.*?)</span>', html)
+            author = unescape(re.sub(r'<[^>]+>', '', author_match.group(1))) if author_match else ""
+            
+            # 提取時間
+            time_match = re.search(r'<span class="time"[^>]*>(.*?)</span>', html)
+            time_text = unescape(re.sub(r'<[^>]+>', '', time_match.group(1))) if time_match else ""
+            
+            # 合併文字內容
+            full_text = f"{title}\n\n{content_text}"
+            if author or time_text:
+                full_text += f"\n\n{author} {time_text}".strip()
+            
+            # 使用 Pillow 渲染器
+            renderer = PillowRenderer(
+                default_width=dimensions["width"],
+                default_height=dimensions["height"]
+            )
+            
+            return renderer.render_text_card(
+                content=full_text,
+                width=dimensions["width"],
+                height=dimensions["height"],
+                background_color="#ffffff",
+                text_color="#333333",
+                font_size=32,
+                padding=60,
+                image_format="JPEG",
+                quality=quality
+            )
                 
-                page = browser.new_page(
-                    viewport={
-                        "width": dimensions["width"],
-                        "height": dimensions["height"]
-                    }
-                )
-                
-                # 設定內容並等待所有資源載入
-                page.set_content(html, wait_until="networkidle", timeout=20000)
-                
-                # 等待字體載入完成
-                page.wait_for_function("document.fonts.ready", timeout=5000)
-                
-                # 等待圖片載入完成（包括 Logo）
-                try:
-                    page.wait_for_function("""
-                        () => {
-                            const images = document.querySelectorAll('img');
-                            return Array.from(images).every(img => img.complete && img.naturalWidth > 0);
-                        }
-                    """, timeout=10000)
-                except:
-                    # 如果圖片載入超時，繼續渲染（避免阻塞）
-                    logger.warning("圖片載入超時，繼續渲染")
-                    pass
-                
-                # 截圖
-                screenshot = page.screenshot(
-                    type="jpeg",
-                    quality=quality,
-                    full_page=False
-                )
-                
-                browser.close()
-                return BytesIO(screenshot)
-                
-        except ImportError:
-            raise Exception("Playwright 未安裝，請執行: pip install playwright && playwright install chromium")
         except Exception as e:
-            logger.error(f"HTML 轉圖片失敗: {e}")
+            logger.error(f"Pillow 渲染失敗: {e}")
             raise Exception(f"渲染失敗: {e}")
     
     def list_available_sizes(self) -> Dict[str, Dict]:

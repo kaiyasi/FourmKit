@@ -39,7 +39,7 @@ def preview_post():
         }
         
         # 配置選項
-        size = data.get("size", "instagram_square")
+        size = data.get("size", "square")
         template = data.get("template", "modern")
         config = data.get("config", {})
         logo_url = data.get("logo_url")
@@ -88,7 +88,7 @@ def generate_image():
         }
         
         # 配置選項
-        size = data.get("size", "instagram_square")
+        size = data.get("size", "square")
         template = data.get("template", "modern")
         config = data.get("config", {})
         logo_url = data.get("logo_url")
@@ -185,7 +185,7 @@ def generate_from_forum_post(post_id: int):
             }
             
             # 配置選項
-            size = data.get("size", "instagram_square")
+            size = data.get("size", "square")
             template = data.get("template", "modern")
             config = data.get("config", {})
             
@@ -291,7 +291,7 @@ def preview_html_only():
             "id": data.get("id", "")
         }
         
-        size = data.get("size", "instagram_square")
+        size = data.get("size", "square")
         template = data.get("template", "modern")
         config = data.get("config", {})
         logo_url = data.get("logo_url")
@@ -343,7 +343,7 @@ def preview_actual_image():
         }
         
         # 配置選項
-        size = data.get("size", "instagram_square")
+        size = data.get("size", "square")
         template = data.get("template", "modern")
         config = data.get("config", {})
         logo_url = data.get("logo_url")
@@ -403,8 +403,8 @@ def preview_actual_image():
             })
             
         except Exception as render_error:
-            # 如果 Playwright 未安裝，回退到 HTML 預覽
-            if "Playwright" in str(render_error):
+            # 如果 Pillow 渲染失敗，嘗試回退到 HTML 預覽
+            try:
                 html = renderer.render_html(
                     content=content,
                     size=size,
@@ -417,15 +417,16 @@ def preview_actual_image():
                 
                 return jsonify({
                     "success": False,
-                    "error": "Playwright 未安裝，無法生成圖片",
+                    "error": f"圖片生成失敗: {str(render_error)}",
                     "fallback": {
                         "html": html,
                         "width": dimensions.get("width", 1080),
                         "height": dimensions.get("height", 1080),
-                        "message": "請安裝 Playwright 來生成實際圖片預覽"
+                        "message": "已回退到 HTML 預覽模式"
                     }
                 }), 202  # 202 Accepted (部分成功)
-            else:
+            except Exception:
+                # 如果連 HTML 預覽都失敗了
                 raise render_error
         
     except Exception as e:

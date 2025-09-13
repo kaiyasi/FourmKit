@@ -23,30 +23,30 @@ import {
 // 統一的狀態顯示組件
 export const StatusBadge = ({ status }: { status: string }) => {
   const statusConfig = {
-    open: { 
-      icon: MessageSquare, 
-      text: '開啟', 
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' 
+    open: {
+      icon: MessageSquare,
+      text: '開啟',
+      className: 'bg-info-bg text-info-text border border-info-border'
     },
-    awaiting_user: { 
-      icon: Clock, 
-      text: '等待用戶回應', 
-      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' 
+    awaiting_user: {
+      icon: Clock,
+      text: '等待用戶回應',
+      className: 'bg-warning-bg text-warning-text border border-warning-border'
     },
-    awaiting_admin: { 
-      icon: AlertCircle, 
-      text: '等待管理員', 
-      className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' 
+    awaiting_admin: {
+      icon: AlertCircle,
+      text: '等待管理員',
+      className: 'bg-warning-bg text-warning-text border border-warning-border'
     },
-    resolved: { 
-      icon: CheckCircle2, 
-      text: '已解決', 
-      className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' 
+    resolved: {
+      icon: CheckCircle2,
+      text: '已解決',
+      className: 'bg-success-bg text-success-text border border-success-border'
     },
-    closed: { 
-      icon: XCircle, 
-      text: '已關閉', 
-      className: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300' 
+    closed: {
+      icon: XCircle,
+      text: '已關閉',
+      className: 'bg-surface text-muted border border-border'
     }
   };
 
@@ -64,10 +64,10 @@ export const StatusBadge = ({ status }: { status: string }) => {
 // 優先級顯示組件
 export const PriorityBadge = ({ priority }: { priority: string }) => {
   const priorityConfig = {
-    low: { text: '低', className: 'text-green-600 dark:text-green-400' },
-    medium: { text: '中', className: 'text-yellow-600 dark:text-yellow-400' },
-    high: { text: '高', className: 'text-orange-600 dark:text-orange-400' },
-    urgent: { text: '緊急', className: 'text-red-600 dark:text-red-400' }
+    low: { text: '低', className: 'text-success' },
+    medium: { text: '中', className: 'text-warning' },
+    high: { text: '高', className: 'text-warning hover:text-warning-hover' },
+    urgent: { text: '緊急', className: 'text-danger font-semibold' }
   };
 
   const config = priorityConfig[priority as keyof typeof priorityConfig] || priorityConfig.medium;
@@ -83,12 +83,12 @@ export const PriorityBadge = ({ priority }: { priority: string }) => {
 // 分類顯示組件
 export const CategoryBadge = ({ category }: { category: string }) => {
   const categoryConfig = {
-    technical: { text: '技術問題', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
-    account: { text: '帳號問題', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
-    feature: { text: '功能建議', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300' },
-    bug: { text: '錯誤報告', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-    abuse: { text: '濫用舉報', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
-    other: { text: '其他', className: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300' }
+    technical: { text: '技術問題', className: 'bg-surface text-fg border border-border' },
+    account: { text: '帳號問題', className: 'bg-surface text-fg border border-border' },
+    feature: { text: '功能建議', className: 'bg-surface text-fg border border-border' },
+    bug: { text: '錯誤報告', className: 'bg-danger-bg text-danger-text border border-danger-border' },
+    abuse: { text: '濫用舉報', className: 'bg-warning-bg text-warning-text border border-warning-border' },
+    other: { text: '其他', className: 'bg-surface text-muted border border-border' }
   };
 
   const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.other;
@@ -207,6 +207,11 @@ export const PageHeader = ({
             </button>
           )}
           <div>
+            {isMobile && (
+              <div className="text-lg font-semibold text-primary mb-1">
+                ForumKit
+              </div>
+            )}
             <h1 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-fg`}>
               {title}
             </h1>
@@ -252,7 +257,7 @@ export const Toolbar = ({
             placeholder="搜尋工單..."
             value={searchValue}
             onChange={(e) => onSearchChange?.(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            className="w-full pl-10 pr-4 support-control bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
           />
         </div>
 
@@ -314,6 +319,7 @@ interface ButtonProps {
   loading?: boolean;
   icon?: React.ReactNode;
   className?: string;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 export const Button = ({ 
@@ -324,7 +330,8 @@ export const Button = ({
   disabled = false, 
   loading = false, 
   icon, 
-  className = '' 
+  className = '',
+  type = 'button'
 }: ButtonProps) => {
   const variantClasses = {
     primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
@@ -340,6 +347,7 @@ export const Button = ({
 
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled || loading}
       className={`

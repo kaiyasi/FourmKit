@@ -1,0 +1,72 @@
+# Instagram Post System Docker Compose
+# 符合專案規範：容器內部統一使用 port 80，對外映射彈性管理
+
+version: '3.8'
+
+services:
+  # Instagram 發布伺服器
+  instagram-post-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ig-post-server
+    ports:
+      - "${HOST_PORT:-8888}:80"  # 對外 port 可透過環境變數設定，預設 8888
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=80
+    volumes:
+      - ./logs:/app/logs  # 日誌持久化
+      - ./config:/app/config  # 配置檔案
+    restart: unless-stopped
+    networks:
+      - ig-post-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(5); s.connect(('localhost', 80)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis (用於任務佇列和快取)
+  redis:
+    image: redis:7-alpine
+    container_name: ig-post-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - ig-post-network
+    command: redis-server --appendonly yes
+
+  # Nginx 反向代理 (選用)
+  nginx:
+    image: nginx:alpine
+    container_name: ig-post-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - instagram-post-server
+    restart: unless-stopped
+    networks:
+      - ig-post-network
+    profiles:
+      - with-nginx  # 使用 --profile with-nginx 啟動
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  ig-post-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

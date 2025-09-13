@@ -1,0 +1,31 @@
+# Instagram Post System 依賴套件
+# Python >= 3.12
+
+# HTTP 請求
+requests>=2.31.0
+
+# 測試框架
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+requests-mock>=1.11.0
+
+# 日誌
+loguru>=0.7.0
+
+# 配置管理
+python-dotenv>=1.0.0
+
+# JSON 處理
+orjson>=3.9.0
+
+# 時間處理
+python-dateutil>=2.8.2
+
+# 網路工具
+urllib3>=2.0.0
+
+# 開發工具
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0

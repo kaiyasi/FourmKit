@@ -72,7 +72,9 @@ class EventType(str, enum.Enum):
 
 
 def generate_public_id() -> str:
-    """生成公開支援單 ID: SUP-XXXXXX 格式"""
+    """保留舊版備援：生成公開支援單 ID: SUP-XXXXXX 格式
+    新版正常由服務層產生（依登入/未登入規則）。
+    """
     random_part = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
     return f"SUP-{random_part}"
 

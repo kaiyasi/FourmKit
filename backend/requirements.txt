@@ -18,6 +18,7 @@ psutil>=5.9.0
 requests>=2.31.0
 html2text>=2024.2.26
 cryptography>=41.0.0
+pytz>=2023.3
 
 # Instagram Integration Dependencies
 celery>=5.3.4
@@ -28,5 +29,4 @@ qrcode>=7.4.2
 
 # Using Python standard library urllib for Discord Webhook, no additional dependencies
 
-# HTML→PNG rendering (optional)
-playwright==1.46.0
+# HTML→PNG rendering now uses Pillow instead of Playwright

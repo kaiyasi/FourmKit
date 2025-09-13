@@ -20,7 +20,6 @@ import {
   User,
   Book,
   Hash,
-  Instagram,
   Bot,
   Server,
   Database,
@@ -46,12 +45,6 @@ interface ProjectStats {
     avgDailyPosts: number
   }
   integrations: {
-    instagram: {
-      connected: boolean
-      accountCount: number
-      lastSync: string | null
-      postsPublished: number
-    }
     discord: {
       connected: boolean
       serverCount: number
@@ -333,24 +326,6 @@ export default function ProjectStatusPage() {
               
               <div className="p-4">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  {/* Instagram 整合 */}
-                  <div className="bg-surface-hover rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Instagram className="w-5 h-5 text-pink-500" />
-                        <h3 className="font-medium text-sm">Instagram 整合</h3>
-                      </div>
-                      {getStatusIcon(stats.integrations.instagram.connected)}
-                    </div>
-                    <div className="text-sm text-muted space-y-1">
-                      <div>連接帳號: {stats.integrations.instagram.accountCount}</div>
-                      <div>已發布: {stats.integrations.instagram.postsPublished} 篇</div>
-                      <div>最後同步: {stats.integrations.instagram.lastSync ? 
-                        new Date(stats.integrations.instagram.lastSync).toLocaleString() : 
-                        '從未同步'}
-                      </div>
-                    </div>
-                  </div>
 
                   {/* Discord Bot */}
                   <div className="bg-surface-hover rounded-lg p-4">

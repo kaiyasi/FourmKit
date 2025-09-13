@@ -645,9 +645,7 @@ export default function ModerationPage() {
                       <div>
                         <div className="mb-2 text-sm line-clamp-2" dangerouslySetInnerHTML={{ __html: item.excerpt || '' }} />
                         
-                        {/* 根據角色顯示不同資訊 */}
                         {isDev ? (
-                          /* dev_admin 顯示作者/IP/Client_ID */
                           <div className="text-xs text-muted mb-2 space-y-1">
                             <div>作者: {(item as any).author?.username || '匿名用戶'}
                               {(item as any).author?.school_name && ` (${(item as any).author?.school_name})`}
@@ -655,7 +653,6 @@ export default function ModerationPage() {
                             <div>IP: {item.ip || 'N/A'} | Client ID: {item.client_id || 'N/A'}</div>
                           </div>
                         ) : (
-                          /* 非 dev_admin 顯示來源/發文時間 */
                           <div className="text-xs text-muted mb-2 space-y-1">
                             <div>來源: {item.school_name || '跨校'}</div>
                             <div>發文時間: {formatDate(item.created_at)}</div>
@@ -724,61 +721,9 @@ export default function ModerationPage() {
 
           {/* 側邊欄 */}
           <div className="space-y-6">
-            {/* 統計資訊 */}
-            <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-              <h2 className="text-lg font-semibold text-fg mb-4">統計資訊</h2>
-              {stats ? (
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">待審貼文</span>
-                    <span className="text-sm font-medium">{stats.pending?.posts || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">待審媒體</span>
-                    <span className="text-sm font-medium">{stats.pending?.media || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">今日處理</span>
-                    <span className="text-sm font-medium">{stats.today?.processed || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">今日核准</span>
-                    <span className="text-sm font-medium text-green-600">{stats.today?.approved || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">今日拒絕</span>
-                    <span className="text-sm font-medium text-red-600">{stats.today?.rejected || 0}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">待審貼文</span>
-                    <span className="text-sm font-medium">0</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">待審媒體</span>
-                    <span className="text-sm font-medium">0</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">今日處理</span>
-                    <span className="text-sm font-medium">0</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">今日核准</span>
-                    <span className="text-sm font-medium text-green-600">0</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">今日拒絕</span>
-                    <span className="text-sm font-medium text-red-600">0</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 選中項目詳情 */}
+            {/* 選中項目詳情 - 手機版優先顯示 */}
             {selectedItem && (
-              <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+              <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-2">
                 <h3 className="text-lg font-semibold text-fg mb-4">貼文詳情</h3>
                 
                 {selectedItem.type === 'post' && itemDetail ? (
@@ -887,6 +832,59 @@ export default function ModerationPage() {
                 </div>
               </div>
             )}
+
+            {/* 統計資訊 - 手機版顯示在貼文詳情下方 */}
+            <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-1">
+              <h2 className="text-lg font-semibold text-fg mb-4">統計資訊</h2>
+              {stats ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審貼文</span>
+                    <span className="text-sm font-medium">{stats.pending?.posts || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審媒體</span>
+                    <span className="text-sm font-medium">{stats.pending?.media || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日處理</span>
+                    <span className="text-sm font-medium">{stats.today?.processed || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日核准</span>
+                    <span className="text-sm font-medium text-green-600">{stats.today?.approved || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日拒絕</span>
+                    <span className="text-sm font-medium text-red-600">{stats.today?.rejected || 0}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審貼文</span>
+                    <span className="text-sm font-medium">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審媒體</span>
+                    <span className="text-sm font-medium">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日處理</span>
+                    <span className="text-sm font-medium">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日核准</span>
+                    <span className="text-sm font-medium text-green-600">0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">今日拒絕</span>
+                    <span className="text-sm font-medium text-red-600">0</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
 
             {/* 審核日誌（有審核權限者皆可顯示） */}
             {canModerate && (

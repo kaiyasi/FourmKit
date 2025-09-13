@@ -501,6 +501,18 @@ input[type="color"].form-control { height: 2.5rem; padding: 0.25rem; }
   }
 }
 
+/* Support controls: unify menu/input/select height to 42px */
+.support-control {
+  height: 42px;
+  min-height: 42px;
+  line-height: 1.25;
+}
+select.support-control {
+  padding-right: 2.25rem; /* 保留箭頭空間 */
+}
+
+/*（移除自訂客服背景，統一走平台 var(--bg)）*/
+
 /* 高 DPI 屏幕優化 */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
   /* 更清晰的邊框 */

@@ -16,6 +16,9 @@ import re
 import hmac, hashlib, time, base64
 from datetime import datetime
 from sqlalchemy import and_, or_, text
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("moderation", __name__, url_prefix="/api/moderation")
 
@@ -719,62 +722,13 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
     except Exception:
         pass
 
-    # 立即模式：就地為符合條件的 IG 帳號建立任務並觸發處理
+    # 觸發新的自動發布系統
     try:
-        from models.instagram import IGAccount, IGTemplate, IGPost, IGAccountStatus, PublishMode, PostStatus
-        from services.instagram_tasks import process_post_for_instagram
-        # 找出啟用帳號（同校或全域）
-        accounts = (
-            s.query(IGAccount)
-             .filter(IGAccount.status == IGAccountStatus.active.value)
-             .filter((IGAccount.school_id == None) | (IGAccount.school_id == post.school_id))  # noqa: E711
-             .all()
-        )
-        for acc in accounts:
-            # 只處理 immediate / scheduled；batch 留待批次
-            if str(acc.publish_mode) not in (PublishMode.immediate.value, PublishMode.scheduled.value):
-                continue
-            # 預設模板
-            tmpl = (
-                s.query(IGTemplate)
-                 .filter(IGTemplate.account_id == acc.id, IGTemplate.is_active == True, IGTemplate.is_default == True)
-                 .first()
-            )
-            if not tmpl:
-                continue
-            # 重複保護
-            exist = (
-                s.query(IGPost)
-                 .filter(IGPost.forum_post_id == post_id, IGPost.account_id == acc.id)
-                 .first()
-            )
-            if exist:
-                continue
-            # 建立 IGPost
-            from datetime import datetime, timezone
-            igp = IGPost(
-                account_id=acc.id,
-                forum_post_id=post_id,
-                template_id=tmpl.id,
-                status=PostStatus.pending.value,
-                scheduled_at=(datetime.now(timezone.utc) if acc.publish_mode == PublishMode.scheduled.value else None),
-            )
-            s.add(igp)
-            s.commit()
-            s.refresh(igp)
-            # 立即觸發處理
-            try:
-                process_post_for_instagram.delay(igp.id)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # 備援：同時觸發全域同步，避免遺漏
-    try:
-        from services.instagram_tasks import sync_approved_posts
-        sync_approved_posts.delay()
-    except Exception:
+        from services.post_approval_hook import trigger_auto_publish_on_approval
+        result = trigger_auto_publish_on_approval(post)
+        logger.info(f"貼文 {post_id} 自動發布觸發結果: {result}")
+    except Exception as e:
+        logger.error(f"觸發自動發布失敗: {e}")
         pass
 
     return jsonify({"ok": True, "message": "貼文核准成功"})

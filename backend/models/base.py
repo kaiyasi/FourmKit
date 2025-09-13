@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .media import Media
     from .comments import Comment, PostReaction
     from .support import SupportTicket, SupportMessage, SupportEvent, TicketWatcher
+    from .school import School
 
 class UserRole(str, enum.Enum):
     user = "user"                    # 一般用戶
@@ -95,6 +96,7 @@ class Post(Base):
     author: Mapped["User"] = relationship("User", foreign_keys=[author_id], back_populates="posts")
     deleted_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[deleted_by], back_populates="deleted_posts")
     pinned_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[pinned_by])
+    school: Mapped["School | None"] = relationship("School", foreign_keys=[school_id])
 
 class DeleteRequest(Base):
     __tablename__ = "delete_requests"

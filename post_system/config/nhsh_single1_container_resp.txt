@@ -1,0 +1,20 @@
+HTTP/2 200 
+content-type: application/json; charset=UTF-8
+vary: Origin
+x-business-use-case-usage: {"821200841068646":[{"type":"instagram","call_count":1,"total_cputime":1,"total_time":1,"estimated_time_to_regain_access":0}],"17841476374625674":[{"type":"instagram","call_count":1,"total_cputime":1,"total_time":1,"estimated_time_to_regain_access":0}]}
+access-control-allow-origin: *
+facebook-api-version: v23.0
+strict-transport-security: max-age=15552000; preload
+pragma: no-cache
+cache-control: private, no-cache, no-store, must-revalidate
+expires: Sat, 01 Jan 2000 00:00:00 GMT
+x-fb-request-id: AL-_iAr2Q3dl7dYyAMzo-7v
+x-fb-trace-id: BKCHGSZVH/f
+x-fb-rev: 1027048259
+x-fb-debug: rRXZ6nBnDQDtSn8LgXEbksC3gElCNGXIoxnQsQmnIu+XZNKwvC3oBjEUDE07fSKd6oGQH2yJUuH3YrP57TTFow==
+content-length: 26
+date: Fri, 12 Sep 2025 16:42:20 GMT
+x-fb-connection-quality: GOOD; q=0.7, rtt=84, rtx=0, c=10, mss=1380, tbw=3584, tp=-1, tpl=-1, uplat=4433, ullat=0
+alt-svc: h3=":443"; ma=86400
+
+{"id":"17851018452545821"}

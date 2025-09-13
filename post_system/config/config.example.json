@@ -1,0 +1,23 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8888,
+    "max_workers": 5,
+    "health_port": null
+  },
+  "instagram": {
+    "api_version": "v23.0",
+    "timeout": 60,
+    "max_wait_time": 180,
+    "retry_interval": 2
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "logs/post_system.log"
+  },
+  "demo": {
+    "test_image_url": "https://picsum.photos/1080/1080",
+    "test_caption_template": "Demo 發文測試 - {timestamp}"
+  }
+}

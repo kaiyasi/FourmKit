@@ -6,6 +6,7 @@ interface MobileSupportCardProps {
   desc: string
   icon: LucideIcon
   color?: 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'yellow'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   onClick?: () => void
   disabled?: boolean
   badge?: string
@@ -17,6 +18,7 @@ export const MobileSupportCard: React.FC<MobileSupportCardProps> = ({
   desc,
   icon: Icon,
   color = 'blue',
+  size = 'md',
   onClick,
   disabled = false,
   badge,
@@ -31,11 +33,52 @@ export const MobileSupportCard: React.FC<MobileSupportCardProps> = ({
     yellow: 'from-yellow-500 to-orange-500'
   }
 
+  const sizeClasses = {
+    sm: {
+      container: 'p-4 rounded-2xl',
+      icon: 'w-8 h-8 rounded-xl mb-3',
+      iconSize: 'w-4 h-4',
+      title: 'font-semibold text-base',
+      desc: 'text-xs',
+      arrow: 'w-4 h-4 bottom-3 right-3',
+      decoration: 'w-12 h-12 -bottom-1 -right-1'
+    },
+    md: {
+      container: 'p-6 rounded-3xl',
+      icon: 'w-12 h-12 rounded-2xl mb-4',
+      iconSize: 'w-6 h-6',
+      title: 'font-bold text-lg',
+      desc: 'text-sm',
+      arrow: 'w-5 h-5 bottom-4 right-4',
+      decoration: 'w-16 h-16 -bottom-2 -right-2'
+    },
+    lg: {
+      container: 'p-8 rounded-3xl',
+      icon: 'w-16 h-16 rounded-3xl mb-6',
+      iconSize: 'w-8 h-8',
+      title: 'font-bold text-xl',
+      desc: 'text-base',
+      arrow: 'w-6 h-6 bottom-6 right-6',
+      decoration: 'w-20 h-20 -bottom-3 -right-3'
+    },
+    xl: {
+      container: 'p-10 rounded-3xl',
+      icon: 'w-20 h-20 rounded-3xl mb-8',
+      iconSize: 'w-10 h-10',
+      title: 'font-bold text-2xl',
+      desc: 'text-lg',
+      arrow: 'w-7 h-7 bottom-8 right-8',
+      decoration: 'w-24 h-24 -bottom-4 -right-4'
+    }
+  }
+
+  const currentSize = sizeClasses[size]
+
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group relative overflow-hidden bg-gradient-to-br ${colorClasses[color]} rounded-3xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 disabled:opacity-50 ${className}`}
+      className={`group relative overflow-hidden bg-gradient-to-br ${colorClasses[color]} ${currentSize.container} text-white shadow-lg hover:shadow-xl transition-all duration-300 mobile-button-press disabled:opacity-50 ${className}`}
     >
       <div className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity"></div>
       
@@ -46,15 +89,15 @@ export const MobileSupportCard: React.FC<MobileSupportCardProps> = ({
       )}
       
       <div className="relative z-10">
-        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4">
-          <Icon className="w-6 h-6" />
+        <div className={`${currentSize.icon} bg-white/20 flex items-center justify-center`}>
+          <Icon className={currentSize.iconSize} />
         </div>
-        <h3 className="font-bold text-lg mb-1">{title}</h3>
-        <p className="text-sm text-white/80">{desc}</p>
+        <h3 className={`${currentSize.title} mb-1`}>{title}</h3>
+        <p className={`${currentSize.desc} text-white/80`}>{desc}</p>
       </div>
       
-      <div className="absolute -bottom-2 -right-2 w-16 h-16 bg-white/10 rounded-full"></div>
-      <ArrowRight className="absolute bottom-4 right-4 w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+      <div className={`absolute ${currentSize.decoration} bg-white/10 rounded-full`}></div>
+      <ArrowRight className={`absolute ${currentSize.arrow} opacity-60 group-hover:opacity-100 group-hover:translate-x-1 transition-all`} />
     </button>
   )
 }
@@ -250,16 +293,16 @@ export const MobileSupportQuickAction: React.FC<MobileSupportQuickActionProps> =
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 p-3 hover:bg-surface-hover rounded-2xl transition-colors text-left ${className}`}
+      className={`w-full flex items-center gap-3 mobile-touch-target px-4 hover:bg-surface-hover rounded-2xl transition-colors text-left mobile-button-press ${className}`}
     >
-      <div className={`w-8 h-8 rounded-xl ${colorClasses[color]} flex items-center justify-center flex-shrink-0`}>
-        <Icon className="w-4 h-4" />
+      <div className={`w-10 h-10 rounded-xl ${colorClasses[color]} flex items-center justify-center flex-shrink-0`}>
+        <Icon className="w-5 h-5" />
       </div>
       <div className="flex-1">
         <p className="font-medium text-fg">{title}</p>
         <p className="text-sm text-muted">{desc}</p>
       </div>
-      <ChevronRight className="w-4 h-4 text-muted flex-shrink-0" />
+      <ChevronRight className="w-5 h-5 text-muted flex-shrink-0" />
     </button>
   )
 }
@@ -291,9 +334,9 @@ export const MobileSupportContact: React.FC<MobileSupportContactProps> = ({
   }
 
   const content = (
-    <div className={`flex flex-col items-center gap-2 p-4 hover:bg-surface-hover rounded-2xl transition-colors ${className}`}>
-      <div className={`w-12 h-12 rounded-xl ${colorClasses[color]} flex items-center justify-center`}>
-        <Icon className="w-6 h-6" />
+    <div className={`flex flex-col items-center gap-2 mobile-touch-target px-4 hover:bg-surface-hover rounded-2xl transition-colors mobile-button-press ${className}`}>
+      <div className={`w-14 h-14 rounded-xl ${colorClasses[color]} flex items-center justify-center`}>
+        <Icon className="w-7 h-7" />
       </div>
       <span className="text-xs text-muted text-center">{label}</span>
     </div>

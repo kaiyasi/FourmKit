@@ -17,20 +17,22 @@ import MyViolationsPage from './pages/MyViolationsPage'
 import AdminUsersPage from './pages/admin/UsersPage'
 import AdminSchoolsPage from './pages/admin/SchoolsPage'
 import AdminIntegrationsPage from './pages/admin/IntegrationsPage'
+import ResponsiveInstagramAdmin from './components/admin/ResponsiveInstagramAdmin'
 import AdminPagesEditor from './pages/admin/PagesEditor'
 import AdminChatPage from './pages/admin/ChatPage'
 import CreateChatRoomPage from './pages/admin/CreateChatRoomPage'
 import AdminEventsPage from './pages/admin/EventsPage'
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage'
-import AdminSupportPageNew from './pages/admin/AdminSupportPageNew'
+import SupportCenterPage from './pages/admin/SupportCenterPage'
 import ServerStatusPage from './pages/admin/ServerStatusPage'
 import ProjectStatusPage from './pages/admin/ProjectStatusPage'
 import MemberManagementPage from './pages/admin/MemberManagementPage'
-import InstagramPage from './pages/admin/InstagramPage'
+import FontManagementPage from './pages/admin/FontManagementPage'
 import ResponsiveSupportPage from './pages/ResponsiveSupportPage'
 import TicketTrackPage from './pages/TicketTrackPage'
 import AboutPage from './pages/AboutPage'
 import RulesPage from './pages/RulesPage'
+import FAQPage from './pages/FAQPage'
 import Forbidden403 from './pages/Forbidden403'
 import CreatePostPage from './pages/CreatePostPage'
 import ThemeDesignerPage from './pages/ThemeDesignerPage'
@@ -65,6 +67,7 @@ const router = createBrowserRouter([
     { path: "/boards", element: <BoardsPage />, errorElement: <RouteError /> },
     { path: "/about", element: <AboutPage />, errorElement: <RouteError /> },
     { path: "/rules", element: <RulesPage />, errorElement: <RouteError /> },
+    { path: "/faq", element: <FAQPage />, errorElement: <RouteError /> },
     { path: "/posts/:id", element: <PostDetailPage />, errorElement: <RouteError /> },
     { path: "/theme-designer", element: <ThemeDesignerPage />, errorElement: <RouteError /> },
 	{ path: "/403", element: <Forbidden403 />, errorElement: <RouteError /> },
@@ -149,15 +152,6 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
-        path: "/admin/instagram",
-        element: (
-            <RequireRoles allow={['dev_admin','admin']}>
-                <InstagramPage />
-            </RequireRoles>
-        ),
-        errorElement: <RouteError />,
-    },
-    {
         path: "/admin/pages",
         element: (
             <RequireRoles allow={['dev_admin','cross_admin','campus_admin']}>
@@ -220,6 +214,15 @@ const router = createBrowserRouter([
             ),
             errorElement: <RouteError />,
         },
+        {
+            path: "/admin/fonts",
+            element: (
+                <RequireRoles allow={['dev_admin']}>
+                    <FontManagementPage />
+                </RequireRoles>
+            ),
+            errorElement: <RouteError />,
+        },
     {
         path: "/admin/announcements",
         element: (
@@ -250,10 +253,19 @@ const router = createBrowserRouter([
         errorElement: <RouteError />,
     },
     {
+        path: "/admin/instagram",
+        element: (
+            <RequireRoles allow={['dev_admin','campus_admin','cross_admin']}>
+                <ResponsiveInstagramAdmin />
+            </RequireRoles>
+        ),
+        errorElement: <RouteError />,
+    },
+    {
         path: "/admin/support",
         element: (
             <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator']}>
-                <AdminSupportPageNew />
+                <SupportCenterPage />
             </RequireRoles>
         ),
         errorElement: <RouteError />,

@@ -1,9 +1,8 @@
 """
-全新的貼文圖片生成器 
-- 基於 HTML/CSS 模板
-- 使用 Playwright 渲染成圖片
-- 簡潔的 API 設計
-- 內建預覽功能
+純 Pillow 貼文圖片生成器
+- 移除所有 Playwright 依賴
+- 僅使用 Pillow 進行圖片生成
+- 輕量且穩定
 """
 from typing import Dict, List, Optional, Union, Tuple
 from datetime import datetime
@@ -12,8 +11,9 @@ from pathlib import Path
 import json
 import os
 import logging
-import tempfile
 import time
+import textwrap
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -24,26 +24,19 @@ class ImageGeneratorError(Exception):
 
 
 class PostImageGenerator:
-    """貼文圖片生成器"""
+    """純 Pillow 貼文圖片生成器"""
     
     def __init__(self, 
-                 templates_dir: Optional[str] = None,
-                 fonts_dir: Optional[str] = None,
                  output_dir: Optional[str] = None):
         """
         初始化圖片生成器
         
         Args:
-            templates_dir: 模板目錄路徑
-            fonts_dir: 字體目錄路徑  
             output_dir: 輸出目錄路徑
         """
-        self.templates_dir = Path(templates_dir or "assets/templates")
-        self.fonts_dir = Path(fonts_dir or "assets/fonts")
         self.output_dir = Path(output_dir or os.getenv('UPLOAD_ROOT', 'uploads'))
         
         # 確保目錄存在
-        self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # 預設配置
@@ -51,222 +44,283 @@ class PostImageGenerator:
             "width": 1080,
             "height": 1080,
             "background_color": "#ffffff",
-            "font_family": "Noto Sans TC",
             "font_size": 32,
             "text_color": "#333333",
             "padding": 60,
-            "line_height": 1.6
+            "title_color": "#2c3e50",
+            "title_size": 48,
+            "line_spacing": 10
         }
-        
-        # 檢查 Playwright
-        self._check_playwright()
-    
-    def _check_playwright(self):
-        """檢查 Playwright 是否可用"""
-        try:
-            from playwright.sync_api import sync_playwright
-            self._playwright_available = True
-        except ImportError:
-            logger.warning("Playwright 未安裝，無法進行圖片渲染")
-            self._playwright_available = False
     
     def generate_image(self, 
                       content: Dict,
-                      template: Optional[str] = None,
-                      config: Optional[Dict] = None,
-                      logo_url: Optional[str] = None) -> BytesIO:
+                      config: Optional[Dict] = None) -> BytesIO:
         """
         生成貼文圖片
         
         Args:
             content: 貼文內容 {"title": "標題", "text": "內容", "author": "作者", ...}
-            template: 模板名稱，預設使用 "default"
             config: 自訂配置，會覆蓋預設值
-            logo_url: Logo 圖片 URL
             
         Returns:
             BytesIO: 圖片資料流
         """
-        if not self._playwright_available:
-            raise ImageGeneratorError("Playwright 未安裝，請執行: pip install playwright && playwright install chromium")
-        
         # 合併配置
         final_config = {**self.default_config, **(config or {})}
         
-        # 建立 HTML
-        html = self._build_html(content, template or "default", final_config, logo_url)
-        
-        # 渲染圖片
-        return self._render_html_to_image(html, final_config)
+        # 使用 Pillow 生成圖片
+        return self._render_with_pillow(content, final_config)
     
-    def preview_html(self,
-                    content: Dict,
-                    template: Optional[str] = None,
-                    config: Optional[Dict] = None,
-                    logo_url: Optional[str] = None) -> str:
-        """
-        預覽 HTML（不渲染圖片）
-        
-        Returns:
-            str: HTML 字符串
-        """
-        final_config = {**self.default_config, **(config or {})}
-        return self._build_html(content, template or "default", final_config, logo_url)
+    def _render_with_pillow(self, content: Dict, config: Dict) -> BytesIO:
+        """使用 Pillow 渲染圖片"""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            
+            width = config.get("width", 1080)
+            height = config.get("height", 1080)
+            padding = config.get("padding", 60)
+            
+            # 提取內容
+            title = self._clean_text(content.get("title", ""))
+            text = self._clean_text(content.get("text", content.get("content", "")))
+            author = self._clean_text(content.get("author", ""))
+            school = content.get("school_name", "")
+            
+            # 創建圖片
+            img = Image.new('RGB', (width, height), color=config.get("background_color", "#ffffff"))
+            draw = ImageDraw.Draw(img)
+            
+            # 載入字體
+            title_font, content_font, meta_font = self._load_fonts(config)
+            
+            # 繪製背景漸變（可選）
+            if config.get("gradient", True):
+                self._draw_gradient_background(draw, width, height, config.get("background_color", "#ffffff"))
+            
+            # 計算位置
+            y_pos = padding
+            content_width = width - (padding * 2)
+            
+            # 繪製標題
+            if title:
+                y_pos = self._draw_title(draw, title, y_pos, content_width, title_font, config)
+                y_pos += 30  # 標題與內容間距
+            
+            # 繪製分隔線
+            if title:
+                draw.line([(padding, y_pos), (width - padding, y_pos)], 
+                         fill='#e0e0e0', width=2)
+                y_pos += 40
+            
+            # 繪製內容
+            if text:
+                y_pos = self._draw_content(draw, text, y_pos, content_width, content_font, config)
+            
+            # 繪製底部資訊
+            self._draw_footer(draw, author, school, width, height, padding, meta_font, config)
+            
+            # 繪製 Logo 或學校標識
+            if school:
+                self._draw_school_badge(draw, school, width, height, padding, meta_font)
+            
+            # 轉換為 BytesIO
+            img_buffer = BytesIO()
+            img.save(img_buffer, format='JPEG', quality=95, optimize=True)
+            img_buffer.seek(0)
+            
+            return img_buffer
+            
+        except ImportError:
+            raise ImageGeneratorError("Pillow 未安裝，請執行: pip install Pillow")
+        except Exception as e:
+            logger.error(f"Pillow 渲染錯誤: {e}")
+            return self._render_simple_fallback(config)
     
-    def _build_html(self, content: Dict, template: str, config: Dict, logo_url: Optional[str]) -> str:
-        """建立 HTML"""
-        
-        # 清理內容
-        title = self._clean_text(content.get("title", ""))
-        text = self._clean_text(content.get("text", ""))
-        author = self._clean_text(content.get("author", ""))
-        created_at = content.get("created_at", datetime.now())
-        
-        # 時間格式化
-        if isinstance(created_at, str):
-            try:
-                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            except:
-                created_at = datetime.now()
-        
-        time_text = created_at.strftime("%Y年%m月%d日 %H:%M")
-        
-        # 載入模板
-        template_html = self._load_template(template)
-        
-        # 替換變數
-        html = template_html.format(
-            # 基本配置
-            width=config["width"],
-            height=config["height"],
-            background_color=config["background_color"],
-            font_family=config["font_family"],
-            font_size=config["font_size"],
-            text_color=config["text_color"],
-            padding=config["padding"],
-            line_height=config["line_height"],
+    def _load_fonts(self, config: Dict) -> Tuple:
+        """載入字體"""
+        try:
+            from PIL import ImageFont
             
-            # 內容
-            title=title,
-            text=text,
-            author=author,
-            time_text=time_text,
+            # 嘗試載入系統中文字體
+            font_paths = [
+                '/System/Library/Fonts/PingFang.ttc',  # macOS
+                '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',  # Linux
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux fallback
+                '/Windows/Fonts/msyh.ttc',  # Windows
+                '/Windows/Fonts/simhei.ttf',  # Windows fallback
+            ]
             
-            # Logo
-            logo_html=self._build_logo_html(logo_url) if logo_url else "",
+            title_size = config.get("title_size", 48)
+            content_size = config.get("font_size", 32)
+            meta_size = max(20, content_size - 8)
             
-            # Google Fonts
-            google_fonts=self._get_google_fonts_url(config["font_family"])
+            title_font = None
+            content_font = None
+            meta_font = None
+            
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        title_font = ImageFont.truetype(font_path, title_size)
+                        content_font = ImageFont.truetype(font_path, content_size)
+                        meta_font = ImageFont.truetype(font_path, meta_size)
+                        break
+                    except Exception:
+                        continue
+            
+            # 回退到預設字體
+            if not title_font:
+                title_font = ImageFont.load_default()
+                content_font = ImageFont.load_default()
+                meta_font = ImageFont.load_default()
+            
+            return title_font, content_font, meta_font
+            
+        except Exception as e:
+            logger.warning(f"字體載入失敗: {e}，使用預設字體")
+            from PIL import ImageFont
+            default_font = ImageFont.load_default()
+            return default_font, default_font, default_font
+    
+    def _draw_gradient_background(self, draw, width: int, height: int, base_color: str):
+        """繪製漸變背景"""
+        try:
+            # 解析顏色
+            if base_color.startswith('#'):
+                base_r = int(base_color[1:3], 16)
+                base_g = int(base_color[3:5], 16)
+                base_b = int(base_color[5:7], 16)
+            else:
+                base_r, base_g, base_b = 255, 255, 255  # 白色回退
+            
+            # 創建輕微的垂直漸變
+            for y in range(height):
+                alpha = y / height * 0.1  # 只有輕微變化
+                r = max(0, min(255, int(base_r * (1 - alpha) + base_r * 0.95 * alpha)))
+                g = max(0, min(255, int(base_g * (1 - alpha) + base_g * 0.95 * alpha)))
+                b = max(0, min(255, int(base_b * (1 - alpha) + base_b * 0.95 * alpha)))
+                draw.line([(0, y), (width, y)], fill=(r, g, b))
+                
+        except Exception:
+            # 如果漸變失敗，忽略錯誤
+            pass
+    
+    def _draw_title(self, draw, title: str, y_pos: int, content_width: int, font, config: Dict) -> int:
+        """繪製標題"""
+        title_color = config.get("title_color", "#2c3e50")
+        
+        # 文字換行
+        max_chars = max(15, content_width // 30)  # 根據寬度估算字數
+        wrapped_title = textwrap.fill(title, width=max_chars)
+        
+        # 繪製文字
+        line_height = config.get("title_size", 48) + config.get("line_spacing", 10)
+        draw.multiline_text(
+            (config.get("padding", 60), y_pos), 
+            wrapped_title, 
+            font=font, 
+            fill=title_color,
+            spacing=config.get("line_spacing", 10)
         )
         
-        return html
+        # 返回下一個 Y 位置
+        lines = len(wrapped_title.split('\n'))
+        return y_pos + (lines * line_height)
     
-    def _load_template(self, template_name: str) -> str:
-        """載入模板"""
-        template_file = self.templates_dir / f"{template_name}.html"
+    def _draw_content(self, draw, text: str, y_pos: int, content_width: int, font, config: Dict) -> int:
+        """繪製內容"""
+        text_color = config.get("text_color", "#333333")
         
-        if template_file.exists():
-            return template_file.read_text(encoding='utf-8')
-        else:
-            # 使用內建預設模板
-            return self._get_default_template()
+        # 限制內容長度
+        if len(text) > 600:
+            text = text[:597] + "..."
+        
+        # 文字換行
+        max_chars = max(20, content_width // 25)  # 根據寬度估算字數
+        wrapped_text = textwrap.fill(text, width=max_chars)
+        
+        # 限制行數
+        lines = wrapped_text.split('\n')
+        max_lines = config.get("max_content_lines", 12)
+        if len(lines) > max_lines:
+            lines = lines[:max_lines-1] + [lines[max_lines-1][:50] + "..."]
+            wrapped_text = '\n'.join(lines)
+        
+        # 繪製文字
+        line_height = config.get("font_size", 32) + config.get("line_spacing", 10)
+        draw.multiline_text(
+            (config.get("padding", 60), y_pos), 
+            wrapped_text, 
+            font=font, 
+            fill=text_color,
+            spacing=config.get("line_spacing", 10)
+        )
+        
+        # 返回下一個 Y 位置
+        return y_pos + (len(lines) * line_height)
     
-    def _get_default_template(self) -> str:
-        """預設模板"""
-        return """<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="{google_fonts}" rel="stylesheet">
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
+    def _draw_footer(self, draw, author: str, school: str, width: int, height: int, padding: int, font, config: Dict):
+        """繪製底部資訊"""
+        footer_color = config.get("meta_color", "#7f8c8d")
+        bottom_y = height - padding - 40
         
-        body {{
-            font-family: '{font_family}', 'Noto Sans TC', sans-serif;
-            background: {background_color};
-            color: {text_color};
-            overflow: hidden;
-            line-height: {line_height};
-        }}
+        # 作者資訊
+        if author:
+            draw.text((padding, bottom_y), f"👤 {author}", font=font, fill=footer_color)
         
-        .container {{
-            width: {width}px;
-            height: {height}px;
-            padding: {padding}px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            position: relative;
-        }}
+        # 時間
+        time_text = datetime.now().strftime('%Y/%m/%d')
+        draw.text((padding, bottom_y + 25), f"🗓 {time_text}", font=font, fill=footer_color)
         
-        .title {{
-            font-size: {font_size}px;
-            font-weight: 700;
-            margin-bottom: 30px;
-            line-height: 1.3;
-        }}
-        
-        .content {{
-            font-size: {font_size}px;
-            line-height: {line_height};
-            flex: 1;
-            display: flex;
-            align-items: center;
-        }}
-        
-        .footer {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 40px;
-            font-size: {font_size}px;
-            opacity: 0.7;
-        }}
-        
-        .logo {{
-            position: absolute;
-            top: {padding}px;
-            right: {padding}px;
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            object-fit: cover;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        {logo_html}
-        <div class="title">{title}</div>
-        <div class="content">
-            <div>{text}</div>
-        </div>
-        <div class="footer">
-            <span>{author}</span>
-            <span>{time_text}</span>
-        </div>
-    </div>
-</body>
-</html>"""
+        # 學校（右側）
+        if school:
+            school_text = f"📍 {school}"
+            # 簡單的右對齊
+            try:
+                bbox = draw.textbbox((0, 0), school_text, font=font)
+                text_width = bbox[2] - bbox[0]
+                x_pos = width - padding - text_width
+                draw.text((x_pos, bottom_y), school_text, font=font, fill=footer_color)
+            except:
+                # 如果 textbbox 不可用，使用固定位置
+                draw.text((width - padding - 200, bottom_y), school_text, font=font, fill=footer_color)
     
-    def _build_logo_html(self, logo_url: str) -> str:
-        """建立 Logo HTML"""
-        return f'<img src="{logo_url}" class="logo" alt="Logo" />'
-    
-    def _get_google_fonts_url(self, font_family: str) -> str:
-        """獲取 Google Fonts URL"""
-        font_map = {
-            "Noto Sans TC": "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap",
-            "Noto Serif TC": "https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500;700&display=swap",
-            "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap",
-        }
-        
-        return font_map.get(font_family, font_map["Noto Sans TC"])
+    def _draw_school_badge(self, draw, school: str, width: int, height: int, padding: int, font):
+        """繪製學校徽章"""
+        try:
+            # 簡單的圓形徽章
+            badge_size = 80
+            badge_x = width - padding - badge_size
+            badge_y = padding
+            
+            # 繪製圓形背景
+            draw.ellipse(
+                [badge_x, badge_y, badge_x + badge_size, badge_y + badge_size],
+                fill='#3498db',
+                outline='#2980b9',
+                width=3
+            )
+            
+            # 繪製學校首字
+            school_initial = school[0] if school else "校"
+            try:
+                bbox = draw.textbbox((0, 0), school_initial, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                text_x = badge_x + (badge_size - text_width) // 2
+                text_y = badge_y + (badge_size - text_height) // 2
+                draw.text((text_x, text_y), school_initial, font=font, fill='white')
+            except:
+                # 如果計算失敗，使用中心位置
+                draw.text(
+                    (badge_x + badge_size//2 - 15, badge_y + badge_size//2 - 15), 
+                    school_initial, 
+                    font=font, 
+                    fill='white'
+                )
+                
+        except Exception as e:
+            logger.debug(f"繪製學校徽章失敗: {e}")
     
     def _clean_text(self, text: str) -> str:
         """清理文字"""
@@ -274,58 +328,65 @@ class PostImageGenerator:
             return ""
         
         # 移除 HTML 標籤
-        import re
         text = re.sub(r'<[^>]+>', '', text)
         
         # 移除多餘空白
         text = re.sub(r'\s+', ' ', text).strip()
         
-        # 限制長度
-        if len(text) > 800:
-            text = text[:797] + "..."
-        
-        # HTML 轉義
-        import html
-        return html.escape(text)
+        return text
     
-    def _render_html_to_image(self, html: str, config: Dict) -> BytesIO:
-        """將 HTML 渲染為圖片"""
+    def _render_simple_fallback(self, config: Dict) -> BytesIO:
+        """最簡單的回退方案"""
         try:
-            from playwright.sync_api import sync_playwright
+            from PIL import Image, ImageDraw, ImageFont
             
-            with sync_playwright() as p:
-                # 啟動瀏覽器
-                browser = p.chromium.launch(
-                    args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
-                )
-                
-                # 建立頁面
-                page = browser.new_page(
-                    viewport={
-                        "width": config["width"],
-                        "height": config["height"]
-                    }
-                )
-                
-                # 設定內容
-                page.set_content(html, wait_until="networkidle")
-                
-                # 截圖
-                screenshot_bytes = page.screenshot(
-                    type="jpeg",
-                    quality=95,
-                    full_page=False
-                )
-                
-                # 清理
-                browser.close()
-                
-                # 返回 BytesIO
-                return BytesIO(screenshot_bytes)
-                
+            width = config.get("width", 1080)
+            height = config.get("height", 1080)
+            
+            # 創建簡單圖片
+            img = Image.new('RGB', (width, height), color='#f8f9fa')
+            draw = ImageDraw.Draw(img)
+            
+            # 載入字體
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+            
+            # 繪製背景圓圈
+            center_x, center_y = width // 2, height // 2
+            circle_radius = min(width, height) // 6
+            draw.ellipse(
+                [center_x - circle_radius, center_y - circle_radius - 50,
+                 center_x + circle_radius, center_y + circle_radius - 50],
+                fill='#3498db'
+            )
+            
+            # 簡單文字
+            text = "ForumKit\n校園動態"
+            if font:
+                try:
+                    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=20)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    x = (width - text_width) // 2
+                    y = center_y + 50
+                    draw.multiline_text((x, y), text, font=font, fill='#2c3e50', spacing=20, align='center')
+                except:
+                    draw.text((width//2 - 100, center_y + 50), text, fill='#2c3e50')
+            else:
+                draw.text((width//2 - 100, center_y + 50), text, fill='#2c3e50')
+            
+            # 轉換為 BytesIO
+            img_buffer = BytesIO()
+            img.save(img_buffer, format='JPEG', quality=80)
+            img_buffer.seek(0)
+            
+            return img_buffer
+            
         except Exception as e:
-            logger.error(f"渲染 HTML 失敗: {e}")
-            raise ImageGeneratorError(f"渲染失敗: {e}")
+            logger.error(f"簡單回退方案失敗: {e}")
+            raise ImageGeneratorError(f"圖片生成完全失敗: {e}")
     
     def save_image(self, image_data: BytesIO, filename: Optional[str] = None) -> str:
         """
@@ -352,33 +413,6 @@ class PostImageGenerator:
             f.write(image_data.getvalue())
         
         return str(file_path)
-    
-    def create_template(self, name: str, html_content: str) -> None:
-        """
-        建立自訂模板
-        
-        Args:
-            name: 模板名稱
-            html_content: HTML 內容
-        """
-        template_file = self.templates_dir / f"{name}.html"
-        template_file.write_text(html_content, encoding='utf-8')
-        logger.info(f"模板已建立: {template_file}")
-    
-    def list_templates(self) -> List[str]:
-        """列出所有可用模板"""
-        templates = []
-        
-        # 掃描模板目錄
-        if self.templates_dir.exists():
-            for file in self.templates_dir.glob("*.html"):
-                templates.append(file.stem)
-        
-        # 加入內建模板
-        if "default" not in templates:
-            templates.insert(0, "default")
-        
-        return templates
 
 
 # 方便的單例實例
@@ -394,9 +428,7 @@ def get_generator() -> PostImageGenerator:
 
 # 快速 API 函數
 def generate_post_image(content: Dict, 
-                       template: str = "default",
-                       config: Optional[Dict] = None,
-                       logo_url: Optional[str] = None) -> BytesIO:
+                       config: Optional[Dict] = None) -> BytesIO:
     """
     快速生成貼文圖片
     
@@ -405,21 +437,10 @@ def generate_post_image(content: Dict,
             "title": "今天天氣很好",
             "text": "陽光明媚，適合出門走走！",
             "author": "小明",
-            "created_at": "2025-01-15T10:30:00"
+            "school_name": "範例學校"
         }
         
-        image = generate_post_image(content, template="modern")
+        image = generate_post_image(content)
     """
     generator = get_generator()
-    return generator.generate_image(content, template, config, logo_url)
-
-
-def preview_post_html(content: Dict,
-                     template: str = "default", 
-                     config: Optional[Dict] = None,
-                     logo_url: Optional[str] = None) -> str:
-    """
-    快速預覽貼文 HTML
-    """
-    generator = get_generator()
-    return generator.preview_html(content, template, config, logo_url)
+    return generator.generate_image(content, config)

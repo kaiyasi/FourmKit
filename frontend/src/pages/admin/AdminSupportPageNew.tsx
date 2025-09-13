@@ -31,6 +31,11 @@ import {
   Trash2
 } from 'lucide-react';
 import { api } from '@/services/api';
+import { QueueTabs } from '@/components/support/admin/QueueTabs';
+import { FilterBar } from '@/components/support/admin/FilterBar';
+import { TicketList } from '@/components/support/admin/TicketList';
+import { StatusBadge, CategoryBadge, PriorityBadge } from '@/components/support/SupportComponents';
+import { useAdminSupportSocket } from '@/hooks/useAdminSupportSocket';
 
 interface AdminTicket {
   id: string;
@@ -132,6 +137,17 @@ const AdminSupportPageNew: React.FC = () => {
     }
   }, [selectedTicketId]);
 
+  // 即時事件：刷新列表或當前詳情
+  useAdminSupportSocket((ev) => {
+    try {
+      if (selectedTicket && ev.ticket_id === selectedTicket.ticket_id) {
+        loadTicketDetail(selectedTicket.id)
+      } else {
+        loadTickets()
+      }
+    } catch {}
+  })
+
   const loadData = useCallback(async () => {
     await Promise.all([loadTickets(), loadStats()]);
   }, []);
@@ -139,9 +155,32 @@ const AdminSupportPageNew: React.FC = () => {
   const loadTickets = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/admin/support/tickets', { params: filters });
-      if (response.success) {
-        setTickets(response.data);
+      const params = new URLSearchParams();
+      if (filters.search) params.set('q', filters.search);
+      if (filters.status && filters.status !== 'all') params.set('status', filters.status);
+      if (filters.category && filters.category !== 'all') params.set('category', filters.category);
+      // 這裡暫不傳 priority/assignee（保持前端篩選），僅做最小修復
+      const limit = filters.per_page || 20; const page = filters.page || 1;
+      params.set('limit', String(limit));
+      params.set('offset', String((page - 1) * limit));
+      const resp = await api<any>(`/api/admin/support/tickets?${params.toString()}`);
+      if (resp?.ok && Array.isArray(resp.tickets)) {
+        // 後端欄位 public_id/id 混用，這裡做基本映射以符合現有 UI 使用
+        const list = resp.tickets.map((t: any) => ({
+          id: t.public_id || t.id,
+          ticket_id: t.public_id || t.id,
+          subject: t.subject,
+          status: t.status,
+          category: t.category,
+          priority: t.priority,
+          created_at: t.created_at,
+          last_activity_at: t.last_activity_at,
+          message_count: t.message_count,
+          user_name: t.submitter,
+          assigned_to: t.assigned_to,
+          assignee_name: t.assignee,
+        }))
+        setTickets(list)
       }
     } catch (error) {
       console.error('載入工單失敗:', error);
@@ -152,9 +191,9 @@ const AdminSupportPageNew: React.FC = () => {
 
   const loadStats = async () => {
     try {
-      const response = await api.get('/admin/support/stats');
-      if (response.success) {
-        setStats(response.data);
+      const resp = await api<any>('/api/admin/support/stats');
+      if (resp?.ok && resp.stats) {
+        setStats(resp.stats);
       }
     } catch (error) {
       console.error('載入統計失敗:', error);
@@ -163,9 +202,17 @@ const AdminSupportPageNew: React.FC = () => {
 
   const loadTicketDetail = async (ticketId: string) => {
     try {
-      const response = await api.get(`/admin/support/tickets/${ticketId}`);
-      if (response.success) {
-        setSelectedTicket(response.data);
+      const resp = await api<any>(`/api/admin/support/tickets/${ticketId}`);
+      if (resp?.ok && resp.ticket) {
+        const t = resp.ticket
+        setSelectedTicket({
+          ...t,
+          id: t.public_id || t.id,
+          ticket_id: t.public_id || t.id,
+          assignee_name: t.assignee_name || t.assignee || undefined,
+          user_name: t.submitter,
+          messages: t.messages || [],
+        });
       }
     } catch (error) {
       console.error('載入工單詳情失敗:', error);
@@ -214,8 +261,9 @@ const AdminSupportPageNew: React.FC = () => {
     
     try {
       setSendingMessage(true);
-      const response = await api.post(`/admin/support/tickets/${selectedTicket.id}/messages`, {
-        body: newMessage.trim()
+      const response = await api<any>(`/api/admin/support/tickets/${selectedTicket.id}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ body: newMessage.trim() })
       });
       
       if (response.success) {
@@ -233,7 +281,10 @@ const AdminSupportPageNew: React.FC = () => {
     if (!selectedTicket) return;
     
     try {
-      const response = await api.patch(`/admin/support/tickets/${selectedTicket.id}`, { status });
+      const response = await api<any>(`/api/admin/support/tickets/${selectedTicket.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
       if (response.success) {
         await Promise.all([loadTicketDetail(selectedTicket.id), loadData()]);
         setShowTicketActions(false);
@@ -250,8 +301,9 @@ const AdminSupportPageNew: React.FC = () => {
     if (!selectedTicket) return;
     
     try {
-      const response = await api.patch(`/admin/support/tickets/${selectedTicket.id}`, { 
-        assigned_to: assigneeId || null 
+      const response = await api<any>(`/api/admin/support/tickets/${selectedTicket.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assigned_to: assigneeId || null })
       });
       if (response.success) {
         await Promise.all([loadTicketDetail(selectedTicket.id), loadTickets()]);
@@ -280,66 +332,7 @@ const AdminSupportPageNew: React.FC = () => {
     }));
   };
 
-  // 狀態顯示組件
-  const StatusBadge = ({ status }: { status: string }) => {
-    const statusConfig = {
-      open: { icon: MessageSquare, text: '開啟', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-      awaiting_user: { icon: Clock, text: '等待用戶', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-      awaiting_admin: { icon: AlertTriangle, text: '等待管理員', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
-      resolved: { icon: CheckCircle2, text: '已解決', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-      closed: { icon: XCircle, text: '已關閉', className: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300' }
-    };
-
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.open;
-    const Icon = config.icon;
-
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium ${config.className}`}>
-        <Icon className="w-3.5 h-3.5" />
-        {config.text}
-      </span>
-    );
-  };
-
-  // 優先級顯示組件
-  const PriorityBadge = ({ priority }: { priority: string }) => {
-    const priorityConfig = {
-      low: { text: '低', className: 'text-green-600 dark:text-green-400' },
-      medium: { text: '中', className: 'text-yellow-600 dark:text-yellow-400' },
-      high: { text: '高', className: 'text-orange-600 dark:text-orange-400' },
-      urgent: { text: '緊急', className: 'text-red-600 dark:text-red-400 font-semibold' }
-    };
-
-    const config = priorityConfig[priority as keyof typeof priorityConfig] || priorityConfig.medium;
-
-    return (
-      <span className={`inline-flex items-center gap-1 text-sm font-medium ${config.className}`}>
-        <Star className="w-3.5 h-3.5" />
-        {config.text}
-      </span>
-    );
-  };
-
-  // 分類顯示組件
-  const CategoryBadge = ({ category }: { category: string }) => {
-    const categoryConfig = {
-      technical: { text: '技術問題', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
-      account: { text: '帳號問題', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
-      feature: { text: '功能建議', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300' },
-      bug: { text: '錯誤報告', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-      abuse: { text: '濫用舉報', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
-      other: { text: '其他', className: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300' }
-    };
-
-    const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.other;
-
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${config.className}`}>
-        <Tag className="w-3 h-3" />
-        {config.text}
-      </span>
-    );
-  };
+  // 使用共用的 StatusBadge / PriorityBadge / CategoryBadge（來自 SupportComponents）
 
   // 統計卡片組件 - 採用審核管理的風格
   const StatsCard = ({ title, value, color, icon: Icon, description }: { 
@@ -352,7 +345,7 @@ const AdminSupportPageNew: React.FC = () => {
     <div className="bg-surface border border-border rounded-xl p-4 shadow-soft hover:shadow-lg transition-shadow">
       <div className="flex items-center justify-between mb-2">
         <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center`}>
-          <Icon className="w-5 h-5 text-white" />
+          <Icon className={`w-5 h-5 ${color === 'bg-surface' ? 'text-fg' : 'text-white'}`} />
         </div>
         <span className="text-2xl font-bold text-fg">{value}</span>
       </div>
@@ -467,10 +460,10 @@ const AdminSupportPageNew: React.FC = () => {
                         <div
                           className={`p-4 rounded-xl ${
                             message.author_type === 'user'
-                              ? 'bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-300'
+                              ? 'bg-info-bg text-info-text border border-info-border'
                               : message.author_type === 'admin'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-300'
+                              ? 'bg-primary-100 text-primary border border-primary'
+                              : 'bg-warning-bg text-warning-text border border-warning-border'
                           }`}
                         >
                           <div className="whitespace-pre-wrap">
@@ -605,12 +598,12 @@ const AdminSupportPageNew: React.FC = () => {
                 <button
                   onClick={refreshData}
                   disabled={refreshing}
-                  className="form-control form-control--compact flex items-center gap-2"
+                  className="form-control form-control--compact support-control flex items-center gap-2"
                 >
                   <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
                   {refreshing ? '載入中...' : '重新載入'}
                 </button>
-                <button className="form-control form-control--compact flex items-center gap-2">
+                <button className="form-control form-control--compact support-control flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   導出報告
                 </button>
@@ -618,21 +611,58 @@ const AdminSupportPageNew: React.FC = () => {
             </div>
           </div>
 
-          {/* 統計概覽 */}
+          {/* Queue 分頁 + 統計概覽（簡化） */}
           {stats && (
             <div className="mb-6">
+              <div className="mb-4">
+                <QueueTabs
+                  current={filters.assignee === 'me' ? 'mine' : filters.assignee === 'unassigned' ? 'unassigned' : filters.status === 'resolved' ? 'resolved' : filters.status === 'closed' ? 'closed' : 'inbox'}
+                  counts={{
+                    inbox: stats.open + stats.awaiting_admin + stats.awaiting_user,
+                    resolved: stats.resolved,
+                    closed: stats.closed,
+                    unassigned: stats.unassigned,
+                  }}
+                  onChange={(key)=>{
+                    switch(key){
+                      case 'mine': updateFilters('assignee','me'); break;
+                      case 'unassigned': updateFilters('assignee','unassigned'); break;
+                      case 'resolved': updateFilters('status','resolved'); break;
+                      case 'closed': updateFilters('status','closed'); break;
+                      default:
+                        setFilters(prev=>({ ...prev, assignee:'all', status:'all', page:1 }))
+                    }
+                  }}
+                />
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-                <StatsCard title="總計" value={stats.total} color="bg-blue-500" icon={LifeBuoy} />
-                <StatsCard title="開啟" value={stats.open} color="bg-green-500" icon={MessageSquare} />
-                <StatsCard title="等待管理員" value={stats.awaiting_admin} color="bg-orange-500" icon={AlertTriangle} />
-                <StatsCard title="等待用戶" value={stats.awaiting_user} color="bg-yellow-500" icon={Clock} />
-                <StatsCard title="已解決" value={stats.resolved} color="bg-emerald-500" icon={CheckCircle2} />
-                <StatsCard title="已關閉" value={stats.closed} color="bg-gray-500" icon={XCircle} />
-                <StatsCard title="未分配" value={stats.unassigned} color="bg-purple-500" icon={Users} />
-                <StatsCard title="逾期" value={stats.overdue} color="bg-red-500" icon={TrendingUp} />
+                <StatsCard title="總計" value={stats.total} color="bg-info" icon={LifeBuoy} />
+                <StatsCard title="開啟" value={stats.open} color="bg-success" icon={MessageSquare} />
+                <StatsCard title="等待管理員" value={stats.awaiting_admin} color="bg-warning" icon={AlertTriangle} />
+                <StatsCard title="等待用戶" value={stats.awaiting_user} color="bg-warning" icon={Clock} />
+                <StatsCard title="已解決" value={stats.resolved} color="bg-success" icon={CheckCircle2} />
+                <StatsCard title="已關閉" value={stats.closed} color="bg-surface" icon={XCircle} />
+                <StatsCard title="未分配" value={stats.unassigned} color="bg-accent" icon={Users} />
+                <StatsCard title="逾期" value={stats.overdue} color="bg-danger" icon={TrendingUp} />
               </div>
             </div>
           )}
+
+          {/* FilterBar */}
+          <div className="mb-4">
+            <FilterBar
+              search={filters.search}
+              onSearch={(v)=>updateFilters('search', v)}
+              status={filters.status}
+              onStatus={(v)=>updateFilters('status', v)}
+              category={filters.category}
+              onCategory={(v)=>updateFilters('category', v)}
+              priority={filters.priority}
+              onPriority={(v)=>updateFilters('priority', v)}
+              assignee={filters.assignee}
+              onAssignee={(v)=>updateFilters('assignee', v)}
+            />
+          </div>
 
           {/* 主內容區域 */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -643,128 +673,16 @@ const AdminSupportPageNew: React.FC = () => {
                   <LifeBuoy className="w-5 h-5" />
                   工單列表
                 </h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted">{filteredTickets.length} 個工單</span>
+                <div className="text-sm text-muted">{filteredTickets.length} 個工單</div>
+              </div>
+              {loading ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto text-muted mb-2" />
+                  <p className="text-muted">載入中...</p>
                 </div>
-              </div>
-
-              {/* 篩選器 */}
-              <div className="mb-4 p-3 bg-surface-hover rounded-lg">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted" />
-                    <input
-                      type="text"
-                      placeholder="搜尋工單..."
-                      value={filters.search}
-                      onChange={(e) => updateFilters('search', e.target.value)}
-                      className="form-control form-control--compact flex-1 pl-10"
-                    />
-                  </div>
-
-                  <select
-                    value={filters.status}
-                    onChange={(e) => updateFilters('status', e.target.value)}
-                    className="form-control form-control--compact flex-1"
-                  >
-                    <option value="all">所有狀態</option>
-                    <option value="open">開啟</option>
-                    <option value="awaiting_admin">等待管理員</option>
-                    <option value="awaiting_user">等待用戶</option>
-                    <option value="resolved">已解決</option>
-                    <option value="closed">已關閉</option>
-                  </select>
-
-                  <select
-                    value={filters.category}
-                    onChange={(e) => updateFilters('category', e.target.value)}
-                    className="form-control form-control--compact flex-1"
-                  >
-                    <option value="all">所有分類</option>
-                    <option value="technical">技術問題</option>
-                    <option value="account">帳號問題</option>
-                    <option value="feature">功能建議</option>
-                    <option value="bug">錯誤報告</option>
-                    <option value="abuse">濫用舉報</option>
-                    <option value="other">其他</option>
-                  </select>
-
-                  <select
-                    value={filters.assignee}
-                    onChange={(e) => updateFilters('assignee', e.target.value)}
-                    className="form-control form-control--compact flex-1"
-                  >
-                    <option value="all">所有分配</option>
-                    <option value="me">分配給我</option>
-                    <option value="unassigned">未分配</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* 工單列表 */}
-              <div className="space-y-3">
-                {loading ? (
-                  <div className="text-center py-8">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-muted mb-2" />
-                    <p className="text-muted">載入中...</p>
-                  </div>
-                ) : filteredTickets.length === 0 ? (
-                  <div className="text-center py-8">
-                    <LifeBuoy className="w-12 h-12 mx-auto text-muted mb-4" />
-                    <p className="text-fg font-medium">找不到符合條件的工單</p>
-                    <p className="text-muted">試試調整搜尋條件或篩選器</p>
-                  </div>
-                ) : (
-                  filteredTickets.map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      onClick={() => selectTicket(ticket.id)}
-                      className={`p-4 border border-border rounded-xl hover:bg-surface-hover transition-colors cursor-pointer ${
-                        ticket.processing ? 'opacity-60 pointer-events-none' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-medium text-fg truncate">
-                              {ticket.subject}
-                            </h3>
-                            <span className="text-xs text-muted font-mono">
-                              #{ticket.ticket_id}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <StatusBadge status={ticket.status} />
-                            <CategoryBadge category={ticket.category} />
-                            <PriorityBadge priority={ticket.priority} />
-                          </div>
-                        </div>
-                        <div className="text-right text-sm text-muted">
-                          <div className="flex items-center gap-1 mb-1">
-                            <Calendar className="w-3.5 h-3.5" />
-                            {new Date(ticket.created_at).toLocaleDateString('zh-TW')}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            {ticket.message_count} 則訊息
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2 text-muted">
-                          <User className="w-3.5 h-3.5" />
-                          {ticket.user_name}
-                        </div>
-                        <div className="flex items-center gap-2 text-muted">
-                          <UserCheck className="w-3.5 h-3.5" />
-                          {ticket.assignee_name || '未分配'}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+              ) : (
+                <TicketList items={filteredTickets as any} onSelect={(id)=>selectTicket(id)} />
+              )}
             </div>
 
             {/* 統計和快速操作側欄 */}
@@ -778,7 +696,7 @@ const AdminSupportPageNew: React.FC = () => {
                       <AlertTriangle className="w-4 h-4" />
                       需要處理
                     </span>
-                    <span className="text-lg font-semibold text-orange-600">
+                    <span className="text-lg font-semibold text-warning">
                       {stats ? stats.awaiting_admin + stats.open : 0}
                     </span>
                   </div>
@@ -787,7 +705,7 @@ const AdminSupportPageNew: React.FC = () => {
                       <Users className="w-4 h-4" />
                       未分配
                     </span>
-                    <span className="text-lg font-semibold text-purple-600">
+                    <span className="text-lg font-semibold text-accent">
                       {stats?.unassigned || 0}
                     </span>
                   </div>
@@ -796,7 +714,7 @@ const AdminSupportPageNew: React.FC = () => {
                       <TrendingUp className="w-4 h-4" />
                       逾期工單
                     </span>
-                    <span className="text-lg font-semibold text-red-600">
+                    <span className="text-lg font-semibold text-danger">
                       {stats?.overdue || 0}
                     </span>
                   </div>
@@ -809,21 +727,21 @@ const AdminSupportPageNew: React.FC = () => {
                 <div className="space-y-3">
                   <button
                     onClick={() => updateFilters('assignee', 'me')}
-                    className="w-full form-control form-control--compact flex items-center gap-2 justify-start"
+                    className="w-full form-control form-control--compact support-control flex items-center gap-2 justify-start"
                   >
                     <UserCheck className="w-4 h-4" />
                     我的工單
                   </button>
                   <button
                     onClick={() => updateFilters('status', 'awaiting_admin')}
-                    className="w-full form-control form-control--compact flex items-center gap-2 justify-start"
+                    className="w-full form-control form-control--compact support-control flex items-center gap-2 justify-start"
                   >
                     <AlertTriangle className="w-4 h-4" />
                     等待處理
                   </button>
                   <button
                     onClick={() => updateFilters('assignee', 'unassigned')}
-                    className="w-full form-control form-control--compact flex items-center gap-2 justify-start"
+                    className="w-full form-control form-control--compact support-control flex items-center gap-2 justify-start"
                   >
                     <Users className="w-4 h-4" />
                     未分配工單

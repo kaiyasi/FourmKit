@@ -74,6 +74,33 @@ export default function TicketTrackPage() {
   const token = searchParams.get('token') || searchParams.get('sig')
   const ticketId = ticketIdParam || searchParams.get('ticket_id')
 
+  // 僅有 token（沒有 ticketId）時，先向後端驗證以取得正確的 redirect_url
+  useEffect(() => {
+    if (token && !ticketId) {
+      (async () => {
+        try {
+          setLoading(true)
+          setError(null)
+          const r = await fetch('/api/support/guest/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          })
+          const j = await r.json().catch(() => ({}))
+          if (r.ok && j?.redirect_url) {
+            navigate(j.redirect_url, { replace: true })
+            return
+          }
+          throw new Error(j?.msg || '無法驗證追蹤連結，請改用工單編號或 Email 追蹤')
+        } catch (e:any) {
+          setError(e?.message || '驗證失敗')
+        } finally {
+          setLoading(false)
+        }
+      })()
+    }
+  }, [token, ticketId])
+
   useEffect(() => {
     if (ticketId) {
       if (token) {
@@ -83,7 +110,7 @@ export default function TicketTrackPage() {
         // 登入用戶模式：直接訪問
         fetchTicketByAuth(ticketId)
       }
-    } else if (isLoggedIn) {
+    } else if (!token && isLoggedIn) {
       // 無 token/單號：載入我的工單列表（就地顯示，不跳頁）
       ;(async () => {
         try {
@@ -254,23 +281,23 @@ export default function TicketTrackPage() {
 
   const getStatusColor = (status: string) => {
     const colors: { [key: string]: string } = {
-      'open': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-      'awaiting_admin': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-      'awaiting_user': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-      'resolved': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-      'closed': 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
+      'open': 'bg-info-bg text-info-text border border-info-border',
+      'awaiting_admin': 'bg-warning-bg text-warning-text border border-warning-border',
+      'awaiting_user': 'bg-warning-bg text-warning-text border border-warning-border',
+      'resolved': 'bg-success-bg text-success-text border border-success-border',
+      'closed': 'bg-surface text-muted border border-border'
     }
-    return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
+    return colors[status] || 'bg-surface text-fg border border-border'
   }
 
   const getPriorityColor = (priority: string) => {
     const colors: { [key: string]: string } = {
-      'low': 'text-green-600 dark:text-green-400',
-      'medium': 'text-yellow-600 dark:text-yellow-400',
-      'high': 'text-orange-600 dark:text-orange-400',
-      'urgent': 'text-red-600 dark:text-red-400'
+      'low': 'text-success',
+      'medium': 'text-warning',
+      'high': 'text-warning hover:text-warning-hover',
+      'urgent': 'text-danger'
     }
-    return colors[priority] || 'text-gray-600 dark:text-gray-400'
+    return colors[priority] || 'text-muted'
   }
 
   const formatDate = (dateString: string) => {
@@ -314,10 +341,10 @@ export default function TicketTrackPage() {
                 <label className="block text-sm font-medium mb-2">工單編號</label>
                 <input
                   type="text"
-                  placeholder="例如：SUP-ABC123"
+                  placeholder="例如：U42-037 或 58201943"
                   value={trackForm.ticket_id}
                   onChange={(e) => setTrackForm(prev => ({ ...prev, ticket_id: e.target.value }))}
-                  className="w-full p-3 border border-border rounded-lg"
+                  className="w-full p-3 bg-surface border border-border rounded-lg"
                 />
               </div>
 
@@ -328,7 +355,7 @@ export default function TicketTrackPage() {
                   placeholder="提交工單時使用的 Email"
                   value={trackForm.email}
                   onChange={(e) => setTrackForm(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full p-3 border border-border rounded-lg"
+                  className="w-full p-3 bg-surface border border-border rounded-lg"
                 />
               </div>
 
@@ -393,6 +420,35 @@ export default function TicketTrackPage() {
             </div>
           </div>
         </div>
+        </div>
+      </PageLayout>
+    )
+  }
+
+  // 僅 token（無 ticketId）階段：顯示驗證狀態或錯誤
+  if (token && !ticketId) {
+    return (
+      <PageLayout pathname="/support/track" maxWidth="max-w-3xl">
+        <div className="max-w-md mx-auto pt-10 p-4">
+          <div className="bg-surface border border-border rounded-lg p-6 text-center">
+            {loading ? (
+              <>
+                <RefreshCw className="w-6 h-6 mx-auto animate-spin text-muted mb-3" />
+                <div className="text-fg font-medium">驗證追蹤連結中...</div>
+              </>
+            ) : error ? (
+              <>
+                <AlertCircle className="w-6 h-6 mx-auto text-danger mb-3" />
+                <div className="text-danger font-medium mb-2">{error}</div>
+                <button
+                  onClick={() => navigate('/support/track', { replace: true })}
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-surface-hover"
+                >
+                  回到追蹤頁
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
       </PageLayout>
     )

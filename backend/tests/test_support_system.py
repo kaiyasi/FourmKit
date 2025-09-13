@@ -76,7 +76,9 @@ class TestSupportService:
         assert ticket.priority == TicketPriority.HIGH
         assert ticket.user_id == test_user.id
         assert ticket.status == TicketStatus.OPEN
-        assert ticket.public_id.startswith("SUP-")
+        # 新版規則：登入用戶的工單號為 U<user_id>-<三位數字>
+        assert ticket.public_id.startswith(f"U{test_user.id}-")
+        assert len(ticket.public_id.split('-')[-1]) in (3, 4)  # 退避機制可能為 3位數或多一位字母
         assert ticket.message_count == 1
     
     def test_create_guest_ticket(self, db_session):

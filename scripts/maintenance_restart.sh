@@ -232,55 +232,77 @@ wait_for_services() {
 }
 
 # ===============================================================================
-# 🌐 安裝 HTML 渲染瀏覽器（Playwright Chromium）
+# 🎨 Pillow 渲染系統檢查（已取代 Playwright）
 # ===============================================================================
-install_playwright_browsers() {
-    step "安裝 HTML 渲染瀏覽器 (Playwright Chromium)"
+verify_pillow_setup() {
+    step "驗證 Pillow 圖片渲染系統"
 
     local targets=(backend celery celery-beat)
     for svc in "${targets[@]}"; do
         if docker compose ps "${svc}" 2>/dev/null | grep -q "Up"; then
-            info "為 ${svc} 檢查/安裝 Playwright Chromium..."
-            # 盡量不因安裝失敗中斷整體流程
-            if docker compose exec -T "${svc}" bash -lc "python -m playwright --version" >/dev/null 2>&1; then
-                docker compose exec -T "${svc}" bash -lc "python -m playwright install chromium || python -m playwright install --with-deps chromium" >/dev/null 2>&1 \
-                    && success "${svc}: Chromium 安裝/檢查完成" \
-                    || warning "${svc}: Chromium 安裝可能失敗，後續若渲染失敗請手動執行 'python -m playwright install chromium'"
+            info "檢查 ${svc} 的 Pillow 渲染環境..."
+            
+            # 檢查 Pillow 是否已安裝
+            if docker compose exec -T "${svc}" python -c "from PIL import Image; print('Pillow OK')" 2>/dev/null; then
+                success "${svc}: Pillow 圖片處理功能正常"
             else
-                warning "${svc}: 未找到 Playwright 指令，可能尚未更新映像或未安裝相依（requirements）。"
+                warning "${svc}: Pillow 未正確安裝，可能影響圖片生成功能"
+            fi
+            
+            # 檢查字體目錄
+            if docker compose exec -T "${svc}" bash -lc "ls /data/fonts" >/dev/null 2>&1; then
+                local font_count
+                font_count=$(docker compose exec -T "${svc}" bash -lc "ls /data/fonts/*.{ttf,otf,ttc} 2>/dev/null | wc -l" || echo "0")
+                if [ "$font_count" -gt 0 ]; then
+                    success "${svc}: 發現 $font_count 個自訂字體檔案"
+                else
+                    info "${svc}: 字體目錄存在但無自訂字體，將使用系統預設字體"
+                fi
+            else
+                info "${svc}: 正在創建字體目錄..."
+                docker compose exec -T "${svc}" bash -lc "mkdir -p /data/fonts"
+                success "${svc}: 字體目錄已創建"
             fi
         else
             info "跳過 ${svc}（未在運行）"
         fi
     done
 
-    info "如使用系統自帶瀏覽器，也可設定環境變數 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指向執行檔。"
+    info "ForumKit 現已使用輕量級 Pillow 系統進行圖片渲染"
+    info "不再需要 Playwright 瀏覽器依賴，大幅減少系統資源使用"
 }
 
 # ===============================================================================
-# 🧩 安裝 Chromium 執行期相依套件（容器內）
+# 📦 檢查 Pillow 基礎相依套件（僅必要套件）
 # ===============================================================================
-install_browser_runtime_deps() {
-    step "安裝 Chromium 執行期相依 (容器內 apt)"
+verify_image_processing_deps() {
+    step "檢查圖片處理基礎相依套件"
 
-    local pkgs=(
-        libglib2.0-0 libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
-        libcups2 libatspi2.0-0 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
-        libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 libdrm2 libexpat1 \
-        libxcb1 libx11-6 libxext6 ca-certificates
+    # Pillow 需要的基礎圖片處理庫（輕量化）
+    local essential_pkgs=(
+        libjpeg-dev libpng-dev libfreetype6-dev ca-certificates
     )
 
     local targets=(backend celery celery-beat)
     for svc in "${targets[@]}"; do
         if docker compose ps "${svc}" 2>/dev/null | grep -q "Up"; then
-            info "為 ${svc} 安裝系統相依..."
-            docker compose exec -T "${svc}" bash -lc "apt-get update && apt-get install -y --no-install-recommends ${pkgs[*]} && rm -rf /var/lib/apt/lists/*" \
-                && success "${svc}: 執行期相依安裝完成" \
-                || warning "${svc}: 相依安裝失敗，請檢查網路或套件來源"
+            info "檢查 ${svc} 的圖片處理相依..."
+            
+            # 檢查是否需要安裝（簡化檢查）
+            if docker compose exec -T "${svc}" python -c "from PIL import Image, ImageDraw, ImageFont; print('Pillow deps OK')" 2>/dev/null; then
+                success "${svc}: 圖片處理相依已就緒"
+            else
+                info "${svc}: 安裝必要的圖片處理相依..."
+                docker compose exec -T "${svc}" bash -lc "apt-get update && apt-get install -y --no-install-recommends ${essential_pkgs[*]} && rm -rf /var/lib/apt/lists/*" \
+                    && success "${svc}: 基礎圖片處理相依安裝完成" \
+                    || warning "${svc}: 相依安裝失敗，Pillow 可能仍可使用預設功能"
+            fi
         else
             info "跳過 ${svc}（未在運行）"
         fi
     done
+    
+    info "已移除不必要的瀏覽器相依套件，僅保留圖片處理必要元件"
 }
 
 # ===============================================================================
@@ -364,6 +386,7 @@ show_summary() {
     printf "  • 資料庫保護完成\n"
     printf "  • 前後端服務重建\n"
     printf "  • 服務啟動/重啟完成\n"
+    printf "  • Pillow 圖片渲染系統驗證\n"
     printf "  • 健康檢查執行\n"
     printf "  • 資料庫資料保留\n\n"
     
@@ -431,8 +454,8 @@ main() {
     protect_database
     rebuild_services
     wait_for_services
-    install_browser_runtime_deps
-    install_playwright_browsers
+    verify_image_processing_deps
+    verify_pillow_setup
     health_check
     verify_services
     show_summary

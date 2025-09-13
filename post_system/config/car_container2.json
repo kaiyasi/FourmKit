@@ -1,0 +1,1 @@
+CAR_CREATE HTTP=400 {"error":{"message":"(#100) The parameter image_url is required","type":"OAuthException","code":100,"fbtrace_id":"AZ_ReJBmkDUgAO7XxYXPS-X"}}

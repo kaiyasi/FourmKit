@@ -14,10 +14,11 @@ from models.support import SupportTicket, SupportMessage, TicketStatus, TicketCa
 from models.base import User
 from models.school import School
 from services.support_service import SupportService
-from utils.db import get_session
+from utils.support_db import get_support_session as get_session
 from utils.ratelimit import rate_limit
 from utils.sanitize import sanitize_html
 from utils.notify import send_admin_event
+from utils.authz import require_role
 
 bp = Blueprint("support", __name__, url_prefix="/api/support")
 
@@ -41,6 +42,245 @@ def clean_input(text: str, max_length: int = 1000) -> str:
         cleaned = sanitize_html(cleaned)
     
     return cleaned
+@bp.route("/queue", methods=["GET"])
+@jwt_required()
+def get_queue():
+    """客服隊列查詢（後台）
+    權限：
+      - dev_admin：可檢視全部
+      - cross_admin/campus_admin/campus_moderator/cross_moderator：僅能檢視指派給自己的工單
+    篩選：status, priority, category, school_id, keyword
+    """
+    try:
+        user_id = int(get_jwt_identity())
+        status = (request.args.get('status') or '').strip().lower() or None
+        priority = (request.args.get('priority') or '').strip().lower() or None
+        category = (request.args.get('category') or '').strip().lower() or None
+        school_id = request.args.get('school_id', type=int)
+        keyword = (request.args.get('q') or '').strip()
+        limit = min(int(request.args.get('limit', 50)), 200)
+        offset = max(int(request.args.get('offset', 0)), 0)
+
+        with get_session() as s:
+            me = s.get(User, user_id)
+            if not me:
+                return jsonify({"ok": False, "error": "AUTH_E_USER_NOT_FOUND", "msg": "用戶不存在，請重新登入"}), 401
+
+            q = s.query(SupportTicket)
+
+            # 角色可見範圍
+            role = (me.role or '').strip()
+            allowed_roles = ['dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator']
+            if role not in allowed_roles:
+                return jsonify({"ok": False, "error": "PERMISSION_DENIED", "msg": f"權限不足，需要管理員角色。當前角色: {role or '無'}"}), 403
+            
+            if role != 'dev_admin':
+                q = q.filter(SupportTicket.assigned_to == me.id)
+
+            # 篩選條件
+            if status:
+                q = q.filter(SupportTicket.status == status)
+            if priority:
+                q = q.filter(SupportTicket.priority == priority)
+            if category:
+                q = q.filter(SupportTicket.category == category)
+            if school_id is not None:
+                q = q.filter(SupportTicket.school_id == school_id)
+            if keyword:
+                kw = f"%{keyword}%"
+                q = q.filter(or_(SupportTicket.subject.ilike(kw), SupportTicket.public_id.ilike(kw)))
+
+            total = q.count()
+            rows = (
+                q.order_by(desc(SupportTicket.last_activity_at))
+                 .offset(offset)
+                 .limit(limit)
+                 .all()
+            )
+
+            items = []
+            for t in rows:
+                # 學校名稱
+                school_name = None
+                if t.school_id:
+                    try:
+                        sch = s.get(School, t.school_id)
+                        school_name = sch.name if sch else None
+                    except Exception:
+                        school_name = None
+
+                # 指派者名稱
+                assignee_name = None
+                if t.assigned_to:
+                    try:
+                        au = s.get(User, t.assigned_to)
+                        assignee_name = au.username if au else None
+                    except Exception:
+                        assignee_name = None
+
+                # 申請者顯示
+                requester_name = t.get_display_name()
+                requester_ip = None  # 如需，未來可在 ticket 增欄位或事件中取得
+
+                item = {
+                    "id": t.public_id,
+                    "subject": t.subject,
+                    "category": t.category,
+                    "priority": t.priority,
+                    "status": t.status,
+                    "school_name": school_name,
+                    "source": "Web",  # 佔位：可由 message/attachments 來源判斷
+                    "assigned_to": assignee_name,
+                    "last_activity_at": t.last_activity_at.isoformat(),
+                }
+                if role == 'dev_admin':
+                    item.update({"requester_name": requester_name, "requester_ip": requester_ip})
+                else:
+                    item.update({"requester_name": requester_name})
+                items.append(item)
+
+            return jsonify({
+                "ok": True,
+                "data": items,
+                "pagination": {"total": total, "limit": limit, "offset": offset, "has_more": offset + limit < total}
+            })
+    except Exception as e:
+        current_app.logger.error(f"Support queue error: {e}")
+        return jsonify({"ok": False, "error": "SUPPORT_E_SERVER"}), 500
+
+
+@bp.route("/tickets/<public_id>/assign", methods=["POST"])
+@jwt_required()
+def assign_ticket(public_id: str):
+    """指派/轉單（僅 dev_admin） body: { assignee_user_id: int|null }"""
+    try:
+        user_id = int(get_jwt_identity())
+        data = request.get_json() or {}
+        assignee_user_id = data.get('assignee_user_id', None)
+
+        with get_session() as s:
+            me = s.get(User, user_id)
+            if not me or me.role != 'dev_admin':
+                return jsonify({"ok": False, "error": "PERMISSION_DENIED"}), 403
+            t = s.query(SupportTicket).filter_by(public_id=public_id).first()
+            if not t:
+                return jsonify({"ok": False, "error": "SUPPORT_E_NOT_FOUND"}), 404
+
+            if assignee_user_id is None:
+                t.assigned_to = None
+            else:
+                au = s.get(User, int(assignee_user_id))
+                if not au:
+                    return jsonify({"ok": False, "error": "SUPPORT_E_ASSIGNEE_NOT_FOUND"}), 400
+                t.assigned_to = au.id
+            t.updated_at = datetime.now(timezone.utc)
+            s.commit()
+            return jsonify({"ok": True, "msg": "指派已更新", "assigned_to": t.assigned_to})
+    except Exception as e:
+        current_app.logger.error(f"Assign ticket error: {e}")
+        return jsonify({"ok": False, "error": "SUPPORT_E_SERVER"}), 500
+
+
+@bp.route("/tickets/<public_id>/status", methods=["POST"])
+@jwt_required()
+def update_ticket_status(public_id: str):
+    """更新工單狀態（dev_admin 或 指派人） body: { status, reason? }"""
+    try:
+        user_id = int(get_jwt_identity())
+        data = request.get_json() or {}
+        new_status = (data.get('status') or '').strip().lower()
+        reason = clean_input(data.get('reason', ''), 500)
+        allowed = {v.value for v in TicketStatus}
+        if new_status not in allowed:
+            return jsonify({"ok": False, "error": "SUPPORT_E_INVALID_STATUS"}), 400
+
+        with get_session() as s:
+            me = s.get(User, user_id)
+            t = s.query(SupportTicket).filter_by(public_id=public_id).first()
+            if not t:
+                return jsonify({"ok": False, "error": "SUPPORT_E_NOT_FOUND"}), 404
+            # 權限：dev_admin 或 指派者
+            if not (me and (me.role == 'dev_admin' or (t.assigned_to == me.id))):
+                return jsonify({"ok": False, "error": "PERMISSION_DENIED"}), 403
+
+            t.status = new_status
+            t.updated_at = datetime.now(timezone.utc)
+            s.commit()
+            # 可選：寫入事件與 reason 訊息
+            if reason:
+                try:
+                    SupportService.add_message(
+                        session=s,
+                        ticket_id=t.id,
+                        body=f"狀態變更為 {new_status}：{reason}",
+                        author_user_id=me.id,
+                        author_type=AuthorType.ADMIN,
+                        
+                    )
+                    s.commit()
+                except Exception:
+                    pass
+            return jsonify({"ok": True, "status": new_status})
+    except Exception as e:
+        current_app.logger.error(f"Update status error: {e}")
+        return jsonify({"ok": False, "error": "SUPPORT_E_SERVER"}), 500
+
+
+@bp.route("/tickets/<public_id>/labels", methods=["POST"])
+@jwt_required()
+def update_ticket_labels(public_id: str):
+    """更新工單標籤（dev_admin 或 指派者） body: { add?: [key], remove?: [key] }"""
+    try:
+        user_id = int(get_jwt_identity())
+        data = request.get_json() or {}
+        add_keys = data.get('add') or []
+        remove_keys = data.get('remove') or []
+
+        with get_session() as s:
+            me = s.get(User, user_id)
+            t = s.query(SupportTicket).filter_by(public_id=public_id).first()
+            if not t:
+                return jsonify({"ok": False, "error": "SUPPORT_E_NOT_FOUND"}), 404
+            if not (me and (me.role == 'dev_admin' or (t.assigned_to == me.id))):
+                return jsonify({"ok": False, "error": "PERMISSION_DENIED"}), 403
+
+            from models.support import SupportLabel, SupportTicketLabel
+            # 新增
+            for key in add_keys:
+                lbl = s.query(SupportLabel).filter(SupportLabel.key == key).first()
+                if not lbl:
+                    continue
+                exists = s.query(SupportTicketLabel).filter(
+                    SupportTicketLabel.ticket_id == t.id,
+                    SupportTicketLabel.label_id == lbl.id
+                ).first()
+                if not exists:
+                    s.add(SupportTicketLabel(ticket_id=t.id, label_id=lbl.id, added_by=me.id))
+
+            # 移除
+            if remove_keys:
+                lbls = s.query(SupportLabel).filter(SupportLabel.key.in_(remove_keys)).all()
+                for lbl in lbls:
+                    s.query(SupportTicketLabel).filter(
+                        SupportTicketLabel.ticket_id == t.id,
+                        SupportTicketLabel.label_id == lbl.id
+                    ).delete()
+
+            s.commit()
+
+            # 回傳當前標籤
+            cur = s.query(SupportTicketLabel).filter(SupportTicketLabel.ticket_id == t.id).all()
+            result = []
+            for r in cur:
+                try:
+                    lab = s.get(SupportLabel, r.label_id)
+                    result.append({"key": lab.key, "name": lab.display_name, "color": lab.color})
+                except Exception:
+                    continue
+            return jsonify({"ok": True, "labels": result})
+    except Exception as e:
+        current_app.logger.error(f"Update labels error: {e}")
+        return jsonify({"ok": False, "error": "SUPPORT_E_SERVER"}), 500
 
 
 @bp.route("/tickets", methods=["POST"])

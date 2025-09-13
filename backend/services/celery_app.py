@@ -1,7 +1,7 @@
 # backend/services/celery_app.py
 """
 Celery 應用配置和初始化
-處理 Instagram 發文的背景任務
+處理背景任務
 """
 from celery import Celery
 from celery.schedules import crontab
@@ -28,43 +28,29 @@ class CeleryConfig:
     enable_utc = True
     
     # 任務路由
-    # 使用完整模組名稱以配合 autodiscover 與任務註冊名稱
     task_routes = {
-        'services.instagram_tasks.*': {'queue': 'instagram'},
         'services.maintenance_tasks.*': {'queue': 'maintenance'},
+        'services.auto_publisher.*': {'queue': 'instagram'},
     }
     
     # 定時任務
     beat_schedule = {
-        # 每分鐘檢查待發布的定時貼文
-        'process-scheduled-posts': {
-            'task': 'services.instagram_tasks.process_scheduled_posts',
+        # 每天清理過期的系統事件
+        'cleanup-old-events': {
+            'task': 'services.maintenance_tasks.cleanup_old_events',
+            'schedule': crontab(hour=3, minute=0),  # 每天凌晨 3 點
+        },
+        # 每日刷新 IG Token（避免短時間過期）
+        'refresh-instagram-tokens-daily': {
+            'task': 'services.maintenance_tasks.refresh_instagram_tokens',
+            'schedule': crontab(hour=4, minute=10),  # 每天 04:10
+        },
+        
+        # 每分鐘檢查定時發布
+        'check-scheduled-publishes': {
+            'task': 'services.auto_publisher.check_scheduled_publishes',
             'schedule': 60.0,  # 60 秒
         },
-        
-        # 每 5 分鐘檢查批量發布佇列
-        'check-batch-queues': {
-            'task': 'services.instagram_tasks.check_batch_queues', 
-            'schedule': 300.0,  # 5 分鐘
-        },
-        
-        # 每小時檢查 Token 是否過期
-        'check-token-expiry': {
-            'task': 'services.maintenance_tasks.check_token_expiry',
-            'schedule': crontab(minute=0),  # 每小時
-        },
-        
-        # 每天清理失敗超過 7 天的任務記錄
-        'cleanup-old-failed-posts': {
-            'task': 'services.maintenance_tasks.cleanup_old_failed_posts',
-            'schedule': crontab(hour=2, minute=0),  # 每天凌晨 2 點
-        },
-        
-        # 每週統計發布數據
-        'weekly-stats-report': {
-            'task': 'services.maintenance_tasks.generate_weekly_stats',
-            'schedule': crontab(hour=9, minute=0, day_of_week=1),  # 每週一早上 9 點
-        }
     }
     
     # Worker 配置
@@ -73,17 +59,17 @@ class CeleryConfig:
     worker_max_tasks_per_child = 50  # 避免記憶體洩漏
 
 # 創建 Celery 應用
-celery_app = Celery('forumkit_instagram')
+celery_app = Celery('forumkit')
 celery_app.config_from_object(CeleryConfig)
 
-# 自動發現任務模組 + 顯式 include，雙保險避免註冊不到
-celery_app.autodiscover_tasks(['services.instagram_tasks', 'services.maintenance_tasks'])
-celery_app.conf.update(include=['services.instagram_tasks', 'services.maintenance_tasks'])
+# 自動發現任務模組
+celery_app.autodiscover_tasks(['services.maintenance_tasks', 'services.auto_publisher'])
+celery_app.conf.update(include=['services.maintenance_tasks', 'services.auto_publisher'])
 
-# 顯式導入以觸發裝飾器註冊（若 autodiscover 因封包結構而失效）
+# 顯式導入以觸發裝飾器註冊
 try:
-    import services.instagram_tasks  # noqa: F401
     import services.maintenance_tasks  # noqa: F401
+    import services.auto_publisher  # noqa: F401
 except Exception as _e:
     logger.warning(f"[Celery] Optional task modules import warning: {_e}")
 

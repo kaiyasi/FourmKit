@@ -14,7 +14,6 @@ import {
   Shield,
   ExternalLink,
   ArrowLeft,
-  Instagram,
   Settings
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'

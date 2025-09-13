@@ -100,9 +100,14 @@ const SupportPage: React.FC = () => {
   const loadTickets = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/support/tickets');
-      if (response.success) {
-        setTickets(response.data);
+      // 僅登入用戶可載入「我的工單」
+      if (!isLoggedIn) {
+        setTickets([]);
+        return;
+      }
+      const resp = await api<{ ok: boolean; tickets: Ticket[] }>(`/api/support/my-tickets?limit=100&_=${Date.now()}`);
+      if (resp?.ok && Array.isArray(resp.tickets)) {
+        setTickets(resp.tickets as any);
       }
     } catch (error) {
       console.error('載入工單失敗:', error);
@@ -113,9 +118,9 @@ const SupportPage: React.FC = () => {
 
   const loadTicketDetail = async (ticketId: string) => {
     try {
-      const response = await api.get(`/support/tickets/${ticketId}`);
-      if (response.success) {
-        setSelectedTicket(response.data);
+      const resp = await api<{ ok: boolean; ticket: TicketDetail }>(`/api/support/tickets/${ticketId}`);
+      if ((resp as any)?.ok && (resp as any)?.ticket) {
+        setSelectedTicket((resp as any).ticket);
       }
     } catch (error) {
       console.error('載入工單詳情失敗:', error);
@@ -154,11 +159,11 @@ const SupportPage: React.FC = () => {
     
     try {
       setSendingMessage(true);
-      const response = await api.post(`/support/tickets/${selectedTicket.id}/messages`, {
-        body: newMessage.trim()
+      const resp = await api<{ ok: boolean }>(`/api/support/tickets/${selectedTicket.id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body: newMessage.trim() })
       });
-      
-      if (response.success) {
+      if ((resp as any)?.ok) {
         setNewMessage('');
         await loadTicketDetail(selectedTicket.id);
       }
@@ -175,7 +180,8 @@ const SupportPage: React.FC = () => {
       subject: '',
       category: 'technical',
       priority: 'medium',
-      body: ''
+      body: '',
+      email: ''
     });
     const [creating, setCreating] = useState(false);
 
@@ -185,11 +191,48 @@ const SupportPage: React.FC = () => {
 
       try {
         setCreating(true);
-        const response = await api.post('/support/tickets', formData);
-        if (response.success) {
+        // 未登入用戶處理 email
+        const payload: any = { ...formData };
+        if (!isLoggedIn) {
+          let email = (formData.email || '').trim();
+          
+          // 只在沒有輸入 email 時顯示錯誤
+          if (!email) {
+            alert('請輸入 Email 以便我們回覆您');
+            return;
+          }
+          
+          // 輕量自動補齊：輸入純字串 → 預設加上 @gmail.com；輸入 *@gmail → 補 .com
+          if (email && !email.includes('@')) email = `${email}@gmail.com`;
+          if (/^.+@gmail$/i.test(email)) email = `${email}.com`;
+          
+          // 與後端一致的格式驗證
+          const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+          if (!EMAIL_RE.test(email)) {
+            alert('Email 格式不正確，請輸入有效 Email（例如 name@gmail.com）');
+            return;
+          }
+          payload.email = email;
+        } else {
+          delete payload.email;
+        }
+
+        const resp = await api<any>('/api/support/tickets', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+
+        if (resp?.ok) {
           setShowCreateModal(false);
-          await loadTickets();
-          selectTicket(response.data.id);
+          // 登入者：刷新列表並選取新單
+          if (isLoggedIn && resp.ticket?.id) {
+            try { localStorage.setItem('fk_last_ticket_id', resp.ticket.id); } catch {}
+            await loadTickets();
+            selectTicket(resp.ticket.id);
+          } else if (resp.tracking_url) {
+            // 訪客：導向追蹤連結
+            window.location.href = resp.tracking_url;
+          }
         }
       } catch (error) {
         console.error('創建工單失敗:', error);
@@ -214,14 +257,14 @@ const SupportPage: React.FC = () => {
           </div>
           
           <form onSubmit={handleSubmit} className="p-6">
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-fg mb-2">主題</label>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-fg mb-2">主題</label>
                 <input
                   type="text"
                   value={formData.subject}
                   onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
-                  className="w-full px-4 py-3 bg-bg border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   placeholder="請描述您的問題主題"
                   required
                 />
@@ -233,7 +276,7 @@ const SupportPage: React.FC = () => {
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-4 py-3 bg-bg border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
                     <option value="technical">技術問題</option>
                     <option value="account">帳號問題</option>
@@ -243,12 +286,24 @@ const SupportPage: React.FC = () => {
                     <option value="other">其他</option>
                   </select>
                 </div>
+              {!isLoggedIn && (
+                <div>
+                  <label className="block text-sm font-medium text-fg mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    placeholder="name@example.com"
+                  />
+                </div>
+              )}
                 <div>
                   <label className="block text-sm font-medium text-fg mb-2">優先級</label>
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
-                    className="w-full px-4 py-3 bg-bg border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
                     <option value="low">低</option>
                     <option value="medium">中</option>
@@ -264,7 +319,7 @@ const SupportPage: React.FC = () => {
                   value={formData.body}
                   onChange={(e) => setFormData(prev => ({ ...prev, body: e.target.value }))}
                   rows={6}
-                  className="w-full px-4 py-3 bg-bg border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                  className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
                   placeholder="請詳細描述您遇到的問題..."
                   required
                 />
@@ -276,6 +331,7 @@ const SupportPage: React.FC = () => {
                 variant="secondary"
                 onClick={() => setShowCreateModal(false)}
                 disabled={creating}
+                className="py-2.5"
               >
                 取消
               </Button>
@@ -283,6 +339,7 @@ const SupportPage: React.FC = () => {
                 type="submit"
                 loading={creating}
                 icon={<Send className="w-4 h-4" />}
+                className="py-2.5"
               >
                 建立工單
               </Button>
@@ -297,46 +354,112 @@ const SupportPage: React.FC = () => {
   if (!isLoggedIn) {
     return (
       <PageLayout pathname="/support">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft mb-6">
-            <div className="text-center mb-6">
-              <h1 className="text-2xl font-semibold dual-text">技術支援</h1>
-              <p className="text-sm text-muted mt-1">我們為您提供專業的技術支援服務</p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="bg-surface/50 border border-border rounded-xl p-4">
-                <h3 className="font-semibold dual-text mb-2">建立新工單</h3>
-                <p className="text-sm text-muted mb-3">提交您的問題或建議，我們會盡快回覆</p>
+        <div className="max-w-4xl mx-auto px-6 py-12">
+          {/* Header */}
+          <div className="text-center mb-12">
+            <h1 className="text-4xl font-bold dual-text mb-3">ForumKit</h1>
+            <p className="text-xl text-muted">Support Center</p>
+          </div>
+
+          <div className="space-y-6">
+            {/* Primary Action */}
+            <div className="bg-surface border border-border rounded-xl p-6 shadow-soft">
+              <h3 className="font-semibold dual-text mb-4 flex items-center">
+                <Plus className="w-5 h-5 mr-2 text-primary" />
+                建立支援工單
+              </h3>
+              <p className="text-muted text-sm mb-4 leading-relaxed">
+                描述您遇到的問題，我們的技術團隊會盡快為您提供解決方案
+              </p>
+              <div className="text-center">
                 <Button
-                  icon={<Plus className="w-4 h-4" />}
                   onClick={() => setShowCreateModal(true)}
-                  className="w-full"
+                  className="mb-3"
                 >
-                  建立工單
+                  尋求支援
                 </Button>
-              </div>
-              
-              <div className="bg-surface/50 border border-border rounded-xl p-4">
-                <h3 className="font-semibold dual-text mb-2">追蹤工單</h3>
-                <p className="text-sm text-muted mb-3">使用追蹤碼查看工單狀態</p>
-                <Button
-                  variant="secondary"
-                  icon={<Eye className="w-4 h-4" />}
-                  onClick={() => navigate('/support/track')}
-                  className="w-full"
-                >
-                  追蹤工單
-                </Button>
+                <p className="text-xs text-muted">
+                  預計回覆時間：1-2 小時（工作日）
+                </p>
               </div>
             </div>
-            
-            <div className="text-center">
-              <p className="text-sm text-muted mb-3">
-                已有帳號？登入後可查看完整的工單歷史
+
+            {/* Secondary Actions */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-surface border border-border rounded-xl p-6 shadow-soft hover:shadow-medium transition-shadow">
+                <div className="flex items-start space-x-3">
+                  <Eye className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-medium dual-text mb-2">追蹤現有工單</h4>
+                    <p className="text-sm text-muted mb-3">
+                      查看您提交工單的處理進度
+                    </p>
+                    <div className="text-center">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => navigate('/support/track')}
+                      >
+                        追蹤工單
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-surface border border-border rounded-xl p-6 shadow-soft hover:shadow-medium transition-shadow">
+                <div className="flex items-start space-x-3">
+                  <MessageSquare className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-medium dual-text mb-2">常見問題</h4>
+                    <p className="text-sm text-muted mb-3">
+                      快速找到常見問題的解答
+                    </p>
+                    <div className="text-center">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => navigate('/faq')}
+                      >
+                        瀏覽 FAQ
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tips Section */}
+            <div className="bg-surface border border-border rounded-xl p-6 shadow-soft">
+              <h4 className="font-medium dual-text mb-3 flex items-center">
+                <Star className="w-4 h-4 mr-2 text-primary" />
+                提交工單小技巧
+              </h4>
+              <ul className="text-sm text-muted space-y-2">
+                <li className="flex items-start space-x-2">
+                  <span className="text-primary mt-1">•</span>
+                  <span>詳細描述問題發生的步驟和環境</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-primary mt-1">•</span>
+                  <span>提供相關的錯誤訊息或截圖</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-primary mt-1">•</span>
+                  <span>選擇正確的問題分類以加速處理</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Login Prompt */}
+            <div className="bg-surface border border-border rounded-xl p-6 text-center shadow-soft">
+              <h4 className="font-medium dual-text mb-2">已有帳號？</h4>
+              <p className="text-sm text-muted mb-4">
+                登入帳號後可以查看完整的支援歷史
               </p>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => navigate('/auth')}
               >
                 登入帳號
@@ -432,7 +555,7 @@ const SupportPage: React.FC = () => {
                       onChange={(e) => setNewMessage(e.target.value)}
                       placeholder="輸入您的回應..."
                       rows={3}
-                      className="flex-1 px-4 py-3 bg-bg border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                      className="flex-1 px-4 py-3 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
                     />
                     <Button
                       onClick={sendMessage}
@@ -454,39 +577,64 @@ const SupportPage: React.FC = () => {
   // 工單列表視圖
   return (
     <PageLayout pathname="/support">
-        <div className="max-w-6xl mx-auto">
-          <PageHeader
-            title="技術支援"
-            subtitle="查看和管理您的支援工單"
-            isMobile={isMobile}
-            actions={
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="secondary"
-                  icon={<RefreshCw className={refreshing ? 'animate-spin' : ''} />}
-                  onClick={refreshTickets}
-                  disabled={refreshing}
-                />
-                <Button
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => setShowCreateModal(true)}
-                >
-                  建立工單
-                </Button>
+        <div className="min-h-screen">
+          {/* Compact Header */}
+          <div className="border-b border-border bg-surface/80 backdrop-blur-sm">
+            <div className="max-w-7xl mx-auto px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-xl font-semibold dual-text">ForumKit</h1>
+                  <p className="text-sm text-muted">Support Center - 我的工單</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />}
+                    onClick={refreshTickets}
+                    disabled={refreshing}
+                  />
+                  <Button
+                    size="sm"
+                    icon={<Plus className="w-4 h-4" />}
+                    onClick={() => setShowCreateModal(true)}
+                  >
+                    新工單
+                  </Button>
+                </div>
               </div>
-            }
-          />
 
-          <Toolbar
-            searchValue={searchTerm}
-            onSearchChange={setSearchTerm}
-            isMobile={isMobile}
-            filterOptions={
-              <div className="flex items-center gap-2">
+              {/* Inline Stats */}
+              {tickets.length > 0 && (
+                <div className="flex items-center gap-6 mt-3 text-sm text-muted">
+                  <span>總共 <strong className="text-fg">{tickets.length}</strong> 個工單</span>
+                  <span>進行中 <strong className="text-yellow-600 dark:text-yellow-400">{tickets.filter(t => ['open', 'awaiting_user', 'awaiting_admin'].includes(t.status)).length}</strong></span>
+                  <span>已解決 <strong className="text-green-600 dark:text-green-400">{tickets.filter(t => t.status === 'resolved').length}</strong></span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="max-w-7xl mx-auto px-6 py-6">
+            {/* Compact Search & Filters */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+              <div className="flex-1">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="搜尋工單..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                  <MessageSquare className="absolute left-2.5 top-2.5 w-4 h-4 text-muted" />
+                </div>
+              </div>
+              <div className="flex gap-2">
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="all">所有狀態</option>
                   <option value="open">開啟</option>
@@ -498,7 +646,7 @@ const SupportPage: React.FC = () => {
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="all">所有分類</option>
                   <option value="technical">技術問題</option>
@@ -509,37 +657,100 @@ const SupportPage: React.FC = () => {
                   <option value="other">其他</option>
                 </select>
               </div>
-            }
-          />
+            </div>
 
-          <div className="px-4 sm:px-6 py-6">
-            {loading ? (
-              <LoadingSpinner size="lg" />
-            ) : filteredTickets.length === 0 ? (
-              <EmptyState
-                icon={<LifeBuoy className="w-12 h-12" />}
-                title={searchTerm || statusFilter !== 'all' || categoryFilter !== 'all' ? '找不到符合條件的工單' : '還沒有工單'}
-                description={searchTerm || statusFilter !== 'all' || categoryFilter !== 'all' ? '試試調整搜尋條件或篩選器' : '點擊上方的「建立工單」按鈕來開始'}
-                action={
-                  <Button
-                    icon={<Plus className="w-4 h-4" />}
-                    onClick={() => setShowCreateModal(true)}
-                  >
-                    建立第一個工單
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="space-y-4">
-                {filteredTickets.map((ticket) => (
-                  <TicketCard
-                    key={ticket.id}
-                    ticket={ticket}
-                    onClick={() => selectTicket(ticket.id)}
-                  />
-                ))}
-              </div>
-            )}
+            {/* Table-like Ticket List */}
+            <div className="bg-surface border border-border rounded-lg overflow-hidden shadow-soft">
+              {loading ? (
+                <div className="p-8 text-center">
+                  <LoadingSpinner size="lg" />
+                </div>
+              ) : filteredTickets.length === 0 ? (
+                <div className="p-12 text-center">
+                  <LifeBuoy className="w-12 h-12 text-muted mx-auto mb-4" />
+                  <h3 className="font-medium dual-text mb-2">
+                    {searchTerm || statusFilter !== 'all' || categoryFilter !== 'all' ? '找不到符合條件的工單' : '還沒有工單'}
+                  </h3>
+                  <p className="text-sm text-muted mb-6">
+                    {searchTerm || statusFilter !== 'all' || categoryFilter !== 'all' ? '試試調整搜尋條件或篩選器' : '點擊右上角的「新工單」按鈕來開始'}
+                  </p>
+                  {(!searchTerm && statusFilter === 'all' && categoryFilter === 'all') && (
+                    <Button
+                      size="sm"
+                      icon={<Plus className="w-4 h-4" />}
+                      onClick={() => setShowCreateModal(true)}
+                    >
+                      建立第一個工單
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {/* Table Header */}
+                  <div className="px-6 py-3 border-b border-border bg-surface/50">
+                    <div className="grid grid-cols-12 gap-4 text-xs font-medium text-muted uppercase tracking-wide">
+                      <div className="col-span-5">工單</div>
+                      <div className="col-span-2 text-center">狀態</div>
+                      <div className="col-span-2 text-center">分類</div>
+                      <div className="col-span-2 text-center">回覆</div>
+                      <div className="col-span-1 text-center">優先度</div>
+                    </div>
+                  </div>
+
+                  {/* Table Body */}
+                  <div className="divide-y divide-border">
+                    {filteredTickets.map((ticket, index) => (
+                      <div
+                        key={ticket.id}
+                        className="px-6 py-4 hover:bg-surface-hover transition-colors cursor-pointer group"
+                        onClick={() => selectTicket(ticket.id)}
+                      >
+                        <div className="grid grid-cols-12 gap-4 items-center">
+                          {/* Ticket Info */}
+                          <div className="col-span-5">
+                            <div className="flex items-start space-x-3">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium dual-text group-hover:text-primary transition-colors truncate">
+                                  {ticket.subject}
+                                </h4>
+                                <div className="flex items-center space-x-2 mt-1">
+                                  <span className="text-xs text-muted">#{ticket.ticket_id}</span>
+                                  <span className="text-xs text-muted">•</span>
+                                  <span className="text-xs text-muted">{ticket.created_at}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Status */}
+                          <div className="col-span-2 text-center">
+                            <StatusBadge status={ticket.status} />
+                          </div>
+
+                          {/* Category */}
+                          <div className="col-span-2 text-center">
+                            <CategoryBadge category={ticket.category} />
+                          </div>
+
+                          {/* Message Count */}
+                          <div className="col-span-2 text-center">
+                            <div className="flex items-center justify-center space-x-1">
+                              <MessageSquare className="w-4 h-4 text-muted" />
+                              <span className="text-sm text-muted">{ticket.message_count}</span>
+                            </div>
+                          </div>
+
+                          {/* Priority */}
+                          <div className="col-span-1 text-center">
+                            <PriorityBadge priority={ticket.priority} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       

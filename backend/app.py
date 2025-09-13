@@ -36,7 +36,10 @@ from routes.routes_announcements import bp as announcements_bp
 from routes.routes_support import bp as support_bp
 from routes.routes_support_admin import bp as support_admin_bp
 from routes.routes_admin_members import bp as admin_members_bp
+from routes.routes_instagram import instagram_bp
+from routes.routes_fonts import bp as fonts_bp
 from routes.routes_cdn import bp as cdn_bp
+from routes.routes_oauth import oauth_bp  # provide /api/auth/instagram/* endpoints used by frontend
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 
@@ -522,7 +525,8 @@ def create_app() -> Flask:
     try:
         from services.platform_event_service import platform_event_service
         from datetime import datetime
-        platform_event_service.set_start_time(datetime.now())
+        import pytz
+        platform_event_service.set_start_time(datetime.now(pytz.timezone('Asia/Taipei')))
         platform_event_service.record_platform_started(f"應用程序啟動 - 重啟ID: {restart_id}")
         print("[ForumKit] 平台啟動事件已記錄")
     except Exception as e:
@@ -606,6 +610,11 @@ def create_app() -> Flask:
     try:
         init_engine_session()
         print("[ForumKit] DB init ok")
+        
+        # 初始化支援工單資料庫
+        from utils.support_db import init_support_database
+        init_support_database()
+        print("[ForumKit] Support DB init ok")
         
         # 初始化自定義聊天室到內存中
         try:
@@ -1403,39 +1412,25 @@ def create_app() -> Flask:
     # 公告通知系統
     app.register_blueprint(announcements_bp)
     
-    # Instagram 整合系統（已改為獨立 FastAPI 微服務，暫不在 Flask 內掛載）
-    
     # 支援工單系統
     app.register_blueprint(support_bp)
     app.register_blueprint(support_admin_bp)
     
-    # Instagram 整合系統（暫時下架，將於 2.0.0 重新設計）
-    # app.register_blueprint(instagram_bp)
-    # app.register_blueprint(admin_instagram_bp)
-    
     # 會員管理系統
     app.register_blueprint(admin_members_bp)
+    
+    # Instagram 整合管理
+    app.register_blueprint(instagram_bp)
+    
+    # 字體管理系統
+    app.register_blueprint(fonts_bp)
+    
+    # OAuth（啟用精簡端點，供前端 revoke/validate 流程使用）
+    app.register_blueprint(oauth_bp)
     
     # CDN 靜態檔案服務
     app.register_blueprint(cdn_bp)
 
-    # Instagram 整合系統
-    try:
-        from routes.routes_instagram import bp as instagram_bp
-        app.register_blueprint(instagram_bp)
-        
-        # IG 統一系統路由
-        from routes.routes_ig_unified import bp as ig_unified_bp
-        app.register_blueprint(ig_unified_bp)
-        
-        # IG 模板預覽路由
-        from routes.routes_ig_template_preview import bp as ig_template_preview_bp
-        app.register_blueprint(ig_template_preview_bp)
-        
-        print('[ForumKit] Instagram routes mounted successfully')
-    except Exception as _e:
-        print('[ForumKit] Instagram routes not mounted:', _e)
-    
     # 新的統一貼文圖片生成系統
     try:
         from routes.routes_post_images import bp as post_images_bp
@@ -1443,22 +1438,6 @@ def create_app() -> Flask:
         print('[ForumKit] Post images routes mounted successfully')
     except Exception as _e:
         print('[ForumKit] Post images routes not mounted:', _e)
-        # 後備：若 Instagram 模組無法掛載，提供健康檢查端點避免 404 噪音
-        try:
-            from flask import Blueprint
-            ig_stub_bp = Blueprint('instagram_stub', __name__, url_prefix='/api/instagram')
-
-            @ig_stub_bp.route('/_health', methods=['GET'])
-            def instagram_health_stub():  # noqa: F401
-                return jsonify({
-                    'success': False,
-                    'message': 'instagram module disabled or not mounted'
-                })
-
-            app.register_blueprint(ig_stub_bp)
-            print('[ForumKit] Instagram stub health route mounted at /api/instagram/_health')
-        except Exception as _e2:
-            print('[ForumKit] Failed to mount Instagram stub:', _e2)
 
     # ---- Realtime rooms debug APIs (for Day10 validation) ----
     from flask_jwt_extended import jwt_required

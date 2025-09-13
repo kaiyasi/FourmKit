@@ -166,10 +166,27 @@ def _content_html(tmpl: Dict, content: str, W: int, H: int, default_font_name: s
     top_center = H * y_r
     ww = W * w_r
     hh = H * h_r
-    # 基本白話 CSS：限制區塊寬高、長文省略換行
+    # 行數限制（若提供 max_lines，使用 -webkit-line-clamp 作為行數上限）
+    max_lines = None
+    try:
+        ml = cb.get('max_lines')
+        if isinstance(ml, int) and ml > 0:
+            max_lines = ml
+    except Exception:
+        max_lines = None
+
+    clamp_css = ""
+    if max_lines:
+        clamp_css = (
+            f"display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:{int(max_lines)};"
+        )
+
+    # 基本 CSS：限制區塊寬高；若有行數上限則使用 line-clamp
+    white_space = "normal" if max_lines else "pre-wrap"
     return (
         f"<div style=\"position:absolute;left:{left:.3f}px;top:{top_center:.3f}px;transform:translateY(-50%);"
-        f"width:{ww:.3f}px;height:{hh:.3f}px;overflow:hidden;word-break:break-word;white-space:pre-wrap;"
+        f"width:{ww:.3f}px;height:{hh:.3f}px;overflow:hidden;word-break:break-word;white-space:{white_space};"
+        f"{clamp_css}"
         f"font-size:{size}px;line-height:1.5;color:{color};text-align:{align};"
         f"font-family:'{font_name}','Noto Sans TC',sans-serif;font-weight:{fw};\">{content}</div>"
     )

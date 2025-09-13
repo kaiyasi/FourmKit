@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { canSetMode, getRole, getRoleDisplayName, canAccessAnnouncements } from '@/utils/auth'
-import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3, Instagram, Type } from 'lucide-react'
 import { MobileAdminDashboard } from '@/components/mobile/admin'
 
 export default function AdminDashboard() {
@@ -98,16 +98,22 @@ export default function AdminDashboard() {
           ) : null}
           <Card to="/admin/schools" title="學校管理" desc="清單、新增、重新命名" icon={Building2} />
           <Card to="/admin/integrations" title="整合狀態" desc="平台監控（佇列 / 系統）" icon={Network} />
-          {/* 整合入口：Instagram（可用） / Discord（占位） */}
-          {role === 'dev_admin' && (
-            <Card to="/admin/instagram" title="Instagram 整合" desc="帳號綁定、模板、排程發佈" icon={LifeBuoy} />
-          )}
+          {/* 整合入口：Discord（占位） */}
           {role === 'dev_admin' ? (
             <Card to="#" title="Discord 整合" desc="Webhook / Bot（開發中）" icon={LifeBuoy} disabled={true} />
           ) : null}
           <Card to="/admin/pages" title="頁面內容（Markdown）" desc="關於/版規 的維護與即時預覽" icon={LayoutDashboard} />
           {/* 公告發佈入口移除：公告改由一般發文流程勾選「公告貼文」並依角色控制範圍 */}
-          {/* Instagram 整合已移除 */}
+          
+          {/* Instagram 整合管理 */}
+          {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') && (
+            <Card to="/admin/instagram" title="Instagram 整合" desc="帳號管理、模板設定、發布狀態與統計" icon={Instagram} />
+          )}
+          
+          {/* 字體管理 - 僅 dev_admin 可見 */}
+          {role === 'dev_admin' && (
+            <Card to="/admin/fonts" title="字體管理" desc="上傳中文字體、預覽效果、支援圖片生成" icon={Type} />
+          )}
         </div>
       </main>
     </div>

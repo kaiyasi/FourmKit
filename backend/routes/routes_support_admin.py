@@ -16,7 +16,7 @@ from models.support import (
 from models.base import User
 from models.school import School
 from services.support_service import SupportService
-from utils.db import get_session
+from utils.support_db import get_support_session as get_session
 from utils.authz import require_role
 from utils.sanitize import sanitize_html
 from utils.notify import send_admin_event

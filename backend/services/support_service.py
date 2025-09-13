@@ -15,6 +15,9 @@ from models.support import (
 )
 from models.base import User
 from flask import current_app
+from sqlalchemy.orm import Session
+import secrets
+import string
 
 
 class SupportService:
@@ -43,6 +46,12 @@ class SupportService:
             raise ValueError("必須提供用戶ID或訪客Email")
         
         # 創建工單
+        # 依身分產生公開編號
+        if user_id:
+            public_id = SupportService._gen_user_ticket_id(session, int(user_id))
+        else:
+            public_id = SupportService._gen_guest_ticket_id(session)
+
         ticket = SupportTicket(
             subject=subject.strip()[:500],  # 限制長度
             category=category,
@@ -50,7 +59,8 @@ class SupportService:
             user_id=user_id,
             guest_email=guest_email.strip().lower() if guest_email else None,
             school_id=school_id,
-            status=TicketStatus.OPEN
+            status=TicketStatus.OPEN,
+            public_id=public_id
         )
         
         session.add(ticket)
@@ -98,7 +108,11 @@ class SupportService:
                 "is_guest": user_id is None
             })
         except Exception as e:
-            current_app.logger.warning(f"Failed to broadcast ticket_created event: {e}")
+            try:
+                current_app.logger.warning(f"Failed to broadcast ticket_created event: {e}")
+            except RuntimeError:
+                # 在測試環境中可能沒有應用上下文
+                print(f"Failed to broadcast ticket_created event: {e}")
         
         return ticket
     
@@ -177,7 +191,10 @@ class SupportService:
                 "new_status": ticket.status
             })
         except Exception as e:
-            current_app.logger.warning(f"Failed to broadcast message_sent event: {e}")
+            try:
+                current_app.logger.warning(f"Failed to broadcast message_sent event: {e}")
+            except RuntimeError:
+                print(f"Failed to broadcast message_sent event: {e}")
         
         return message
     
@@ -262,7 +279,10 @@ class SupportService:
                 "subject": ticket.subject
             })
         except Exception as e:
-            current_app.logger.warning(f"Failed to broadcast status_changed event: {e}")
+            try:
+                current_app.logger.warning(f"Failed to broadcast status_changed event: {e}")
+            except RuntimeError:
+                print(f"Failed to broadcast status_changed event: {e}")
         
         return True
     
@@ -513,7 +533,32 @@ class SupportService:
             'resolved_tickets': resolved_tickets,
             'closed_tickets': closed_tickets,
             'today_tickets': today_tickets,
-            'priority_distribution': dict(priority_stats),
-            'category_distribution': dict(category_stats),
-            'resolution_rate': round((resolved_tickets + closed_tickets) / total_tickets * 100, 2) if total_tickets > 0 else 0
+            'priority_stats': dict(priority_stats),
+            'category_stats': dict(category_stats)
         }
+
+    @staticmethod
+    def _gen_user_ticket_id(session: Session, user_id: int) -> str:
+        """為登入用戶生成工單公開ID：格式 U<user_id>-<三位數字>
+        確保在 support_tickets.public_id 上唯一。
+        """
+        for _ in range(10):
+            rand3 = f"{secrets.randbelow(1000):03d}"
+            pid = f"U{user_id}-{rand3}"
+            exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
+            if not exists:
+                return pid
+        # 退而求其次：加一位隨機字母確保不撞
+        suffix = secrets.choice(string.ascii_uppercase)
+        return f"U{user_id}-{rand3}{suffix}"
+
+    @staticmethod
+    def _gen_guest_ticket_id(session: Session) -> str:
+        """為訪客生成純數字流水碼（8位數），確保唯一。"""
+        for _ in range(10):
+            pid = ''.join(secrets.choice(string.digits) for _ in range(8))
+            exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
+            if not exists:
+                return pid
+        # 退而求其次：9位
+        return ''.join(secrets.choice(string.digits) for _ in range(9))
