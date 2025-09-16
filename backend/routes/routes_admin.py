@@ -1,4 +1,3 @@
-# 先 import 所有依賴
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.authz import require_role
@@ -12,6 +11,10 @@ from werkzeug.security import generate_password_hash
 from sqlalchemy import func, and_, or_, desc
 from datetime import datetime, timezone
 import hmac, hashlib, base64, os, uuid
+
+# For the new unblock IP feature
+from utils.ratelimit import unblock_ip
+from utils.admin_events import log_security_event
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -324,8 +327,6 @@ def remove_custom_room_member(room_id: str, user_id: int):
 
 
 # ---------------- Delete Requests Management ----------------
-
-
 
 
 
@@ -2456,7 +2457,7 @@ def create_chat_room():
                     session=s,
                     event_type="chat.room.created",
                     title=f"創建聊天室: {name}",
-                    description=f"管理員 {user.username} 創建了聊天室「{name}」\n"
+                    description=f"管理員 {user.username} 創建了聊天室「{name}」\n" 
                                f"描述: {description or '無'}\n"
                                f"類型: {room_type}\n"
                                f"邀請目標: {', '.join(invite_info) if invite_info else '無'}",
@@ -2773,3 +2774,51 @@ def get_schools_for_admin():
             })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+@bp.post('/users/unblock-ip')
+@jwt_required()
+@require_role("dev_admin")
+def unblock_user_ip():
+    """解除使用者的 IP 封鎖"""
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'user_id is required'}), 400
+
+    with get_session() as s:
+        # 獲取操作者資訊
+        actor_id = get_jwt_identity()
+        actor = s.get(User, actor_id) if actor_id else None
+        if not actor:
+            return jsonify({'ok': False, 'error': 'Actor not found'}), 401
+
+        # 找到該使用者最近一次活動的 IP
+        latest_event = s.query(SystemEvent).filter(
+            SystemEvent.actor_id == user_id
+        ).order_by(SystemEvent.created_at.desc()).first()
+
+        if not latest_event or not latest_event.client_ip:
+            return jsonify({'ok': False, 'error': 'No recent IP address found for this user.'}), 404
+
+        ip_to_unblock = latest_event.client_ip
+
+        try:
+            # 解除 IP 封鎖
+            unblock_ip(ip_to_unblock)
+
+            # 記錄安全事件
+            log_security_event(
+                event_type="ip_unblocked",
+                description=f"管理員 {actor.username} 解除了使用者 ID {user_id} 的 IP({ip_to_unblock}) 封鎖。",
+                severity="medium",
+                actor_id=actor.id,
+                actor_name=actor.username,
+                metadata={"unblocked_ip": ip_to_unblock, "target_user_id": user_id}
+            )
+            s.commit()
+            return jsonify({'ok': True, 'message': f'IP {ip_to_unblock} has been unblocked for user {user_id}.'})
+
+        except Exception as e:
+            s.rollback()
+            return jsonify({'ok': False, 'error': str(e)}), 500

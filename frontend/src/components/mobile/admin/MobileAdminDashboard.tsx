@@ -111,10 +111,14 @@ export function MobileAdminDashboard() {
           <Card to="/admin/instagram" title="Instagram 整合" desc="帳號管理、模板設定、發布狀態與統計" icon={Instagram} />
         )}
         
-        {/* 字體管理 - 僅 dev_admin 可見 */}
-        {role === 'dev_admin' && (
+        {/* 字體管理 - dev_admin 完整權限，campus_admin 可申請，cross_admin 唯讀 */}
+        {role === 'dev_admin' ? (
           <Card to="/admin/fonts" title="字體管理" desc="上傳中文字體、預覽效果、支援圖片生成" icon={Type} />
-        )}
+        ) : role === 'campus_admin' ? (
+          <Card to="/admin/fonts" title="字體管理" desc="申請新字體、檢視可用字體、查看申請狀態" icon={Type} />
+        ) : role === 'cross_admin' ? (
+          <Card to="/admin/fonts" title="字體管理" desc="檢視可用字體列表、預覽效果" icon={Type} disabled={true} />
+        ) : null}
       </div>
     </MobileAdminLayout>
   )

@@ -336,77 +336,72 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
           const ad = isAdvertisement(p)
 
           const Cover = () => {
-            const [imgLoading, setImgLoading] = useState(!!cover)
-            const [imgError, setImgError] = useState(false)
-            const [url] = useState<string | null>(cover)
-            
-            // 判斷是否為影片
+            const [imgLoading, setImgLoading] = useState(!!cover);
+            const [imgError, setImgError] = useState(false);
+            const [url] = useState<string | null>(cover);
+
             const isVideo = (path: string) => {
-              return /\.(mp4|webm|mov)$/i.test(path || '') || 
-                     (p.media_kind && p.media_kind === 'video')
-            }
-            
-            if (!url) return null
-            
-            const inner = (
-              <div className="mb-3 relative overflow-hidden rounded-lg border border-border bg-surface/50">
-                {!imgError && (
-                  isVideo(p.cover_path || '') ? (
-                    // 影片縮圖：使用 video 標籤的 poster 屬性或顯示播放圖標
-                    <div className="w-full h-48 bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center relative group">
-                      <video 
+                return /\.(mp4|webm|mov)$/i.test(path || '') ||
+                    (p.media_kind && p.media_kind === 'video');
+            };
+
+            if (!url) return null;
+
+            const mediaEl = isVideo(p.cover_path || '') ? (
+                <div className="w-full h-48 bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center relative group">
+                    <video
                         src={url}
                         className="w-full h-full object-cover"
                         preload="metadata"
                         muted
                         onLoadedMetadata={() => setImgLoading(false)}
-                        onError={() => { setImgLoading(false); setImgError(true) }}
-                      />
-                      {/* 播放圖標覆蓋層 */}
-                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        onError={() => { setImgLoading(false); setImgError(true); }} />
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center">
-                          <svg className="w-8 h-8 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z"/>
-                          </svg>
+                            <svg className="w-8 h-8 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
                         </div>
-                      </div>
                     </div>
-                  ) : (
-                    // 圖片縮圖
-                    <img
-                      src={url}
-                      alt="封面"
-                      className={`w-full h-48 object-cover transition-opacity ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
-                      loading="lazy"
-                      onLoad={() => setImgLoading(false)}
-                      onError={() => { setImgLoading(false); setImgError(true) }}
-                    />
-                  )
-                )}
-                {imgLoading && <div className="absolute inset-0 animate-pulse bg-neutral-200 dark:bg-neutral-800" />}
-                {imgError && (
-                  <div className="w-full h-48 grid place-items-center text-xs text-muted">
-                    {isVideo(p.cover_path || '') ? '影片載入失敗' : '封面載入失敗'}
-                  </div>
-                )}
-                {count > 1 && (
-                  <span className="absolute bottom-2 right-2 text-xs px-2 py-0.5 rounded-md bg-neutral-900/70 text-white">
-                    {isVideo(p.cover_path || '') ? `${count} 個檔案` : `${count} 張`}
-                  </span>
-                )}
-                {/* 影片標識 */}
-                {isVideo(p.cover_path || '') && (
-                  <span className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded-md bg-red-600/90 text-white flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                    影片
-                  </span>
-                )}
-              </div>
-            )
-            return realId ? <Link to={`/posts/${p.id}`}>{inner}</Link> : inner
-          }
+                </div>
+            ) : (
+                <img
+                    src={url}
+                    alt="封面"
+                    className={`w-full h-48 object-cover transition-opacity ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
+                    loading="lazy"
+                    onLoad={() => setImgLoading(false)}
+                    onError={() => { setImgLoading(false); setImgError(true); }} />
+            );
+
+            const inner = (
+                <div className="mb-3 relative overflow-hidden rounded-lg border border-border bg-surface/50">
+                    {imgError ? (
+                        <div className="w-full h-48 grid place-items-center text-xs text-muted">
+                            {isVideo(p.cover_path || '') ? '影片載入失敗' : '封面載入失敗'}
+                        </div>
+                    ) : mediaEl}
+
+                    {imgLoading && <div className="absolute inset-0 animate-pulse bg-neutral-200 dark:bg-neutral-800" />}
+
+                    {count > 1 && (
+                        <span className="absolute bottom-2 right-2 text-xs px-2 py-0.5 rounded-md bg-neutral-900/70 text-white">
+                            {isVideo(p.cover_path || '') ? `${count} 個檔案` : `${count} 張`}
+                        </span>
+                    )}
+
+                    {isVideo(p.cover_path || '') && (
+                        <span className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded-md bg-red-600/90 text-white flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                            影片
+                        </span>
+                    )}
+                </div>
+            );
+            return realId ? <Link to={`/posts/${p.id}`}>{inner}</Link> : inner;
+          };
 
           return (
           <article

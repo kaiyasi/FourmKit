@@ -1,6 +1,8 @@
-import React, { ReactNode } from 'react'
+import React, { ReactNode, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Menu, Bell, Search, MoreVertical } from 'lucide-react'
+import { useNotifications } from '@/hooks/useNotifications'
+import NotificationCenter from '@/components/notifications/NotificationCenter'
 
 interface MobileAdminLayoutProps {
   title: string
@@ -29,6 +31,9 @@ export function MobileAdminLayout({
 }: MobileAdminLayoutProps) {
   const navigate = useNavigate()
   const location = useLocation()
+  const { unreadCount, showBadge } = useNotifications()
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false)
+  const notificationButtonRef = React.useRef<HTMLButtonElement>(null)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -64,9 +69,20 @@ export function MobileAdminLayout({
             )}
             
             {showNotifications && (
-              <button className="p-2 hover:bg-surface-hover rounded-lg transition-colors relative">
+              <button
+                ref={notificationButtonRef}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsNotificationOpen(!isNotificationOpen)
+                }}
+                className="p-2 hover:bg-surface-hover rounded-lg transition-colors relative"
+                title={`通知${unreadCount > 0 ? ` (${unreadCount} 未讀)` : ''}`}
+              >
                 <Bell className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full" />
+                {showBadge && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                )}
               </button>
             )}
             
@@ -96,6 +112,15 @@ export function MobileAdminLayout({
           {bottomContent}
           <div className="pb-safe-bottom" />
         </div>
+      )}
+
+      {/* 通知中心面板（手機版適配） */}
+      {showNotifications && (
+        <NotificationCenter
+          isOpen={isNotificationOpen}
+          onClose={() => setIsNotificationOpen(false)}
+          anchorRef={notificationButtonRef}
+        />
       )}
     </div>
   )

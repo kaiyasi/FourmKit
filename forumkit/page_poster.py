@@ -36,13 +36,13 @@ class FacebookPagePoster:
             return json.loads(resp.read().decode("utf-8"))
 
     def create_text_post(self, message: str):
-        endpoint = f"https://graph.facebook.com/v20.0/{self.page_id}/feed"
+        endpoint = f"https://graph.facebook.com/v23.0/{self.page_id}/feed"
         data = {"message": message, "access_token": self.access_token}
         return self._post(endpoint, data)
 
     def review_post(self, post_id: str):
         endpoint = (
-            f"https://graph.facebook.com/v20.0/{post_id}?fields=permalink_url,message,created_time&access_token="
+            f"https://graph.facebook.com/v23.0/{post_id}?fields=permalink_url,message,created_time&access_token="
             f"{urllib.parse.quote(self.access_token)}"
         )
         return self._get(endpoint)

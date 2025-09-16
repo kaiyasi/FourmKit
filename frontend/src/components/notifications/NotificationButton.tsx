@@ -14,10 +14,10 @@ interface NotificationButtonProps {
   size?: 'sm' | 'md' | 'lg'
 }
 
-export default function NotificationButton({ 
-  className = '', 
+export default function NotificationButton({
+  className = '',
   showLabel = false,
-  size = 'md' 
+  size = 'md'
 }: NotificationButtonProps) {
   const { unreadCount, showBadge, showCount } = useNotifications()
   const [isOpen, setIsOpen] = useState(false)
@@ -35,7 +35,9 @@ export default function NotificationButton({
     lg: 'w-6 h-6'
   }
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     setIsOpen(!isOpen)
   }
 
@@ -51,8 +53,10 @@ export default function NotificationButton({
           hover:bg-muted/50 active:bg-muted/70
           transition-colors duration-200
           focus:outline-none focus:ring-2 focus:ring-primary/20
+          cursor-pointer pointer-events-auto
           ${className}
         `}
+        style={{ zIndex: 20 }}
         title={`通知${unreadCount > 0 ? ` (${unreadCount} 未讀)` : ''}`}
       >
         <Bell className={`${iconSizes[size]} text-muted hover:text-fg transition-colors`} />

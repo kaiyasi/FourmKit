@@ -31,7 +31,7 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
   const [formData, setFormData] = useState({
     display_name: '',
     instagram_user_token: '',
-    facebook_id: '',
+    instagram_page_id: '',
     platform_username: '',
     school_id: null as number | null
   })
@@ -85,10 +85,7 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
       alert('請輸入顯示名稱')
       return
     }
-    if (!formData.instagram_user_token.trim()) {
-      alert('請輸入 Instagram User Token')
-      return
-    }
+    // Token 改為可選，沒有也可先建帳號（狀態標記為待驗證）
     if (!formData.instagram_page_id.trim()) {
       alert('請輸入 Page ID')
       return
@@ -106,9 +103,10 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
         school_id: null
       })
       onClose()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Save account failed:', error)
-      alert('新增失敗，請稍後再試')
+      const msg = (error && (error.message || error.msg)) || '新增失敗，請稍後再試'
+      alert(msg)
     } finally {
       setSaving(false)
     }
@@ -150,7 +148,7 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
   }
 
   const handleSelectPageId = (pageId: string) => {
-    setFormData(prev => ({ ...prev, facebook_id: pageId }))
+    setFormData(prev => ({ ...prev, instagram_page_id: pageId }))
     setShowDebugInfo(false)
   }
 
@@ -158,7 +156,7 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
     setFormData({
       display_name: '',
       instagram_user_token: '',
-      facebook_id: '',
+      instagram_page_id: '',
       platform_username: '',
       school_id: null
     })
@@ -253,33 +251,36 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
 
             <div>
               <label className="block text-sm font-medium dual-text mb-2">
-                Instagram User Token *
+                Instagram User Token（建議輸入短期Token）
               </label>
               <div className="relative">
                 <Key className="absolute left-3 top-3 w-4 h-4 text-muted" />
                 <textarea
                   value={formData.instagram_user_token}
                   onChange={(e) => setFormData(prev => ({ ...prev, instagram_user_token: e.target.value }))}
-                  placeholder="EAAJ... 或 IGQVJY... (短期或長期 Token 都可以)"
+                  placeholder="建議輸入短期Token（EAAJ...開頭），系統會自動轉為長期Token並儲存"
                   rows={3}
                   className="w-full pl-10 pr-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono text-xs sm:text-sm"
                 />
               </div>
-              <p className="text-xs text-muted mt-1">支援短期 Token（E開頭）或長期 Token，系統會自動處理</p>
+              <p className="text-xs text-muted mt-1">
+                <span className="text-green-600 font-medium">推薦：</span>輸入短期Token（EAAJ開頭），系統會自動轉換為長期Token避免過期問題。
+                也支援長期Token（IGQVJY開頭）直接輸入。
+              </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium dual-text mb-2">
-                Facebook ID（可選）
+                粉專 Page ID（必填）
               </label>
               <input
                 type="text"
-                value={formData.facebook_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, facebook_id: e.target.value }))}
-                placeholder="留空則自動從 Token 取得"
+                value={formData.instagram_page_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, instagram_page_id: e.target.value }))}
+                placeholder="例如：123456789012345（Facebook 粉專 ID）"
                 className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono"
               />
-              <p className="text-xs text-muted mt-1">你的 Facebook 用戶 ID，留空則系統會自動從 Token 中取得</p>
+              <p className="text-xs text-muted mt-1">請輸入 Facebook 粉專的 Page ID（不是個人 Facebook ID）。你也可以用下方診斷按鈕從 Token 自動列出並選擇。</p>
             </div>
 
             {/* 學校綁定選擇 */}

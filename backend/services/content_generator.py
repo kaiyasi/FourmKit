@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 import os
 import json
 import hashlib
+import shutil
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
+import requests
 import textwrap
 import logging
 
@@ -29,8 +31,28 @@ class ContentGenerator:
     
     def __init__(self):
         self.pillow_renderer = get_pillow_renderer()
-        self.output_dir = os.path.join(os.getenv('UPLOAD_ROOT', 'uploads'), 'social_media')
+        # 將預覽圖存放在 uploads/public/social_media，確保由主站 Nginx 穩定對外提供
+        self.output_root = os.getenv('UPLOAD_ROOT', 'uploads')
+        self.output_dir = os.path.join(self.output_root, 'public', 'social_media')
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _format_id(self, post_id: Any, id_format_config: Dict) -> str:
+        """根據 idFormat 配置格式化 ID"""
+        if not post_id:
+            return ''
+
+        formatted = str(post_id)
+
+        # 補零處理
+        digits = id_format_config.get('digits', 0)
+        if digits > 0:
+            formatted = formatted.zfill(digits)
+
+        # 加前後綴
+        prefix = id_format_config.get('prefix', '')
+        suffix = id_format_config.get('suffix', '')
+
+        return f"{prefix}{formatted}{suffix}"
     
     def generate_multipost_content(
         self, 
@@ -50,8 +72,13 @@ class ContentGenerator:
             List[Dict]: 每篇貼文的生成內容
         """
         try:
-            # 檢查模板是否包含 {id} 變數
-            caption_template = template.config.get('caption', {}).get('template', '')
+            # 檢查模板是否包含 {id} 變數 - 優先使用 multipost 配置
+            multipost_config = template.config.get('multipost', {})
+            caption_config = template.config.get('caption', {})
+
+            # 優先使用 multipost.template，如果沒有則使用 caption.template
+            caption_template = multipost_config.get('template', caption_config.get('template', ''))
+
             if '{id}' not in caption_template:
                 # 如果沒有 {id} 變數，使用正常的單篇發布流程
                 return [self.generate_content(forum_posts[0], template, custom_options)]
@@ -131,10 +158,19 @@ class ContentGenerator:
     
     def _prepare_content_data(self, forum_post: ForumPost) -> Dict[str, Any]:
         """準備內容數據"""
+        raw_content = forum_post.content or ''
+        raw_title = (getattr(forum_post, 'title', '') or '').strip()
+        # 後端模型多數沒有 title，這裡以「首行內容（最多50字）」作為安全後備標題
+        if not raw_title:
+            first_line = raw_content.strip().splitlines()[0] if raw_content.strip() else ''
+            if len(first_line) > 50:
+                first_line = first_line[:50] + '...'
+            raw_title = first_line
+
         return {
             'id': forum_post.id,
-            'title': getattr(forum_post, 'title', ''),
-            'content': forum_post.content or '',
+            'title': raw_title,
+            'content': raw_content,
             'author': forum_post.author.username if forum_post.author else '匿名',
             'school_name': forum_post.school.name if forum_post.school else '未知學校',
             'created_at': forum_post.created_at,
@@ -153,7 +189,7 @@ class ContentGenerator:
             config = template.config.get('image', {})
             if custom_options and 'image' in custom_options:
                 config.update(custom_options['image'])
-            
+
             # 準備 Pillow 渲染配置
             pillow_config = {
                 'width': config.get('width', 1080),
@@ -165,13 +201,84 @@ class ContentGenerator:
                 'padding': config.get('padding', 60),
                 'line_spacing': config.get('text', {}).get('lineSpacing', 10),  # 改為像素值
                 'logo': config.get('logo', {}),
+                'timestamp': config.get('timestamp', {}),
                 'max_content_lines': config.get('text', {}).get('maxLines', 8)
             }
+
+            # 處理格式化ID配置 - 優先使用 custom_options 中的 postId 配置
+            post_id_config = config.get('postId', {})
+            logger.info(f"[DEBUG] custom_options: {custom_options}")
+            if custom_options and 'postId' in custom_options:
+                logger.info(f"[DEBUG] custom_options['postId']: {custom_options['postId']}")
+                post_id_config.update(custom_options['postId'])
+
+            multipost_config = template.config.get('multipost', {})
+            id_format = multipost_config.get('idFormat', {})
+
+            # 調試信息
+            logger.info(f"[DEBUG] post_id_config: {post_id_config}")
+            logger.info(f"[DEBUG] multipost_config: {multipost_config}")
+            logger.info(f"[DEBUG] id_format: {id_format}")
+            logger.info(f"[DEBUG] content_data.id: {content_data.get('id')}")
+
+            # 如果有ID格式配置或postId配置是啟用的，就處理格式化ID
+            if post_id_config.get('enabled', False):
+                actual_id = content_data.get('id', '')
+
+                # 新格式：使用 postId 自己的 prefix/digits/suffix 配置
+                if post_id_config.get('prefix') is not None or post_id_config.get('digits') or post_id_config.get('suffix'):
+                    # 使用圖片設定中的 postId 格式配置
+                    post_id_format = {
+                        'prefix': post_id_config.get('prefix', ''),
+                        'digits': post_id_config.get('digits', 0),
+                        'suffix': post_id_config.get('suffix', '')
+                    }
+                    formatted_id = self._format_id(actual_id, post_id_format)
+                    logger.info(f"[DEBUG] 使用 postId 自己的格式配置: {post_id_format} -> '{formatted_id}'")
+
+                # 兼容舊格式：使用 text 欄位的自定義文字
+                elif post_id_config.get('text'):
+                    custom_text = post_id_config.get('text')
+                    # 檢查是否包含 {id} 佔位符，如果有則替換
+                    if '{id}' in custom_text:
+                        # 如果自定義文字就是 {id}，直接使用格式化後的ID
+                        if custom_text.strip() == '{id}':
+                            formatted_id = self._format_id(actual_id, id_format)
+                        else:
+                            # 如果是複雜模板（如 #{id}），只替換數字部分，避免重複前綴
+                            formatted_actual_id = self._format_id(actual_id, {}) if id_format.get('prefix') and custom_text.startswith('#') else self._format_id(actual_id, id_format)
+                            formatted_id = custom_text.replace('{id}', str(formatted_actual_id))
+                        logger.info(f"[DEBUG] 替換自定義文字中的{{id}}: '{custom_text}' -> '{formatted_id}'")
+                    else:
+                        formatted_id = custom_text
+                        logger.info(f"[DEBUG] 使用 text 欄位的格式化ID: {formatted_id}")
+
+                # 回退：使用 multipost 的 idFormat 配置
+                else:
+                    formatted_id = self._format_id(actual_id, id_format)
+                    logger.info(f"[DEBUG] 使用 multipost idFormat: {formatted_id}")
+
+                logger.info(f"[DEBUG] 最終 formatted_id: {formatted_id}")
+
+                # 添加到pillow配置中
+                pillow_config['postId'] = {
+                    'enabled': True,
+                    'text': formatted_id,
+                    'position': post_id_config.get('position', 'top-left'),
+                    'size': post_id_config.get('size', 20),
+                    'font': post_id_config.get('font', 'default'),
+                    'color': post_id_config.get('color', '#0066cc'),
+                    'opacity': post_id_config.get('opacity', 0.9)
+                }
+                logger.info(f"[DEBUG] 已設定 pillow_config['postId']: {pillow_config['postId']}")
+            else:
+                logger.info(f"[DEBUG] 格式化ID未啟用，跳過")
+
             
             # 準備文字內容用於 Pillow 渲染 - 只顯示內文，不顯示標題
             text_content = content_data.get('content', '')
             
-            # 使用 Pillow 渲染器生成圖片
+            # 使用 Pillow 渲染器生成圖片（先產出文字底圖）
             image_buffer = self.pillow_renderer.render_text_card(
                 content=text_content,
                 width=pillow_config.get('width', 1080),
@@ -183,6 +290,171 @@ class ContentGenerator:
                 padding=pillow_config.get('padding', 60),
                 line_spacing=pillow_config.get('line_spacing', 10)
             )
+
+            # 疊加圖層（Logo + 時間戳）
+            try:
+                base = Image.open(image_buffer).convert('RGBA')
+                bw, bh = base.size
+                pad = int(pillow_config.get('padding', 60) or 60)
+
+                # 1) Logo 疊圖
+                try:
+                    logo_cfg = pillow_config.get('logo') or {}
+                    if isinstance(logo_cfg, dict) and logo_cfg.get('enabled', False):
+                        logo_url = logo_cfg.get('url') or ''
+                        if logo_url:
+                            resp = requests.get(logo_url, timeout=10)
+                            resp.raise_for_status()
+                            logo_img = Image.open(BytesIO(resp.content)).convert('RGBA')
+                            size = int(logo_cfg.get('size', 80) or 80)
+                            size = max(16, min(1024, size))
+                            logo_img = logo_img.resize((size, size), Image.LANCZOS)
+
+                            opacity = logo_cfg.get('opacity', 0.8)
+                            try:
+                                opacity = float(opacity)
+                            except Exception:
+                                opacity = 0.8
+                            opacity = max(0.0, min(1.0, opacity))
+                            if opacity < 1.0:
+                                alpha = logo_img.split()[3]
+                                alpha = alpha.point(lambda p: int(p * opacity))
+                                logo_img.putalpha(alpha)
+
+                            pos = (logo_cfg.get('position') or 'top-right').lower()
+                            if pos == 'top-left':
+                                x, y = pad, pad
+                            elif pos == 'top-center':
+                                x, y = (bw - size) // 2, pad
+                            elif pos == 'top-right':
+                                x, y = bw - pad - size, pad
+                            elif pos == 'bottom-left':
+                                x, y = pad, bh - pad - size
+                            elif pos == 'bottom-center':
+                                x, y = (bw - size) // 2, bh - pad - size
+                            elif pos == 'bottom-right':
+                                x, y = bw - pad - size, bh - pad - size
+                            else:
+                                x, y = (bw - size) // 2, (bh - size) // 2
+                            base.alpha_composite(logo_img, dest=(x, y))
+                except Exception as _e:
+                    logger.warning(f"Logo 疊圖失敗或略過: {_e}")
+
+                # 2) 時間戳文字
+                try:
+                    ts_cfg = pillow_config.get('timestamp') or {}
+                    if isinstance(ts_cfg, dict) and ts_cfg.get('enabled', False):
+                        # 取得時間
+                        created_at = content_data.get('created_at')
+                        dt = None
+                        from datetime import datetime as _dt
+                        try:
+                            if isinstance(created_at, str):
+                                # 嘗試多種格式
+                                for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                                    try:
+                                        dt = _dt.strptime(created_at[:len(fmt)], fmt)
+                                        break
+                                    except Exception:
+                                        continue
+                            elif isinstance(created_at, _dt):
+                                dt = created_at
+                        except Exception:
+                            dt = None
+                        if dt is None:
+                            dt = _dt.now()
+
+                        show_year = bool(ts_cfg.get('showYear', False))
+                        show_seconds = bool(ts_cfg.get('showSeconds', False))
+                        fmt_12_24 = (ts_cfg.get('format') or '24h').lower()
+
+                        if fmt_12_24 == '12h':
+                            fmt = '%I:%M%p' if not show_seconds else '%I:%M:%S%p'
+                        else:
+                            fmt = '%H:%M' if not show_seconds else '%H:%M:%S'
+                        date_fmt = '%Y-%m-%d ' if show_year else ''
+                        ts_text = dt.strftime(date_fmt + fmt)
+
+                        # 繪製
+                        draw = ImageDraw.Draw(base)
+                        font_size = int(ts_cfg.get('size', 18) or 18)
+                        font_name = ts_cfg.get('font')
+                        font = self.pillow_renderer.get_font(font_name, font_size)
+                        color = ts_cfg.get('color', '#666666')
+
+                        text_bbox = draw.textbbox((0, 0), ts_text, font=font)
+                        tw = text_bbox[2] - text_bbox[0]
+                        th = text_bbox[3] - text_bbox[1]
+
+                        pos = (ts_cfg.get('position') or 'bottom-right').lower()
+                        if pos == 'top-left':
+                            tx, ty = pad, pad
+                        elif pos == 'top-center':
+                            tx, ty = (bw - tw) // 2, pad
+                        elif pos == 'top-right':
+                            tx, ty = bw - pad - tw, pad
+                        elif pos == 'bottom-left':
+                            tx, ty = pad, bh - pad - th
+                        elif pos == 'bottom-center':
+                            tx, ty = (bw - tw) // 2, bh - pad - th
+                        else:  # bottom-right default
+                            tx, ty = bw - pad - tw, bh - pad - th
+                        draw.text((tx, ty), ts_text, fill=color, font=font)
+                except Exception as _e:
+                    logger.warning(f"時間戳繪製失敗或略過: {_e}")
+
+                # 3) 格式化ID文字（簡化版本，參考時間戳寫法）
+                try:
+                    post_id_cfg = pillow_config.get('postId') or {}
+                    if isinstance(post_id_cfg, dict) and post_id_cfg.get('enabled', False):
+                        id_text = post_id_cfg.get('text', '')
+                        # 替換 {id} 為實際的貼文ID
+                        actual_id = content_data.get('id', 0)
+                        if '{id}' in id_text:
+                            id_text = id_text.replace('{id}', str(actual_id))
+                        logger.info(f"[DEBUG] 格式化ID繪製: enabled={post_id_cfg.get('enabled')}, text='{id_text}', actual_id={actual_id}")
+
+                        if id_text:
+                            # 繪製（簡化版本，跟時間戳一樣）
+                            draw = ImageDraw.Draw(base)
+                            font_size = int(post_id_cfg.get('size', 20) or 20)
+                            font_name = post_id_cfg.get('font')
+                            font = self.pillow_renderer.get_font(font_name, font_size)
+                            color = post_id_cfg.get('color', '#0066cc')
+
+                            text_bbox = draw.textbbox((0, 0), id_text, font=font)
+                            tw = text_bbox[2] - text_bbox[0]
+                            th = text_bbox[3] - text_bbox[1]
+
+                            pos = (post_id_cfg.get('position') or 'top-left').lower()
+                            if pos == 'top-left':
+                                tx, ty = pad, pad
+                            elif pos == 'top-center':
+                                tx, ty = (bw - tw) // 2, pad
+                            elif pos == 'top-right':
+                                tx, ty = bw - pad - tw, pad
+                            elif pos == 'bottom-left':
+                                tx, ty = pad, bh - pad - th
+                            elif pos == 'bottom-center':
+                                tx, ty = (bw - tw) // 2, bh - pad - th
+                            else:  # bottom-right default
+                                tx, ty = bw - pad - tw, bh - pad - th
+
+                            # 直接繪製（不處理透明度，保持簡潔）
+                            draw.text((tx, ty), id_text, fill=color, font=font)
+                            logger.info(f"[DEBUG] 格式化ID已繪製在位置 ({tx}, {ty}): '{id_text}'")
+
+                except Exception as _e:
+                    logger.warning(f"格式化ID繪製失敗或略過: {_e}")
+
+                # 將合成後影像覆寫回緩衝區（以 JPEG 輸出）
+                out_buf = BytesIO()
+                base = base.convert('RGB')
+                base.save(out_buf, format='JPEG', quality=90)
+                out_buf.seek(0)
+                image_buffer = out_buf
+            except Exception as _e:
+                logger.warning(f"合成圖層階段失敗或略過: {_e}")
             
             # 儲存圖片（本機副本）
             post_id = content_data.get('id', 'preview')
@@ -200,23 +472,29 @@ class ContentGenerator:
             except FileNotFoundError:
                 raise ContentGenerationError(f"找不到生成圖片檔案: {file_path}")
             
-            # 優先：將檔案發佈到 CDN（若已設定 CDN_PUBLIC_BASE_URL/PUBLIC_CDN_URL）
+            # 上傳到 CDN（必須成功）
             try:
                 from utils.cdn_uploader import publish_to_cdn
                 cdn_url = publish_to_cdn(file_path, subdir="social_media")
-            except Exception:
-                cdn_url = None
+                if not cdn_url:
+                    raise ContentGenerationError("CDN上傳失敗：未取得CDN URL")
 
-            if cdn_url:
+                logger.info(f"圖片已上傳到CDN: {cdn_url}")
+                logger.info(f"本地圖片檔案保留在: {file_path}")
+
                 return cdn_url
 
-            # 次優先：以站台 BASE URL 對外提供
-            public_base = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
-            if public_base:
-                return f"{public_base}/uploads/social_media/{filename}"
+            except Exception as e:
+                # CDN上傳失敗時，清理本地檔案避免佔用空間
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        logger.info(f"CDN上傳失敗，已清理本地檔案: {file_path}")
+                except Exception:
+                    pass
 
-            # 最後：相對路徑（不建議，IG 無法抓取；保留相容性）
-            return f"/uploads/social_media/{filename}"
+                logger.error(f"CDN上傳失敗: {e}")
+                raise ContentGenerationError(f"圖片生成失敗：CDN上傳失敗 - {str(e)}")
                 
         except Exception as e:
             logger.error(f"圖片生成失敗: {e}")
@@ -301,7 +579,8 @@ class ContentGenerator:
             logo_html = f'<div class="logo">{school_initial}</div>'
         
         # 處理內容長度
-        title = content_data.get('title', '')[:50]
+        # 平台貼文無標題/內文分離，預設不顯示標題
+        title = ''
         content = content_data.get('content', '')[:200]
         if len(content_data.get('content', '')) > 200:
             content += '...'
@@ -337,28 +616,70 @@ class ContentGenerator:
     ) -> Dict[str, str]:
         """生成文案"""
         try:
-            config = template.config.get('caption', {})
+            # 優先使用 multipost 配置，如果沒有則使用 caption 配置
+            multipost_config = template.config.get('multipost', {})
+            caption_config = template.config.get('caption', {})
+
+            # 合併配置（multipost 優先）
+            config = {**caption_config, **multipost_config}
+
             if custom_options and 'caption' in custom_options:
                 config.update(custom_options['caption'])
-            
+
             # 獲取文案模板
-            caption_template = config.get('template', '{title}\n\n{content}')
-            max_length = config.get('max_length', 2200)
+            caption_template = config.get('template', '{content}')
+            max_length = config.get('maxLength', config.get('max_length', 2200))
             
             # 生成標籤
             hashtags = self._generate_hashtags(content_data, template)
             hashtags_str = ' '.join(hashtags) if hashtags else ''
             
-            # 格式化文案
-            caption = caption_template.format(
-                title=content_data.get('title', ''),
-                content=content_data.get('content', ''),
-                author=content_data.get('author', ''),
-                id=content_data.get('id', ''),
-                hashtags=hashtags_str,
-                school_name=content_data.get('school_name', ''),
-                category=content_data.get('category', '')
-            )
+            # 檢查是否是多篇發布模板
+            if multipost_config and '{id}' in caption_template:
+                # 使用 multipost 格式化邏輯
+                formatted_id = self._format_id(content_data.get('id', ''), multipost_config.get('idFormat', {}))
+                caption = caption_template.format(
+                    content=content_data.get('content', ''),
+                    author=content_data.get('author', ''),
+                    id=formatted_id,
+                    title=content_data.get('title', ''),
+                    hashtags=hashtags_str,
+                    school_name=content_data.get('school_name', ''),
+                    category=content_data.get('category', '')
+                )
+                # 注意：prefix 和 suffix 在 multipost 場景中由調用方處理
+            else:
+                # 傳統單篇發布格式化
+                caption = caption_template.format(
+                    content=content_data.get('content', ''),
+                    author=content_data.get('author', ''),
+                    id=content_data.get('id', ''),
+                    title=content_data.get('title', ''),
+                    hashtags=hashtags_str,
+                    school_name=content_data.get('school_name', ''),
+                    category=content_data.get('category', '')
+                )
+
+            # 壓縮多餘空行（避免移除 {title} 後殘留大段空白）
+            try:
+                lines = [ln.rstrip() for ln in caption.splitlines()]
+                cleaned: list[str] = []
+                empty = 0
+                for ln in lines:
+                    if ln.strip() == '':
+                        empty += 1
+                        if empty <= 1:
+                            cleaned.append('')
+                    else:
+                        empty = 0
+                        cleaned.append(ln)
+                while cleaned and cleaned[0] == '':
+                    cleaned.pop(0)
+                while cleaned and cleaned[-1] == '':
+                    cleaned.pop()
+                caption = '\n'.join(cleaned)
+            except Exception:
+                pass
             
             # 限制長度
             if len(caption) > max_length:
@@ -376,7 +697,7 @@ class ContentGenerator:
         template: ContentTemplate
     ) -> List[str]:
         """生成標籤"""
-        hashtags = []
+        hashtags: List[str] = []
         
         # 從模板獲取預設標籤
         template_hashtags = template.config.get('hashtags', [])
@@ -397,13 +718,20 @@ class ContentGenerator:
                 tag = f'#{tag}'
             hashtags.append(tag)
         
-        # 基於學校添加標籤
-        school_name = content_data.get('school_name', '')
-        if school_name and school_name != '未知學校':
-            hashtags.append(f'#{school_name}')
         
-        # 去重並返回
-        return list(dict.fromkeys(hashtags))  # 保持順序的去重
+        
+        # 強化去重（忽略大小寫與首尾空白）
+        seen = set()
+        unique: List[str] = []
+        for h in hashtags:
+            hh = h.strip()
+            if not hh:
+                continue
+            key = hh.lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(hh)
+        return unique
     
     def _generate_content_hash(self, content_data: Dict[str, Any]) -> str:
         """生成內容雜湊值用於快取"""
@@ -411,8 +739,8 @@ class ContentGenerator:
         return hashlib.md5(content_str.encode()).hexdigest()
     
     def preview_content(
-        self, 
-        content_data: Dict[str, Any], 
+        self,
+        content_data: Dict[str, Any],
         template: ContentTemplate,
         custom_options: Optional[Dict] = None
     ) -> Dict[str, Any]:
@@ -420,22 +748,46 @@ class ContentGenerator:
         try:
             logger.info(f"開始預覽內容生成 - 模板ID: {template.id}, 類型: {template.template_type}")
             result = {}
-            
+
+            # 如果有custom_options，需要創建一個更新後的模板配置
+            if custom_options:
+                # 創建模板的副本以避免修改原始模板
+                updated_config = template.config.copy()
+
+                # 合併multipost和caption配置
+                if 'multipost' in custom_options:
+                    updated_config['multipost'] = {**(updated_config.get('multipost', {})), **custom_options['multipost']}
+                if 'caption' in custom_options:
+                    updated_config['caption'] = {**(updated_config.get('caption', {})), **custom_options['caption']}
+
+                # 創建臨時模板對象
+                temp_template = ContentTemplate(
+                    id=template.id,
+                    name=template.name,
+                    template_type=template.template_type,
+                    config=updated_config,
+                    is_active=template.is_active,
+                    account_id=template.account_id
+                )
+                template_to_use = temp_template
+            else:
+                template_to_use = template
+
             # 生成文案預覽
             if template.template_type in [TemplateType.TEXT, TemplateType.COMBINED]:
                 logger.info("生成文案預覽中...")
-                caption_data = self._generate_caption(content_data, template, custom_options)
+                caption_data = self._generate_caption(content_data, template_to_use, custom_options)
                 result.update(caption_data)
                 logger.info("文案預覽生成完成")
-            
+
             # 生成真實圖片預覽
             if template.template_type in [TemplateType.IMAGE, TemplateType.COMBINED]:
                 logger.info("開始圖片預覽生成...")
-                config = template.config.get('image', {})
+                config = template_to_use.config.get('image', {})
                 if custom_options and 'image' in custom_options:
                     config.update(custom_options['image'])
                     logger.info(f"使用自訂配置: {custom_options['image']}")
-                
+
                 # 生成 HTML 預覽（保持向後兼容）
                 result['preview_html'] = self._build_preview_html(content_data, config)
                 logger.info("HTML 預覽生成完成")
@@ -443,7 +795,7 @@ class ContentGenerator:
                 # 生成真實圖片預覽
                 try:
                     logger.info("調用 _generate_image...")
-                    image_url = self._generate_image(content_data, template, custom_options)
+                    image_url = self._generate_image(content_data, template_to_use, custom_options)
                     logger.info(f"圖片生成成功，URL: {image_url}")
                     result['image_url'] = image_url
                 except Exception as img_error:

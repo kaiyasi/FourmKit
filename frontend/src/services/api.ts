@@ -4,10 +4,26 @@ const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
 const j = (u: string) => API_BASE ? API_BASE.replace(/\/?$/, '') + (u.startsWith('/')?u:`/${u}`) : u;
 
 function getClientId(): string {
-  let id = localStorage.getItem('client_id');
+  let id: string;
+  try {
+    id = localStorage.getItem('client_id') || '';
+  } catch {
+    // 手機瀏覽器可能限制 localStorage 訪問
+    id = '';
+  }
+
   if (!id) {
     id = 'c_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
-    try { localStorage.setItem('client_id', id); } catch {}
+    try {
+      localStorage.setItem('client_id', id);
+    } catch {
+      // 手機瀏覽器失敗時使用 sessionStorage 或記憶體
+      try {
+        sessionStorage.setItem('client_id', id);
+      } catch {
+        // 完全失敗時直接使用臨時 ID
+      }
+    }
   }
   return id;
 }
@@ -16,7 +32,14 @@ function getSelectedSchoolSlug(): string | null {
   try {
     const v = localStorage.getItem('selected_school_slug');
     return v && v.trim() ? v.trim() : null;
-  } catch { return null; }
+  } catch {
+    try {
+      const v = sessionStorage.getItem('selected_school_slug');
+      return v && v.trim() ? v.trim() : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -32,7 +55,17 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
 
-  let token = localStorage.getItem("token") || undefined;
+  let token: string | undefined;
+  try {
+    token = localStorage.getItem("token") || undefined;
+  } catch {
+    try {
+      token = sessionStorage.getItem("token") || undefined;
+    } catch {
+      token = undefined;
+    }
+  }
+
   let res = await doFetch(token);
 
   if (res.status === 401) {
@@ -42,7 +75,17 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       let body: any = {};
       try { body = bodyText ? JSON.parse(bodyText) : {}; } catch { body = { raw: bodyText }; }
       const code = body?.error?.code || body?.code;
-      const refreshToken = localStorage.getItem("refresh_token") || undefined;
+
+      let refreshToken: string | undefined;
+      try {
+        refreshToken = localStorage.getItem("refresh_token") || undefined;
+      } catch {
+        try {
+          refreshToken = sessionStorage.getItem("refresh_token") || undefined;
+        } catch {
+          refreshToken = undefined;
+        }
+      }
       if (refreshToken && (code === "JWT_EXPIRED" || code === "JWT_INVALID" || code === "JWT_MISSING")) {
   const r = await fetch(j("/api/auth/refresh"), {
           method: "POST",
@@ -51,7 +94,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         if (r.ok) {
           const j = (await r.json()) as { access_token: string };
           if (j?.access_token) {
-            localStorage.setItem("token", j.access_token);
+            try {
+              localStorage.setItem("token", j.access_token);
+            } catch {
+              try {
+                sessionStorage.setItem("token", j.access_token);
+              } catch {
+                // 完全失敗時跳過存儲，但仍使用 token
+              }
+            }
             token = j.access_token;
             res = await doFetch(token); // 重試一次
           }
@@ -164,7 +215,17 @@ export const AccountAPI = {
   updateProfile: (payload: { username: string }) => api<{ ok: boolean }>(j("/api/account/profile"), { method: 'PUT', body: JSON.stringify(payload) }),
   uploadAvatar: async (file: File) => {
     const fd = new FormData(); fd.append('file', file)
-  const r = await fetch(j('/api/account/avatar'), { method:'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')||''}` }, body: fd })
+    let token = '';
+    try {
+      token = localStorage.getItem('token') || '';
+    } catch {
+      try {
+        token = sessionStorage.getItem('token') || '';
+      } catch {
+        token = '';
+      }
+    }
+    const r = await fetch(j('/api/account/avatar'), { method:'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
     if (!r.ok) throw new Error(await r.text())
     return r.json() as Promise<{ ok: boolean; path: string }>
   }

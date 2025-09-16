@@ -12,7 +12,6 @@ from services.celery_app import celery_app
 from utils.db import get_session
 from models.events import SystemEvent
 from models.social_publishing import SocialAccount, PlatformType, AccountStatus
-from services.instagram_oauth import instagram_oauth_service, InstagramOAuthError
 
 logger = get_task_logger(__name__)
 

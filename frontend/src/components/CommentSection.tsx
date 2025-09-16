@@ -381,37 +381,39 @@ export default function CommentSection({
       )}
 
       {/* 貼文反應區 */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4">
         {/* 反應按鈕群 */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 sm:gap-2 flex-wrap flex-1">
           {Object.entries(REACTION_ICONS).map(([type, Icon]) => {
             const count = reactionStats[type as keyof PostReactionStats] || 0
             const isActive = userReactions.includes(type)
             const isLoading = reactLoading === type
-            
+
             return (
               <button
                 key={type}
                 onClick={() => togglePostReaction(type)}
                 disabled={isLoading || !isLoggedIn}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
+                className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-all ${
                   isActive ? 'bg-primary text-white shadow-sm' : 'bg-surface-hover hover:bg-surface-active text-muted hover:text-fg'
-                } ${!isLoggedIn ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                } ${!isLoggedIn ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${
+                  ['love', 'laugh', 'angry'].includes(type) ? 'hidden sm:flex' : ''
+                }`}
               >
                 {isLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Icon className={`w-4 h-4 ${isActive ? 'fill-current' : ''}`} />
                 )}
-                <span>{REACTION_LABELS[type as keyof typeof REACTION_LABELS]}</span>
+                <span className="hidden sm:inline">{REACTION_LABELS[type as keyof typeof REACTION_LABELS]}</span>
                 {count > 0 && <span className="font-medium">{count}</span>}
               </button>
             )
           })}
         </div>
-        
+
         {/* 右側按鈕群 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {extraActions}
         </div>
       </div>

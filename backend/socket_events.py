@@ -168,7 +168,7 @@ def init_socket_events(socketio: SocketIO) -> None:
     def broadcast_support_event(event_type: str, ticket_public_id: str, payload: Dict[str, Any]):
         """廣播支援系統事件到相關房間"""
         ticket_room = f"support:ticket:{ticket_public_id}"
-        
+
         # 根據事件類型決定廣播範圍
         event_data = {
             "event_type": event_type,
@@ -176,13 +176,46 @@ def init_socket_events(socketio: SocketIO) -> None:
             "payload": payload,
             "ts": _now_iso()
         }
-        
+
         # 廣播到工單房間
         socketio.emit("support:event", event_data, room=ticket_room)
-        
+
         # 特定事件也廣播到管理員房間
         if event_type in ["ticket_created", "message_sent", "status_changed"]:
             socketio.emit("support:admin_event", event_data, room="support:admins")
+
+        # 發送 Discord webhook 通知
+        if event_type == "ticket_created":
+            try:
+                from utils.notify import send_admin_event
+
+                # 準備 Discord 通知內容
+                title = f"🎫 新客服單：{payload.get('subject', '無主題')}"
+                description = f"用戶 **{payload.get('submitter', '匿名')}** 建立了新的客服單"
+
+                fields = [
+                    {"name": "工單編號", "value": f"#{ticket_public_id}", "inline": True},
+                    {"name": "分類", "value": payload.get('category', '其他'), "inline": True},
+                    {"name": "優先級", "value": payload.get('priority', '中等'), "inline": True}
+                ]
+
+                if payload.get('is_guest'):
+                    fields.append({"name": "提交方式", "value": "訪客提交", "inline": True})
+                else:
+                    fields.append({"name": "提交方式", "value": "已登入用戶", "inline": True})
+
+                send_admin_event(
+                    kind="support_ticket_created",
+                    title=title,
+                    description=description,
+                    fields=fields,
+                    source=f"/admin/support/tickets/{ticket_public_id}",
+                    actor=payload.get('submitter', '系統'),
+                    ticket_id=ticket_public_id
+                )
+
+            except Exception as e:
+                print(f"Failed to send Discord notification for ticket {ticket_public_id}: {e}")
 
     def broadcast_announcement(payload: Dict[str, Any]):
         """廣播公告事件到所有在線用戶"""

@@ -20,6 +20,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 bp = Blueprint("moderation", __name__, url_prefix="/api/moderation")
 
 # 審核狀態枚舉
@@ -218,8 +220,8 @@ def upsert_log_by_replacing_last(
                 last.moderator_id = mid
                 s.add(last)
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to publish media during approval process: {e}")
         # 找不到舊紀錄時，退回新增一筆
         write_log(s, ttype, tid, act, old, new, reason, mid)
     except Exception:
@@ -695,8 +697,8 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
                 new_rel = publish_media_by_id(media_item.path or '', int(media_item.id), getattr(media_item, 'mime_type', None))
                 if new_rel.startswith('public/'):
                     media_item.path = new_rel
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to publish media during approval process: {e}")
             media_item.status = MODERATION_STATUS["APPROVED"]
             media_item.rejected_reason = None
             write_log(
@@ -1257,8 +1259,8 @@ def escalate_log():
                     is_important=True,
                     send_webhook=True
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to publish media during approval process: {e}")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -1342,8 +1344,8 @@ def get_moderation_logs():
                         )
                     )
                 # dev_admin 視野不受限
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to publish media during approval process: {e}")
 
             # 分頁查詢
             total = query.count()

@@ -24,12 +24,13 @@ interface TokenUpdateModalProps {
 export default function TokenUpdateModal({ isOpen, onClose, onUpdate, account }: TokenUpdateModalProps) {
   const [formData, setFormData] = useState({
     instagram_user_token: '',
-    facebook_id: ''
+    instagram_page_id: ''
   })
   const [updating, setUpdating] = useState(false)
   const [debugPages, setDebugPages] = useState<any[]>([])
   const [showDebugInfo, setShowDebugInfo] = useState(false)
   const [debugLoading, setDebugLoading] = useState(false)
+  const [keepExistingPageId, setKeepExistingPageId] = useState(true)
 
   const handleUpdate = async () => {
     if (!formData.instagram_user_token.trim()) {
@@ -39,12 +40,18 @@ export default function TokenUpdateModal({ isOpen, onClose, onUpdate, account }:
 
     setUpdating(true)
     try {
-      await onUpdate(formData)
+      // 如果選擇保留現有Page ID，則不傳送Page ID（後端會維持原有值）
+      const updateData = {
+        instagram_user_token: formData.instagram_user_token,
+        facebook_id: keepExistingPageId ? '' : formData.instagram_page_id
+      }
+      await onUpdate(updateData)
       // 重置表單
       setFormData({
         instagram_user_token: '',
-        facebook_id: ''
+        instagram_page_id: ''
       })
+      setKeepExistingPageId(true)
       onClose()
     } catch (error) {
       console.error('Token update failed:', error)
@@ -90,17 +97,18 @@ export default function TokenUpdateModal({ isOpen, onClose, onUpdate, account }:
   }
 
   const handleSelectPageId = (pageId: string) => {
-    setFormData(prev => ({ ...prev, facebook_id: pageId }))
+    setFormData(prev => ({ ...prev, instagram_page_id: pageId }))
     setShowDebugInfo(false)
   }
 
   const handleClose = () => {
     setFormData({
       instagram_user_token: '',
-      facebook_id: ''
+      instagram_page_id: ''
     })
     setDebugPages([])
     setShowDebugInfo(false)
+    setKeepExistingPageId(true)
     onClose()
   }
 
@@ -177,33 +185,73 @@ export default function TokenUpdateModal({ isOpen, onClose, onUpdate, account }:
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium dual-text mb-2">
-                新的 Instagram User Token *
+                新的 Instagram User Token *（建議輸入短期Token）
               </label>
               <div className="relative">
                 <Key className="absolute left-3 top-3 w-4 h-4 text-muted" />
                 <textarea
                   value={formData.instagram_user_token}
                   onChange={(e) => setFormData(prev => ({ ...prev, instagram_user_token: e.target.value }))}
-                  placeholder="EAAJ... 或 IGQVJY... (短期或長期 Token 都可以)"
+                  placeholder="建議輸入短期Token（EAAJ...開頭），系統會自動轉為長期Token並儲存"
                   rows={3}
                   className="w-full pl-10 pr-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono text-xs sm:text-sm"
                 />
               </div>
-              <p className="text-xs text-muted mt-1">支援短期 Token（E開頭）或長期 Token，系統會自動處理</p>
+              <p className="text-xs text-muted mt-1">
+                <span className="text-green-600 font-medium">推薦：</span>輸入短期Token（EAAJ開頭），系統會自動轉換為長期Token避免過期問題。
+                也支援長期Token（IGQVJY開頭）直接輸入。
+              </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium dual-text mb-2">
-                Facebook ID（可選）
+            {/* Page ID 設定選項 */}
+            <div className="space-y-3">
+              <label className="block text-sm font-medium dual-text">
+                Page ID 設定
               </label>
-              <input
-                type="text"
-                value={formData.facebook_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, facebook_id: e.target.value }))}
-                placeholder="留空則自動從 Token 取得"
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono"
-              />
-              <p className="text-xs text-muted mt-1">你的 Facebook 用戶 ID，留空則系統會自動從 Token 中取得</p>
+
+              <div className="space-y-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="pageIdOption"
+                    checked={keepExistingPageId}
+                    onChange={() => setKeepExistingPageId(true)}
+                    className="text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm text-foreground">保留現有 Page ID（推薦）</span>
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="pageIdOption"
+                    checked={!keepExistingPageId}
+                    onChange={() => setKeepExistingPageId(false)}
+                    className="text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm text-foreground">重新設定 Page ID</span>
+                </label>
+              </div>
+
+              {!keepExistingPageId && (
+                <div className="ml-6 space-y-2">
+                  <input
+                    type="text"
+                    value={formData.instagram_page_id}
+                    onChange={(e) => setFormData(prev => ({ ...prev, instagram_page_id: e.target.value }))}
+                    placeholder="例如：123456789012345（Facebook 粉專 ID）"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono"
+                  />
+                  <p className="text-xs text-muted">輸入新的 Facebook 粉專 Page ID（不是個人 ID）</p>
+                </div>
+              )}
+
+              <p className="text-xs text-muted">
+                {keepExistingPageId
+                  ? "將只更新 Token，保持原有的 Page ID 不變"
+                  : "將同時更新 Token 和 Page ID"
+                }
+              </p>
             </div>
           </div>
 

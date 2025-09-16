@@ -52,7 +52,13 @@ export function validatePost(obj: any): Post {
     client_tx_id: typeof obj.client_tx_id === 'string' ? obj.client_tx_id : undefined,
     school_id: typeof obj.school_id === 'number' ? obj.school_id : (obj.school_id === null ? null : undefined),
     school: (obj.school && typeof obj.school === 'object' && typeof obj.school.id === 'number')
-      ? { id: obj.school.id, slug: String(obj.school.slug || ''), name: String(obj.school.name || obj.school.slug || '') }
+      ? { 
+          id: obj.school.id, 
+          slug: String(obj.school.slug || ''), 
+          name: String(obj.school.name || obj.school.slug || ''),
+          logo_path: obj.school.logo_path,
+          logo_url: obj.school.logo_url,
+        }
       : (obj.school === null ? null : undefined),
     // 公告和廣告相關欄位
     is_announcement: typeof obj.is_announcement === 'boolean' ? obj.is_announcement : undefined,

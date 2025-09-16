@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User } from 'lucide-react'
+import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User, Unlock } from 'lucide-react'
 import { formatLocalMinute } from '@/utils/time'
-import { getRoleDisplayName } from '@/utils/auth'
+import { getRoleDisplayName, Role } from '@/utils/auth'
 
 interface User {
   id: number
@@ -250,13 +250,13 @@ export default function AdminUsersPage() {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ msg: '刪除失敗' }))
-        
+
         // 如果有關聯資料，詢問是否強制刪除
         if (error.msg && error.msg.includes('存在關聯資料')) {
           const forceDelete = confirm(
             '該用戶有相關的貼文或留言。是否強制刪除？\n這將同時刪除該用戶的所有內容。'
           )
-          
+
           if (forceDelete) {
             response = await fetch(`/api/admin/users/${userId}?force=1`, {
               method: 'DELETE',
@@ -264,7 +264,7 @@ export default function AdminUsersPage() {
                 'Authorization': `Bearer ${localStorage.getItem('token')||''}`
               }
             })
-            
+
             if (!response.ok) {
               throw new Error(await response.text())
             }
@@ -280,6 +280,33 @@ export default function AdminUsersPage() {
       load()
     } catch (e: any) {
       setMessage(e?.message || '用戶刪除失敗')
+    }
+  }
+
+  const unblockUserIP = async (userId: number, username: string) => {
+    if (!confirm(`確定要解除 ${username} 的 IP 限制嗎？`)) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/admin/users/unblock-ip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')||''}`
+        },
+        body: JSON.stringify({ user_id: userId })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'IP 解除失敗')
+      }
+
+      setMessage(`${username} 的 IP 限制已解除`)
+    } catch (e: any) {
+      setMessage(e?.message || 'IP 解除失敗')
     }
   }
 
@@ -382,9 +409,9 @@ export default function AdminUsersPage() {
           </div>
           
           {message && (
-            <div className={`mt-4 p-3 rounded-lg text-sm ${
+            <div className={`mt-4 p-3 rounded-lg text-sm ${ 
               message.includes('失敗') 
-                ? 'bg-red-50 text-red-700 border border-red-200' 
+                ? 'bg-red-50 text-red-700 border border-red-200'
                 : 'bg-green-50 text-green-700 border border-green-200'
             }`}>
               {message}
@@ -428,197 +455,206 @@ export default function AdminUsersPage() {
 
         {/* 用戶清單 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {loading ? (
+          {loading && (
             <div className="col-span-full p-8 text-center text-muted">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-3"></div>
               載入中...
             </div>
-          ) : items.length === 0 ? (
+          )}
+
+          {!loading && items.length === 0 && (
             <div className="col-span-full p-8 text-center text-muted">
               <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
               {query ? '找不到符合條件的用戶' : '尚無用戶資料'}
             </div>
-          ) : (
-            items.map((user) => {
-              const roleInfo = getRoleInfo(user.role)
-              const RoleIcon = roleInfo.icon
-              
-              return (
-                <div key={user.id} className="bg-surface border border-border rounded-2xl p-4 shadow-soft hover:shadow-medium transition-all duration-200 hover:scale-[1.02] flex flex-col h-full">
-                  {/* 用戶頭像和基本資訊 */}
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary font-semibold text-lg">
-                        {user.username.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-fg truncate text-lg flex items-center gap-2">
-                        {user.username}
-                        {user.is_premium && (
-                          <span className="inline-flex items-center" title={`會員 ${user.premium_until ? `至 ${formatLocalMinute(user.premium_until)}` : '永久'}`}>
-                            <Star className="w-4 h-4 text-amber-500 fill-current" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-muted truncate flex items-center gap-1 mt-1">
-                        <Mail className="w-3 h-3" />
-                        {user.email}
-                      </div>
-                      <div className="text-xs text-muted font-mono bg-surface-hover px-2 py-1 rounded mt-2 inline-block">
-                        ID: {user.personal_id}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* 角色標籤 */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${roleInfo.color}`}>
-                      <RoleIcon className="w-3 h-3 inline mr-1" />
-                      {roleInfo.label}
+          )}
+
+          {!loading && items.length > 0 && items.map((user) => {
+            const roleInfo = getRoleInfo(user.role)
+            const RoleIcon = roleInfo.icon
+
+            return (
+              <div key={user.id} className="bg-surface border border-border rounded-2xl p-4 shadow-soft hover:shadow-medium transition-all duration-200 hover:scale-[1.02] flex flex-col h-full">
+                {/* 用戶頭像和基本資訊 */}
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-primary font-semibold text-lg">
+                      {user.username.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  
-                  {/* 學校資訊 */}
-                  <div className="flex items-center gap-2 text-sm text-muted mb-3">
-                    <Building2 className="w-3 h-3" />
-                    {user.school?.name || '無'}
-                  </div>
-                  
-                  {/* 用戶統計資訊 */}
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="flex items-center gap-1 text-xs text-muted">
-                      <FileText className="w-3 h-3" />
-                      {user.post_count} 篇貼文
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-fg truncate text-lg flex items-center gap-2">
+                      {user.username}
+                      {user.is_premium && (
+                        <span className="inline-flex items-center" title={`會員 ${user.premium_until ? `至 ${formatLocalMinute(user.premium_until)}` : '永久'}`}>
+                          <Star className="w-4 h-4 text-amber-500 fill-current" />
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-muted">
-                      <MessageSquare className="w-3 h-3" />
-                      {user.comment_count} 則留言
+                    <div className="text-sm text-muted truncate flex items-center gap-1 mt-1">
+                      <Mail className="w-3 h-3" />
+                      {user.email}
                     </div>
-                  </div>
-                  
-
-                  
-                  {/* 最近活動 */}
-                  <div className="flex items-center gap-1 text-xs text-muted mb-3">
-                    <Activity className="w-3 h-3" />
-                    最後活動 {user.last_activity ? formatLocalMinute(user.last_activity) : '無記錄'}
-                  </div>
-                  
-                  {/* 註冊時間 */}
-                  <div className="flex items-center gap-2 text-sm text-muted mb-4">
-                    <Calendar className="w-3 h-3" />
-                    註冊於 {formatLocalMinute(user.created_at)}
-                  </div>
-                  
-                  {/* IP地址資訊 */}
-                  <div className="mb-3">
-                    <div className="flex items-center gap-1 text-xs text-muted mb-1">
-                      <Globe className="w-3 h-3" />
-                      最新IP地址：
-                    </div>
-                    <div className="text-xs font-mono bg-surface-hover px-2 py-1 rounded">
-                      {user.recent_ips.length > 0 ? 
-                        `${user.recent_ips[0]}${user.recent_ips.length > 1 ? `(+${user.recent_ips.length - 1}個)` : ''}` : 
-                        '無記錄'
-                      }
-                    </div>
-                  </div>
-                  
-                  {/* 操作按鈕 - 使用 flex-1 確保按鈕等寬並對齊底部 */}
-                  <div className="space-y-2 mt-auto">
-                    {/* 角色調整 */}
-                    <select
-                      value={user.role}
-                      onChange={(e) => updateUserRole(user.id, e.target.value)}
-                      className="form-control text-sm w-full"
-                      title="調整權限"
-                    >
-                      {roles.map(role => (
-                        <option key={role.value} value={role.value}>
-                          {role.label}
-                        </option>
-                      ))}
-                    </select>
-                    
-                    {/* 學校綁定 */}
-                    <select
-                      value={user.school?.slug || ''}
-                      onChange={(e) => updateUserSchool(user.id, e.target.value)}
-                      className="form-control text-sm w-full"
-                      title="學校綁定"
-                    >
-                      {schools.map(school => (
-                        <option key={school.value} value={school.value}>
-                          {school.label}
-                        </option>
-                      ))}
-                    </select>
-                    
-                    {/* 快速操作按鈕 */}
-                    <div className="flex gap-1 pt-2">
-                      <button
-                        onClick={() => loadUserActivity(user)}
-                        className="flex-1 btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
-                        title="查看詳細資訊"
-                        disabled={loadingActivities}
-                      >
-                        <Activity className="w-3 h-3" />
-                        詳細資訊
-                      </button>
-                      
-                      <button
-                        onClick={async () => {
-                          const newEmail = prompt(`為 ${user.username} 設定新 Email`, user.email)
-                          if (!newEmail || newEmail === user.email) return
-                          await updateUserEmail(user.id, newEmail)
-                        }}
-                        className="flex-1 btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
-                        title="修改 Email"
-                      >
-                        <Mail className="w-3 h-3" />
-                        Email
-                      </button>
-                      
-                      <button
-                        onClick={async () => {
-                          const p = prompt(`為 ${user.username} 設定新密碼（至少 8 碼）`)
-                          if (!p) return
-                          try {
-                            await fetch(`/api/admin/users/${user.id}/set_password`, {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${localStorage.getItem('token')||''}`
-                              },
-                              body: JSON.stringify({ password: p })
-                            })
-                            setMessage('密碼更新成功')
-                          } catch {
-                            setMessage('密碼更新失敗')
-                          }
-                        }}
-                        className="flex-1 btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
-                        title="重設密碼"
-                      >
-                        <Key className="w-3 h-3" />
-                        密碼
-                      </button>
-                      
-                      <button
-                        onClick={() => deleteUser(user.id)}
-                        className="flex-1 px-2 py-1.5 text-xs rounded-lg border text-red-600 border-red-300 hover:bg-red-50 transition-colors flex items-center justify-center gap-1"
-                        title="刪除用戶"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        刪除
-                      </button>
+                    <div className="text-xs text-muted font-mono bg-surface-hover px-2 py-1 rounded mt-2 inline-block">
+                      ID: {user.personal_id}
                     </div>
                   </div>
                 </div>
-              )
-            })
-          )}
+
+                {/* 角色標籤 */}
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium border ${roleInfo.color}`}>
+                    <RoleIcon className="w-3 h-3 inline mr-1" />
+                    {roleInfo.label}
+                  </span>
+                </div>
+
+                {/* 學校資訊 */}
+                <div className="flex items-center gap-2 text-sm text-muted mb-3">
+                  <Building2 className="w-3 h-3" />
+                  {user.school?.name || '無'}
+                </div>
+
+                {/* 用戶統計資訊 */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="flex items-center gap-1 text-xs text-muted">
+                    <FileText className="w-3 h-3" />
+                    {user.post_count} 篇貼文
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-muted">
+                    <MessageSquare className="w-3 h-3" />
+                    {user.comment_count} 則留言
+                  </div>
+                </div>
+
+                {/* 最近活動 */}
+                <div className="flex items-center gap-1 text-xs text-muted mb-3">
+                  <Activity className="w-3 h-3" />
+                  最後活動 {user.last_activity ? formatLocalMinute(user.last_activity) : '無記錄'}
+                </div>
+
+                {/* 註冊時間 */}
+                <div className="flex items-center gap-2 text-sm text-muted mb-4">
+                  <Calendar className="w-3 h-3" />
+                  註冊於 {formatLocalMinute(user.created_at)}
+                </div>
+
+                {/* IP地址資訊 */}
+                <div className="mb-3">
+                  <div className="flex items-center gap-1 text-xs text-muted mb-1">
+                    <Globe className="w-3 h-3" />
+                    最新IP地址：
+                  </div>
+                  <div className="text-xs font-mono bg-surface-hover px-2 py-1 rounded">
+                    {user.recent_ips.length > 0 ?
+                      `${user.recent_ips[0]}${user.recent_ips.length > 1 ? `(+${user.recent_ips.length - 1}個)` : ''}` :
+                      '無記錄'
+                    }
+                  </div>
+                </div>
+
+                {/* 操作按鈕 - 使用 flex-1 確保按鈕等寬並對齊底部 */}
+                <div className="space-y-2 mt-auto">
+                  {/* 角色調整 */}
+                  <select
+                    value={user.role}
+                    onChange={(e) =>updateUserRole(user.id, e.target.value)}
+                    className="form-control text-sm w-full"
+                    title="調整權限"
+                  >
+                    {roles.map(role => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* 學校綁定 */}
+                  <select
+                    value={user.school?.slug || ''}
+                    onChange={(e) =>updateUserSchool(user.id, e.target.value)}
+                    className="form-control text-sm w-full"
+                    title="學校綁定"
+                  >
+                    {schools.map(school => (
+                      <option key={school.value} value={school.value}>
+                        {school.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* 快速操作按鈕 */}
+                  <div className="grid grid-cols-2 gap-1 pt-2">
+                    <button
+                      onClick={() => loadUserActivity(user)}
+                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                      title="查看詳細資訊"
+                      disabled={loadingActivities}
+                    >
+                      <Activity className="w-3 h-3" />
+                      詳細資訊
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        const newEmail = prompt(`為 ${user.username} 設定新 Email`, user.email)
+                        if (!newEmail || newEmail === user.email) return
+                        await updateUserEmail(user.id, newEmail)
+                      }}
+                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                      title="修改 Email"
+                    >
+                      <Mail className="w-3 h-3" />
+                      Email
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        const p = prompt(`為 ${user.username} 設定新密碼（至少 8 碼）`)
+                        if (!p) return
+                        try {
+                          await fetch(`/api/admin/users/${user.id}/set_password`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${localStorage.getItem('token')||''}`
+                            },
+                            body: JSON.stringify({ password: p })
+                          })
+                          setMessage('密碼更新成功')
+                        } catch {
+                          setMessage('密碼更新失敗')
+                        }
+                      }}
+                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                      title="重設密碼"
+                    >
+                      <Key className="w-3 h-3" />
+                      密碼
+                    </button>
+
+                    <button
+                      onClick={() => unblockUserIP(user.id, user.username)}
+                      className="px-2 py-1.5 text-xs rounded-lg border text-green-600 border-green-300 hover:bg-green-50 transition-colors flex items-center justify-center gap-1"
+                      title="解除 IP 限制"
+                    >
+                      <Unlock className="w-3 h-3" />
+                      解鎖IP
+                    </button>
+
+                    <button
+                      onClick={() => deleteUser(user.id)}
+                      className="px-2 py-1.5 text-xs rounded-lg border text-red-600 border-red-300 hover:bg-red-50 transition-colors flex items-center justify-center gap-1 col-span-2"
+                      title="刪除用戶"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      刪除用戶
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </main>
 
@@ -779,7 +815,7 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted">角色：</span>
-                    <span className="font-medium">{getRoleInfo(showActivityModal.user.role).label}</span>
+                    <span className="font-medium">{getRoleDisplayName(showActivityModal.user.role as Role)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted">學校：</span>
@@ -947,8 +983,8 @@ export default function AdminUsersPage() {
                       </div>
                     )}
                   </div>
-                ))
-              )}
+                )))
+              }
             </div>
           </div>
         </div>

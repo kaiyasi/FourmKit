@@ -12,7 +12,14 @@ from models import User, School
 bp = Blueprint("pages", __name__, url_prefix="/api/pages")
 
 PAGES_DIR = Path(UPLOAD_ROOT) / 'pages'
-PAGES_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    PAGES_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError) as e:
+    # 如果無法創建目錄，嘗試使用當前目錄下的 uploads
+    import warnings
+    warnings.warn(f"無法創建 {PAGES_DIR}，使用備用路徑: {e}")
+    PAGES_DIR = Path("uploads/pages")
+    PAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _safe_slug(slug: str) -> str:

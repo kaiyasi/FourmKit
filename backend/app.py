@@ -11,6 +11,18 @@ from utils.notify import get_admin_webhook_url as _get_admin_hook
 import eventlet  # type: ignore
 eventlet.monkey_patch()  # type: ignore
 
+# Load environment variables from project root .env early
+try:
+    from dotenv import load_dotenv, find_dotenv  # type: ignore
+    # Prefer explicit /app/.env inside container; fallback to nearest .env
+    _dotenv_path = os.environ.get("DOTENV_PATH", "/app/.env")
+    if os.path.exists(_dotenv_path):
+        load_dotenv(_dotenv_path)
+    else:
+        load_dotenv(find_dotenv())
+except Exception:
+    pass
+
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room  # type: ignore[import]
@@ -39,7 +51,6 @@ from routes.routes_admin_members import bp as admin_members_bp
 from routes.routes_instagram import instagram_bp
 from routes.routes_fonts import bp as fonts_bp
 from routes.routes_cdn import bp as cdn_bp
-from routes.routes_oauth import oauth_bp  # provide /api/auth/instagram/* endpoints used by frontend
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 
@@ -882,8 +893,9 @@ def create_app() -> Flask:
         # request_id 和 request_ts 已在 add_req_id 中設定
 
         if request.path.startswith("/api"):
-            # IP 封鎖檢查（允許提交稽核報告來解封）
-            if request.path != '/api/audit_report' and is_ip_blocked():
+            # IP 封鎖檢查（允許提交稽核報告來解封，以及管理員功能）
+            admin_paths = ['/api/audit_report', '/api/admin/users/unblock-ip', '/api/admin/auth']
+            if not any(request.path.startswith(path) for path in admin_paths) and is_ip_blocked():
                 return jsonify({
                     'ok': False,
                     'error': {
@@ -1419,14 +1431,16 @@ def create_app() -> Flask:
     # 會員管理系統
     app.register_blueprint(admin_members_bp)
     
-    # Instagram 整合管理
+    # Instagram 整合管理（舊 Instagram routes）
     app.register_blueprint(instagram_bp)
+
+    # Instagram 基於 Page ID 的新路由（強制掛載，失敗時直接顯錯，避免前端打到 404）
+    from routes.routes_instagram_page_based import register_instagram_page_routes  # type: ignore
+    register_instagram_page_routes(app)
     
     # 字體管理系統
     app.register_blueprint(fonts_bp)
     
-    # OAuth（啟用精簡端點，供前端 revoke/validate 流程使用）
-    app.register_blueprint(oauth_bp)
     
     # CDN 靜態檔案服務
     app.register_blueprint(cdn_bp)

@@ -186,6 +186,8 @@ export default function AdminInstagramPage() {
             failed_posts: 0,
             published_today: 0
           },
+          daily_trends: monitoringRes.monitoring.daily_trends || [],
+          account_stats: monitoringRes.monitoring.account_stats || [],
           carousel_status: monitoringRes.monitoring.carousel_status || {
             processing: 0,
             failed: 0,
@@ -198,84 +200,25 @@ export default function AdminInstagramPage() {
       
     } catch (error) {
       console.error('Failed to fetch Instagram data:', error)
-      // 如果 API 失敗，使用模擬數據作為後備
-      setAccounts([
-        {
-          id: 1,
-          platform: 'instagram',
-          platform_username: 'example_school',
-          display_name: '範例學校',
-          status: 'active',
-          publish_trigger: 'batch_count',
-          batch_size: 5,
-          total_posts: 42,
-          last_post_at: '2025-01-15T10:30:00Z',
-          created_at: '2025-01-01T00:00:00Z'
-        }
-      ])
-      
-      setTemplates([
-        {
-          id: 1,
-          name: '預設模板',
-          description: '校園動態發布模板',
-          template_type: 'combined',
-          is_active: true,
-          is_default: true,
-          usage_count: 25
-        }
-      ])
-      
-      // 生成模擬的監控數據
-      const mockCarouselGroups = [
-        {
-          id: 1,
-          batch_id: 'batch_001',
-          status: 'processing',
-          total_posts: 5,
-          published_posts: 2,
-          processing_posts: 2,
-          failed_posts: 1,
-          progress: 40.0,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          batch_id: 'batch_002',
-          status: 'completed',
-          total_posts: 3,
-          published_posts: 3,
-          processing_posts: 0,
-          failed_posts: 0,
-          progress: 100.0,
-          created_at: new Date(Date.now() - 3600000).toISOString()
-        }
-      ]
-
-      const mockRecentFailures = [
-        {
-          id: 1,
-          post_title: '校園活動通知',
-          account_display_name: '範例學校',
-          error_message: 'Token expired',
-          updated_at: new Date().toISOString()
-        }
-      ]
-
+      // 如果 API 失敗，設定為空狀態而非假資料
+      setAccounts([])
+      setTemplates([])
       setStats({
         overview: {
-          total_posts: 42,
-          pending_posts: 3,
-          failed_posts: 1,
-          published_today: 2
+          total_posts: 0,
+          pending_posts: 0,
+          failed_posts: 0,
+          published_today: 0
         },
+        daily_trends: [],
+        account_stats: [],
         carousel_status: {
-          processing: 1,
+          processing: 0,
           failed: 0,
-          completed: 2
+          completed: 0
         },
-        carousel_groups: mockCarouselGroups,
-        recent_failures: mockRecentFailures
+        carousel_groups: [],
+        recent_failures: []
       })
     } finally {
       setLoading(false)
@@ -286,7 +229,7 @@ export default function AdminInstagramPage() {
     const loadingKey = `validate-${accountId}`
     try {
       setActionLoading(prev => ({ ...prev, [loadingKey]: true }))
-      
+
       const response = await fetch(`/api/admin/social/accounts/${accountId}/validate`, {
         method: 'POST',
         headers: {
@@ -294,23 +237,49 @@ export default function AdminInstagramPage() {
           'Content-Type': 'application/json'
         }
       })
-      
+
       const result = await response.json()
-      
+
       if (result.success) {
         // 更新帳號狀態
-        setAccounts(prev => prev.map(acc => 
-          acc.id === accountId 
+        setAccounts(prev => prev.map(acc =>
+          acc.id === accountId
             ? { ...acc, status: result.account_status }
             : acc
         ))
-        alert('帳號驗證成功！')
+        alert(`帳號驗證成功！\n${result.status_message || ''}`)
       } else {
-        alert(`帳號驗證失敗: ${result.error}`)
+        // 根據錯誤類型提供不同的處理方式
+        const errorMsg = result.status_message || result.error || '未知錯誤'
+        const debugInfo = result.debug_info ? `\n\n除錯資訊：\n- Page ID: ${result.debug_info.page_id || '無'}\n- 有 Token: ${result.debug_info.has_token ? '是' : '否'}\n- 驗證錯誤: ${result.debug_info.validation_error || '無'}` : ''
+
+        // Instagram Business Account 相關問題：需要到 Facebook 設定
+        const isInstagramAccountIssue = errorMsg.includes('Instagram Business Account') ||
+                                       errorMsg.includes('無法訪問') ||
+                                       errorMsg.includes('權限不足') ||
+                                       errorMsg.includes('已被撤銷')
+
+        if (isInstagramAccountIssue) {
+          // Instagram Business Account 相關問題，提供具體的修復步驟
+          const fixSteps = `${errorMsg}\n\n📋 修復步驟：\n1. 前往 Facebook 企業管理平台 (business.facebook.com)\n2. 選擇您的 Page\n3. 到「Instagram 帳號」設定中\n4. 重新連結或授權 Instagram Business Account\n5. 確認權限包含「管理 Instagram 內容」\n6. 完成後重新驗證`
+
+          alert(fixSteps)
+        } else {
+          alert(`驗證結果：${errorMsg}${debugInfo}`)
+        }
+
+        // 如果有狀態更新，仍然更新帳號狀態
+        if (result.account_status) {
+          setAccounts(prev => prev.map(acc =>
+            acc.id === accountId
+              ? { ...acc, status: result.account_status }
+              : acc
+          ))
+        }
       }
     } catch (error) {
       console.error('Validate account failed:', error)
-      alert('帳號驗證失敗，請稍後再試')
+      alert('網路連線錯誤，請稍後再試')
     } finally {
       setActionLoading(prev => ({ ...prev, [loadingKey]: false }))
     }
@@ -320,13 +289,21 @@ export default function AdminInstagramPage() {
     if (!updatingAccount) return
     
     try {
+      const payload: any = {}
+      if (tokenData.instagram_user_token && tokenData.instagram_user_token.trim().length > 0) {
+        payload.instagram_user_token = tokenData.instagram_user_token.trim()
+      }
+      if (tokenData.instagram_page_id && tokenData.instagram_page_id.trim().length > 0) {
+        // 後端目前接受 facebook_id 欄位，這裡將 Page ID 對應過去
+        payload.facebook_id = tokenData.instagram_page_id.trim()
+      }
       const response = await fetch(`/api/admin/social/accounts/${updatingAccount.id}/token`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(tokenData)
+        body: JSON.stringify(payload)
       })
       
       const result = await response.json()
@@ -447,23 +424,34 @@ export default function AdminInstagramPage() {
 
   const handleSaveSimpleAccount = async (accountData: any) => {
     try {
-      const response = await fetch('/api/admin/social/accounts/simple', {
+      // 以 Page ID 為主的新增帳號流程
+      const payload = {
+        display_name: accountData.display_name,
+        page_id: accountData.instagram_page_id,
+        access_token: accountData.instagram_user_token,
+        platform_username: accountData.platform_username,
+        school_id: accountData.school_id,
+      }
+
+      const response = await fetch('/api/instagram_page/accounts/create_with_page', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(accountData)
+        body: JSON.stringify(payload)
       })
 
-      const result = await response.json()
+      let result: any = null
+      try { result = await response.json() } catch { /* non-JSON */ }
 
-      if (result.success) {
+      if (response.ok && result?.success) {
         alert('Instagram 帳號新增成功！')
         fetchData() // 重新載入數據
         setShowSimpleAccountForm(false)
       } else {
-        alert(`新增失敗: ${result.error || '未知錯誤'}`)
+        const err = result?.error?.message || result?.error || result?.msg || `HTTP ${response.status}`
+        alert(`新增失敗: ${typeof err === 'string' ? err : JSON.stringify(err)}`)
       }
     } catch (error) {
       console.error('新增 Instagram 帳號失敗:', error)
@@ -1021,29 +1009,58 @@ export default function AdminInstagramPage() {
                 <div className="space-y-3">
                   {stats.carousel_groups && stats.carousel_groups.length > 0 ? (
                     stats.carousel_groups.map((group) => (
-                      <div key={group.id} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                      <div key={group.id} className={`p-3 rounded-lg border ${
+                        group.failed_posts > 0 ? 'bg-red-50 border-red-200' :
+                        group.progress >= 100 ? 'bg-green-50 border-green-200' :
+                        group.processing_posts > 0 ? 'bg-blue-50 border-blue-200' :
+                        'bg-gray-50 border-gray-200'
+                      }`}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-orange-800">批次 {group.batch_id}</span>
+                          <span className={`font-medium ${
+                            group.failed_posts > 0 ? 'text-red-800' :
+                            group.progress >= 100 ? 'text-green-800' : 'text-blue-800'
+                          }`}>批次 {group.batch_id}</span>
                           <span className={`text-sm px-2 py-1 rounded-full text-xs font-medium ${
-                            group.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                            group.status === 'completed' ? 'bg-green-100 text-green-700' :
-                            'bg-red-100 text-red-700'
+                            group.processing_posts > 0 ? 'bg-blue-100 text-blue-700' :
+                            group.failed_posts > 0 ? 'bg-red-100 text-red-700' :
+                            group.progress >= 100 ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-700'
                           }`}>
-                            {group.status === 'processing' ? '處理中' :
-                             group.status === 'completed' ? '已完成' : '失敗'}
+                            {group.processing_posts > 0 ? '處理中' :
+                             group.failed_posts > 0 ? `失敗 (${group.failed_posts}/${group.total_posts})` :
+                             group.progress >= 100 ? '已完成' : '等待中'}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 mb-2">
-                          <div className="flex-1 bg-orange-200 rounded-full h-2">
-                            <div className="bg-orange-500 h-2 rounded-full transition-all duration-300" 
+                          <div className={`flex-1 rounded-full h-2 ${
+                            group.failed_posts > 0 ? 'bg-red-200' :
+                            group.progress >= 100 ? 'bg-green-200' : 'bg-blue-200'
+                          }`}>
+                            <div className={`h-2 rounded-full transition-all duration-300 ${
+                              group.failed_posts > 0 ? 'bg-red-500' :
+                              group.progress >= 100 ? 'bg-green-500' : 'bg-blue-500'
+                            }`}
                                  style={{width: `${group.progress}%`}}></div>
                           </div>
-                          <span className="text-sm font-medium text-orange-700">{group.progress}%</span>
+                          <span className={`text-sm font-medium ${
+                            group.failed_posts > 0 ? 'text-red-700' :
+                            group.progress >= 100 ? 'text-green-700' : 'text-blue-700'
+                          }`}>{group.progress}%</span>
                         </div>
-                        <div className="flex justify-between text-xs text-orange-600">
+                        <div className={`flex justify-between text-xs ${
+                          group.failed_posts > 0 ? 'text-red-600' :
+                          group.progress >= 100 ? 'text-green-600' : 'text-blue-600'
+                        }`}>
                           <span>已發布: {group.published_posts}</span>
                           <span>處理中: {group.processing_posts}</span>
-                          <span>失敗: {group.failed_posts}</span>
+                          <span className={group.failed_posts > 0 ? 'font-bold text-red-700' : ''}>
+                            失敗: {group.failed_posts}
+                            {group.failed_posts > 0 && group.error_message && (
+                              <span className="ml-2 text-xs text-red-500" title={group.error_message}>
+                                ({group.error_message.length > 20 ? group.error_message.substring(0, 20) + '...' : group.error_message})
+                              </span>
+                            )}
+                          </span>
                           <span>總數: {group.total_posts}</span>
                         </div>
                       </div>

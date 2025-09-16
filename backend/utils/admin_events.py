@@ -76,10 +76,17 @@ def log_admin_event(
         }
 
     if session is not None:
+        # 呼叫端自行管理交易，避免打斷既有流程
         return _log(session)
-    # 若未提供 session，自行開啟一次性 session
+    # 若未提供 session，自行開啟一次性 session並確保提交
     with get_session() as s:
-        return _log(s)
+        res = _log(s)
+        try:
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise
+        return res
 
 
 def get_recent_events(

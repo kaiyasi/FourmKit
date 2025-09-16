@@ -293,6 +293,8 @@ export default function AdminInstagramMobilePage() {
   const [editingAccount, setEditingAccount] = useState<SocialAccount | null>(null)
   const [showSimpleAccountForm, setShowSimpleAccountForm] = useState(false)
   const [showFontManagement, setShowFontManagement] = useState(false)
+  const [showTokenUpdate, setShowTokenUpdate] = useState(false)
+  const [updatingAccount, setUpdatingAccount] = useState<SocialAccount | null>(null)
 
   // 載入資料
   useEffect(() => {
@@ -342,25 +344,111 @@ export default function AdminInstagramMobilePage() {
   const handleValidateAccount = async (accountId: number) => {
     const loadingKey = `validate-${accountId}`
     setActionLoading(prev => ({ ...prev, [loadingKey]: true }))
-    
+
     try {
       const response = await fetch(`/api/admin/social/accounts/${accountId}/validate`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       })
-      
+
       const result = await response.json()
       if (result.success) {
-        alert('帳號驗證成功！')
+        alert(`帳號驗證成功！\n${result.status_message || ''}`)
         fetchData()
       } else {
-        alert(`驗證失敗: ${result.error}`)
+        // 顯示詳細的錯誤訊息和狀態
+        const errorMsg = result.status_message || result.error || '未知錯誤'
+        const debugInfo = result.debug_info ? `\n\n除錯資訊：\n- Page ID: ${result.debug_info.page_id || '無'}\n- 有 Token: ${result.debug_info.has_token ? '是' : '否'}\n- 驗證錯誤: ${result.debug_info.validation_error || '無'}` : ''
+
+        // 根據錯誤類型提供不同的處理方式
+        const errorMessage = result.status_message || result.error || '未知錯誤'
+
+        // Token 相關問題：可以透過更新 Token 解決
+        const isTokenIssue = errorMessage.includes('Token') ||
+                           errorMessage.includes('過期') ||
+                           errorMessage.includes('無效')
+
+        // Instagram Business Account 相關問題：需要到 Facebook 設定
+        const isInstagramAccountIssue = errorMessage.includes('Instagram Business Account') ||
+                                       errorMessage.includes('無法訪問') ||
+                                       errorMessage.includes('權限不足') ||
+                                       errorMessage.includes('已被撤銷')
+
+        if (isTokenIssue) {
+          const shouldUpdate = confirm(`${errorMsg}\n\n是否要立即更新 Token 和 Page ID？`)
+          if (shouldUpdate) {
+            // 找到對應的帳號
+            const account = accounts.find(acc => acc.id === accountId)
+            if (account) {
+              setUpdatingAccount(account)
+              setShowTokenUpdate(true)
+            }
+          }
+        } else if (isInstagramAccountIssue) {
+          // Instagram Business Account 相關問題，提供具體的修復步驟
+          const fixSteps = `${errorMsg}\n\n📋 修復步驟：\n1. 前往 Facebook 企業管理平台 (business.facebook.com)\n2. 選擇您的 Page\n3. 到「Instagram 帳號」設定中\n4. 重新連結或授權 Instagram Business Account\n5. 確認權限包含「管理 Instagram 內容」\n6. 完成後重新驗證`
+
+          alert(fixSteps)
+        } else {
+          alert(`驗證結果：${errorMsg}${debugInfo}`)
+        }
+
+        // 如果有狀態更新，仍然重新載入資料
+        if (result.account_status) {
+          fetchData()
+        }
       }
     } catch (error) {
       console.error('帳號驗證失敗:', error)
-      alert('驗證失敗，請稍後再試')
+      alert('網路連線錯誤，請稍後再試')
     } finally {
       setActionLoading(prev => ({ ...prev, [loadingKey]: false }))
+    }
+  }
+
+  const handleUpdateToken = async (tokenData: { instagram_user_token: string; instagram_page_id: string }) => {
+    if (!updatingAccount) return
+
+    try {
+      const payload: any = {}
+
+      if (tokenData.instagram_user_token?.trim()) {
+        payload.instagram_user_token = tokenData.instagram_user_token.trim()
+      }
+      if (tokenData.instagram_page_id?.trim()) {
+        // 後端目前接受 facebook_id 欄位，這裡將 Page ID 對應過去
+        payload.facebook_id = tokenData.instagram_page_id.trim()
+      }
+
+      const response = await fetch(`/api/admin/social/accounts/${updatingAccount.id}/token`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        // 更新帳號狀態
+        setAccounts(prev => prev.map(acc =>
+          acc.id === updatingAccount.id
+            ? { ...acc, status: 'active', updated_at: result.account.updated_at }
+            : acc
+        ))
+
+        alert(`✅ 帳號 @${updatingAccount.platform_username} Token 更新成功！`)
+
+        setShowTokenUpdate(false)
+        setUpdatingAccount(null)
+      } else {
+        alert(`❌ Token 更新失敗: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Update token failed:', error)
+      alert('Token 更新失敗，請稍後再試')
     }
   }
 
@@ -484,26 +572,36 @@ export default function AdminInstagramMobilePage() {
                   <div key={account.id} className="bg-surface-hover border border-border rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${account.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        <div className={`w-3 h-3 rounded-full ${account.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}`} />
                         <div>
                           <div className="font-medium dual-text">@{account.platform_username}</div>
                           <div className="text-xs text-muted">
                             {account.total_posts} 次發布 • 
-                            {account.is_active ? ' 已啟用' : ' 已停用'}
+                            {account.status === 'active' ? ' 已啟用' : ' 已停用'}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleValidateAccount(account.id)}
                           disabled={actionLoading[`validate-${account.id}`]}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           title="驗證帳號"
                         >
-                          {actionLoading[`validate-${account.id}`] ? 
-                            <RefreshCw className="w-4 h-4 animate-spin" /> : 
+                          {actionLoading[`validate-${account.id}`] ?
+                            <RefreshCw className="w-4 h-4 animate-spin" /> :
                             <CheckCircle className="w-4 h-4" />
                           }
+                        </button>
+                        <button
+                          onClick={() => {
+                            setUpdatingAccount(account)
+                            setShowTokenUpdate(true)
+                          }}
+                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                          title="更新 Token"
+                        >
+                          <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleEditAccount(account)}
@@ -646,7 +744,7 @@ export default function AdminInstagramMobilePage() {
                   <div key={account.id} className="bg-surface-hover border border-border rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${account.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        <div className={`w-2 h-2 rounded-full ${account.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}`} />
                         <span className="font-medium dual-text text-sm">@{account.platform_username}</span>
                       </div>
                       <span className="text-lg font-bold dual-text">{account.total_posts}</span>
@@ -779,10 +877,29 @@ export default function AdminInstagramMobilePage() {
           setShowAccountSettings(false)
           setEditingAccount(null)
         }}
-        onSave={async (account) => {
-          // TODO: 實現儲存邏輯
-          console.log('儲存帳號設定:', account)
-          fetchData()
+        onSave={async (accountData) => {
+          try {
+            const response = await fetch(`/api/admin/social/accounts/${accountData.account_id}/settings`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify(accountData)
+            })
+
+            const result = await response.json()
+            if (result.success) {
+              alert('帳號設定已更新')
+              fetchData()
+            } else {
+              throw new Error(result.error || '儲存失敗')
+            }
+          } catch (error: any) {
+            console.error('Save account settings failed:', error)
+            alert(`儲存失敗: ${error.message}`)
+            throw error
+          }
         }}
         account={editingAccount}
       />
@@ -790,7 +907,29 @@ export default function AdminInstagramMobilePage() {
       <SimpleAccountForm
         isOpen={showSimpleAccountForm}
         onClose={() => setShowSimpleAccountForm(false)}
-        onSuccess={() => {
+        onSave={async (accountData: any) => {
+          const payload = {
+            display_name: accountData.display_name,
+            page_id: accountData.instagram_page_id,
+            access_token: accountData.instagram_user_token,
+            platform_username: accountData.platform_username,
+            school_id: accountData.school_id,
+          }
+          const resp = await fetch('/api/instagram_page/accounts/create_with_page', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            },
+            body: JSON.stringify(payload),
+          })
+          let result: any = null
+          try { result = await resp.json() } catch { /* non-JSON */ }
+          if (!resp.ok || !result?.success) {
+            const err = (result?.error?.message || result?.error || result?.msg || '新增失敗')
+            throw new Error(typeof err === 'string' ? err : JSON.stringify(err))
+          }
+          alert('Instagram 帳號新增成功！')
           setShowSimpleAccountForm(false)
           fetchData()
         }}
@@ -800,6 +939,19 @@ export default function AdminInstagramMobilePage() {
         isOpen={showFontManagement}
         onClose={() => setShowFontManagement(false)}
       />
+
+      {/* Token 更新 */}
+      {updatingAccount && (
+        <TokenUpdateModal
+          isOpen={showTokenUpdate}
+          onClose={() => {
+            setShowTokenUpdate(false)
+            setUpdatingAccount(null)
+          }}
+          onUpdate={handleUpdateToken}
+          account={updatingAccount}
+        />
+      )}
     </div>
   )
 }

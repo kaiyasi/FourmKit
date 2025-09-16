@@ -1,123 +1,185 @@
+version: '3.8'
+
 services:
+  # 主要的 Nginx 前端服務
+  nginx:
+    build:
+      context: ./docker/nginx
+    container_name: forumkit-nginx
+    ports:
+      - "12005:80"  # 主專案端口
+    volumes:
+      - ./uploads:/var/www/uploads:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+      - cdn
+    restart: unless-stopped
+    networks:
+      - forumkit-net
+
+  # CDN 服務
+  cdn:
+    build:
+      context: ./docker/cdn
+    container_name: forumkit-cdn
+    ports:
+      - "12002:80"  # CDN 端口
+    volumes:
+      - ./cdn-data:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    networks:
+      - forumkit-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/admin/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # CDN 上傳服務
+  cdn-uploader:
+    build:
+      context: ./docker/cdn-uploader
+    container_name: forumkit-cdn-uploader
+    environment:
+      - CDN_LOCAL_ROOT=/data
+      - CDN_PUBLIC_BASE_URL=${PUBLIC_CDN_URL}
+      - CDN_DEFAULT_SUBDIR=social_media
+      - CDN_ADMIN_PASSWORD=${CDN_ADMIN_PASSWORD:-Serelix}
+    volumes:
+      - ./cdn-data:/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+    networks:
+      - forumkit-net
+
+  # 後端 Flask 應用
+  backend:
+    build:
+      context: ./backend
+    container_name: forumkit-backend
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - FLASK_ENV=${FLASK_ENV:-production}
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - UPLOAD_ROOT=/app/uploads
+      # Ensure preview images published to CDN land in a shared folder
+      - CDN_LOCAL_ROOT=/app/cdn-data
+      - PUBLIC_CDN_URL=${PUBLIC_CDN_URL}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Share CDN content directory with backend so publish_to_cdn copies are visible to cdn container
+      - ./cdn-data:/app/cdn-data
+    depends_on:
+      - postgres
+      - redis
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - forumkit-net
+
+  # PostgreSQL 資料庫
   postgres:
     image: postgres:15
+    container_name: forumkit-postgres
+    ports:
+      - "12007:5432"  # PostgreSQL 端口 (修正)
     environment:
-      POSTGRES_DB: forumkit
-      POSTGRES_USER: forumkit
-      POSTGRES_PASSWORD: forumkit
-    command: postgres -p 80
-    ports: ["${POSTGRES_PORT:-12007}:80"]
+      - POSTGRES_DB=${POSTGRES_DB:-forumkit}
+      - POSTGRES_USER=${POSTGRES_USER:-forumkit}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-forumkit_password}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    restart: unless-stopped
+    networks:
+      - forumkit-net
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U forumkit -p 80"]
-      interval: 5s
-      retries: 10
-    networks: [ core ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forumkit}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
+  # Redis 快取
   redis:
     image: redis:7-alpine
-    command: redis-server --port 80
-    ports: ["${REDIS_PORT:-12008}:80"]
-    networks: [ core ]
-
-  backend:
-    build: ./backend
-    environment:
-      DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
-      REDIS_URL: redis://redis:80/0
-      # 給健康檢查使用：在容器網路內直連 cdn 服務
-      CDN_HOST: cdn
-      CDN_PORT: "80"
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      PASSWORD_SALT_ROUNDS: ${PASSWORD_SALT_ROUNDS}
-      APP_MODE: ${APP_MODE}
-      UPLOAD_ROOT: /data/uploads
-      # Developer single-admin enforcement (optional; use with care)
-      ENFORCE_SINGLE_ADMIN: ${ENFORCE_SINGLE_ADMIN}
-      SINGLE_ADMIN_USERNAME: ${SINGLE_ADMIN_USERNAME}
-      SINGLE_ADMIN_PASSWORD: ${SINGLE_ADMIN_PASSWORD}
-      # Unified admin notifications webhook (Discord-compatible)
-      ADMIN_NOTIFY_WEBHOOK: ${ADMIN_NOTIFY_WEBHOOK}
-      # Backward-compat environment variables (optional)
-      DISCORD_THEME_WEBHOOK: ${DISCORD_THEME_WEBHOOK}
-      DISCORD_REPORT_WEBHOOK: ${DISCORD_REPORT_WEBHOOK}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      SOCKETIO_ORIGINS: ${SOCKETIO_ORIGINS}
-      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
-      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
-      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+    container_name: forumkit-redis
+    ports:
+      - "12008:6379"  # Redis 端口 (修正)
     volumes:
-      - ./uploads:/data/uploads
-    expose: ["80"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks: [ core ]
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - forumkit-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
+  # Celery Worker
   celery:
-    build: ./backend
-    command: celery -A services.celery_app.celery_app worker --loglevel=info -Q instagram,maintenance
+    build:
+      context: ./backend
+    container_name: forumkit-celery
+    command: celery -A services.celery_app.celery_app worker --loglevel=info -Q instagram,maintenance,celery
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
-      REDIS_URL: redis://redis:80/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      APP_MODE: ${APP_MODE}
-      UPLOAD_ROOT: /data/uploads
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
-      ENFORCE_SINGLE_ADMIN: ${ENFORCE_SINGLE_ADMIN}
-      SINGLE_ADMIN_USERNAME: ${SINGLE_ADMIN_USERNAME}
-      SINGLE_ADMIN_PASSWORD: ${SINGLE_ADMIN_PASSWORD}
-      ADMIN_NOTIFY_WEBHOOK: ${ADMIN_NOTIFY_WEBHOOK}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      # Use same broker/backend as backend
+      - REDIS_URL=${REDIS_URL}
+      - DATABASE_URL=${DATABASE_URL}
     volumes:
-      - ./uploads:/data/uploads
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./logs:/app/logs
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks: [ core ]
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - forumkit-net
 
+  # Celery Beat (定時任務)
   celery-beat:
-    build: ./backend
+    build:
+      context: ./backend
+    container_name: forumkit-celery-beat
     command: celery -A services.celery_app.celery_app beat --loglevel=info
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://forumkit:forumkit@postgres:80/forumkit
-      REDIS_URL: redis://redis:80/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      APP_MODE: ${APP_MODE}
-      UPLOAD_ROOT: /data/uploads
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
-      ADMIN_NOTIFY_WEBHOOK: ${ADMIN_NOTIFY_WEBHOOK}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=${REDIS_URL}
+      - DATABASE_URL=${DATABASE_URL}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./logs:/app/logs
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks: [ core ]
-
-  nginx:
-    build: ./docker/nginx
-    ports: ["${HOST_PORT:-12005}:80"]
-    volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./frontend/dist:/usr/share/nginx/html:ro
-      - ./uploads:/var/www/uploads:ro
-    depends_on: [backend]
-    networks: [ core ]
-
-  cdn:
-    build: ./docker/cdn
-    ports: ["${CDN_PORT:-12002}:80"]
-    volumes:
-      - ./uploads/public:/usr/share/nginx/html:ro
-    networks: [ core ]
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - forumkit-net
 
 volumes:
-  pgdata:
+  postgres_data:
+  redis_data:
 
 networks:
-  core:
+  forumkit-net:
+    driver: bridge

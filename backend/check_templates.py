@@ -4,7 +4,7 @@ import json
 import os
 
 # 直接使用正確的數據庫路徑
-db_path = r"g:\ForumKit\backend\data\forumkit_core.db"
+db_path = r"/mnt/data_pool_b/kaiyasi/ForumKit/backend/data/forumkit_core.db"
 
 if not os.path.exists(db_path):
     print(f"數據庫檔案不存在: {db_path}")

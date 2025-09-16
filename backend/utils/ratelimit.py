@@ -164,6 +164,46 @@ def unblock_ip(ip: str | None = None) -> None:
 
 def is_ip_blocked(ip: str | None = None) -> bool:
     ip = ip or get_client_ip()
+
+    # 白名單檢查 - 特定用戶身份豁免
+    try:
+        from flask_jwt_extended import get_jwt_identity
+        user_identity = get_jwt_identity()
+        if user_identity and user_identity in ['dev_admin', 'admin']:
+            return False
+    except Exception:
+        # JWT context 不可用時，嘗試手動解析JWT並查詢用戶角色
+        try:
+            from flask import request
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]  # 移除 'Bearer ' 前綴
+                import jwt
+                # 使用相同的JWT密鑰解析token
+                jwt_secret = os.getenv('JWT_SECRET_KEY', 'dev-secret-change-in-production')
+                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+                user_id = payload.get('sub')
+
+                if user_id:
+                    # 查詢用戶角色
+                    try:
+                        from models.user import User
+                        from models.database import get_session
+                        with get_session() as session:
+                            user = session.get(User, user_id)
+                            if user and user.role in ['dev_admin', 'admin']:
+                                return False
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 白名單檢查 - 環境變數配置的IP
+    whitelist_ips = os.getenv('IP_WHITELIST', '').split(',')
+    whitelist_ips = [w.strip() for w in whitelist_ips if w.strip()]
+    if ip in whitelist_ips:
+        return False
+
     key = _ip_key(ip, 'blocked')
     if _redis_ok and _redis is not None:
         return bool(_redis.get(key))

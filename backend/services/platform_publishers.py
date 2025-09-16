@@ -283,37 +283,6 @@ class InstagramPublisher(BasePlatformPublisher):
             return f"https://www.instagram.com/p/{j['shortcode']}/"
         # 最後才退回（不建議）
         return f"https://www.instagram.com/"
-    
-    def refresh_access_token(self, account) -> Dict[str, Any]:
-        """刷新 Access Token"""
-        try:
-            url = f"{self.api_base_url}/oauth/access_token"
-            
-            params = {
-                'grant_type': 'fb_exchange_token',
-                'client_id': os.getenv('FACEBOOK_APP_ID'),
-                'client_secret': os.getenv('FACEBOOK_APP_SECRET'),
-                'fb_exchange_token': account.access_token
-            }
-            
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            return {
-                'success': True,
-                'access_token': data['access_token'],
-                'expires_in': data.get('expires_in'),
-                'token_type': data.get('token_type', 'bearer')
-            }
-            
-        except Exception as e:
-            logger.error(f"Instagram token 刷新失敗: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
 
 class TwitterPublisher(BasePlatformPublisher):
     """Twitter 發布器 (預留實作)"""

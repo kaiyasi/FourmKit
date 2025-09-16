@@ -81,19 +81,10 @@ class PostApprovalHook:
         if getattr(forum_post, 'is_deleted', False):
             return False
         
-        # 檢查內容是否符合平台字數要求
-        from utils.config_handler import load_config
-        config = load_config()
-        
-        if not forum_post.content:
+        # 檢查內容基本要求
+        if not forum_post.content or not forum_post.content.strip():
+            logger.info(f"貼文 {forum_post.id} 內容為空")
             return False
-            
-        # 使用平台的字數限制設定
-        if config.get('enforce_min_post_chars', True):
-            min_chars = config.get('min_post_chars', 15)
-            if len(forum_post.content.strip()) < min_chars:
-                logger.info(f"貼文 {forum_post.id} 內容長度 {len(forum_post.content.strip())} < 最小要求 {min_chars}")
-                return False
         
         # 檢查是否有關聯的活躍社交帳號
         with get_session() as db:

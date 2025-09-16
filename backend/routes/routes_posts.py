@@ -461,10 +461,13 @@ def list_posts():
             if p.school_id:
                 school = s.query(School).get(p.school_id)
                 if school:
+                    logo_url = f"/uploads/{school.logo_path}" if school.logo_path else None
                     school_info = {
                         'id': school.id,
                         'slug': school.slug,
-                        'name': school.name
+                        'name': school.name,
+                        'logo_path': school.logo_path,
+                        'logo_url': logo_url
                     }
                     school_name = school.name
             
@@ -483,16 +486,30 @@ def list_posts():
                     school_info = None
                 school_name = '成功大學'
 
-            cov_path = (cover_map.get(p.id) or None)
-            cov_url = (f"/uploads/{cov_path}" if isinstance(cov_path, str) and cov_path else None)
+            # 封面 URL/路徑處理
+            # resolve_or_publish_public_media 現在可能回傳完整 URL 或本地相對 URL
+            cover_url = cover_map.get(p.id)
+            cover_path = None
+            if cover_url:
+                # 如果是本地 URL，移除 /uploads/ 前綴以得到相對路徑
+                if cover_url.startswith("/uploads/"):
+                    cover_path = cover_url[len("/uploads/"):]
+                # 如果是 CDN URL，試著解析出相對路徑
+                elif cdn_base_url := (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/"):
+                    if cover_url.startswith(cdn_base_url):
+                        # 組合出 public/media/... 的路徑
+                        relative_part = cover_url[len(cdn_base_url):].lstrip('/')
+                        if '/' in relative_part:
+                            cover_path = f"public/{relative_part}"
+
             items.append({
                 "id": p.id,
                 "content": _markdown_to_html(p.content),
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
                 "media_count": int(count_map.get(p.id, 0)),
-                "cover_path": cov_path,
-                "cover_url": cov_url,
+                "cover_path": cover_path, # 前端可能需要相對路徑
+                "cover_url": cover_url,   # 完整的、可直接使用的 URL
                 "school_id": p.school_id,
                 "school": school_info,
                 "school_name": school_name,
@@ -698,20 +715,41 @@ def list_posts_compat():
                 if getattr(p, 'school_id', None):
                     sch = s.query(School).get(p.school_id)
                     if sch:
-                        school_info = { 'id': sch.id, 'slug': sch.slug, 'name': sch.name }
+                        logo_url = f"/uploads/{sch.logo_path}" if sch.logo_path else None
+                        school_info = {
+                            'id': sch.id,
+                            'slug': sch.slug,
+                            'name': sch.name,
+                            'logo_path': sch.logo_path,
+                            'logo_url': logo_url
+                        }
                         school_name = sch.name
             except Exception:
                 pass
-            cov_path = (cover_map.get(p.id) or None)
-            cov_url = (f"/uploads/{cov_path}" if isinstance(cov_path, str) and cov_path else None)
+            # 封面 URL/路徑處理
+            # resolve_or_publish_public_media 現在可能回傳完整 URL 或本地相對 URL
+            cover_url = cover_map.get(p.id)
+            cover_path = None
+            if cover_url:
+                # 如果是本地 URL，移除 /uploads/ 前綴以得到相對路徑
+                if cover_url.startswith("/uploads/"):
+                    cover_path = cover_url[len("/uploads/"):]
+                # 如果是 CDN URL，試著解析出相對路徑
+                elif cdn_base_url := (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/"):
+                    if cover_url.startswith(cdn_base_url):
+                        # 組合出 public/media/... 的路徑
+                        relative_part = cover_url[len(cdn_base_url):].lstrip('/')
+                        if '/' in relative_part:
+                            cover_path = f"public/{relative_part}"
+
             items.append({
                 "id": p.id,
                 "content": _markdown_to_html(p.content),
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
                 "media_count": int(count_map.get(p.id, 0)),
-                "cover_path": cov_path,
-                "cover_url": cov_url,
+                "cover_path": cover_path, # 前端可能需要相對路徑
+                "cover_url": cover_url,   # 完整的、可直接使用的 URL
                 "school_id": (p.school_id or None),
                 "school": school_info,
                 "school_name": school_name,
@@ -762,17 +800,30 @@ def get_post(pid: int):
                  .all()
             )
             from utils.upload_utils import resolve_or_publish_public_media
+            cdn_base_url = (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/")
             for m in medias:
-                path = resolve_or_publish_public_media(m.path or '', int(m.id), getattr(m,'mime_type',None)) or ''
-                if not path.startswith('public/'):
+                url = resolve_or_publish_public_media(m.path or '', int(m.id), getattr(m,'mime_type',None))
+                if not url:
                     continue
+
                 # 推測類型（前端可再判斷）
-                ext = (path.rsplit(".",1)[-1] or "").lower()
+                ext = (url.rsplit(".",1)[-1].split("?")[0] or "").lower()
                 kind = "image" if ext in {"jpg","jpeg","png","webp","gif"} else ("video" if ext in {"mp4","webm","mov"} else "other")
+                
+                # 解析相對路徑 for 'path' field
+                path = None
+                if url.startswith("/uploads/"):
+                    path = url[len("/uploads/"):]
+                elif cdn_base_url and url.startswith(cdn_base_url):
+                    relative_part = url[len(cdn_base_url):].lstrip('/')
+                    # 假設 CDN URL 結構為 .../media/123.jpg -> public/media/123.jpg
+                    if '/' in relative_part:
+                        path = f"public/{relative_part}"
+
                 media_items.append({
                     "id": m.id,
-                    "path": path,
-                    "url": f"/uploads/{path}",
+                    "path": path, # 盡可能提供相對路徑
+                    "url": url,   # 完整的、可直接使用的 URL
                     "kind": kind,
                 })
         except Exception:
@@ -783,7 +834,14 @@ def get_post(pid: int):
             if getattr(p, 'school_id', None):
                 sch = s.query(School).get(p.school_id)
                 if sch:
-                    school_info = { 'id': sch.id, 'slug': sch.slug, 'name': sch.name }
+                    logo_url = f"/uploads/{sch.logo_path}" if sch.logo_path else None
+                    school_info = {
+                        'id': sch.id,
+                        'slug': sch.slug,
+                        'name': sch.name,
+                        'logo_path': sch.logo_path,
+                        'logo_url': logo_url
+                    }
         except Exception:
             school_info = None
 

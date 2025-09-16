@@ -4,7 +4,6 @@ import {
   Save,
   Settings,
   Clock,
-  Hash,
   Zap,
   Calendar,
   Target,
@@ -69,6 +68,8 @@ export default function AccountSettingsEditor({ isOpen, onClose, onSave, account
   const [loadingSchools, setLoadingSchools] = useState(false)
   const [userRole, setUserRole] = useState<string>('')
   const [userSchoolId, setUserSchoolId] = useState<number | null>(null)
+  const [newToken, setNewToken] = useState('')
+  const [tokenUpdating, setTokenUpdating] = useState(false)
 
   useEffect(() => {
     if (account) {
@@ -132,25 +133,46 @@ export default function AccountSettingsEditor({ isOpen, onClose, onSave, account
     }
   }
 
-  const updateHashtag = (index: number, value: string) => {
-    const newHashtags = [...settings.auto_hashtags]
-    newHashtags[index] = value.startsWith('#') ? value : `#${value}`
-    setSettings(prev => ({ ...prev, auto_hashtags: newHashtags }))
+  const handleTokenUpdate = async () => {
+    if (!account || !newToken.trim()) {
+      alert('請輸入新的 Token')
+      return
+    }
+
+    setTokenUpdating(true)
+    try {
+      const response = await fetch(`/api/admin/social/accounts/${account.id}/token`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          instagram_user_token: newToken.trim()
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Token 更新失敗')
+      }
+
+      const result = await response.json()
+      if (result.success) {
+        alert('Token 更新成功！')
+        setNewToken('')
+        onClose() // 關閉編輯器讓用戶看到更新後的狀態
+      } else {
+        throw new Error(result.error || 'Token 更新失敗')
+      }
+    } catch (error: any) {
+      console.error('Token update failed:', error)
+      alert(error.message || 'Token 更新失敗，請稍後再試')
+    } finally {
+      setTokenUpdating(false)
+    }
   }
 
-  const addHashtag = () => {
-    setSettings(prev => ({
-      ...prev,
-      auto_hashtags: [...prev.auto_hashtags, '#']
-    }))
-  }
-
-  const removeHashtag = (index: number) => {
-    setSettings(prev => ({
-      ...prev,
-      auto_hashtags: prev.auto_hashtags.filter((_, i) => i !== index)
-    }))
-  }
 
 
   const getTriggerDescription = (trigger: string) => {
@@ -387,44 +409,58 @@ export default function AccountSettingsEditor({ isOpen, onClose, onSave, account
             )}
           </div>
 
-          {/* 標籤設定 */}
+          {/* Token 更新設定 */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Hash className="w-5 h-5 text-muted" />
-              <h3 className="font-semibold dual-text">自動標籤</h3>
+              <Key className="w-5 h-5 text-muted" />
+              <h3 className="font-semibold dual-text">更新 Access Token</h3>
             </div>
 
-            <div className="space-y-2">
-              {settings.auto_hashtags.map((hashtag, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={hashtag}
-                    onChange={(e) => updateHashtag(index, e.target.value)}
-                    placeholder="#標籤"
-                    className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            <div className="space-y-4">
+              {/* Token 輸入欄位 */}
+              <div>
+                <label className="block text-sm font-medium dual-text mb-2">
+                  新的 Instagram User Token
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-3 w-4 h-4 text-muted" />
+                  <textarea
+                    value={newToken}
+                    onChange={(e) => setNewToken(e.target.value)}
+                    placeholder="貼上新的 Instagram User Token..."
+                    rows={3}
+                    className="w-full pl-10 pr-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono text-sm"
                   />
-                  <button
-                    onClick={() => removeHashtag(index)}
-                    className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
                 </div>
-              ))}
-              
-              <button
-                onClick={addHashtag}
-                className="w-full px-3 py-2 border border-dashed border-border rounded-lg text-muted hover:text-foreground hover:border-muted transition-colors"
-              >
-                + 新增標籤
-              </button>
-              
-              <div className="flex items-start gap-2 p-3 bg-muted/20 rounded-lg">
-                <Info className="w-4 h-4 text-muted mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-muted">
-                  這些標籤會自動添加到所有從這個帳號發布的內容中。建議設定與你的學校或品牌相關的常用標籤。
+                <p className="text-xs text-muted mt-1">
+                  從 Facebook 開發者平台獲取的 User Token，支援短期或長期 Token
                 </p>
+              </div>
+
+              {/* 更新按鈕 */}
+              <button
+                onClick={handleTokenUpdate}
+                disabled={!newToken.trim() || tokenUpdating}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {tokenUpdating ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span>{tokenUpdating ? '更新中...' : '更新 Token'}</span>
+              </button>
+
+              <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-blue-800 dark:text-blue-300">
+                  <div className="font-medium mb-1">更新 Token 的原因：</div>
+                  <ul className="space-y-0.5">
+                    <li>• Facebook/Instagram tokens 通常有60天有效期</li>
+                    <li>• 帳號權限變更時需要重新授權</li>
+                    <li>• 當帳號狀態顯示錯誤時，通常是 Token 過期</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

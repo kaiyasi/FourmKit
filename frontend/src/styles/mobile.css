@@ -240,6 +240,16 @@
     padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
 
+  /* 強化底部導航間距 - 確保所有手機頁面都有足夠底部間距 */
+  .page-content {
+    padding-bottom: max(var(--fk-bottomnav-offset, calc(80px + env(safe-area-inset-bottom))), 80px) !important;
+  }
+
+  /* 額外的底部間距工具類，給需要的元件使用 */
+  .mobile-navbar-safe-bottom {
+    margin-bottom: max(var(--fk-bottomnav-offset, calc(80px + env(safe-area-inset-bottom))), 80px);
+  }
+
   .mobile-horizontal-padding {
     padding-left: 16px;
     padding-right: 16px;

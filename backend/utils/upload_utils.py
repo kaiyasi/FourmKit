@@ -57,8 +57,12 @@ def _mime_magic(buf: bytes) -> str:
             return 'image/png'
         elif buf.startswith(b'RIFF') and b'WEBP' in buf[:12]:
             return 'image/webp'
-        elif buf.startswith(b'\x00\x00\x00\x20ftypmp4') or buf.startswith(b'\x00\x00\x00\x18ftypmp4'):
+        elif len(buf) > 8 and buf[4:8] == b'ftyp':
+            # 更精確的 MP4 檢測：檢查 ftyp box
             return 'video/mp4'
+        elif buf.startswith(b'\x1a\x45\xdf\xa3'):
+            # WebM (EBML header)
+            return 'video/webm'
         else:
             return 'application/octet-stream'
 
@@ -281,20 +285,40 @@ def find_public_media_rel(media_id: int) -> Optional[str]:
     return None
 
 
+from utils.cdn_uploader import publish_to_cdn
+
 def resolve_or_publish_public_media(current_rel_path: str, media_id: int, mime_type: Optional[str]) -> Optional[str]:
-    """確保並回傳 public/media/<id>.<ext> 的相對路徑；
-    若既有檔案不存在，嘗試發布；仍失敗則回 None。
+    """確保並回傳完整的公開媒體 URL。
+    優先從 CDN 提供，若 CDN 設定不存在則回退到本地相對路徑。
     """
-    # 先找找看
-    rel = find_public_media_rel(media_id)
-    if rel:
-        return rel
-    # 沒找到 → 依當前路徑/來源發布
-    new_rel = publish_media_by_id(current_rel_path or '', media_id, mime_type)
-    if new_rel.startswith('public/'):
-        return new_rel
-    # 發布失敗再找一次（避免 race）
-    return find_public_media_rel(media_id)
+    # 檢查 CDN URL 是否已設定
+    cdn_base_url = (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/")
+    
+    # 1. 先嘗試尋找已存在的公開媒體檔案
+    public_rel_path = find_public_media_rel(media_id)
+    
+    # 2. 如果找不到，則嘗試發布
+    if not public_rel_path:
+        public_rel_path = publish_media_by_id(current_rel_path or '', media_id, mime_type)
+
+    # 3. 如果找到或成功發布了公開檔案
+    if public_rel_path and public_rel_path.startswith('public/'):
+        # 如果設定了 CDN，則將檔案發布到 CDN 並回傳 CDN URL
+        if cdn_base_url:
+            upload_root = Path(os.getenv("UPLOAD_ROOT", "uploads"))
+            full_local_path = upload_root / public_rel_path
+            
+            if full_local_path.exists():
+                # 使用 'media' 作為子目錄，與 content_generator.py 的行為保持一致
+                cdn_url = publish_to_cdn(str(full_local_path), subdir="media")
+                if cdn_url:
+                    return cdn_url
+        
+        # 如果沒有設定 CDN 或 CDN 發布失敗，回退到本地相對 URL
+        return f"/uploads/{public_rel_path}"
+
+    # 4. 如果最終還是失敗，回傳 None
+    return None
 
 def cleanup_orphaned_chunks(user_id: int, max_age_hours: int = 24):
     """清理孤兒分塊檔案"""

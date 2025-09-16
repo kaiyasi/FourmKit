@@ -187,6 +187,8 @@ const SupportPage: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+      e.stopPropagation(); // 手機瀏覽器額外阻止事件冒泡
+
       if (!formData.subject.trim() || !formData.body.trim()) return;
 
       try {
@@ -223,19 +225,54 @@ const SupportPage: React.FC = () => {
         });
 
         if (resp?.ok) {
+          // 顯示成功訊息給用戶，包含客服單資訊
+          const ticketInfo = resp.ticket;
+          const successMessage = `✅ 客服單建立成功！
+
+📋 客服單資訊：
+• 工單編號：#${ticketInfo.public_id}
+• 主題：${ticketInfo.subject}
+• 狀態：${ticketInfo.status === 'open' ? '已開啟' : ticketInfo.status}
+• 分類：${ticketInfo.category}
+• 建立時間：${new Date(ticketInfo.created_at).toLocaleString('zh-TW')}
+
+${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住您的工單編號以便日後追蹤。'}`;
+
+          alert(successMessage);
           setShowCreateModal(false);
+
           // 登入者：刷新列表並選取新單
           if (isLoggedIn && resp.ticket?.id) {
-            try { localStorage.setItem('fk_last_ticket_id', resp.ticket.id); } catch {}
+            try {
+              localStorage.setItem('fk_last_ticket_id', resp.ticket.id);
+            } catch {
+              try {
+                sessionStorage.setItem('fk_last_ticket_id', resp.ticket.id);
+              } catch {
+                // 完全失敗時跳過存儲
+              }
+            }
             await loadTickets();
             selectTicket(resp.ticket.id);
           } else if (resp.tracking_url) {
-            // 訪客：導向追蹤連結
-            window.location.href = resp.tracking_url;
+            // 訪客：使用 React Router 導航而非直接跳轉
+            navigate(resp.tracking_url);
           }
         }
       } catch (error) {
         console.error('創建工單失敗:', error);
+
+        // 手機瀏覽器特殊錯誤處理
+        const errorMessage = error instanceof Error ? error.message : '創建工單失敗';
+
+        // 檢查是否為網路錯誤或手機瀏覽器限制
+        if (errorMessage.includes('NetworkError') || errorMessage.includes('Failed to fetch')) {
+          alert('網路連線問題，請檢查網路連線後重試');
+        } else if (errorMessage.includes('localStorage') || errorMessage.includes('sessionStorage')) {
+          alert('瀏覽器儲存空間問題，請嘗試清除瀏覽器快取');
+        } else {
+          alert(errorMessage.includes('HTTP') ? '伺服器回應錯誤，請稍後再試' : errorMessage);
+        }
       } finally {
         setCreating(false);
       }

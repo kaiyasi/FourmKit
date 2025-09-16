@@ -28,7 +28,8 @@ class InstagramPagePublisher:
         try:
             # 基礎檢查：image_url 必須是公開的 http(s) 絕對網址
             self._assert_public_http_url(image_url)
-            logger.info(f"開始發布到 IG，Page ID: {account.platform_user_id}")
+            acc_page_id = getattr(account, 'page_id', None) or getattr(account, 'platform_user_id', None)
+            logger.info(f"開始發布到 IG，Page ID: {acc_page_id}")
             
             # Step 1: 從 Page ID 取得 IG Account ID 和 Page Token
             page_info = self._get_page_info(account)
@@ -82,7 +83,8 @@ class InstagramPagePublisher:
     ) -> Dict[str, Any]:
         """發布輪播貼文"""
         try:
-            logger.info(f"開始發布輪播到 IG，Page ID: {account.platform_user_id}")
+            acc_page_id = getattr(account, 'page_id', None) or getattr(account, 'platform_user_id', None)
+            logger.info(f"開始發布輪播到 IG，Page ID: {acc_page_id}")
             
             # Step 1: 取得 Page 資訊
             page_info = self._get_page_info(account)
@@ -135,8 +137,9 @@ class InstagramPagePublisher:
     def _get_page_info(self, account) -> Dict[str, Any]:
         """從 Page ID 取得必要的發布資訊"""
         try:
-            page_id = account.platform_user_id
-            user_token = account.access_token
+            page_id = getattr(account, 'page_id', None) or getattr(account, 'platform_user_id', None)
+            # 優先使用長期Token，如果沒有則使用原始Token
+            user_token = getattr(account, 'long_lived_access_token', None) or account.access_token
             
             # 取得 Page Token
             page_response = requests.get(
@@ -400,10 +403,27 @@ class InstagramPagePublisher:
                     'account_type': ig_data.get('account_type')
                 }
             else:
-                return {
-                    'valid': False,
-                    'error': f"無法訪問 IG Account {ig_account_id}"
-                }
+                # 取得更詳細的錯誤資訊
+                try:
+                    error_data = ig_response.json()
+                    error_msg = error_data.get('error', {})
+                    if isinstance(error_msg, dict):
+                        detailed_error = error_msg.get('message', '未知API錯誤')
+                        error_code = error_msg.get('code', 'unknown')
+                        return {
+                            'valid': False,
+                            'error': f"無法訪問 IG Account {ig_account_id}：{detailed_error} (錯誤代碼: {error_code})"
+                        }
+                    else:
+                        return {
+                            'valid': False,
+                            'error': f"無法訪問 IG Account {ig_account_id}：{error_msg}"
+                        }
+                except:
+                    return {
+                        'valid': False,
+                        'error': f"無法訪問 IG Account {ig_account_id}：HTTP {ig_response.status_code}"
+                    }
                 
         except Exception as e:
             return {

@@ -149,7 +149,7 @@ export default function AuthPage() {
           <div className="mb-4 p-3 rounded-lg bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-100 border border-rose-300 dark:border-rose-700">
             {err}
             <div className="mt-2 text-sm">
-              需要協助？請聯繫系統管理員
+              需要協助？<a href="/support" className="underline">請聯繫系統管理員</a>
             </div>
           </div>
         )}

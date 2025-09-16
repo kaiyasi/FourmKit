@@ -4,17 +4,23 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  Download,
   Type,
   FileText,
-  BarChart3,
   Plus,
   X,
-  Settings,
   AlertTriangle,
   CheckCircle,
-  RefreshCw
+  RefreshCw,
+  Clock,
+  Send,
+  User,
+  XCircle,
+  ArrowLeft,
+  Filter,
+  Server,
+  Zap
 } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface FontFile {
   id: number
@@ -35,12 +41,24 @@ interface FontFile {
   file_exists: boolean
 }
 
-interface FontStats {
-  total_fonts: number
-  active_fonts: number
-  chinese_fonts: number
-  most_used_fonts: FontFile[]
-  recent_fonts: FontFile[]
+interface FontRequest {
+  id: number
+  font_name: string
+  description: string
+  reason: string
+  status: 'pending' | 'approved' | 'rejected'
+  requester: {
+    id: number
+    username: string
+    school_name?: string
+  }
+  reviewer?: {
+    id: number
+    username: string
+  }
+  created_at: string
+  reviewed_at?: string
+  review_reason?: string
 }
 
 interface FontManagementProps {
@@ -49,15 +67,30 @@ interface FontManagementProps {
 }
 
 export default function FontManagement({ isOpen, onClose }: FontManagementProps) {
+  const { role } = useAuth()
+  const isDev = role === 'dev_admin'
+  const isCampus = role === 'campus_admin'
+  const isCross = role === 'cross_admin'
+
   const [fonts, setFonts] = useState<FontFile[]>([])
-  const [stats, setStats] = useState<FontStats | null>(null)
+  const [requests, setRequests] = useState<FontRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [showUploadForm, setShowUploadForm] = useState(false)
+  const [showRequestForm, setShowRequestForm] = useState(false)
   const [previewFont, setPreviewFont] = useState<FontFile | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [previewText, setPreviewText] = useState('這是字體預覽文字 ABC 123')
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({})
+  const [selectedRequest, setSelectedRequest] = useState<FontRequest | null>(null)
+  const [selectedFont, setSelectedFont] = useState<FontFile | null>(null)
+
+  // 過濾器狀態
+  const [filters, setFilters] = useState({
+    view: 'fonts' as 'fonts' | 'requests',
+    status: 'all' as 'all' | 'active' | 'inactive',
+    type: 'all' as 'all' | 'chinese' | 'system'
+  })
 
   // 表單狀態
   const [uploadForm, setUploadForm] = useState({
@@ -69,10 +102,16 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
     style: 'normal'
   })
 
+  const [requestForm, setRequestForm] = useState({
+    font_name: '',
+    description: '',
+    reason: ''
+  })
+
   useEffect(() => {
     if (isOpen) {
       fetchFonts()
-      fetchStats()
+      if (isDev || isCampus) fetchRequests()
     }
   }, [isOpen])
 
@@ -83,34 +122,36 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       })
-      
+
       const result = await response.json()
       if (result.success) {
-        setFonts(result.fonts)
+        setFonts(result.fonts || [])
       } else {
         console.error('獲取字體列表失敗:', result.error)
       }
     } catch (error) {
       console.error('獲取字體列表失敗:', error)
+      setFonts([])
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchStats = async () => {
+  const fetchRequests = async () => {
     try {
-      const response = await fetch('/api/admin/fonts/stats', {
+      const response = await fetch('/api/admin/fonts/requests', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       })
-      
+
       const result = await response.json()
       if (result.success) {
-        setStats(result.stats)
+        setRequests(result.requests || [])
       }
     } catch (error) {
-      console.error('獲取字體統計失敗:', error)
+      console.error('獲取字體申請失敗:', error)
+      setRequests([])
     }
   }
 
@@ -162,7 +203,6 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
           style: 'normal'
         })
         fetchFonts()
-        fetchStats()
       } else {
         alert(`上傳失敗: ${result.error}`)
       }
@@ -171,6 +211,41 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
       alert('字體上傳失敗，請稍後再試')
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleSubmitRequest = async () => {
+    if (!requestForm.font_name.trim() || !requestForm.reason.trim()) {
+      alert('請填寫字體名稱和申請理由')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/admin/fonts/requests', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestForm)
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        alert('字體申請已提交，等待審核')
+        setShowRequestForm(false)
+        setRequestForm({
+          font_name: '',
+          description: '',
+          reason: ''
+        })
+        fetchRequests()
+      } else {
+        alert(`申請失敗: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('字體申請失敗:', error)
+      alert('字體申請失敗，請稍後再試')
     }
   }
 
@@ -220,13 +295,42 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
       if (result.success) {
         alert('字體刪除成功')
         fetchFonts()
-        fetchStats()
       } else {
         alert(`刪除失敗: ${result.error}`)
       }
     } catch (error) {
       console.error('字體刪除失敗:', error)
       alert('刪除失敗，請稍後再試')
+    } finally {
+      setActionLoading(prev => ({ ...prev, [loadingKey]: false }))
+    }
+  }
+
+  const handleRequestAction = async (requestId: number, action: 'approve' | 'reject', reason?: string) => {
+    const loadingKey = `request-${action}-${requestId}`
+    setActionLoading(prev => ({ ...prev, [loadingKey]: true }))
+
+    try {
+      const response = await fetch(`/api/admin/fonts/requests/${requestId}/${action}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ reason })
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        alert(`申請已${action === 'approve' ? '核准' : '拒絕'}`)
+        fetchRequests()
+        setSelectedRequest(null)
+      } else {
+        alert(`操作失敗: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('處理申請失敗:', error)
+      alert('操作失敗，請稍後再試')
     } finally {
       setActionLoading(prev => ({ ...prev, [loadingKey]: false }))
     }
@@ -269,227 +373,577 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('zh-TW', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  // 過濾字體和申請
+  const filteredFonts = (fonts || []).filter(font => {
+    if (filters.status !== 'all') {
+      if (filters.status === 'active' && !font.is_active) return false
+      if (filters.status === 'inactive' && font.is_active) return false
+    }
+    if (filters.type !== 'all') {
+      if (filters.type === 'chinese' && !font.is_chinese_supported) return false
+      if (filters.type === 'system' && !font.is_system_font) return false
+    }
+    return true
+  })
+
+  const filteredRequests = (requests || []).filter(request => {
+    // 可以添加更多過濾條件
+    return true
+  })
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface border border-border rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <div>
-            <h2 className="text-xl font-semibold dual-text flex items-center gap-2">
-              <Type className="w-6 h-6" />
-              字體管理
-            </h2>
-            <p className="text-sm text-muted mt-1">
-              管理系統字體檔案（僅限 dev_admin）
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowUploadForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              上傳字體
-            </button>
+    <div className="min-h-screen">
+      <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+        {/* 頁面標題 - 比照審核管理 */}
+        <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
+          <div className="flex items-center gap-3 mb-2">
             <button
               onClick={onClose}
-              className="p-2 text-muted hover:text-foreground rounded-lg hover:bg-muted/50"
+              className="flex items-center gap-2 text-muted hover:text-fg transition-colors"
             >
-              <X className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" />
+              返回後台
             </button>
           </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-semibold dual-text flex items-center gap-3">
+                <Type className="w-6 h-6 text-primary" />
+                字體管理
+                {isCross && <span className="text-xs px-2 py-1 bg-muted text-muted rounded-full">唯讀模式</span>}
+              </h1>
+              <p className="text-sm text-muted mt-1">
+                {isDev && '管理系統字體檔案，支援模板圖片生成'}
+                {isCampus && '申請新字體與檢視可用字體'}
+                {isCross && '檢視可用字體列表'}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  fetchFonts()
+                  if (isDev || isCampus) fetchRequests()
+                }}
+                className="p-2 text-muted hover:text-foreground rounded-lg hover:bg-muted hover:bg-opacity-50 transition-colors"
+                title="重新載入"
+              >
+                <RefreshCw className="w-5 h-5" />
+              </button>
+
+              {isDev && (
+                <button
+                  onClick={() => setShowUploadForm(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">上傳字體</span>
+                </button>
+              )}
+
+              {isCampus && (
+                <button
+                  onClick={() => setShowRequestForm(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors shadow-sm"
+                >
+                  <Send className="w-4 h-4" />
+                  <span className="hidden sm:inline">申請字體</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel - Stats */}
-          <div className="w-80 border-r border-border bg-muted/30 p-4 overflow-y-auto">
-            <h3 className="font-medium dual-text mb-3">字體統計</h3>
-            
-            {stats && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-background rounded-lg p-3 border border-border">
-                    <div className="text-lg font-semibold dual-text">{stats.total_fonts}</div>
-                    <div className="text-xs text-muted">總字體數</div>
-                  </div>
-                  <div className="bg-background rounded-lg p-3 border border-border">
-                    <div className="text-lg font-semibold text-green-600">{stats.active_fonts}</div>
-                    <div className="text-xs text-muted">啟用字體</div>
-                  </div>
-                  <div className="bg-background rounded-lg p-3 border border-border">
-                    <div className="text-lg font-semibold text-blue-600">{stats.chinese_fonts}</div>
-                    <div className="text-xs text-muted">中文字體</div>
-                  </div>
-                  <div className="bg-background rounded-lg p-3 border border-border">
-                    <div className="text-lg font-semibold dual-text">
-                      {stats.most_used_fonts.reduce((sum, font) => sum + font.usage_count, 0)}
-                    </div>
-                    <div className="text-xs text-muted">總使用次數</div>
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 主內容區 - 字體列表/申請列表 */}
+          <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
+                {filters.view === 'fonts' ? <Type className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                {filters.view === 'fonts' ? '字體列表' : '申請列表'}
+                {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
+              </h2>
 
-                {/* 最常用字體 */}
-                <div className="bg-background rounded-lg p-3 border border-border">
-                  <h4 className="font-medium dual-text mb-2 text-sm">最常用字體</h4>
-                  <div className="space-y-2">
-                    {stats.most_used_fonts.slice(0, 3).map((font) => (
-                      <div key={font.id} className="flex justify-between items-center text-xs">
-                        <span className="truncate">{font.display_name}</span>
-                        <span className="text-primary">{font.usage_count}</span>
-                      </div>
-                    ))}
-                  </div>
+              {/* 視圖切換 */}
+              {(isDev || isCampus) && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFilters(prev => ({ ...prev, view: 'fonts' }))}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      filters.view === 'fonts'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted hover:text-fg hover:bg-surface-hover'
+                    }`}
+                  >
+                    字體
+                  </button>
+                  <button
+                    onClick={() => setFilters(prev => ({ ...prev, view: 'requests' }))}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      filters.view === 'requests'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted hover:text-fg hover:bg-surface-hover'
+                    }`}
+                  >
+                    申請
+                    {(requests || []).filter(r => r.status === 'pending').length > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">
+                        {(requests || []).filter(r => r.status === 'pending').length}
+                      </span>
+                    )}
+                  </button>
                 </div>
+              )}
+            </div>
 
-                {/* 最新字體 */}
-                <div className="bg-background rounded-lg p-3 border border-border">
-                  <h4 className="font-medium dual-text mb-2 text-sm">最新字體</h4>
-                  <div className="space-y-2">
-                    {stats.recent_fonts.slice(0, 3).map((font) => (
-                      <div key={font.id} className="text-xs">
-                        <div className="truncate font-medium">{font.display_name}</div>
-                        <div className="text-muted">
-                          {new Date(font.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
-                    ))}
+            {/* 過濾器 - 比照審核管理 */}
+            {filters.view === 'fonts' && (
+              <div className="mb-4 p-3 bg-surface-hover rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <select
+                    className="form-control form-control--compact flex-1"
+                    value={filters.status}
+                    onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as any }))}
+                  >
+                    <option value="all">所有狀態</option>
+                    <option value="active">已啟用</option>
+                    <option value="inactive">已停用</option>
+                  </select>
+                  <select
+                    className="form-control form-control--compact flex-1"
+                    value={filters.type}
+                    onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value as any }))}
+                  >
+                    <option value="all">所有類型</option>
+                    <option value="chinese">中文字體</option>
+                    <option value="system">系統字體</option>
+                  </select>
+                  <div className="text-xs text-muted flex items-center">
+                    共 {filteredFonts?.length || 0} 個字體
                   </div>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Main Content */}
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
-                  <p className="text-muted">載入字體列表...</p>
+            {/* 內容列表 */}
+            <div className="space-y-3">
+              {loading ? (
+                <div className="text-center py-8 text-muted">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+                  載入中...
                 </div>
-              </div>
-            ) : (
-              <div className="p-6">
-                <div className="grid gap-4">
-                  {fonts.map((font) => (
+              ) : filters.view === 'fonts' ? (
+                filteredFonts.length === 0 ? (
+                  <div className="text-center py-8 text-muted">
+                    {filters.status === 'all' && filters.type === 'all'
+                      ? '尚未上傳任何字體檔案'
+                      : '沒有符合條件的字體'}
+                  </div>
+                ) : (
+                  filteredFonts.map((font) => (
                     <div
                       key={font.id}
-                      className={`border rounded-lg p-4 transition-colors ${
-                        font.is_active ? 'border-border bg-background' : 'border-border bg-muted/30'
+                      className={`p-4 rounded-xl border border-border cursor-pointer transition-colors ${
+                        selectedFont?.id === font.id
+                          ? 'ring-2 ring-primary bg-primary bg-opacity-5'
+                          : 'bg-surface-hover hover:bg-surface'
                       }`}
+                      onClick={() => setSelectedFont(font)}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h4 className="font-medium dual-text">{font.display_name}</h4>
-                            <div className="flex items-center gap-2">
-                              {font.is_system_font && (
-                                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                                  系統字體
-                                </span>
-                              )}
-                              {font.is_chinese_supported && (
-                                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
-                                  支援中文
-                                </span>
-                              )}
-                              {!font.file_exists && (
-                                <span className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded flex items-center gap-1">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  檔案遺失
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="text-sm text-muted space-y-1">
-                            <div>字體家族: <code className="bg-muted px-1 rounded">{font.font_family}</code></div>
-                            <div>檔案: {font.filename} ({formatFileSize(font.file_size)})</div>
-                            <div>格式: {font.file_format.toUpperCase()} | 樣式: {font.weight} {font.style}</div>
-                            {font.description && <div>描述: {font.description}</div>}
-                            <div>使用次數: {font.usage_count} | 創建時間: {new Date(font.created_at).toLocaleString()}</div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 ml-4">
-                          <button
-                            onClick={() => handlePreviewFont(font)}
-                            className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded"
-                            title="預覽字體"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          
-                          {!font.is_system_font && (
-                            <>
-                              <button
-                                onClick={() => handleToggleStatus(font.id)}
-                                disabled={actionLoading[`toggle-${font.id}`]}
-                                className={`p-2 rounded ${
-                                  font.is_active
-                                    ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                                    : 'text-gray-600 hover:text-gray-700 hover:bg-gray-50'
-                                }`}
-                                title={font.is_active ? '停用字體' : '啟用字體'}
-                              >
-                                {actionLoading[`toggle-${font.id}`] ? (
-                                  <RefreshCw className="w-4 h-4 animate-spin" />
-                                ) : font.is_active ? (
-                                  <CheckCircle className="w-4 h-4" />
-                                ) : (
-                                  <EyeOff className="w-4 h-4" />
-                                )}
-                              </button>
-                              
-                              <button
-                                onClick={() => handleDeleteFont(font.id, font.display_name)}
-                                disabled={actionLoading[`delete-${font.id}`]}
-                                className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
-                                title="刪除字體"
-                              >
-                                {actionLoading[`delete-${font.id}`] ? (
-                                  <RefreshCw className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-4 h-4" />
-                                )}
-                              </button>
-                            </>
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            font.is_active
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {font.is_active ? '已啟用' : '已停用'}
+                          </span>
+                          {font.is_chinese_supported && (
+                            <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                              中文
+                            </span>
+                          )}
+                          {font.is_system_font && (
+                            <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">
+                              系統
+                            </span>
                           )}
                         </div>
+                        <span className="text-xs text-muted">
+                          <Clock className="inline w-3 h-3 mr-1" />
+                          {formatDate(font.created_at)}
+                        </span>
+                      </div>
+
+                      <div className="mb-2">
+                        <h3 className="font-semibold text-lg text-fg mb-1">{font.display_name}</h3>
+                        <code className="text-sm text-muted bg-surface px-2 py-1 rounded">
+                          {font.font_family}
+                        </code>
+                      </div>
+
+                      <div className="text-sm text-muted">
+                        {font.filename} • {formatFileSize(font.file_size)} • {font.file_format.toUpperCase()}
+                      </div>
+
+                      {font.description && (
+                        <div className="mt-2 text-sm text-muted">{font.description}</div>
+                      )}
+                    </div>
+                  ))
+                )
+              ) : (
+                filteredRequests.length === 0 ? (
+                  <div className="text-center py-8 text-muted">
+                    尚無字體申請
+                  </div>
+                ) : (
+                  filteredRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className={`p-4 rounded-xl border border-border cursor-pointer transition-colors ${
+                        selectedRequest?.id === request.id
+                          ? 'ring-2 ring-primary bg-primary bg-opacity-5'
+                          : request.status === 'pending'
+                            ? 'bg-surface border-primary border-opacity-20 hover:bg-primary hover:bg-opacity-5'
+                            : 'bg-surface-hover border-border hover:bg-surface'
+                      }`}
+                      onClick={() => setSelectedRequest(request)}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            request.status === 'pending' ? 'bg-orange-100 text-orange-800' :
+                            request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {request.status === 'pending' ? '待審核' :
+                             request.status === 'approved' ? '已核准' : '已拒絕'}
+                          </span>
+                          {request.requester.school_name && (
+                            <span className="text-xs px-2 py-1 bg-primary bg-opacity-10 text-primary rounded-full">
+                              {request.requester.school_name}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted">
+                          <Clock className="inline w-3 h-3 mr-1" />
+                          {formatDate(request.created_at)}
+                        </span>
+                      </div>
+
+                      <div className="mb-2">
+                        <h3 className="font-semibold text-lg text-fg mb-1">{request.font_name}</h3>
+                        <div className="text-sm text-muted line-clamp-2">{request.reason}</div>
+                      </div>
+
+                      {isDev && (
+                        <div className="text-xs text-muted">
+                          申請人: {request.requester.username}
+                          {request.requester.school_name && ` (${request.requester.school_name})`}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )
+              )}
+            </div>
+          </div>
+
+          {/* 右側邊欄 - 詳情和統計 */}
+          <div className="space-y-6">
+            {/* 選中項目詳情 */}
+            {(selectedFont || selectedRequest) && (
+              <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+                <h3 className="text-lg font-semibold text-fg mb-4">
+                  {selectedFont ? '字體詳情' : '申請詳情'}
+                </h3>
+
+                {selectedFont ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-fg text-lg">{selectedFont.display_name}</h4>
+                      <code className="text-sm text-muted bg-surface-hover px-2 py-1 rounded mt-1 inline-block">
+                        {selectedFont.font_family}
+                      </code>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-sm">
+                        <span className="text-muted">檔案名稱: </span>
+                        <span className="text-fg">{selectedFont.filename}</span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-muted">檔案大小: </span>
+                        <span className="text-fg">{formatFileSize(selectedFont.file_size)}</span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-muted">格式: </span>
+                        <span className="text-fg">{selectedFont.file_format.toUpperCase()}</span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-muted">樣式: </span>
+                        <span className="text-fg">{selectedFont.weight} {selectedFont.style}</span>
                       </div>
                     </div>
-                  ))}
 
-                  {fonts.length === 0 && (
-                    <div className="text-center py-12">
-                      <Type className="w-12 h-12 text-muted mx-auto mb-4" />
-                      <p className="text-muted">尚未上傳任何字體檔案</p>
+                    {selectedFont.description && (
+                      <div>
+                        <div className="text-sm text-muted">描述</div>
+                        <div className="mt-1 p-3 bg-surface-hover rounded-lg text-sm">
+                          {selectedFont.description}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 操作按鈕 */}
+                    <div className="space-y-2 mt-4">
+                      <button
+                        onClick={() => handlePreviewFont(selectedFont)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        預覽字體
+                      </button>
+
+                      {isDev && !selectedFont.is_system_font && (
+                        <>
+                          <button
+                            onClick={() => handleToggleStatus(selectedFont.id)}
+                            disabled={actionLoading[`toggle-${selectedFont.id}`]}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                              selectedFont.is_active
+                                ? 'bg-orange-500 text-white hover:bg-orange-600'
+                                : 'bg-green-500 text-white hover:bg-green-600'
+                            }`}
+                          >
+                            {actionLoading[`toggle-${selectedFont.id}`] ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : selectedFont.is_active ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4" />
+                            )}
+                            {selectedFont.is_active ? '停用字體' : '啟用字體'}
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteFont(selectedFont.id, selectedFont.display_name)}
+                            disabled={actionLoading[`delete-${selectedFont.id}`]}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                          >
+                            {actionLoading[`delete-${selectedFont.id}`] ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                            刪除字體
+                          </button>
+                        </>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                ) : selectedRequest ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-fg text-lg">{selectedRequest.font_name}</h4>
+                      <div className={`text-xs px-2 py-1 rounded-full inline-block mt-2 ${
+                        selectedRequest.status === 'pending' ? 'bg-orange-100 text-orange-800' :
+                        selectedRequest.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {selectedRequest.status === 'pending' ? '待審核' :
+                         selectedRequest.status === 'approved' ? '已核准' : '已拒絕'}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-muted">申請理由</div>
+                      <div className="mt-1 p-3 bg-surface-hover rounded-lg text-sm">
+                        {selectedRequest.reason}
+                      </div>
+                    </div>
+
+                    {selectedRequest.description && (
+                      <div>
+                        <div className="text-sm text-muted">字體描述</div>
+                        <div className="mt-1 p-3 bg-surface-hover rounded-lg text-sm">
+                          {selectedRequest.description}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <div className="text-sm">
+                        <span className="text-muted">申請人: </span>
+                        <span className="text-fg">{selectedRequest.requester.username}</span>
+                        {selectedRequest.requester.school_name && (
+                          <span className="text-xs px-2 py-1 bg-primary bg-opacity-10 text-primary rounded ml-2">
+                            {selectedRequest.requester.school_name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-muted">申請時間: </span>
+                        <span className="text-fg">{formatDate(selectedRequest.created_at)}</span>
+                      </div>
+                    </div>
+
+                    {/* 審核資訊 */}
+                    {selectedRequest.status !== 'pending' && (
+                      <div className="border-t pt-4">
+                        {selectedRequest.reviewer && (
+                          <div className="text-sm mb-2">
+                            <span className="text-muted">審核人: </span>
+                            <span className="text-fg">{selectedRequest.reviewer.username}</span>
+                          </div>
+                        )}
+                        {selectedRequest.reviewed_at && (
+                          <div className="text-sm mb-2">
+                            <span className="text-muted">審核時間: </span>
+                            <span className="text-fg">{formatDate(selectedRequest.reviewed_at)}</span>
+                          </div>
+                        )}
+                        {selectedRequest.review_reason && (
+                          <div>
+                            <div className="text-sm text-muted">審核備註</div>
+                            <div className="mt-1 p-3 bg-surface-hover rounded-lg text-sm">
+                              {selectedRequest.review_reason}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 操作按鈕 */}
+                    {isDev && selectedRequest.status === 'pending' && (
+                      <div className="space-y-2 mt-4 border-t pt-4">
+                        <button
+                          onClick={() => handleRequestAction(selectedRequest.id, 'approve')}
+                          disabled={actionLoading[`request-approve-${selectedRequest.id}`]}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                        >
+                          {actionLoading[`request-approve-${selectedRequest.id}`] ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <CheckCircle className="w-4 h-4" />
+                          )}
+                          核准申請
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const reason = prompt('請輸入拒絕理由:')
+                            if (reason) {
+                              handleRequestAction(selectedRequest.id, 'reject', reason)
+                            }
+                          }}
+                          disabled={actionLoading[`request-reject-${selectedRequest.id}`]}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                        >
+                          {actionLoading[`request-reject-${selectedRequest.id}`] ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <XCircle className="w-4 h-4" />
+                          )}
+                          拒絕申請
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </div>
             )}
+
+            {/* 統計資訊 */}
+            <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+              <h3 className="text-lg font-semibold text-fg mb-4">統計資訊</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted">總字體數</span>
+                  <span className="text-sm font-medium">{fonts?.length || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted">已啟用</span>
+                  <span className="text-sm font-medium text-green-600">
+                    {(fonts || []).filter(f => f.is_active).length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted">中文字體</span>
+                  <span className="text-sm font-medium text-blue-600">
+                    {(fonts || []).filter(f => f.is_chinese_supported).length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted">系統字體</span>
+                  <span className="text-sm font-medium text-purple-600">
+                    {(fonts || []).filter(f => f.is_system_font).length}
+                  </span>
+                </div>
+                {(isDev || isCampus) && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">待審申請</span>
+                    <span className="text-sm font-medium text-orange-600">
+                      {(requests || []).filter(r => r.status === 'pending').length}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
 
       {/* Upload Form Modal */}
-      {showUploadForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
-          <div className="bg-surface border border-border rounded-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold dual-text mb-4">上傳字體檔案</h3>
-            
+      {isDev && showUploadForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+             onClick={(e) => {
+               if (e.target === e.currentTarget) {
+                 setShowUploadForm(false)
+               }
+             }}>
+          <div className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-xl"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                <Upload className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-fg">上傳字體檔案</h3>
+                <p className="text-sm text-muted">新增字體到系統中</p>
+              </div>
+            </div>
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium dual-text mb-2">字體檔案</label>
-                <input
-                  type="file"
-                  accept=".ttf,.otf,.woff,.woff2"
-                  onChange={handleFileSelect}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
+                <div className="relative">
+                  <label className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-surface-hover border border-border rounded-full cursor-pointer hover:bg-surface transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-opacity-20">
+                    <Upload className="w-4 h-4 text-muted" />
+                    <span className="text-sm text-muted">
+                      {uploadForm.font_file ? uploadForm.font_file.name : '點擊選擇字體檔案'}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".ttf,.otf,.woff,.woff2"
+                      onChange={handleFileSelect}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </label>
+                </div>
                 <p className="text-xs text-muted mt-1">
                   支援格式: TTF, OTF, WOFF, WOFF2 (最大 10MB)
                 </p>
@@ -502,7 +956,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   value={uploadForm.display_name}
                   onChange={(e) => setUploadForm(prev => ({ ...prev, display_name: e.target.value }))}
                   placeholder="字體顯示名稱"
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
                 />
               </div>
 
@@ -513,7 +967,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   onChange={(e) => setUploadForm(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="字體描述（可選）"
                   rows={2}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary resize-none"
                 />
               </div>
 
@@ -523,7 +977,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   <select
                     value={uploadForm.weight}
                     onChange={(e) => setUploadForm(prev => ({ ...prev, weight: e.target.value }))}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
                   >
                     <option value="normal">Normal</option>
                     <option value="bold">Bold</option>
@@ -536,7 +990,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   <select
                     value={uploadForm.style}
                     onChange={(e) => setUploadForm(prev => ({ ...prev, style: e.target.value }))}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
                   >
                     <option value="normal">Normal</option>
                     <option value="italic">Italic</option>
@@ -550,7 +1004,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   id="is_chinese_supported"
                   checked={uploadForm.is_chinese_supported}
                   onChange={(e) => setUploadForm(prev => ({ ...prev, is_chinese_supported: e.target.checked }))}
-                  className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                  className="w-4 h-4 text-primary bg-surface-hover border-border rounded focus:ring-primary focus:ring-2"
                 />
                 <label htmlFor="is_chinese_supported" className="text-sm dual-text">
                   支援中文字符
@@ -562,7 +1016,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
               <button
                 onClick={handleUpload}
                 disabled={uploading || !uploadForm.font_file}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors disabled:opacity-50"
               >
                 {uploading ? (
                   <>
@@ -578,7 +1032,82 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
               </button>
               <button
                 onClick={() => setShowUploadForm(false)}
-                className="px-4 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+                className="px-4 py-2 bg-surface-hover text-fg border border-border rounded-lg hover:bg-muted transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request Form Modal */}
+      {isCampus && showRequestForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+             onClick={(e) => {
+               if (e.target === e.currentTarget) {
+                 setShowRequestForm(false)
+               }
+             }}>
+          <div className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-xl"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
+                <Send className="w-5 h-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-fg">申請新字體</h3>
+                <p className="text-sm text-muted">提交字體申請給系統管理員</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium dual-text mb-2">字體名稱 *</label>
+                <input
+                  type="text"
+                  value={requestForm.font_name}
+                  onChange={(e) => setRequestForm(prev => ({ ...prev, font_name: e.target.value }))}
+                  placeholder="例如：思源黑體、Noto Sans TC"
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium dual-text mb-2">字體描述</label>
+                <input
+                  type="text"
+                  value={requestForm.description}
+                  onChange={(e) => setRequestForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="字體的簡短描述（可選）"
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium dual-text mb-2">申請理由 *</label>
+                <textarea
+                  value={requestForm.reason}
+                  onChange={(e) => setRequestForm(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="請說明為什麼需要這個字體，以及預期的使用場景..."
+                  rows={4}
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSubmitRequest}
+                disabled={!requestForm.font_name.trim() || !requestForm.reason.trim()}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" />
+                提交申請
+              </button>
+              <button
+                onClick={() => setShowRequestForm(false)}
+                className="px-4 py-2 bg-surface-hover text-fg border border-border rounded-lg hover:bg-muted transition-colors"
               >
                 取消
               </button>
@@ -589,15 +1118,28 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
 
       {/* Preview Modal */}
       {previewFont && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
-          <div className="bg-surface border border-border rounded-xl w-full max-w-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold dual-text">
-                字體預覽: {previewFont.display_name}
-              </h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+             onClick={(e) => {
+               if (e.target === e.currentTarget) {
+                 setPreviewFont(null)
+                 setPreviewImage(null)
+               }
+             }}>
+          <div className="bg-surface border border-border rounded-2xl w-full max-w-3xl p-6 shadow-xl"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
+                  <Eye className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-fg">字體預覽</h3>
+                  <p className="text-sm text-muted">{previewFont.display_name}</p>
+                </div>
+              </div>
               <button
                 onClick={() => setPreviewFont(null)}
-                className="p-2 text-muted hover:text-foreground rounded-lg hover:bg-muted/50"
+                className="p-2 text-muted hover:text-fg rounded-lg hover:bg-surface-hover transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -610,11 +1152,11 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   type="text"
                   value={previewText}
                   onChange={(e) => setPreviewText(e.target.value)}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
                 />
               </div>
 
-              <div className="bg-muted/30 rounded-lg p-4 min-h-[200px] flex items-center justify-center">
+              <div className="bg-surface-hover rounded-lg p-4 min-h-[200px] flex items-center justify-center">
                 {previewImage ? (
                   <img src={previewImage} alt="字體預覽" className="max-w-full max-h-full rounded" />
                 ) : (
@@ -627,7 +1169,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
 
               <button
                 onClick={() => handlePreviewFont(previewFont)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" />
                 重新生成預覽

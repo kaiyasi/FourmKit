@@ -20,10 +20,11 @@ const ImagePreview: React.FC<{
   content: any
   config?: any
   templateId?: number
-}> = ({ content, config, templateId }) => {
+  templateConfig?: any
+}> = ({ content, config, templateId, templateConfig }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  
+
   // 預覽尺寸配置 - 設定為更大的固定尺寸
   const maxPreviewHeight = '1000px'
 
@@ -32,6 +33,10 @@ const ImagePreview: React.FC<{
 
     setLoading(true)
     try {
+      // 添加超時控制
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15秒超時
+
       const response = await fetch('/api/admin/social/templates/preview', {
         method: 'POST',
         headers: {
@@ -41,25 +46,42 @@ const ImagePreview: React.FC<{
         body: JSON.stringify({
           template_id: templateId,
           content_data: content,
-          custom_options: { image: config }
-        })
+          custom_options: {
+            image: config,
+            // 包含完整的模板配置以便生成格式化ID
+            ...(templateConfig && {
+              multipost: templateConfig.multipost,
+              caption: templateConfig.caption
+            })
+          }
+        }),
+        signal: controller.signal
       })
 
+      clearTimeout(timeoutId)
       const result = await response.json()
       if (result.success && result.preview?.image_url) {
         setPreviewUrl(result.preview.image_url)
       }
     } catch (error) {
-      console.error('生成預覽失敗:', error)
+      if (error.name === 'AbortError') {
+        console.error('預覽生成超時')
+      } else {
+        console.error('生成預覽失敗:', error)
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  // 當內容或配置改變時重新生成預覽
+  // 當內容或配置改變時重新生成預覽 (使用防抖避免過於頻繁的請求)
   useEffect(() => {
-    generatePreview()
-  }, [content, config, templateId])
+    const timeoutId = setTimeout(() => {
+      generatePreview()
+    }, 300) // 300ms 防抖延遲
+
+    return () => clearTimeout(timeoutId)
+  }, [content, JSON.stringify(config), templateId, JSON.stringify(templateConfig)])
 
   return (
     <div className="relative">
@@ -115,7 +137,7 @@ interface TemplateConfig {
     }
     logo?: {
       enabled: boolean
-      position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+      position: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right' | 'center'
       size: number
       opacity?: number
     }
@@ -130,7 +152,7 @@ interface TemplateConfig {
     }
     timestamp?: {
       enabled: boolean
-      position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+      position: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
       format: '12h' | '24h'
       showYear: boolean
       showSeconds: boolean
@@ -150,6 +172,18 @@ interface TemplateConfig {
     maxLength: number
     autoHashtags: string[]
     emojiStyle: 'none' | 'minimal' | 'rich'
+  }
+  multipost?: {
+    prefix?: string
+    idFormat?: {
+      prefix: string
+      suffix?: string
+      digits: number
+    }
+    template: string
+    suffix?: string
+    maxLength: number
+    emojiStyle?: 'none' | 'minimal' | 'rich'
   }
 }
 
@@ -208,6 +242,14 @@ const DEFAULT_CONFIG: TemplateConfig = {
       size: 18,
       color: '#666666'
     },
+    postId: {
+      enabled: false,
+      position: 'top-left',
+      size: 20,
+      font: 'default',
+      color: '#0066cc',
+      opacity: 0.9
+    },
     border: {
       enabled: false,
       width: 4,
@@ -222,9 +264,15 @@ const DEFAULT_CONFIG: TemplateConfig = {
     emojiStyle: 'minimal'
   },
   multipost: {
-    template: '#{id}\n{content}',
+    prefix: '[*]匿名內容不代表本版立場',
+    idFormat: {
+      prefix: '#內湖高中',
+      suffix: '',
+      digits: 0
+    },
+    template: '{id}\n{content}\n-----------------',
+    suffix: '#內湖高中#台灣匿名聯合#匿名#黑特#靠北#告白#日更#內湖高中',
     maxLength: 2200,
-    autoHashtags: ['#校園生活'],
     emojiStyle: 'minimal'
   }
 }
@@ -237,7 +285,10 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
     template_type: 'combined' as 'image' | 'text' | 'combined',
     account_id: accounts[0]?.id || 0,
     is_default: false,
-    config: DEFAULT_CONFIG
+    config: {
+      ...DEFAULT_CONFIG,
+      multipost: { ...DEFAULT_CONFIG.multipost }
+    }
   })
   const [previewContent, setPreviewContent] = useState({
     title: '校園生活分享',
@@ -348,7 +399,14 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
         template_type: editingTemplate.template_type || 'combined',
         account_id: editingTemplate.account_id || accounts[0]?.id || 0,
         is_default: editingTemplate.is_default || false,
-        config: { ...DEFAULT_CONFIG, ...editingTemplate.config }
+        config: {
+          ...DEFAULT_CONFIG,
+          ...editingTemplate.config,
+          multipost: {
+            ...DEFAULT_CONFIG.multipost,
+            ...editingTemplate.config?.multipost
+          }
+        }
       })
     } else {
       // 重置為預設值
@@ -412,6 +470,19 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
     }))
   }
 
+  const updateMultipostConfig = (key: string, value: any) => {
+    setTemplateData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        multipost: {
+          ...prev.config.multipost,
+          [key]: value
+        }
+      }
+    }))
+  }
+
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -428,11 +499,22 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
       return
     }
 
+    // 產生隨機雜湊字串（後端僅用於唯一檔名，無需真 Hash）
+    const genHex = (bytes = 16) => {
+      const arr = new Uint8Array(bytes)
+      window.crypto.getRandomValues(arr)
+      return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('')
+    }
+
     try {
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('name', file.name)
+      formData.append('hash', `logo_${genHex(12)}`)
+      formData.append('category', 'templates')
+      formData.append('identifier', (file.name.split('.')[0] || 'logo').slice(0, 48))
 
-      const response = await fetch('/api/admin/media/upload', {
+      const response = await fetch('/api/media/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -446,17 +528,18 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
 
       const result = await response.json()
       
-      if (result.success) {
+      // 後端回傳格式：{ ok: true, url, path, info }
+      if (result.ok && result.url) {
         // 更新 Logo URL
         updateImageConfig('logo', {
           ...templateData.config.image?.logo,
-          url: result.data.url,
+          url: result.url,
           enabled: true
         })
         
         alert('Logo 上傳成功！')
       } else {
-        throw new Error(result.message || '上傳失敗')
+        throw new Error(result.error || result.message || '上傳失敗')
       }
     } catch (error) {
       console.error('Logo 上傳失敗:', error)
@@ -468,36 +551,37 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
   }
 
   const generatePreviewCaption = () => {
-    const template = templateData.config.caption?.template || ''
-    
-    if (template.includes('{id}')) {
-      return generateMultiPostPreview(template)
-    }
-    let caption = template
-      .replace('{title}', previewContent.title)
-      .replace('{content}', previewContent.content)
-      .replace('{author}', previewContent.author)
-      .replace('{hashtags}', previewContent.hashtags.join(' '))
-      .replace(/{id}/g, realPosts.length > 0 ? realPosts[0].id?.toString() || '1001' : '1001')
-
-    const maxLength = templateData.config.caption?.maxLength || 2200
-    if (caption.length > maxLength) {
-      caption = caption.substring(0, maxLength - 3) + '...'
-    }
-
-    return caption
+    // 統一使用多篇發布模板邏輯
+    return generateMultiPostPreview()
   }
 
-  const generateMultiPostPreview = (template: string) => {
+  const formatId = (id: number | string, idFormat: any) => {
+    let formatted = id.toString()
+
+    // 補零處理
+    if (idFormat?.digits > 0) {
+      formatted = formatted.padStart(idFormat.digits, '0')
+    }
+
+    // 加前後綴
+    return (idFormat?.prefix || '') + formatted + (idFormat?.suffix || '')
+  }
+
+  const generateMultiPostPreview = () => {
+    const multipostConfig = templateData.config.multipost || DEFAULT_CONFIG.multipost
+    if (!multipostConfig || !multipostConfig.template) {
+      return '請設定多篇發布模板'
+    }
+
     // 使用真實貼文數據，如果沒有則使用模擬數據
     const postsToUse = realPosts.length > 0 ? realPosts.slice(0, 3) : [
-      { id: 1001, title: '社團博覽會', content: '今天參加了社團博覽會，看到好多有趣的社團！', author: { username: '學生會' } },
-      { id: 1002, title: '圖書館新區', content: '圖書館新開放了自習區，環境真的很棒！', author: { username: '圖書館員' } },
-      { id: 1003, title: '學餐新菜', content: '學餐推出了新菜色，味道意外的不錯呢~', author: { username: '美食達人' } }
+      { id: 15523, title: '社團博覽會', content: '外迎好煩啊啊啊啊啊啊啊', author: '學生會' },
+      { id: 15524, title: '圖書館新區', content: '所以你們在吵的總召是嘻研的那個粉毛嗎', author: '圖書館員' },
+      { id: 15525, title: '學餐新菜', content: '那群隨便抨擊別人的你們真的很有事，你們在優越什麼', author: '美食達人' }
     ]
 
-    let result = `🔄 重複發布預覽 (會產生 ${postsToUse.length} 篇貼文):\n\n`
-    
+    let result = `🔄 多篇發布預覽 (會產生 ${postsToUse.length} 篇貼文):\n\n`
+
     if (realPosts.length > 0) {
       result += '📍 使用真實論壇貼文預覽:\n\n'
     } else if (loadingPosts) {
@@ -505,19 +589,42 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
     } else {
       result += '🎭 使用模擬數據預覽:\n\n'
     }
-    
-    postsToUse.forEach((post, index) => {
-      let postCaption = template
-        .replace('{title}', post.title || '無標題')
-        .replace('{content}', post.content || '無內容')
-        .replace('{author}', post.author?.username || '匿名用戶')
-        .replace(/{id}/g, post.id?.toString() || `${1000 + index}`)
-        .replace('{hashtags}', previewContent.hashtags.join(' '))
 
-      result += `📌 第 ${index + 1} 篇 (ID: ${post.id || `${1000 + index}`}):\n${postCaption}\n\n`
+    // 1. 開頭固定內容（只顯示一次）
+    if (multipostConfig.prefix) {
+      result += multipostConfig.prefix + '\n'
+    }
+
+    // 2. 重複每篇貼文內容
+    postsToUse.forEach((post, index) => {
+      const formattedId = formatId(post.id || `${15520 + index}`, multipostConfig.idFormat)
+      let postContent = multipostConfig.template
+        .replace('{id}', formattedId)
+        .replace('{content}', post.content || '無內容')
+        .replace('{title}', post.title || '無標題')
+        .replace('{author}', post.author || '匿名用戶')
+
+      result += postContent
+      // 如果不是最後一篇且模板沒有換行，自動加換行
+      if (index < postsToUse.length - 1 && !multipostConfig.template.endsWith('\n')) {
+        result += '\n'
+      }
     })
 
-    return result + (realPosts.length > 0 ? '✅ 基於真實論壇貼文生成' : '※ 實際發布時會使用真實論壇貼文')
+    // 3. 結尾固定內容（只顯示一次）
+    if (multipostConfig.suffix) {
+      result += '\n' + multipostConfig.suffix
+    }
+
+    // 4. 添加用戶自定義的標籤
+    const autoHashtags = templateData.config.caption?.autoHashtags || []
+    if (autoHashtags.length > 0) {
+      result += '\n' + autoHashtags.join(' ')
+    }
+
+    result += '\n\n' + (realPosts.length > 0 ? '✅ 基於真實論壇貼文生成' : '※ 實際發布時會使用真實論壇貼文')
+
+    return result
   }
 
   if (!isOpen) return null
@@ -899,8 +1006,10 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                           className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
                         >
                           <option value="top-left">左上角</option>
+                          <option value="top-center">上方中間</option>
                           <option value="top-right">右上角</option>
                           <option value="bottom-left">左下角</option>
+                          <option value="bottom-center">下方中間</option>
                           <option value="bottom-right">右下角</option>
                           <option value="center">中央</option>
                         </select>
@@ -953,8 +1062,10 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                             className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
                           >
                             <option value="top-left">左上角</option>
+                            <option value="top-center">上方中間</option>
                             <option value="top-right">右上角</option>
                             <option value="bottom-left">左下角</option>
+                            <option value="bottom-center">下方中間</option>
                             <option value="bottom-right">右下角</option>
                           </select>
                         </div>
@@ -1013,8 +1124,6 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                               ...templateData.config.image?.timestamp,
                               size: parseInt(e.target.value)
                             })}
-                            min="10"
-                            max="36"
                             className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
                           />
                         </div>
@@ -1055,93 +1164,284 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                     </div>
                   )}
                 </div>
+
+                {/* 貼文ID設定 */}
+                <div className="border border-border rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <input
+                      type="checkbox"
+                      checked={templateData.config.image?.postId?.enabled || false}
+                      onChange={(e) => updateImageConfig('postId', {
+                        ...templateData.config.image?.postId,
+                        enabled: e.target.checked
+                      })}
+                      className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                    />
+                    <h3 className="font-medium dual-text">貼文ID設定</h3>
+                  </div>
+
+                  {templateData.config.image?.postId?.enabled && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">位置</label>
+                          <select
+                            value={templateData.config.image?.postId?.position || 'top-left'}
+                            onChange={(e) => updateImageConfig('postId', {
+                              ...templateData.config.image?.postId,
+                              position: e.target.value
+                            })}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          >
+                            <option value="top-left">左上角</option>
+                            <option value="top-center">上方中間</option>
+                            <option value="top-right">右上角</option>
+                            <option value="bottom-left">左下角</option>
+                            <option value="bottom-center">下方中間</option>
+                            <option value="bottom-right">右下角</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">自定義文字</label>
+                          <input
+                            type="text"
+                            value={templateData.config.image?.postId?.text || ''}
+                            onChange={(e) => updateImageConfig('postId', {
+                              ...templateData.config.image?.postId,
+                              text: e.target.value
+                            })}
+                            placeholder="#匿名內中{id}"
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">字體大小</label>
+                          <input
+                            type="number"
+                            value={templateData.config.image?.postId?.size || 18}
+                            onChange={(e) => updateImageConfig('postId', {
+                              ...templateData.config.image?.postId,
+                              size: parseInt(e.target.value)
+                            })}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">字體</label>
+                          <select
+                            value={templateData.config.image?.postId?.font || 'Noto Sans TC'}
+                            onChange={(e) => updateImageConfig('postId', {
+                              ...templateData.config.image?.postId,
+                              font: e.target.value
+                            })}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          >
+                            <option value="Noto Sans TC">Noto Sans TC</option>
+                            {fonts.map(font => (
+                              <option key={font.font_family} value={font.font_family}>
+                                {font.display_name}
+                                {font.is_system_font && ' (系統)'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">顏色</label>
+                          <input
+                            type="color"
+                            value={templateData.config.image?.postId?.color || '#666666'}
+                            onChange={(e) => updateImageConfig('postId', {
+                              ...templateData.config.image?.postId,
+                              color: e.target.value
+                            })}
+                            className="w-full h-10 rounded-lg border border-border cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
 
             {activeTab === 'caption' && (
               <div className="p-6 space-y-6">
-                <div>
-                  <label className="block text-sm font-medium dual-text mb-2">文案模板</label>
-                  <textarea
-                    value={templateData.config.caption?.template || ''}
-                    onChange={(e) => updateCaptionConfig('template', e.target.value)}
-                    placeholder="📢 {title}&#10;&#10;{content}&#10;&#10;{hashtags}&#10;&#10;重複發布範例:&#10;#{id}&#10;{content}"
-                    rows={6}
-                    className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono text-sm"
-                  />
-                  <div className="text-xs text-muted mt-1 space-y-1">
-                    <div>可使用變數：</div>
-                    <div className="pl-2 space-y-1">
-                      <div>• <code className="bg-gray-100 px-1 rounded">{'{title}'}</code> - 論壇貼文標題</div>
-                      <div>• <code className="bg-gray-100 px-1 rounded">{'{content}'}</code> - 論壇貼文內容 (自動填入)</div>
-                      <div>• <code className="bg-gray-100 px-1 rounded">{'{author}'}</code> - 貼文作者</div>
-                      <div>• <code className="bg-gray-100 px-1 rounded">{'{id}'}</code> - 貼文編號 (用於重複發布)</div>
-                      <div>• <code className="bg-gray-100 px-1 rounded">{'{hashtags}'}</code> - 自動生成的標籤</div>
-                    </div>
-                    <div className="mt-2 p-2 bg-blue-50 rounded">
-                      <div className="text-blue-800 font-medium text-xs mb-1">💡 重複發布功能</div>
-                      <div className="text-blue-700 text-xs">
-                        當多篇貼文同時發布時，包含 <code className="bg-blue-100 px-1 rounded">{'{id}'}</code> 的模板會為每篇貼文重複執行
+                {/* 文案模板設定 */}
+                <div className="space-y-6">
+
+                  {/* 開頭固定內容 */}
+                  <div>
+                    <label className="block text-sm font-medium dual-text mb-2">開頭內容 (只顯示一次)</label>
+                    <input
+                      type="text"
+                      value={templateData.config.multipost?.prefix || ''}
+                      onChange={(e) => updateMultipostConfig('prefix', e.target.value)}
+                      placeholder="[*]匿名內容不代表本版立場"
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                  </div>
+
+                  {/* ID 格式設定 */}
+                  <div>
+                    <label className="block text-sm font-medium dual-text mb-2">ID 顯示格式</label>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium dual-text mb-2">ID 前綴</label>
+                        <input
+                          type="text"
+                          value={templateData.config.multipost?.idFormat?.prefix || ''}
+                          onChange={(e) => updateMultipostConfig('idFormat', {
+                            ...templateData.config.multipost?.idFormat,
+                            prefix: e.target.value
+                          })}
+                          placeholder="#匿名內中"
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        />
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium dual-text mb-2">補零位數</label>
+                        <input
+                          type="number"
+                          value={templateData.config.multipost?.idFormat?.digits || 0}
+                          onChange={(e) => updateMultipostConfig('idFormat', {
+                            ...templateData.config.multipost?.idFormat,
+                            digits: parseInt(e.target.value) || 0
+                          })}
+                          min="0"
+                          max="8"
+                          placeholder="0"
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        />
+                        <div className="text-xs text-muted-foreground mt-1">0 = 不補零</div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium dual-text mb-2">ID 後綴</label>
+                        <input
+                          type="text"
+                          value={templateData.config.multipost?.idFormat?.suffix || ''}
+                          onChange={(e) => updateMultipostConfig('idFormat', {
+                            ...templateData.config.multipost?.idFormat,
+                            suffix: e.target.value
+                          })}
+                          placeholder="(可選)"
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        />
+                      </div>
+                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                        <div className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">ℹ️ 使用說明</div>
+                        <div className="text-sm text-blue-800 dark:text-blue-200">
+                          文案中的 <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{"{id}"}</code> 會被替換為格式化後的貼文ID，
+                          例如貼文15520會顯示為：<strong>{(templateData.config.multipost?.idFormat?.prefix || '#') + '15520'}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 重複模板 */}
+                  <div>
+                    <label className="block text-sm font-medium dual-text mb-2">重複模板 (每篇貼文執行)</label>
+                    <textarea
+                      value={templateData.config.multipost?.template || ''}
+                      onChange={(e) => updateMultipostConfig('template', e.target.value)}
+                      placeholder="{id}&#10;{content}&#10;-----------------"
+                      rows={4}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono text-sm"
+                    />
+                  </div>
+
+                  {/* 結尾固定內容 */}
+                  <div>
+                    <label className="block text-sm font-medium dual-text mb-2">結尾內容 (只顯示一次)</label>
+                    <input
+                      type="text"
+                      value={templateData.config.multipost?.suffix || ''}
+                      onChange={(e) => updateMultipostConfig('suffix', e.target.value)}
+                      placeholder="#匿名內中#台灣匿名聯合#匿名#黑特#靠北#告白#日更#內湖高中"
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                  </div>
+
+                  {/* Hashtag 設定 */}
+                  <div>
+                    <label className="block text-sm font-medium dual-text mb-2">新增標籤</label>
+                    <p className="text-xs text-muted mb-2">
+                      這些標籤會自動添加到所有從這個帳號發布的內容中。建議設定與你的學校或品牌相關的常用標籤。
+                    </p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="text"
+                        placeholder="輸入新標籤後按 Enter"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            let newTag = (e.target as HTMLInputElement).value.trim();
+                            // 自動添加 # 符號如果沒有的話
+                            if (newTag && !newTag.startsWith('#')) {
+                              newTag = '#' + newTag;
+                            }
+                            if (newTag && !templateData.config.caption?.autoHashtags?.includes(newTag)) {
+                              updateCaptionConfig('autoHashtags', [...(templateData.config.caption?.autoHashtags || []), newTag]);
+                              (e.target as HTMLInputElement).value = '';
+                            }
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(templateData.config.caption?.autoHashtags || []).map((tag, index) => (
+                        <div key={index} className="flex items-center gap-1 bg-muted/50 text-foreground rounded-full px-3 py-1 text-sm">
+                          <span>{tag}</span>
+                          <button
+                            onClick={() => {
+                              const newTags = [...(templateData.config.caption?.autoHashtags || [])];
+                              newTags.splice(index, 1);
+                              updateCaptionConfig('autoHashtags', newTags);
+                            }}
+                            className="text-muted hover:text-foreground"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
 
+                {/* 共用說明 */}
+                <div className="text-xs text-muted space-y-1">
+                  <div>可使用變數：</div>
+                  <div className="pl-2 space-y-1">
+                    <div>• <code className="bg-gray-100 px-1 rounded">{'{title}'}</code> - 論壇貼文標題</div>
+                    <div>• <code className="bg-gray-100 px-1 rounded">{'{content}'}</code> - 論壇貼文內容 (自動填入)</div>
+                    <div>• <code className="bg-gray-100 px-1 rounded">{'{author}'}</code> - 貼文作者</div>
+                    <div>• <code className="bg-gray-100 px-1 rounded">{'{id}'}</code> - 貼文編號</div>
+                  </div>
+                </div>
+
+                {/* 字數限制 */}
                 <div>
                   <label className="block text-sm font-medium dual-text mb-2">
-                    最大字數限制：{templateData.config.caption?.maxLength || 2200}
+                    最大字數限制：{templateData.config.multipost?.maxLength || 2200}
                   </label>
                   <input
                     type="range"
                     min="100"
                     max="2200"
-                    value={templateData.config.caption?.maxLength || 2200}
-                    onChange={(e) => updateCaptionConfig('maxLength', parseInt(e.target.value))}
+                    value={templateData.config.multipost?.maxLength || 2200}
+                    onChange={(e) => updateMultipostConfig('maxLength', parseInt(e.target.value))}
                     className="w-full"
                   />
                   <div className="flex justify-between text-xs text-muted mt-1">
                     <span>100</span>
                     <span>2200 (IG 限制)</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium dual-text mb-2">預設標籤</label>
-                  <div className="space-y-2">
-                    {(templateData.config.caption?.autoHashtags || []).map((hashtag, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={hashtag}
-                          onChange={(e) => {
-                            const newHashtags = [...(templateData.config.caption?.autoHashtags || [])]
-                            newHashtags[index] = e.target.value
-                            updateCaptionConfig('autoHashtags', newHashtags)
-                          }}
-                          placeholder="#標籤"
-                          className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                        <button
-                          onClick={() => {
-                            const newHashtags = [...(templateData.config.caption?.autoHashtags || [])]
-                            newHashtags.splice(index, 1)
-                            updateCaptionConfig('autoHashtags', newHashtags)
-                          }}
-                          className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => {
-                        const newHashtags = [...(templateData.config.caption?.autoHashtags || []), '']
-                        updateCaptionConfig('autoHashtags', newHashtags)
-                      }}
-                      className="w-full px-3 py-2 border border-dashed border-border rounded-lg text-muted hover:text-foreground hover:border-muted transition-colors"
-                    >
-                      + 新增標籤
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1212,7 +1512,7 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-medium dual-text text-sm">文案預覽</h4>
                   <span className="text-xs text-muted">
-                    {generatePreviewCaption().length} / {templateData.config.caption?.maxLength || 2200}
+                    {generatePreviewCaption().length} / {templateData.config.multipost?.maxLength || 2200}
                   </span>
                 </div>
                 
@@ -1231,10 +1531,11 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                 </div>
                 
                 <div className="bg-muted/10 rounded-lg p-6 text-center min-h-[600px] flex items-center justify-center">
-                  <ImagePreview 
+                  <ImagePreview
                     content={previewContent}
                     config={templateData.config.image}
                     templateId={editingTemplate?.id}
+                    templateConfig={templateData.config}
                   />
                 </div>
               </div>
@@ -1249,6 +1550,7 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                       <button
                         key={post.id}
                         onClick={() => setPreviewContent({
+                          id: post.id,
                           title: post.title || '無標題',
                           content: post.content || '無內容',
                           author: post.author?.username || '匿名用戶',

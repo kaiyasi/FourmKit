@@ -468,7 +468,7 @@ export default function NewAuthPage() {
               <div className="text-sm">
                 {error}
                 <div className="mt-2">
-                  需要協助？請聯繫系統管理員
+                  需要協助？<a href="/support" className="underline">請聯繫系統管理員</a>
                 </div>
               </div>
             </div>

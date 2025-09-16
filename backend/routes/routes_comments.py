@@ -163,7 +163,7 @@ def create_comment(pid: int):
         if not can_comment_on_post(user, p):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED", "message": "您沒有權限在該貼文留言"}), 403
         
-        c = Comment(post_id=pid, author_id=uid, content=content)
+        c = Comment(post_id=pid, author_id=uid, content=content, status="approved")
         try:
             c.ip = get_client_ip()
         except Exception:

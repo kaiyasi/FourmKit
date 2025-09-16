@@ -107,29 +107,33 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
         {/* 頭部信息 */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-              <span className="text-xs font-semibold text-primary">
-                                 {(() => {
-                   const nameField = String((post as any).school_name || '').trim()
-                   const obj = (post as any).school as any
-                   const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
-                   const sidRaw = (post as any).school_id
-                   const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
-                   const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
-                   const name = (post as any).is_advertisement ? '廣告' : 
-                     (post as any).is_announcement ? (() => {
-                       const announcementType = (post as any).announcement_type
-                       switch(announcementType) {
-                         case 'platform': return '全平台公告'
-                         case 'cross': return '跨校公告'
-                         case 'school': return '學校公告'
-                         default: return '公告'
-                       }
-                     })() :
-                     nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
-                   return name ? name.charAt(0) : ''
-                 })()}
-              </span>
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+              {post.school?.logo_url ? (
+                <img src={post.school.logo_url} alt={post.school.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xs font-semibold text-primary">
+                  {(() => {
+                    const nameField = String((post as any).school_name || '').trim()
+                    const obj = (post as any).school as any
+                    const fromObj = obj && typeof obj === 'object' ? String(obj.name || obj.slug || '').trim() : ''
+                    const sidRaw = (post as any).school_id
+                    const hasSid = typeof sidRaw === 'number' && Number.isFinite(sidRaw)
+                    const mapped = hasSid && sidRaw !== null ? ((schools.find(s=>s.id===sidRaw)?.name || schools.find(s=>s.id===sidRaw)?.slug || '').trim()) : ''
+                    const name = (post as any).is_advertisement ? '廣告' : 
+                      (post as any).is_announcement ? (() => {
+                        const announcementType = (post as any).announcement_type
+                        switch(announcementType) {
+                          case 'platform': return '全平台公告'
+                          case 'cross': return '跨校公告'
+                          case 'school': return '學校公告'
+                          default: return '公告'
+                        }
+                      })() :
+                      nameField || fromObj || ((!hasSid || sidRaw === null) ? '跨校' : mapped)
+                    return name ? name.charAt(0) : ''
+                  })()}
+                </span>
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -260,6 +264,15 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                 {post.reaction_counts?.like || 0}
               </span>
             </button>
+            <Link 
+              to={`/posts/${post.id}#comments`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full text-muted hover:text-blue-500 hover:bg-blue-500/10 transition-all duration-200 mobile-touch-target active:scale-95"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span className="text-sm font-medium">
+                {post.comment_count || 0}
+              </span>
+            </Link>
           </div>
 
           <div className="flex items-center gap-2 pr-1">
@@ -272,21 +285,6 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
               <span>更多</span>
             </button>
           </div>
-        </div>
-
-
-
-        {/* 留言按鈕 */}
-        <div className="flex items-center justify-start pt-2">
-          <Link 
-            to={`/posts/${post.id}#comments`}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-full text-muted hover:text-blue-500 hover:bg-blue-500/10 transition-all duration-200 mobile-touch-target active:scale-95"
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              {post.comment_count || 0}
-            </span>
-          </Link>
         </div>
       </article>
 

@@ -81,15 +81,46 @@ export function MobileNavigation() {
   // 確保主導航不超過5個項目
   const visiblePrimaryNav = primaryNav.slice(0, 5)
 
+  // 設定底部導航高度到CSS變數
+  const writeBottomOffset = () => {
+    try {
+      const el = document.getElementById('fk-mobile-bottom-nav')
+      if (!el) {
+        document.documentElement.style.setProperty('--fk-bottomnav-offset', `calc(72px + env(safe-area-inset-bottom))`)
+        return
+      }
+      const rect = el.getBoundingClientRect()
+      const offset = Math.max(0, Math.ceil(rect.height))
+      document.documentElement.style.setProperty('--fk-bottomnav-offset', `${offset + 12}px`)
+    } catch {
+      document.documentElement.style.setProperty('--fk-bottomnav-offset', `calc(72px + env(safe-area-inset-bottom))`)
+    }
+  }
+
+  // 設定CSS變數
+  useEffect(() => {
+    writeBottomOffset()
+    const timeoutId = setTimeout(() => writeBottomOffset(), 100)
+    const onResize = () => writeBottomOffset()
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
+
   // 關閉菜單當路由變化
   useEffect(() => {
     setMenuOpen(false)
+    const timeoutId = setTimeout(() => writeBottomOffset(), 50)
+    return () => clearTimeout(timeoutId)
   }, [location.pathname])
 
   return (
     <>
       {/* 底部主導航 */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden">
+      <nav id="fk-mobile-bottom-nav" className="fixed bottom-0 left-0 right-0 z-40 md:hidden">
         <div className="bg-surface/95 backdrop-blur-md border-t border-border">
           <div className="flex items-center justify-around px-2 py-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
             {visiblePrimaryNav.map((item) => {

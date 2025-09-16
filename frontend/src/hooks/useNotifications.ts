@@ -47,24 +47,26 @@ export function useNotifications() {
         const notifications = JSON.parse(stored) as Notification[]
         const unreadCount = notifications.filter(n => !n.read).length
         const now = Date.now()
-        const lastNotificationTime = state.lastNotificationTime || now
-        
-        // 檢查是否在10秒內有新通知
-        const showCount = (now - lastNotificationTime) < 10000 && unreadCount > 0
-        
-        setState(prev => ({
-          ...prev,
-          notifications: notifications.slice(0, MAX_NOTIFICATIONS),
-          unreadCount,
-          showBadge: unreadCount > 0,
-          showCount,
-          lastNotificationTime
-        }))
+
+        setState(prev => {
+          const lastNotificationTime = prev.lastNotificationTime || now
+          // 檢查是否在10秒內有新通知
+          const showCount = (now - lastNotificationTime) < 10000 && unreadCount > 0
+
+          return {
+            ...prev,
+            notifications: notifications.slice(0, MAX_NOTIFICATIONS),
+            unreadCount,
+            showBadge: unreadCount > 0,
+            showCount,
+            lastNotificationTime
+          }
+        })
       }
     } catch (error) {
       console.warn('Failed to load notifications:', error)
     }
-  }, [state.lastNotificationTime])
+  }, [])
 
   // 儲存通知到 localStorage
   const saveNotifications = useCallback((notifications: Notification[]) => {
@@ -115,18 +117,18 @@ export function useNotifications() {
   // 標記通知為已讀
   const markAsRead = useCallback((id: string) => {
     setState(prev => {
-      const notifications = prev.notifications.map(n => 
+      const notifications = prev.notifications.map(n =>
         n.id === id ? { ...n, read: true } : n
       )
       const unreadCount = notifications.filter(n => !n.read).length
-      
+
       saveNotifications(notifications)
-      
+
       return {
         ...prev,
         notifications,
         unreadCount,
-        showBadge: unreadCount > 0,
+        showBadge: unreadCount > 0, // 關鍵：有未讀才顯示徽章
         showCount: false // 標記已讀後不再顯示數字徽章
       }
     })
@@ -137,12 +139,12 @@ export function useNotifications() {
     setState(prev => {
       const notifications = prev.notifications.map(n => ({ ...n, read: true }))
       saveNotifications(notifications)
-      
+
       return {
         ...prev,
         notifications,
         unreadCount: 0,
-        showBadge: false,
+        showBadge: false, // 關鍵：沒有未讀就不顯示徽章
         showCount: false // 標記所有已讀後不再顯示數字徽章
       }
     })

@@ -336,7 +336,7 @@ export default function AdminSchoolsPage() {
                 ) : (
                   schools.map((school) => {
                     const logoUrl = school.logo_path && typeof school.logo_path === 'string'
-                      ? `https://cdn.serelix.xyz/${school.logo_path.replace(/^public\//, '')}`
+                      ? `https://cdn.serelix.xyz/${school.logo_path}`
                       : null
                       
                     return (

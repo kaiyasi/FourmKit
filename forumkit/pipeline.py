@@ -30,7 +30,7 @@ class InstagramPoster:
             return json.loads(resp.read().decode("utf-8"))
 
     def create_media(self, image_url: str, caption: str):
-        endpoint = f"https://graph.facebook.com/v20.0/{self.ig_user_id}/media"
+        endpoint = f"https://graph.facebook.com/v23.0/{self.ig_user_id}/media"
         data = {
             "image_url": image_url,
             "caption": caption,
@@ -39,11 +39,11 @@ class InstagramPoster:
         return self._post(endpoint, data)
 
     def check_media_status(self, creation_id: str):
-        endpoint = f"https://graph.facebook.com/v20.0/{creation_id}?fields=status_code&access_token={urllib.parse.quote(self.access_token)}"
+        endpoint = f"https://graph.facebook.com/v23.0/{creation_id}?fields=status_code&access_token={urllib.parse.quote(self.access_token)}"
         return self._get(endpoint)
 
     def publish_media(self, creation_id: str):
-        endpoint = f"https://graph.facebook.com/v20.0/{self.ig_user_id}/media_publish"
+        endpoint = f"https://graph.facebook.com/v23.0/{self.ig_user_id}/media_publish"
         data = {"creation_id": creation_id, "access_token": self.access_token}
         return self._post(endpoint, data)
 

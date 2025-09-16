@@ -883,7 +883,8 @@ export default function SettingsPage() {
                 <button
                   onClick={() => {
                     if (confirm('確定要登出嗎？')) {
-                      logout()
+                      logout();
+                      window.location.href = '/';
                     }
                   }}
                   className="w-full flex items-center justify-center gap-3 p-4 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-xl border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors mobile-touch-target"

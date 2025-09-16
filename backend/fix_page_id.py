@@ -27,7 +27,7 @@ def check_available_pages():
         try:
             # 檢查用戶管理的 Pages
             response = requests.get(
-                "https://graph.facebook.com/v18.0/me/accounts",
+                "https://graph.facebook.com/v23.0/me/accounts",
                 params={
                     'access_token': token,
                     'fields': 'id,name,category,access_token,instagram_business_account'
@@ -75,7 +75,7 @@ def check_available_pages():
                     if has_token:
                         try:
                             ig_response = requests.get(
-                                f"https://graph.facebook.com/v18.0/{ig_account['id']}",
+                                f"https://graph.facebook.com/v23.0/{ig_account['id']}",
                                 params={
                                     'fields': 'id,username,name,account_type',
                                     'access_token': page['access_token']
@@ -142,7 +142,7 @@ def test_updated_config():
         try:
             # 步驟1: 用 User Token 取得 Page Token
             page_response = requests.get(
-                f"https://graph.facebook.com/v18.0/{page_id}",
+                f"https://graph.facebook.com/v23.0/{page_id}",
                 params={
                     'fields': 'access_token,instagram_business_account',
                     'access_token': user_token
@@ -170,7 +170,7 @@ def test_updated_config():
             
             # 步驟2: 測試 Instagram API
             ig_response = requests.get(
-                f"https://graph.facebook.com/v18.0/{ig_account['id']}",
+                f"https://graph.facebook.com/v23.0/{ig_account['id']}",
                 params={
                     'fields': 'id,username,name,account_type,media_count',
                     'access_token': page_token

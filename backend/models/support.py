@@ -161,7 +161,7 @@ class SupportTicket(Base):
     def get_display_name(self) -> str:
         """取得顯示名稱"""
         if self.user:
-            return self.user.username
+            return self.user.username or f"用戶 #{self.user.id}"
         elif self.pseudonym_code:
             return self.pseudonym_code
         else:
@@ -196,11 +196,15 @@ class SupportMessage(Base):
     def get_author_display_name(self) -> str:
         """取得作者顯示名稱"""
         if self.author_type == AuthorType.ADMIN:
-            return self.author_user.username if self.author_user else "管理員"
+            if self.author_user:
+                return self.author_user.username or f"管理員 #{self.author_user.id}"
+            return "管理員"
         elif self.author_type == AuthorType.USER:
-            return self.author_user.username if self.author_user else "用戶"
+            if self.author_user:
+                return self.author_user.username or f"用戶 #{self.author_user.id}"
+            return "用戶"
         else:  # GUEST
-            return self.ticket.pseudonym_code if self.ticket.pseudonym_code else "訪客"
+            return self.ticket.pseudonym_code if self.ticket and self.ticket.pseudonym_code else "訪客"
 
 
 class SupportEvent(Base):

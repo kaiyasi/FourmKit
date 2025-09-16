@@ -318,8 +318,6 @@ export default function AdminCommentsMonitorPage() {
                   onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
                 >
                   <option value="active">正常留言</option>
-                  <option value="pending">待審核</option>
-                  <option value="rejected">已拒絕</option>
                   <option value="deleted">已下架</option>
                 </select>
                 {isDev && (
@@ -438,14 +436,6 @@ export default function AdminCommentsMonitorPage() {
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">正常留言</span>
                     <span className="text-sm font-medium text-green-600">{stats.approved}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">待審核</span>
-                    <span className="text-sm font-medium text-yellow-600">{stats.pending}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">已拒絕</span>
-                    <span className="text-sm font-medium text-orange-600">{stats.rejected}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">已下架</span>

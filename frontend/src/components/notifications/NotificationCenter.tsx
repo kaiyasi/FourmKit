@@ -52,26 +52,31 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
   const [isConfirmingClear, setIsConfirmingClear] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // 點擊外部關閉
-  useEffect(() => {
-    if (!isOpen) return
-
-      const handleClickOutside = (event: MouseEvent) => {
-    const target = event.target as Node
-    const panel = panelRef.current
-    const anchor = anchorRef.current
-
-    if (panel && !panel.contains(target) && anchor && !anchor.contains(target)) {
-      onClose()
-    }
-  }
-
   // 點擊通知項目時標記為已讀
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.read) {
       markAsRead(notification.id)
     }
+
+    if (notification.actionUrl) {
+      window.location.href = notification.actionUrl
+      onClose()
+    }
   }
+
+  // 點擊外部關閉
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node
+      const panel = panelRef.current
+      const anchor = anchorRef.current
+
+      if (panel && !panel.contains(target) && anchor && !anchor.contains(target)) {
+        onClose()
+      }
+    }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -105,16 +110,6 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
     }
   }
 
-  const handleNotificationClick = (notification: Notification) => {
-    if (!notification.read) {
-      markAsRead(notification.id)
-    }
-    
-    if (notification.actionUrl) {
-      window.location.href = notification.actionUrl
-      onClose()
-    }
-  }
 
   const handleClearAll = () => {
     if (isConfirmingClear) {
@@ -132,7 +127,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
   return (
     <div
       ref={panelRef}
-      className="fixed top-20 md:top-16 right-2 md:right-4 w-[calc(100vw-1rem)] md:w-80 max-w-[calc(100vw-1rem)] md:max-w-[calc(100vw-2rem)] bg-surface border border-border rounded-xl shadow-lg z-50 max-h-[calc(100vh-8rem)] md:max-h-[80vh] flex flex-col overflow-hidden"
+      className="fixed top-20 md:top-16 right-2 md:right-4 w-[calc(100vw-1rem)] md:w-80 max-w-[calc(100vw-1rem)] md:max-w-[calc(100vw-2rem)] bg-surface border border-border rounded-xl shadow-lg z-[60] max-h-[calc(100vh-8rem)] md:max-h-[80vh] flex flex-col overflow-hidden"
     >
       {/* 標題欄 */}
       <div className="flex items-center justify-between p-3 md:p-4 border-b border-border bg-surface/80 backdrop-blur">

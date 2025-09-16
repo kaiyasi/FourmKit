@@ -19,6 +19,7 @@ from models.base import Post as ForumPost
 from services.content_generator import ContentGenerator, ContentGenerationError
 from services.platform_publishers import get_platform_publisher
 from services.celery_app import celery_app
+from services import monitoring
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +438,11 @@ def publish_single_post(self, social_post_id: int):
             social_post = db.query(SocialPost).filter(SocialPost.id == social_post_id).first()
             if not social_post:
                 raise AutoPublishError(f"找不到社交貼文 ID: {social_post_id}")
+            try:
+                monitoring.mark_worker_seen('worker')
+                monitoring.record_event('single_post_start', social_post_id=int(social_post_id))
+            except Exception:
+                pass
             
             # 生成內容
             generator = ContentGenerator()
@@ -458,9 +464,19 @@ def publish_single_post(self, social_post_id: int):
                 caption=social_post.generated_caption,
                 hashtags=social_post.hashtags
             )
-            
+
+            # 檢查發布是否成功
+            if not publish_result.get('success', False):
+                error_msg = publish_result.get('error', '發布失敗，未取得錯誤訊息')
+                raise AutoPublishError(f"Instagram 發布失敗: {error_msg}")
+
+            # 檢查是否有真正的貼文 ID
+            post_id = publish_result.get('post_id')
+            if not post_id:
+                raise AutoPublishError("發布回應成功但未取得 Instagram 貼文 ID")
+
             # 更新發布結果
-            social_post.platform_post_id = publish_result.get('post_id')
+            social_post.platform_post_id = post_id
             social_post.platform_post_url = publish_result.get('post_url')
             social_post.status = PostStatus.PUBLISHED
             social_post.published_at = datetime.now(timezone.utc)
@@ -470,6 +486,10 @@ def publish_single_post(self, social_post_id: int):
             social_post.account.last_post_at = datetime.now(timezone.utc)
             
             db.commit()
+            try:
+                monitoring.record_event('single_post_done', social_post_id=int(social_post_id), post_id=social_post.platform_post_id)
+            except Exception:
+                pass
             
             return {
                 'success': True,
@@ -489,6 +509,10 @@ def publish_single_post(self, social_post_id: int):
                 social_post.error_message = str(e)
                 social_post.retry_count += 1
                 db.commit()
+        try:
+            monitoring.record_event('single_post_failed', social_post_id=int(social_post_id), error=str(e))
+        except Exception:
+            pass
         
         # 重試邏輯
         if self.request.retries < self.max_retries:
@@ -511,15 +535,24 @@ def publish_carousel(self, carousel_group_id: int):
             
             # 獲取群組中的所有貼文
             # 注意：狀態欄位為 String(16)，避免 Enum 比對不一致，使用字串比對
-            posts = db.query(SocialPost).filter(
+            from sqlalchemy.orm import joinedload
+            posts = db.query(SocialPost).options(
+                joinedload(SocialPost.template),
+                joinedload(SocialPost.forum_post)
+            ).filter(
                 SocialPost.carousel_group_id == carousel_group_id,
                 ~SocialPost.status.in_(["failed", "published"])  # 只要不是失敗/已發布都納入處理
             ).order_by(SocialPost.position_in_carousel).all()
             
             if not posts:
                 raise AutoPublishError("輪播群組中沒有待發布的貼文")
-            
+
             # 為每個貼文確認內容；若尚未生成才補生成
+            try:
+                monitoring.mark_worker_seen('worker')
+                monitoring.record_event('carousel_start', carousel_group_id=int(carousel_group_id))
+            except Exception:
+                pass
             carousel_items = []
             for post in posts:
                 try:
@@ -574,9 +607,19 @@ def publish_carousel(self, carousel_group_id: int):
                 caption=combined_caption,
                 hashtags=combined_hashtags
             )
-            
+
+            # 檢查發布是否成功
+            if not publish_result.get('success', False):
+                error_msg = publish_result.get('error', '發布失敗，未取得錯誤訊息')
+                raise AutoPublishError(f"Instagram 發布失敗: {error_msg}")
+
+            # 檢查是否有真正的貼文 ID
+            post_id = publish_result.get('post_id')
+            if not post_id:
+                raise AutoPublishError("發布回應成功但未取得 Instagram 貼文 ID")
+
             # 更新群組和貼文狀態
-            carousel_group.platform_post_id = publish_result.get('post_id')
+            carousel_group.platform_post_id = post_id
             carousel_group.platform_post_url = publish_result.get('post_url')
             carousel_group.status = 'published'
             carousel_group.published_at = datetime.now(timezone.utc)
@@ -585,7 +628,7 @@ def publish_carousel(self, carousel_group_id: int):
             for post in posts:
                 if post.status == PostStatus.PROCESSING:
                     post.status = PostStatus.PUBLISHED
-                    post.platform_post_id = publish_result.get('post_id')
+                    post.platform_post_id = post_id
                     post.platform_post_url = publish_result.get('post_url')
                     now_ts = datetime.now(timezone.utc)
                     post.published_at = now_ts
@@ -596,6 +639,10 @@ def publish_carousel(self, carousel_group_id: int):
             carousel_group.account.last_post_at = datetime.now(timezone.utc)
             
             db.commit()
+            try:
+                monitoring.record_event('carousel_done', carousel_group_id=int(carousel_group_id), post_id=carousel_group.platform_post_id)
+            except Exception:
+                pass
             
             return {
                 'success': True,
@@ -628,6 +675,10 @@ def publish_carousel(self, carousel_group_id: int):
                 except Exception:
                     db.rollback()
                     db.commit()
+        try:
+            monitoring.record_event('carousel_failed', carousel_group_id=int(carousel_group_id), error=str(e))
+        except Exception:
+            pass
         
         # 重試邏輯
         if self.request.retries < self.max_retries:
@@ -637,21 +688,98 @@ def publish_carousel(self, carousel_group_id: int):
         raise
 
 def _combine_carousel_captions(posts: List[SocialPost]) -> str:
-    """組合輪播貼文的文案"""
-    # 使用第一個貼文的標題作為主文案
-    if posts and posts[0].generated_caption:
-        return posts[0].generated_caption
-    
-    # 如果沒有生成文案，組合標題
-    titles = []
+    """組合輪播貼文的文案 - 支援 multipost 模板格式"""
+    if not posts:
+        return "📢 校園生活分享"
+
+    try:
+        # 獲取模板配置（使用第一個貼文的模板）
+        first_post = posts[0]
+        logger.info(f"檢查輪播貼文模板: post_id={first_post.id}, template_id={first_post.template_id}")
+
+        if not first_post.template:
+            logger.warning(f"貼文 {first_post.id} 沒有模板，使用舊邏輯")
+            # 如果沒有模板，使用舊邏輯
+            if first_post.generated_caption:
+                return first_post.generated_caption
+            return "📢 校園生活分享"
+
+        template_config = first_post.template.config
+        multipost_config = template_config.get('multipost', {})
+        logger.info(f"模板配置: multipost_config={multipost_config}")
+
+        # 檢查是否使用 multipost 格式
+        if multipost_config and multipost_config.get('template') and '{id}' in multipost_config.get('template', ''):
+            return _generate_multipost_caption(posts, multipost_config)
+        else:
+            # 使用傳統邏輯
+            if first_post.generated_caption:
+                return first_post.generated_caption
+            return "📢 校園生活分享"
+
+    except Exception as e:
+        logger.error(f"組合輪播文案失敗: {e}")
+        # 後備方案：使用第一個貼文的文案
+        if posts and posts[0].generated_caption:
+            return posts[0].generated_caption
+        return "📢 校園生活分享"
+
+def _generate_multipost_caption(posts: List[SocialPost], multipost_config: Dict) -> str:
+    """使用 multipost 模板格式生成輪播文案"""
+    result = ""
+
+    # 1. 開頭固定內容（只顯示一次）
+    if multipost_config.get('prefix'):
+        result += multipost_config['prefix'] + '\n'
+
+    # 2. 重複每篇貼文內容
+    template = multipost_config.get('template', '{id}\n{content}\n-----------------')
+    id_format = multipost_config.get('idFormat', {})
+
     for post in posts:
-        if hasattr(post.forum_post, 'title') and post.forum_post.title:
-            titles.append(post.forum_post.title)
-    
-    if titles:
-        return f"📢 校園動態更新\n\n" + "\n".join(f"• {title}" for title in titles[:5])
-    
-    return "📢 校園生活分享"
+        try:
+            # 格式化 ID
+            formatted_id = _format_post_id(post.forum_post_id, id_format)
+
+            # 格式化單篇內容
+            post_content = template.format(
+                id=formatted_id,
+                content=getattr(post.forum_post, 'content', '無內容') if post.forum_post else '無內容',
+                title=getattr(post.forum_post, 'title', '無標題') if post.forum_post else '無標題',
+                author=getattr(post.forum_post, 'author', '匿名用戶') if post.forum_post else '匿名用戶'
+            )
+            result += post_content
+
+            # 如果不是最後一篇且模板沒有換行，自動加換行
+            if post != posts[-1] and not template.endswith('\n'):
+                result += '\n'
+        except Exception as e:
+            logger.error(f"格式化貼文 {post.id} 失敗: {e}")
+            continue
+
+    # 3. 結尾固定內容（只顯示一次）
+    if multipost_config.get('suffix'):
+        result += '\n' + multipost_config['suffix']
+
+    return result.strip()
+
+def _format_post_id(post_id: int, id_format_config: Dict) -> str:
+    """根據 idFormat 配置格式化貼文 ID"""
+    if not post_id:
+        return ''
+
+    formatted = str(post_id)
+
+    # 補零處理
+    digits = id_format_config.get('digits', 0)
+    if digits > 0:
+        formatted = formatted.zfill(digits)
+
+    # 加前後綴
+    prefix = id_format_config.get('prefix', '')
+    suffix = id_format_config.get('suffix', '')
+
+    return f"{prefix}{formatted}{suffix}"
 
 def _combine_carousel_hashtags(posts: List[SocialPost]) -> List[str]:
     """組合輪播貼文的標籤"""
@@ -669,6 +797,7 @@ def _combine_carousel_hashtags(posts: List[SocialPost]) -> List[str]:
 def check_scheduled_publishes():
     """檢查定時發布任務和積壓的輪播組"""
     try:
+        monitoring.mark_beat_seen()
         with get_session() as db:
             now = datetime.now(timezone.utc)
             
@@ -712,6 +841,7 @@ def check_scheduled_publishes():
                     if ready_items >= 2:
                         task = publish_carousel.delay(group.id)
                         results.append({'group_id': group.id, 'task_id': task.id, 'success': True})
+                        monitoring.record_event('stuck_recovery_triggered', carousel_group_id=int(group.id), reason='scheduled_due')
                     else:
                         results.append({'group_id': group.id, 'success': False, 'reason': 'not_enough_images'})
                 except Exception as e:
@@ -737,6 +867,7 @@ def check_scheduled_publishes():
                         logger.info(f"觸發積壓輪播組 {group.id} 的發布")
                         task = publish_carousel.delay(group.id)
                         results.append({'group_id': group.id, 'type': 'stuck_recovery', 'task_id': task.id, 'success': True, 'collected_count': group.collected_count})
+                        monitoring.record_event('stuck_recovery_triggered', carousel_group_id=int(group.id), reason='stuck_collecting')
                     else:
                         results.append({'group_id': group.id, 'type': 'stuck_recovery', 'success': False, 'reason': 'not_enough_images'})
                 except Exception as e:

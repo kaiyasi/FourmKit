@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
 import { getJSON, HttpError } from '@/lib/http'
 import ErrorPage from '@/components/ui/ErrorPage'
 import { formatLocalMinute } from '@/utils/time'
@@ -211,12 +212,12 @@ export default function PostDetailPage({ id }: { id?: number }) {
           // fallback: 直接構建 CDN URL
           let rel = (m.path || '').replace(/^\/+/, '')
           if (rel.startsWith('public/')) {
-            setUrl(`https://cdn.serelix.xyz/${rel.replace(/^public\//, '')}`)
+            setUrl(`${API_BASE}/${rel.replace(/^public\//, '')}`)
           } else if (rel.startsWith('media/')) {
-            setUrl(`https://cdn.serelix.xyz/${rel}`)
+            setUrl(`${API_BASE}/${rel}`)
           } else {
             const ext = (m.path || '').split('.').pop() || 'jpg'
-            setUrl(`https://cdn.serelix.xyz/${m.id}.${ext}`)
+            setUrl(`${API_BASE}/${m.id}.${ext}`)
           }
           setLoading(false)
         } catch (e) {
@@ -267,6 +268,11 @@ export default function PostDetailPage({ id }: { id?: number }) {
 
   return (
     <PageLayout pathname={`/posts/${post.id}`} maxWidth="max-w-5xl">
+      <div className="mt-4 text-center mb-4 sm:hidden">
+        <h1 className="text-2xl font-bold text-fg">ForumKit</h1>
+        <p className="text-sm text-muted">Post details</p>
+      </div>
+      
       {/* 返回按鈕 */}
       <div className="mb-4">
         <button
@@ -437,10 +443,10 @@ function LightboxOverlay({
     .filter(m => /\.(jpg|jpeg|png|webp|gif)$/i.test(m.path || '') || m.kind === 'image')
     .map(m => {
       let rel = (m.path || '').replace(/^\/+/, '')
-      if (rel.startsWith('public/')) return `https://cdn.serelix.xyz/${rel.replace(/^public\//, '')}`
-      if (rel.startsWith('media/')) return `https://cdn.serelix.xyz/${rel}`
+      if (rel.startsWith('public/')) return `${API_BASE}/${rel.replace(/^public\//, '')}`
+      if (rel.startsWith('media/')) return `${API_BASE}/${rel}`
       const ext = (m.path || '').split('.').pop() || 'jpg'
-      return `https://cdn.serelix.xyz/${m.id}.${ext}`
+      return `${API_BASE}/${m.id}.${ext}`
     })
 
   // 解析目前 url 在清單中的位置

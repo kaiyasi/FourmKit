@@ -50,14 +50,19 @@ class SocialAccount(Base):
     
     # 基本資訊
     platform: Mapped[str] = mapped_column(String(20), nullable=False)  # instagram, twitter, etc.
-    platform_user_id: Mapped[str] = mapped_column(String(64), nullable=False)  # 平台用戶 ID
+    # DEPRECATE: platform_user_id（舊欄位，歷史上誤存過 User ID）
+    # 新欄位 page_id 存放 Facebook Page ID（Page-based Instagram 流程需要 Page ID）
+    platform_user_id: Mapped[str] = mapped_column(String(64), nullable=False)  # 平台用戶 ID（舊）
+    page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)     # 正確的 Page ID（新）
     platform_username: Mapped[str] = mapped_column(String(64), nullable=False)  # 平台用戶名
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)  # 顯示名稱
     
     # 認證資訊
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    # 認證資訊
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True) # 用戶提供的原始 Token 或短期 Token
+    long_lived_access_token: Mapped[str | None] = mapped_column(Text, nullable=True) # 儲存的長期 Token
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True) # 長期 Token 的過期時間
     
     # 帳號設定
     status: Mapped[str] = mapped_column(String(16), default=AccountStatus.PENDING, nullable=False)

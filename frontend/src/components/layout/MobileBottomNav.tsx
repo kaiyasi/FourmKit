@@ -23,28 +23,56 @@ export function MobileBottomNav() {
   const writeBottomOffset = () => {
     try {
       const el = document.getElementById('fk-mobile-bottom-nav')
-      if (!el) return
+      if (!el) {
+        // 如果元素還沒有載入，使用預設值
+        document.documentElement.style.setProperty('--fk-bottomnav-offset', `calc(64px + env(safe-area-inset-bottom) + 8px)`)
+        return
+      }
       const rect = el.getBoundingClientRect()
       const offset = Math.max(0, Math.ceil(rect.height))
-      document.documentElement.style.setProperty('--fk-bottomnav-offset', `${offset + 8}px`)
-    } catch {}
+      // 加上額外間距，確保內容不會被遮住
+      document.documentElement.style.setProperty('--fk-bottomnav-offset', `${offset + 12}px`)
+      console.log(`[MobileBottomNav] 設定底部間距: ${offset + 12}px`)
+    } catch (error) {
+      console.warn('[MobileBottomNav] 設定 CSS 變數失敗:', error)
+      // 失敗時使用預設值
+      document.documentElement.style.setProperty('--fk-bottomnav-offset', `calc(64px + env(safe-area-inset-bottom) + 8px)`)
+    }
   }
 
   useEffect(() => {
+    // 立即執行一次
     writeBottomOffset()
+
+    // 延遲執行，確保 DOM 完全載入
+    const timeoutId = setTimeout(() => {
+      writeBottomOffset()
+    }, 100)
+
     const onResize = () => writeBottomOffset()
     window.addEventListener('resize', onResize)
+
     let ro: ResizeObserver | null = null
     try {
       ro = new ResizeObserver(() => writeBottomOffset())
       const el = document.getElementById('fk-mobile-bottom-nav')
       if (el) ro.observe(el)
     } catch {}
+
     return () => {
+      clearTimeout(timeoutId)
       window.removeEventListener('resize', onResize)
       try { ro?.disconnect() } catch {}
     }
   }, [])
+
+  // 路由變化時也重新計算，防止某些頁面沒有正確更新
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      writeBottomOffset()
+    }, 50)
+    return () => clearTimeout(timeoutId)
+  }, [location.pathname])
 
   // 手機版底部導航：貼文 / 版規(或後台) / 發文 / 支援 / 更多
   const isAdmin = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(currentRole)

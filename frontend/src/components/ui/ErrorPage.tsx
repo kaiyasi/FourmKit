@@ -28,13 +28,19 @@ export default function ErrorPage({
   const Icon = variant.icon
   
   // 構建支援頁面 URL，預填錯誤資訊
-  const supportUrl = `/support?prefill=${encodeURIComponent(JSON.stringify({
-    type: 'system_error',
-    title: `系統錯誤 ${status || '未知'}`,
-    description: message || '發生未知錯誤',
-    error_code: status,
-    error_details: hint
-  }))}`
+  const prefillData = status === 451
+    ? {
+        category: 'account_issue',
+        priority: 'high',
+        title: 'IP 受限制申訴',
+        message: `我的 IP 位址被系統限制，導致無法存取服務.\n\n錯誤訊息: ${message}\n\n請協助審核並解除限制`,
+      }
+    : {
+        category: 'system_error',
+        title: `系統錯誤 ${status || '未知'}`, 
+        message: `錯誤訊息: ${message || '發生未知錯誤'}\n錯誤代碼: ${status}\n相關提示: ${hint || '無'}`, 
+      };
+  const supportUrl = `/support/create?prefill=${encodeURIComponent(JSON.stringify(prefillData))}`;
   
   return (
     <div className="min-h-screen grid place-items-center p-6 bg-gradient-to-br from-surface via-surface to-surface/50">
@@ -102,7 +108,7 @@ export default function ErrorPage({
         {/* 額外提示 */}
         {showSupport && (
           <p className="text-xs text-muted mt-4">
-            如果問題持續發生，請聯繫系統管理員獲取協助
+            如果問題持續發生，請<Link to={supportUrl} className="text-primary hover:text-primary/80 underline">聯繫系統管理員</Link>獲取協助
           </p>
         )}
       </div>
@@ -118,6 +124,12 @@ function pickVariant(status?: number) {
   if (status === 404) return base('找不到頁面', SearchX)
   if (status === 408) return base('請求逾時', Timer)
   if (status === 429) return base('請求過於頻繁', Ban)
+  if (status === 451) return {
+    title: '此 IP 已受限制',
+    icon: Ban,
+    badgeBg: 'bg-red-100 dark:bg-red-900/30',
+    badgeFg: 'text-red-700 dark:text-red-300',
+  }
   if (status === 500) return base('伺服器錯誤', ServerCrash)
   if (status === 502 || status === 503 || status === 504) return base('服務暫時不可用', WifiOff)
   return base('發生錯誤', AlertTriangle)
