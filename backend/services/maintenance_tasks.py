@@ -122,25 +122,9 @@ def refresh_instagram_tokens() -> Dict:
                         skipped += 1
                         continue
 
-                    res = instagram_oauth_service.refresh_access_token(acc.access_token)
-                    if res.get('success') and res.get('access_token'):
-                        acc.access_token = res['access_token']
-                        # 設定過期時間（若 API 回傳 expires_at，否則用 expires_in 推算）
-                        expires_at = res.get('expires_at')
-                        if not expires_at and res.get('expires_in'):
-                            expires_at = (now + timedelta(seconds=int(res['expires_in']))).isoformat()
-                        try:
-                            acc.token_expires_at = datetime.fromisoformat(expires_at) if isinstance(expires_at, str) else expires_at
-                        except Exception:
-                            acc.token_expires_at = now + timedelta(days=60)
-                        acc.updated_at = now
-                        acc.status = AccountStatus.ACTIVE
-                        db.commit()
-                        refreshed += 1
-                    else:
-                        failed.append({'account_id': acc.id, 'error': res})
-                except InstagramOAuthError as e:
-                    failed.append({'account_id': acc.id, 'error': str(e)})
+                    # v23 API Token 通常不需要刷新，直接跳過維護任務中的 token 刷新
+                    logger.info(f"Instagram 帳號 {acc.id} ({acc.display_name}) 跳過 Token 刷新（v23 API）")
+                    skipped += 1
                 except Exception as e:
                     failed.append({'account_id': acc.id, 'error': str(e)})
         return {

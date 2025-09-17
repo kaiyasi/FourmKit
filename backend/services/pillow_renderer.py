@@ -130,6 +130,19 @@ class PillowRenderer:
         font_size: Optional[int] = None,
         padding: int = 40,
         line_spacing: int = 10,
+        # 新增：排版與輸出控制
+        text_align: str = "center",           # left | center | right
+        vertical_align: str = "middle",       # top | middle | bottom
+        max_lines: Optional[int] = None,       # 最大行數（超出將截斷）
+        max_chars_per_line: Optional[int] = None,  # 每行最大字數
+        ellipsis: bool = True,                 # 截斷時是否加上 …
+        # 文字截斷浮水印
+        apply_watermark_on_truncation: bool = False,
+        watermark_text: str = "",
+        watermark_font_name: Optional[str] = None,
+        watermark_font_size: int = 18,
+        watermark_color: str = "#666666",
+        watermark_position: Optional[object] = None,  # str 位置名 或 {x:int,y:int}
         image_format: str = "JPEG",
         quality: int = 92,
     ) -> BytesIO:
@@ -152,7 +165,40 @@ class PillowRenderer:
             text_height = img_height - (padding * 2)
             
             # 自動換行
-            lines = self._wrap_text(content, font, text_width)
+            wrapped = self._wrap_text(content, font, text_width)
+
+            # 每行最大字數限制（先於 max_lines）
+            lines: List[str] = []
+            was_truncated = False
+            if isinstance(max_chars_per_line, int) and max_chars_per_line > 0:
+                for ln in wrapped:
+                    if len(ln) > max_chars_per_line:
+                        was_truncated = True
+                        lines.append(ln[:max_chars_per_line])
+                    else:
+                        lines.append(ln)
+            else:
+                lines = wrapped
+
+            # 最大行數限制（若有設定）
+            if isinstance(max_lines, int) and max_lines > 0 and len(lines) > max_lines:
+                was_truncated = True or was_truncated
+                lines = lines[:max_lines]
+                if ellipsis and lines:
+                    # 盡量在寬度內添加 …
+                    last = lines[-1]
+                    try:
+                        test = last + "…"
+                        bbox = font.getbbox(test)
+                        lw = bbox[2] - bbox[0]
+                        while lw > text_width and len(last) > 0:
+                            last = last[:-1]
+                            test = last + "…"
+                            bbox = font.getbbox(test)
+                            lw = bbox[2] - bbox[0]
+                        lines[-1] = test
+                    except Exception:
+                        lines[-1] = last  # 退回原樣
             
             # 計算總文字高度 - 修正：使用實際字體高度而不是 font_size
             # 獲取實際字體高度
@@ -161,20 +207,76 @@ class PillowRenderer:
             line_height = actual_font_height + line_spacing
             total_text_height = len(lines) * line_height - line_spacing
             
-            # 垂直居中起始位置
-            y_start = padding + (text_height - total_text_height) // 2
+            # 垂直對齊起始位置
+            v = (vertical_align or "middle").lower()
+            if v == "top":
+                y_start = padding
+            elif v in ("bottom", "down"):
+                y_start = padding + (text_height - total_text_height)
+            else:  # middle default
+                y_start = padding + (text_height - total_text_height) // 2
             
             # 繪製文字
             y_position = y_start
             for line in lines:
-                # 水平居中
+                # 水平對齊
                 text_bbox = draw.textbbox((0, 0), line, font=font)
                 text_line_width = text_bbox[2] - text_bbox[0]
-                x_position = padding + (text_width - text_line_width) // 2
+                align = (text_align or "center").lower()
+                if align == "left":
+                    x_position = padding
+                elif align == "right":
+                    x_position = padding + (text_width - text_line_width)
+                else:  # center default
+                    x_position = padding + (text_width - text_line_width) // 2
                 
                 draw.text((x_position, y_position), line, fill=text_color, font=font)
                 y_position += line_height
             
+            # 文字被截斷時，渲染浮水印
+            if was_truncated and apply_watermark_on_truncation and watermark_text:
+                try:
+                    wm_font = self.get_font(watermark_font_name, watermark_font_size)
+                    wm_draw = ImageDraw.Draw(img)
+                    tb = wm_draw.textbbox((0, 0), watermark_text, font=wm_font)
+                    tw = tb[2] - tb[0]
+                    th = tb[3] - tb[1]
+
+                    # 預設右下角
+                    wx, wy = img_width - padding - tw, img_height - padding - th
+
+                    pos = watermark_position
+                    if isinstance(pos, str):
+                        p = pos.lower()
+                        if p == 'top-left':
+                            wx, wy = padding, padding
+                        elif p == 'top-center':
+                            wx, wy = (img_width - tw) // 2, padding
+                        elif p == 'top-right':
+                            wx, wy = img_width - padding - tw, padding
+                        elif p in ('middle-left', 'left-center'):
+                            wx, wy = padding, (img_height - th) // 2
+                        elif p in ('center', 'middle-center'):
+                            wx, wy = (img_width - tw) // 2, (img_height - th) // 2
+                        elif p in ('middle-right', 'right-center'):
+                            wx, wy = img_width - padding - tw, (img_height - th) // 2
+                        elif p == 'bottom-left':
+                            wx, wy = padding, img_height - padding - th
+                        elif p == 'bottom-center':
+                            wx, wy = (img_width - tw) // 2, img_height - padding - th
+                        else:  # bottom-right
+                            wx, wy = img_width - padding - tw, img_height - padding - th
+                    elif isinstance(pos, dict):
+                        try:
+                            wx = int(pos.get('x', wx))
+                            wy = int(pos.get('y', wy))
+                        except Exception:
+                            pass
+
+                    wm_draw.text((wx, wy), watermark_text, fill=watermark_color, font=wm_font)
+                except Exception:
+                    pass
+
             # 保存到 BytesIO
             buf = BytesIO()
             if image_format.upper() == "PNG":

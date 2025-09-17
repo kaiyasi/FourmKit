@@ -42,6 +42,8 @@ services:
     build:
       context: ./docker/cdn-uploader
     container_name: forumkit-cdn-uploader
+    ports:
+      - "${CDN_UPLOADER_PORT:-12001}:8080"  # CDN 上傳服務端口
     environment:
       - CDN_LOCAL_ROOT=/data
       - CDN_PUBLIC_BASE_URL=${PUBLIC_CDN_URL}
@@ -49,8 +51,6 @@ services:
       - CDN_ADMIN_PASSWORD=${CDN_ADMIN_PASSWORD:-Serelix}
     volumes:
       - ./cdn-data:/data
-    expose:
-      - "8080"
     restart: unless-stopped
     networks:
       - forumkit-net
@@ -93,7 +93,7 @@ services:
     image: postgres:15
     container_name: forumkit-postgres
     ports:
-      - "12007:5432"  # PostgreSQL 端口 (修正)
+      - "12007:5432"  # PostgreSQL 端口 (保持原來的內部端口)
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-forumkit}
       - POSTGRES_USER=${POSTGRES_USER:-forumkit}
@@ -115,7 +115,7 @@ services:
     image: redis:7-alpine
     container_name: forumkit-redis
     ports:
-      - "12008:6379"  # Redis 端口 (修正)
+      - "12008:6379"  # Redis 端口 (保持原來的內部端口)
     volumes:
       - redis_data:/data
     restart: unless-stopped

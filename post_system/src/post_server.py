@@ -53,10 +53,10 @@ class PostRequest:
     request_id: str
     user_token: str
     page_id: str
-    image_url: str = ""
-    image_urls: Optional[list] = None
     caption: str
     client_address: tuple
+    image_url: str = ""
+    image_urls: Optional[list] = None
 
 @dataclass
 class PostResponse:

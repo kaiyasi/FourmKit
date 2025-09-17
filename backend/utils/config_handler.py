@@ -36,6 +36,9 @@ DEFAULT_DATA: Dict[str, Any] = {
     # 內容字數審核（最小字數與開關）
     "enforce_min_post_chars": True,
     "min_post_chars": int(os.getenv("MIN_POST_CHARS", "15")),
+    # 使用者註銷/黑名單
+    "email_blacklist": [],
+    "suspended_users": [],
 }
 
 

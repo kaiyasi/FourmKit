@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Trash2
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { getRole, getRoleDisplayName } from '@/utils/auth'
 
 interface Comment {
@@ -487,8 +488,15 @@ export default function CommentSection({
             </div>
           ) : (
             <div ref={commentsContainerRef} className="space-y-3 max-h-96 overflow-y-auto">
-              {comments.map((comment) => (
-                <div key={comment.id} className="bg-surface border border-border rounded-xl p-4">
+              {comments.map((comment) => {
+                const raw = (comment.content || '').toString()
+                const trimmed = raw.trim()
+                const mReply = trimmed.match(/^※#(\d+)\s*(.*)$/s)
+                const isLegacyNote = !mReply && trimmed.startsWith('※ ')
+                const displayContent = mReply ? (mReply[2] || '') : (isLegacyNote ? trimmed.replace(/^※\s*/, '') : raw)
+                const replyId = mReply ? mReply[1] : null
+                return (
+                  <div key={comment.id} className="bg-surface border border-border rounded-xl p-4">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
@@ -513,7 +521,14 @@ export default function CommentSection({
                     )}
                   </div>
                   
-                  <p className="text-sm text-fg mb-3 whitespace-pre-wrap">{comment.content}</p>
+                  <p className={`mb-3 whitespace-pre-wrap ${replyId ? 'text-sm text-fg' : (isLegacyNote ? 'text-xs text-muted italic' : 'text-sm text-fg')}`}>
+                    {replyId && (
+                      <Link to={`/posts/${replyId}`} className="text-xs text-muted mr-2 hover:underline">
+                        回覆貼文 #{replyId}
+                      </Link>
+                    )}
+                    {displayContent}
+                  </p>
                   
                   <div className="flex items-center gap-2">
                     <button
@@ -543,7 +558,7 @@ export default function CommentSection({
                     </button>
                   </div>
                 </div>
-              ))}
+              )})}
               
               {/* Auto-loading indicator */}
               {loading && hasMore && (

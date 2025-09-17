@@ -343,17 +343,33 @@ class InstagramPagePublisher:
 
     def _get_permalink(self, media_id: str, page_token: str) -> str:
         """查詢已發布媒體的 permalink"""
-        r = requests.get(
-            f"{self.api_base_url}/{media_id}",
-            params={'fields': 'permalink,shortcode', 'access_token': page_token},
-            timeout=self.timeout
-        )
-        if r.status_code == 200:
-            j = r.json()
-            if j.get('permalink'):
-                return j['permalink']
-            if j.get('shortcode'):
-                return f"https://www.instagram.com/p/{j['shortcode']}/"
+        try:
+            r = requests.get(
+                f"{self.api_base_url}/{media_id}",
+                params={'fields': 'permalink,shortcode', 'access_token': page_token},
+                timeout=self.timeout
+            )
+
+            if r.status_code == 200:
+                j = r.json()
+                if j.get('permalink'):
+                    return j['permalink']
+                if j.get('shortcode'):
+                    return f"https://www.instagram.com/p/{j['shortcode']}/"
+            else:
+                # 如果查詢失敗，記錄詳細錯誤但不拋出異常
+                error_data = r.json() if r.content else {}
+                logger.warning(f"無法查詢媒體 permalink (media_id: {media_id}): {r.status_code} - {error_data}")
+
+                # 嘗試用基本的 Instagram URL 格式
+                if media_id:
+                    # 使用 media_id 的最後部分作為 shortcode（不一定正確，但比沒有 URL 好）
+                    return f"https://www.instagram.com/p/{media_id}/"
+
+        except Exception as e:
+            logger.error(f"查詢 permalink 時發生錯誤: {e}")
+
+        # 最終回退：返回基本 Instagram URL
         return "https://www.instagram.com/"
     
     def _build_caption(self, caption: str, hashtags: List[str]) -> str:

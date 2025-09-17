@@ -1,189 +1,111 @@
-import React, { useState, useEffect } from 'react'
-import {
-  X,
-  Save,
-  Eye,
-  Type,
-  Image,
-  Palette,
-  Layout,
-  Settings,
-  Hash,
-  Upload,
-  RotateCcw,
-  Download,
-  RefreshCw
-} from 'lucide-react'
+import React, { useMemo, useState, useEffect, useCallback } from 'react'
+import { X, Save } from 'lucide-react'
 
-// 圖片預覽組件
-const ImagePreview: React.FC<{
-  content: any
-  config?: any
-  templateId?: number
-  templateConfig?: any
-}> = ({ content, config, templateId, templateConfig }) => {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  // 預覽尺寸配置 - 設定為更大的固定尺寸
-  const maxPreviewHeight = '1000px'
-
-  const generatePreview = async () => {
-    if (!templateId || loading) return
-
-    setLoading(true)
-    try {
-      // 添加超時控制
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15秒超時
-
-      const response = await fetch('/api/admin/social/templates/preview', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          template_id: templateId,
-          content_data: content,
-          custom_options: {
-            image: config,
-            // 包含完整的模板配置以便生成格式化ID
-            ...(templateConfig && {
-              multipost: templateConfig.multipost,
-              caption: templateConfig.caption
-            })
-          }
-        }),
-        signal: controller.signal
-      })
-
-      clearTimeout(timeoutId)
-      const result = await response.json()
-      if (result.success && result.preview?.image_url) {
-        setPreviewUrl(result.preview.image_url)
-      }
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error('預覽生成超時')
-      } else {
-        console.error('生成預覽失敗:', error)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // 當內容或配置改變時重新生成預覽 (使用防抖避免過於頻繁的請求)
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      generatePreview()
-    }, 300) // 300ms 防抖延遲
-
-    return () => clearTimeout(timeoutId)
-  }, [content, JSON.stringify(config), templateId, JSON.stringify(templateConfig)])
-
-  return (
-    <div className="relative">
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded">
-          <RefreshCw className="w-4 h-4 animate-spin" />
-          <span className="ml-2 text-xs">生成中...</span>
-        </div>
-      )}
-      
-      {previewUrl ? (
-        <div className="relative group cursor-pointer" onClick={generatePreview}>
-          <img 
-            src={previewUrl} 
-            alt="模板預覽"
-            className="max-w-full h-auto rounded border border-border hover:opacity-80 transition-opacity"
-            style={{ maxHeight: maxPreviewHeight, maxWidth: '100%' }}
-            title="點擊重新生成預覽"
-          />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-            <RefreshCw className="w-6 h-6 text-white drop-shadow-lg" />
-            <span className="ml-2 text-white text-sm font-medium drop-shadow-lg">點擊重新生成</span>
-          </div>
-        </div>
-      ) : (
-        <div className="p-8 text-center text-muted-foreground">
-          <div className="text-2xl mb-2">🖼️</div>
-          <div className="text-xs">
-            {loading ? '正在生成預覽...' : '點擊重新生成預覽圖片'}
-          </div>
-          {!loading && (
-            <button
-              onClick={generatePreview}
-              className="mt-2 text-xs text-primary hover:text-primary/80"
-            >
-              生成預覽
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
+type Align = 'left' | 'center' | 'right'
+type VAlign = 'top' | 'middle' | 'bottom'
 
 interface TemplateConfig {
-  image?: {
-    width?: number
-    height?: number
-    background?: {
-      type: 'color' | 'gradient' | 'image'
-      value: string
-      gradient?: { start: string; end: string; direction: string }
-    }
-    logo?: {
-      enabled: boolean
-      position: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right' | 'center'
-      size: number
-      opacity?: number
-    }
-    text?: {
+  // 1. 貼文模板：純文字轉圖片（沒有附件時使用）
+  textToImage: {
+    enabled: boolean
+    width: number
+    height: number
+    background: { type: 'color' | 'gradient' | 'image', value: string }
+    text: {
       font: string
       size: number
       color: string
-      weight: 'normal' | 'bold'
-      align: 'left' | 'center' | 'right'
-      lineHeight?: number
-      maxLines?: number
+      align: Align
+      vAlign: VAlign
+      lineSpacing: number
+      maxLines: number
+      maxCharsPerLine: number
+      watermark?: {
+        enabled: boolean
+        text?: string
+        font?: string
+        size?: number
+        color?: string
+        position?: 'top-left'|'top-center'|'top-right'|'middle-left'|'center'|'middle-right'|'bottom-left'|'bottom-center'|'bottom-right'
+      }
     }
-    timestamp?: {
-      enabled: boolean
-      position: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
-      format: '12h' | '24h'
-      showYear: boolean
-      showSeconds: boolean
-      font?: string
-      size?: number
-      color?: string
+    logo?: { enabled: boolean, url?: string, size?: number, opacity?: number, position?: string, x?: number, y?: number }
+    timestamp?: { enabled: boolean, format?: '12h'|'24h', showYear?: boolean, showSeconds?: boolean, size?: number, font?: string, color?: string, position?: string, x?: number, y?: number }
+    postId?: { enabled: boolean, text?: string, prefix?: string, digits?: number, suffix?: string, position?: string, size?: number, font?: string, color?: string, opacity?: number, x?: number, y?: number }
+    border?: { enabled: boolean, width?: number, color?: string, radius?: number }
+  }
+
+  // 2. 相片模板：有圖片附件時的處理方式
+  photos: {
+    enabled: boolean
+    mode: 'combined' | 'separate'
+
+    // 合成模式：文字與圖片合成為一張圖
+    combined: {
+      canvas: {
+        width: number
+        height: number
+        background: { type: 'color' | 'gradient' | 'image', value: string }
+      }
+      layout: {
+        maxPhotos: 1 | 2 | 3 | 4
+        arrangement: 'grid' | 'row' | 'column' | 'collage'
+        // 百分比定位系統
+        photoArea: { width: number, height: number, x: number, y: number } // 0-100%
+        textArea: { width: number, height: number, x: number, y: number }   // 0-100%
+      }
+      photos: {
+        resizeMode: 'none' | 'fit' | 'fill' | 'crop'
+        quality: number // 0-100
+        rounded: boolean
+        cornerRadius: number
+        border?: { enabled: boolean, width?: number, color?: string }
+        spacing: number // 圖片間距
+      }
+      text: {
+        font: string
+        size: number
+        color: string
+        align: Align
+        vAlign: VAlign
+        lineSpacing: number
+        maxLines: number
+        maxCharsPerLine: number
+        background?: { enabled: boolean, color?: string, opacity?: number }
+        shadow?: { enabled: boolean, color?: string, blur?: number, offset?: { x: number, y: number } }
+      }
+      logo?: { enabled: boolean, url?: string, size?: number, opacity?: number, position?: string, x?: number, y?: number }
+      timestamp?: { enabled: boolean, format?: '12h'|'24h', showYear?: boolean, showSeconds?: boolean, size?: number, font?: string, color?: string, position?: string, x?: number, y?: number }
+      postId?: { enabled: boolean, text?: string, prefix?: string, digits?: number, suffix?: string, position?: string, size?: number, font?: string, color?: string, opacity?: number, x?: number, y?: number }
+      border?: { enabled: boolean, width?: number, color?: string, radius?: number }
     }
-    border?: {
-      enabled: boolean
-      width: number
-      color: string
-      radius: number
+
+    // 分開模式：原圖片 + 文字描述
+    separate: {
+      photos: {
+        maxCount: 1 | 2 | 3 | 4
+        resizeMode: 'none' | 'fit' | 'fill'
+        quality: number // 0-100
+        watermark?: {
+          enabled: boolean
+          logo?: { enabled: boolean, url?: string, size?: number, opacity?: number, position?: string }
+          timestamp?: { enabled: boolean, format?: '12h'|'24h', size?: number, color?: string, position?: string }
+          postId?: { enabled: boolean, format?: string, size?: number, color?: string, position?: string }
+        }
+      }
     }
   }
-  caption?: {
-    template: string
+
+  // 3. 文案模板：Instagram 發文時的文字內容
+  caption: {
+    enabled: boolean
+    header: string
+    content: string
+    footer: string
     maxLength: number
     autoHashtags: string[]
-    emojiStyle: 'none' | 'minimal' | 'rich'
-  }
-  multipost?: {
-    prefix?: string
-    idFormat?: {
-      prefix: string
-      suffix?: string
-      digits: number
-    }
-    template: string
-    suffix?: string
-    maxLength: number
-    emojiStyle?: 'none' | 'minimal' | 'rich'
+    includeOriginalLink: boolean
+    linkText?: string
   }
 }
 
@@ -191,14 +113,6 @@ interface SocialAccount {
   id: number
   platform_username: string
   display_name: string
-}
-
-interface FontFile {
-  id: number
-  font_family: string
-  display_name: string
-  is_active: boolean
-  is_system_font: boolean
 }
 
 interface TemplateEditorProps {
@@ -210,424 +124,378 @@ interface TemplateEditorProps {
 }
 
 const DEFAULT_CONFIG: TemplateConfig = {
-  image: {
+  textToImage: {
+    enabled: true,
     width: 1080,
     height: 1080,
-    background: {
-      type: 'color',
-      value: '#ffffff'
-    },
-    logo: {
-      enabled: true,
-      position: 'top-right',
-      size: 80,
-      opacity: 0.8
-    },
+    background: { type: 'color', value: '#ffffff' },
     text: {
       font: 'Noto Sans TC',
       size: 32,
       color: '#333333',
-      weight: 'bold',
       align: 'center',
-      lineHeight: 1.4,
-      maxLines: 6
+      vAlign: 'middle',
+      lineSpacing: 10,
+      maxLines: 6,
+      maxCharsPerLine: 0,
+      watermark: { enabled: false, text: '詳情請至平台查看', size: 20, color: '#666666', position: 'bottom-right' },
     },
-    timestamp: {
-      enabled: true,
-      position: 'bottom-right',
-      format: '24h',
-      showYear: false,
-      showSeconds: false,
-      font: 'Noto Sans TC',
-      size: 18,
-      color: '#666666'
+    logo: { enabled: false, size: 80, opacity: 0.85, position: 'top-right' },
+    timestamp: { enabled: false, format: '24h', showYear: false, showSeconds: false, size: 18, color: '#666666', position: 'bottom-right' },
+    postId: { enabled: false, position: 'top-left', size: 20, color: '#0066cc', opacity: 0.9 },
+    border: { enabled: false, width: 2, color: '#e5e7eb', radius: 12 }
+  },
+  photos: {
+    enabled: true,
+    mode: 'combined',
+    combined: {
+      canvas: { width: 1080, height: 1080, background: { type: 'color', value: '#ffffff' } },
+      layout: {
+        maxPhotos: 4,
+        arrangement: 'grid',
+        photoArea: { width: 60, height: 60, x: 5, y: 5 },  // 左上角 60% 區域
+        textArea: { width: 30, height: 60, x: 67, y: 5 }    // 右側 30% 區域
+      },
+      photos: {
+        resizeMode: 'crop',
+        quality: 85,
+        rounded: true,
+        cornerRadius: 8,
+        border: { enabled: false, width: 2, color: '#e5e7eb' },
+        spacing: 8
+      },
+      text: {
+        font: 'Noto Sans TC',
+        size: 24,
+        color: '#333333',
+        align: 'left',
+        vAlign: 'top',
+        lineSpacing: 8,
+        maxLines: 8,
+        maxCharsPerLine: 20,
+        background: { enabled: false, color: '#ffffff', opacity: 0.8 },
+        shadow: { enabled: false, color: '#000000', blur: 4, offset: { x: 2, y: 2 } }
+      },
+      logo: { enabled: false, size: 60, opacity: 0.85, position: 'bottom-right' },
+      timestamp: { enabled: false, format: '24h', showYear: false, showSeconds: false, size: 14, color: '#666666', position: 'bottom-left' },
+      postId: { enabled: false, position: 'top-left', size: 16, color: '#0066cc', opacity: 0.9 },
+      border: { enabled: false, width: 2, color: '#e5e7eb', radius: 12 }
     },
-    postId: {
-      enabled: false,
-      position: 'top-left',
-      size: 20,
-      font: 'default',
-      color: '#0066cc',
-      opacity: 0.9
-    },
-    border: {
-      enabled: false,
-      width: 4,
-      color: '#e5e7eb',
-      radius: 16
+    separate: {
+      photos: {
+        maxCount: 4,
+        resizeMode: 'none',
+        quality: 90,
+        watermark: {
+          enabled: false,
+          logo: { enabled: false, size: 40, opacity: 0.7, position: 'bottom-right' },
+          timestamp: { enabled: false, format: '24h', size: 12, color: '#ffffff', position: 'bottom-left' },
+          postId: { enabled: false, format: '#{id}', size: 12, color: '#ffffff', position: 'top-left' }
+        }
+      }
     }
   },
   caption: {
-    template: '📢 {title}\n\n{content}\n\n{hashtags}',
+    enabled: true,
+    header: '貼文 {id}',
+    content: '{content}',
+    footer: '{hashtags}',
     maxLength: 2200,
     autoHashtags: ['#校園生活', '#學生分享'],
-    emojiStyle: 'minimal'
+    includeOriginalLink: false,
+    linkText: '查看完整內容：{link}'
   },
-  multipost: {
-    prefix: '[*]匿名內容不代表本版立場',
-    idFormat: {
-      prefix: '#內湖高中',
-      suffix: '',
-      digits: 0
-    },
-    template: '{id}\n{content}\n-----------------',
-    suffix: '#內湖高中#台灣匿名聯合#匿名#黑特#靠北#告白#日更#內湖高中',
-    maxLength: 2200,
-    emojiStyle: 'minimal'
-  }
 }
 
 export default function TemplateEditor({ isOpen, onClose, onSave, accounts, editingTemplate }: TemplateEditorProps) {
-  const [activeTab, setActiveTab] = useState<'basic' | 'image' | 'caption'>('basic')
-  const [templateData, setTemplateData] = useState({
-    name: '',
-    description: '',
-    template_type: 'combined' as 'image' | 'text' | 'combined',
-    account_id: accounts[0]?.id || 0,
-    is_default: false,
-    config: {
-      ...DEFAULT_CONFIG,
-      multipost: { ...DEFAULT_CONFIG.multipost }
+  const initial = useMemo(() => {
+    if (editingTemplate?.config) {
+      return {
+        name: editingTemplate.name || '',
+        description: editingTemplate.description || '',
+        account_id: editingTemplate.account_id || accounts[0]?.id || 0,
+        is_default: Boolean(editingTemplate.is_default),
+        config: { ...DEFAULT_CONFIG, ...editingTemplate.config },
+      }
     }
-  })
-  const [previewContent, setPreviewContent] = useState({
-    title: '校園生活分享',
-    content: '【論壇貼文內容將自動填入此處】\n這裡會顯示來自論壇的實際貼文內容，包含用戶發布的文字、圖片說明等。系統會自動將論壇貼文的內容替換 {content} 佔位符。',
-    author: '小明',
-    hashtags: ['#校園生活', '#健康生活', '#學生日常']
-  })
-  const [realPosts, setRealPosts] = useState<any[]>([])
-  const [loadingPosts, setLoadingPosts] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [fonts, setFonts] = useState<FontFile[]>([])
-  const [loadingFonts, setLoadingFonts] = useState(false)
+    return {
+      name: '',
+      description: '',
+      account_id: accounts[0]?.id || 0,
+      is_default: false,
+      config: { ...DEFAULT_CONFIG },
+    }
+  }, [accounts, editingTemplate])
 
-  const fetchRecentPosts = async () => {
-    if (loadingPosts || realPosts.length > 0) return
-    
+  const [templateData, setTemplateData] = useState(initial)
+  const [activeTab, setActiveTab] = useState<'basic' | 'textToImage' | 'photos' | 'caption'>('basic')
+  const [saving, setSaving] = useState(false)
+  const [previewImages, setPreviewImages] = useState<{
+    textToImage?: string
+    photos?: string
+  }>({})
+  const [generating, setGenerating] = useState<{
+    textToImage?: boolean
+    photos?: boolean
+  }>({})
+  const [realPosts, setRealPosts] = useState<any[]>([])
+  const [selectedPostIndex, setSelectedPostIndex] = useState(0)
+  const [loadingPosts, setLoadingPosts] = useState(false)
+
+  // 獲取真實貼文數據
+  useEffect(() => {
+    if (isOpen) {
+      fetchRealPosts()
+    }
+  }, [isOpen])
+
+  const fetchRealPosts = async () => {
     setLoadingPosts(true)
     try {
-      const response = await fetch('/api/admin/social/posts/sample?limit=5', {
+      const response = await fetch('/api/posts?limit=10&with_content=true', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       })
-      
+
       if (response.ok) {
-        const result = await response.json()
-        if (result.success && result.posts) {
-          setRealPosts(result.posts)
-          if (result.posts.length > 0) {
-            const firstPost = result.posts[0]
-            setPreviewContent({
-              title: firstPost.title || '無標題',
-              content: firstPost.content || '無內容',
-              author: firstPost.author || '匿名用戶',  // 直接使用 author 字段
-              hashtags: ['#校園生活', '#學生分享']
-            })
-          }
+        const data = await response.json()
+        const posts = data.posts || data.data || []
+        if (posts.length > 0) {
+          setRealPosts(posts)
+        } else {
+          // 如果沒有真實貼文，使用預設範例
+          setRealPosts([{
+            id: 999,
+            title: '範例貼文標題',
+            content: '這是一個範例貼文內容，展示模板的實際效果。內容會根據論壇貼文動態替換，包含各種文字內容和排版效果。',
+            author: '測試作者',
+            school: { name: '測試學校' },
+            created_at: new Date().toISOString()
+          }])
         }
       }
     } catch (error) {
-      console.error('獲取論壇貼文失敗:', error)
+      console.error('Failed to fetch posts:', error)
+      // 使用預設範例
+      setRealPosts([{
+        id: 999,
+        title: '範例貼文標題',
+        content: '這是一個範例貼文內容，展示模板的實際效果。內容會根據論壇貼文動態替換，包含各種文字內容和排版效果。',
+        author: '測試作者',
+        school: { name: '測試學校' },
+        created_at: new Date().toISOString()
+      }])
     } finally {
       setLoadingPosts(false)
     }
   }
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchRecentPosts()
-      fetchFonts()
-    }
-  }, [isOpen])
+  const currentPost = realPosts[selectedPostIndex] || realPosts[0]
 
-  const fetchFonts = async () => {
-    setLoadingFonts(true)
-    try {
-      const response = await fetch('/api/admin/fonts/list', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          // 轉換字體列表格式
-          const fontList = result.data.fonts.map((font: any) => ({
-            id: font.filename,
-            font_family: font.filename,
-            display_name: font.name,
-            is_active: font.valid,
-            is_system_font: false
-          }))
-          
-          // 添加預設系統字體選項
-          const systemFonts = [
-            {
-              id: 'noto-sans-tc',
-              font_family: 'Noto Sans TC',
-              display_name: 'Noto Sans TC (繁體中文)',
-              is_active: true,
-              is_system_font: true
-            },
-            {
-              id: 'arial',
-              font_family: 'Arial',
-              display_name: 'Arial',
-              is_active: true,
-              is_system_font: true
-            }
-          ]
-          
-          setFonts([...systemFonts, ...fontList.filter((font: FontFile) => font.is_active)])
-        }
+  if (!isOpen) return null
+
+  // Update functions
+  const updateTextToImageConfig = (patch: Partial<TemplateConfig['textToImage']>) => {
+    setTemplateData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        textToImage: { ...prev.config.textToImage, ...patch }
       }
-    } catch (error) {
-      console.error('獲取字體列表失敗:', error)
-    } finally {
-      setLoadingFonts(false)
-    }
+    }))
   }
 
-  useEffect(() => {
-    if (editingTemplate) {
-      setTemplateData({
-        name: editingTemplate.name || '',
-        description: editingTemplate.description || '',
-        template_type: editingTemplate.template_type || 'combined',
-        account_id: editingTemplate.account_id || accounts[0]?.id || 0,
-        is_default: editingTemplate.is_default || false,
-        config: {
-          ...DEFAULT_CONFIG,
-          ...editingTemplate.config,
-          multipost: {
-            ...DEFAULT_CONFIG.multipost,
-            ...editingTemplate.config?.multipost
+  const updatePhotosConfig = (patch: Partial<TemplateConfig['photos']>) => {
+    setTemplateData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        photos: { ...prev.config.photos, ...patch }
+      }
+    }))
+  }
+
+  const updateCombinedConfig = (patch: Partial<TemplateConfig['photos']['combined']>) => {
+    setTemplateData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        photos: {
+          ...prev.config.photos,
+          combined: { ...prev.config.photos.combined, ...patch }
+        }
+      }
+    }))
+  }
+
+  const updateSeparateConfig = (patch: Partial<TemplateConfig['photos']['separate']>) => {
+    setTemplateData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        photos: {
+          ...prev.config.photos,
+          separate: { ...prev.config.photos.separate, ...patch }
+        }
+      }
+    }))
+  }
+
+  const updateCaptionConfig = (patch: Partial<TemplateConfig['caption']>) => {
+    setTemplateData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        caption: { ...prev.config.caption, ...patch }
+      }
+    }))
+  }
+
+  // 生成實際預覽圖片
+  const generatePreviewImage = useCallback(async (type: 'textToImage' | 'photos') => {
+    if (!currentPost) return
+
+    setGenerating(prev => ({ ...prev, [type]: true }))
+
+    try {
+      const config = templateData.config
+      let requestData: any = {
+        id: currentPost.id,
+        title: currentPost.title || '',
+        text: currentPost.content || '',
+        author: currentPost.author || '',
+        school_name: currentPost.school?.name || '',
+        created_at: currentPost.created_at,
+        quality: 95
+      }
+
+      if (type === 'textToImage' && config.textToImage.enabled) {
+        requestData = {
+          ...requestData,
+          size: 'custom',
+          template: 'custom',
+          config: {
+            width: config.textToImage.width,
+            height: config.textToImage.height,
+            background: config.textToImage.background,
+            text: config.textToImage.text,
+            logo: config.textToImage.logo,
+            timestamp: config.textToImage.timestamp,
+            postId: config.textToImage.postId,
+            border: config.textToImage.border
           }
         }
+      } else if (type === 'photos' && config.photos.enabled) {
+        if (config.photos.mode === 'combined') {
+          requestData = {
+            ...requestData,
+            size: 'custom',
+            template: 'photo_combined',
+            config: {
+              canvas: config.photos.combined.canvas,
+              layout: config.photos.combined.layout,
+              photos: config.photos.combined.photos,
+              text: config.photos.combined.text,
+              logo: config.photos.combined.logo,
+              timestamp: config.photos.combined.timestamp,
+              postId: config.photos.combined.postId,
+              border: config.photos.combined.border
+            }
+          }
+        } else {
+          requestData = {
+            ...requestData,
+            template: 'photo_separate',
+            config: {
+              photos: config.photos.separate.photos
+            }
+          }
+        }
+      }
+
+      const response = await fetch('/api/post-images/preview-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(requestData)
       })
-    } else {
-      // 重置為預設值
-      setTemplateData({
-        name: '',
-        description: '',
-        template_type: 'combined',
-        account_id: accounts[0]?.id || 0,
-        is_default: false,
-        config: DEFAULT_CONFIG
-      })
+
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success && result.image_url) {
+          setPreviewImages(prev => ({
+            ...prev,
+            [type]: result.image_url
+          }))
+        }
+      } else {
+        console.error('Failed to generate preview:', response.status)
+      }
+    } catch (error) {
+      console.error('Error generating preview:', error)
+    } finally {
+      setGenerating(prev => ({ ...prev, [type]: false }))
     }
-  }, [editingTemplate, accounts])
+  }, [currentPost?.id, JSON.stringify(templateData.config)])
+
+  // 當配置變更時自動重新生成預覽
+  useEffect(() => {
+    if (currentPost && templateData.config.textToImage.enabled) {
+      const debounceTimer = setTimeout(() => {
+        generatePreviewImage('textToImage')
+      }, 1000) // 1秒防抖
+      return () => clearTimeout(debounceTimer)
+    }
+  }, [
+    templateData.config.textToImage,
+    currentPost?.id,
+    selectedPostIndex,
+    generatePreviewImage
+  ])
+
+  useEffect(() => {
+    if (currentPost && templateData.config.photos.enabled) {
+      const debounceTimer = setTimeout(() => {
+        generatePreviewImage('photos')
+      }, 1000)
+      return () => clearTimeout(debounceTimer)
+    }
+  }, [
+    templateData.config.photos,
+    currentPost?.id,
+    selectedPostIndex,
+    generatePreviewImage
+  ])
 
   const handleSave = async () => {
+    // 驗證三個模板都已啟用
+    const { textToImage, photos, caption } = templateData.config
+    if (!textToImage.enabled || !photos.enabled || !caption.enabled) {
+      alert('請啟用所有三個模板（貼文、相片、文案）才能儲存！')
+      return
+    }
+
+    // 基本欄位驗證
     if (!templateData.name.trim()) {
       alert('請輸入模板名稱')
       return
     }
 
-    if (!templateData.account_id) {
-      alert('請選擇要關聯的帳號')
-      return
-    }
-
     setSaving(true)
     try {
-      await onSave(templateData)
-      onClose()
-    } catch (error) {
-      console.error('Save template failed:', error)
-      alert('儲存失敗，請稍後再試')
+      onSave(templateData)
     } finally {
       setSaving(false)
     }
   }
 
-  const updateImageConfig = (key: string, value: any) => {
-    setTemplateData(prev => ({
-      ...prev,
-      config: {
-        ...prev.config,
-        image: {
-          ...prev.config.image,
-          [key]: value
-        }
-      }
-    }))
-  }
+  const config = templateData.config
 
-  const updateCaptionConfig = (key: string, value: any) => {
-    setTemplateData(prev => ({
-      ...prev,
-      config: {
-        ...prev.config,
-        caption: {
-          ...prev.config.caption,
-          [key]: value
-        }
-      }
-    }))
-  }
-
-  const updateMultipostConfig = (key: string, value: any) => {
-    setTemplateData(prev => ({
-      ...prev,
-      config: {
-        ...prev.config,
-        multipost: {
-          ...prev.config.multipost,
-          [key]: value
-        }
-      }
-    }))
-  }
-
-  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // 檢查檔案類型
-    if (!file.type.startsWith('image/')) {
-      alert('請選擇圖片檔案')
-      return
-    }
-
-    // 檢查檔案大小 (最大 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('檔案過大，請選擇小於 5MB 的圖片')
-      return
-    }
-
-    // 產生隨機雜湊字串（後端僅用於唯一檔名，無需真 Hash）
-    const genHex = (bytes = 16) => {
-      const arr = new Uint8Array(bytes)
-      window.crypto.getRandomValues(arr)
-      return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('')
-    }
-
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('name', file.name)
-      formData.append('hash', `logo_${genHex(12)}`)
-      formData.append('category', 'templates')
-      formData.append('identifier', (file.name.split('.')[0] || 'logo').slice(0, 48))
-
-      const response = await fetch('/api/media/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
-      })
-
-      if (!response.ok) {
-        throw new Error('上傳失敗')
-      }
-
-      const result = await response.json()
-      
-      // 後端回傳格式：{ ok: true, url, path, info }
-      if (result.ok && result.url) {
-        // 更新 Logo URL
-        updateImageConfig('logo', {
-          ...templateData.config.image?.logo,
-          url: result.url,
-          enabled: true
-        })
-        
-        alert('Logo 上傳成功！')
-      } else {
-        throw new Error(result.error || result.message || '上傳失敗')
-      }
-    } catch (error) {
-      console.error('Logo 上傳失敗:', error)
-      alert('Logo 上傳失敗，請稍後再試')
-    }
-
-    // 清空 input
-    event.target.value = ''
-  }
-
-  const generatePreviewCaption = () => {
-    // 統一使用多篇發布模板邏輯
-    return generateMultiPostPreview()
-  }
-
-  const formatId = (id: number | string, idFormat: any) => {
-    let formatted = id.toString()
-
-    // 補零處理
-    if (idFormat?.digits > 0) {
-      formatted = formatted.padStart(idFormat.digits, '0')
-    }
-
-    // 加前後綴
-    return (idFormat?.prefix || '') + formatted + (idFormat?.suffix || '')
-  }
-
-  const generateMultiPostPreview = () => {
-    const multipostConfig = templateData.config.multipost || DEFAULT_CONFIG.multipost
-    if (!multipostConfig || !multipostConfig.template) {
-      return '請設定多篇發布模板'
-    }
-
-    // 使用真實貼文數據，如果沒有則使用模擬數據
-    const postsToUse = realPosts.length > 0 ? realPosts.slice(0, 3) : [
-      { id: 15523, title: '社團博覽會', content: '外迎好煩啊啊啊啊啊啊啊', author: '學生會' },
-      { id: 15524, title: '圖書館新區', content: '所以你們在吵的總召是嘻研的那個粉毛嗎', author: '圖書館員' },
-      { id: 15525, title: '學餐新菜', content: '那群隨便抨擊別人的你們真的很有事，你們在優越什麼', author: '美食達人' }
-    ]
-
-    let result = `🔄 多篇發布預覽 (會產生 ${postsToUse.length} 篇貼文):\n\n`
-
-    if (realPosts.length > 0) {
-      result += '📍 使用真實論壇貼文預覽:\n\n'
-    } else if (loadingPosts) {
-      result += '⏳ 載入真實貼文中...\n\n'
-    } else {
-      result += '🎭 使用模擬數據預覽:\n\n'
-    }
-
-    // 1. 開頭固定內容（只顯示一次）
-    if (multipostConfig.prefix) {
-      result += multipostConfig.prefix + '\n'
-    }
-
-    // 2. 重複每篇貼文內容
-    postsToUse.forEach((post, index) => {
-      const formattedId = formatId(post.id || `${15520 + index}`, multipostConfig.idFormat)
-      let postContent = multipostConfig.template
-        .replace('{id}', formattedId)
-        .replace('{content}', post.content || '無內容')
-        .replace('{title}', post.title || '無標題')
-        .replace('{author}', post.author || '匿名用戶')
-
-      result += postContent
-      // 如果不是最後一篇且模板沒有換行，自動加換行
-      if (index < postsToUse.length - 1 && !multipostConfig.template.endsWith('\n')) {
-        result += '\n'
-      }
-    })
-
-    // 3. 結尾固定內容（只顯示一次）
-    if (multipostConfig.suffix) {
-      result += '\n' + multipostConfig.suffix
-    }
-
-    // 4. 添加用戶自定義的標籤
-    const autoHashtags = templateData.config.caption?.autoHashtags || []
-    if (autoHashtags.length > 0) {
-      result += '\n' + autoHashtags.join(' ')
-    }
-
-    result += '\n\n' + (realPosts.length > 0 ? '✅ 基於真實論壇貼文生成' : '※ 實際發布時會使用真實論壇貼文')
-
-    return result
-  }
-
-  if (!isOpen) return null
+  // 檢查模板完整性
+  const isTemplateComplete = config.textToImage.enabled && config.photos.enabled && config.caption.enabled
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2">
@@ -635,24 +503,24 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <div>
-            <h2 className="text-xl font-semibold dual-text">
-              {editingTemplate ? '編輯模板' : '新增模板'}
-            </h2>
-            <p className="text-sm text-muted mt-1">
-              設計你的 Instagram 貼文模板
-            </p>
+            <h2 className="text-xl font-semibold dual-text">{editingTemplate ? '編輯模板' : '新增模板'}</h2>
+            <p className="text-sm text-muted mt-1">設計你的 Instagram 貼文模板</p>
+            {!isTemplateComplete && (
+              <div className="flex items-center gap-2 mt-2 text-yellow-600">
+                <span className="text-xs">需要啟用所有三個模板才能儲存</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || !isTemplateComplete}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {saving ? (
-                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              ) : (
+              {saving ?
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> :
                 <Save className="w-4 h-4" />
-              )}
+              }
               儲存模板
             </button>
             <button
@@ -665,41 +533,83 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Sidebar - Settings Tabs */}
-          <div className="w-56 border-r border-border bg-muted/30 p-4">
+          {/* Left Sidebar */}
+          <div className="w-64 border-r border-border bg-muted/30 p-4">
             <div className="space-y-2">
               {[
-                { id: 'basic', label: '基本設定', icon: Settings },
-                { id: 'image', label: '圖片設定', icon: Image },
-                { id: 'caption', label: '文案設定', icon: Type }
-              ].map(({ id, label, icon: Icon }) => (
+                { id: 'basic', label: '基本設定' },
+                {
+                  id: 'textToImage',
+                  label: '貼文模板',
+                  desc: '純文字轉圖片',
+                  enabled: config.textToImage.enabled
+                },
+                {
+                  id: 'photos',
+                  label: '相片模板',
+                  desc: '文字+圖片處理',
+                  enabled: config.photos.enabled
+                },
+                {
+                  id: 'caption',
+                  label: '文案模板',
+                  desc: 'Instagram 文案',
+                  enabled: config.caption.enabled
+                },
+              ].map(({ id, label, desc, enabled }: any) => (
                 <button
                   key={id}
-                  onClick={() => setActiveTab(id as any)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-left ${
-                    activeTab === id
-                      ? 'bg-primary/10 text-primary border border-primary/20'
-                      : 'hover:bg-muted/50 text-muted hover:text-foreground'
+                  onClick={() => setActiveTab(id)}
+                  className={`w-full flex items-start gap-3 px-3 py-2 rounded-lg transition-colors text-left ${
+                    activeTab === id ?
+                    'bg-primary/10 text-primary border border-primary/20' :
+                    'hover:bg-muted/50 text-muted hover:text-foreground'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{label}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{label}</span>
+                      {enabled !== undefined && (
+                        <div className={`w-2 h-2 rounded-full ${enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                      )}
+                    </div>
+                    {desc && <div className="text-xs opacity-60">{desc}</div>}
+                  </div>
                 </button>
               ))}
             </div>
+
+            {/* 模板狀態總覽 */}
+            <div className="mt-6 p-3 bg-background rounded-lg border border-border">
+              <h4 className="text-sm font-medium dual-text mb-2">模板狀態</h4>
+              <div className="space-y-1 text-xs">
+                <div className={`flex items-center gap-2 ${config.textToImage.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className={`w-2 h-2 rounded-full ${config.textToImage.enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                  貼文模板
+                </div>
+                <div className={`flex items-center gap-2 ${config.photos.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className={`w-2 h-2 rounded-full ${config.photos.enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                  相片模板
+                </div>
+                <div className={`flex items-center gap-2 ${config.caption.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className={`w-2 h-2 rounded-full ${config.caption.enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                  文案模板
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Middle - Settings Content */}
+          {/* Middle - Content */}
           <div className="w-1/2 overflow-y-auto border-r border-border">
+
             {activeTab === 'basic' && (
               <div className="p-6 space-y-6">
                 <div>
-                  <label className="block text-sm font-medium dual-text mb-2">模板名稱</label>
+                  <label className="block text-sm font-medium dual-text mb-2">模板名稱 *</label>
                   <input
                     type="text"
                     value={templateData.name}
                     onChange={(e) => setTemplateData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="輸入模板名稱..."
                     className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
                 </div>
@@ -707,51 +617,24 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                 <div>
                   <label className="block text-sm font-medium dual-text mb-2">模板描述</label>
                   <textarea
+                    rows={3}
                     value={templateData.description}
                     onChange={(e) => setTemplateData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="描述這個模板的用途..."
-                    rows={3}
                     className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium dual-text mb-2">關聯帳號</label>
+                  <label className="block text-sm font-medium dual-text mb-2">關聯帳號 *</label>
                   <select
                     value={templateData.account_id}
                     onChange={(e) => setTemplateData(prev => ({ ...prev, account_id: parseInt(e.target.value) }))}
                     className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
-                    {accounts.map(account => (
-                      <option key={account.id} value={account.id}>
-                        @{account.platform_username} - {account.display_name}
-                      </option>
+                    {accounts.map(a => (
+                      <option key={a.id} value={a.id}>@{a.platform_username} - {a.display_name}</option>
                     ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium dual-text mb-2">模板類型</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { value: 'image', label: '純圖片', desc: '只生成圖片內容' },
-                      { value: 'text', label: '純文字', desc: '只生成文案內容' },
-                      { value: 'combined', label: '圖文並茂', desc: '圖片+文案組合' }
-                    ].map(({ value, label, desc }) => (
-                      <button
-                        key={value}
-                        onClick={() => setTemplateData(prev => ({ ...prev, template_type: value as any }))}
-                        className={`p-4 border rounded-lg text-left transition-colors ${
-                          templateData.template_type === value
-                            ? 'border-primary bg-primary/5 text-primary'
-                            : 'border-border hover:border-muted hover:bg-muted/30'
-                        }`}
-                      >
-                        <div className="font-medium text-sm">{label}</div>
-                        <div className="text-xs text-muted mt-1">{desc}</div>
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -762,817 +645,772 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                     onChange={(e) => setTemplateData(prev => ({ ...prev, is_default: e.target.checked }))}
                     className="rounded border-border focus:ring-primary/20 focus:border-primary"
                   />
-                  <label htmlFor="is_default" className="text-sm dual-text">
-                    設為該帳號的預設模板
-                  </label>
+                  <label htmlFor="is_default" className="text-sm dual-text">設為該帳號的預設模板</label>
+                </div>
+
+                {/* 模板要求說明 */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-medium text-blue-800 mb-2">模板設定要求</h3>
+                  <div className="text-sm text-blue-700 space-y-2">
+                    <p>要建立完整的模板，需要設定以下三個部分：</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      <li><strong>貼文模板</strong>：純文字貼文轉換為圖片的設定</li>
+                      <li><strong>相片模板</strong>：有圖片附件時的處理方式（合成或分開）</li>
+                      <li><strong>文案模板</strong>：Instagram 發文時的文字內容格式</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             )}
 
-            {activeTab === 'image' && (
+            {activeTab === 'textToImage' && (
               <div className="p-6 space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">圖片寬度</label>
-                    <input
-                      type="number"
-                      value={templateData.config.image?.width || 1080}
-                      onChange={(e) => updateImageConfig('width', parseInt(e.target.value))}
-                      min="400"
-                      max="2000"
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">圖片高度</label>
-                    <input
-                      type="number"
-                      value={templateData.config.image?.height || 1080}
-                      onChange={(e) => updateImageConfig('height', parseInt(e.target.value))}
-                      min="400"
-                      max="2000"
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
-                  </div>
+                {/* 啟用開關 */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="textToImage_enabled"
+                    checked={config.textToImage.enabled}
+                    onChange={(e) => updateTextToImageConfig({ enabled: e.target.checked })}
+                    className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                  />
+                  <label htmlFor="textToImage_enabled" className="text-lg font-medium dual-text">啟用貼文模板</label>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium dual-text mb-2">背景顏色</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={templateData.config.image?.background?.value || '#ffffff'}
-                      onChange={(e) => updateImageConfig('background', {
-                        ...templateData.config.image?.background,
-                        value: e.target.value
-                      })}
-                      className="w-12 h-10 rounded-lg border border-border cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={templateData.config.image?.background?.value || '#ffffff'}
-                      onChange={(e) => updateImageConfig('background', {
-                        ...templateData.config.image?.background,
-                        value: e.target.value
-                      })}
-                      placeholder="#ffffff"
-                      className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <h3 className="font-medium text-blue-800 mb-2">貼文模板說明</h3>
+                  <p className="text-sm text-blue-700">當貼文「沒有圖片附件」時，會將純文字內容轉換成圖片格式發布到 Instagram。</p>
                 </div>
 
-                <div className="border border-border rounded-lg p-4">
-                  <h3 className="font-medium dual-text mb-3">文字設定</h3>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium dual-text mb-2">字體</label>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={templateData.config.image?.text?.font || 'default'}
-                          onChange={(e) => updateImageConfig('text', {
-                            ...templateData.config.image?.text,
-                            font: e.target.value
-                          })}
-                          className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        >
-                          <option value="default">系統預設字體</option>
-                          {fonts.map(font => (
-                            <option key={font.font_family} value={font.font_family}>
-                              {font.display_name}
-                              {font.is_system_font && ' (系統)'}
-                            </option>
-                          ))}
-                        </select>
-                        {loadingFonts && (
-                          <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                        )}
+                {config.textToImage.enabled && (
+                  <>
+                    {/* Canvas 設定 */}
+                    <div className="border border-border rounded-lg p-4">
+                      <h3 className="font-medium dual-text mb-3">畫布設定</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">寬度</label>
+                          <input
+                            type="number"
+                            value={config.textToImage.width}
+                            onChange={(e) => updateTextToImageConfig({ width: parseInt(e.target.value) })}
+                            min={400}
+                            max={2000}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">高度</label>
+                          <input
+                            type="number"
+                            value={config.textToImage.height}
+                            onChange={(e) => updateTextToImageConfig({ height: parseInt(e.target.value) })}
+                            min={400}
+                            max={2000}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium dual-text mb-2">背景顏色</label>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="color"
+                            value={config.textToImage.background.value}
+                            onChange={(e) => updateTextToImageConfig({
+                              background: { ...config.textToImage.background, value: e.target.value }
+                            })}
+                            className="w-12 h-10 rounded-lg border border-border cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={config.textToImage.background.value}
+                            onChange={(e) => updateTextToImageConfig({
+                              background: { ...config.textToImage.background, value: e.target.value }
+                            })}
+                            className="flex-1 px-3 py-2 bg-background border border-border rounded-lg"
+                          />
+                        </div>
                       </div>
                     </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium dual-text mb-2">字體大小</label>
-                      <input
-                        type="number"
-                        value={templateData.config.image?.text?.size || 32}
-                        onChange={(e) => updateImageConfig('text', {
-                          ...templateData.config.image?.text,
-                          size: parseInt(e.target.value)
-                        })}
-                        min="12"
-                        max="72"
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      />
-                    </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">文字顏色</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={templateData.config.image?.text?.color || '#333333'}
-                        onChange={(e) => updateImageConfig('text', {
-                          ...templateData.config.image?.text,
-                          color: e.target.value
-                        })}
-                        className="w-8 h-8 rounded border border-border cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={templateData.config.image?.text?.color || '#333333'}
-                        onChange={(e) => updateImageConfig('text', {
-                          ...templateData.config.image?.text,
-                          color: e.target.value
-                        })}
-                        placeholder="#333333"
-                        className="flex-1 px-2 py-1 text-sm bg-background border border-border rounded focus:ring-1 focus:ring-primary/20 focus:border-primary"
-                      />
+                    {/* 文字設定 */}
+                    <div className="border border-border rounded-lg p-4">
+                      <h3 className="font-medium dual-text mb-3">文字設定</h3>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">字體大小</label>
+                          <input
+                            type="number"
+                            value={config.textToImage.text.size}
+                            onChange={(e) => updateTextToImageConfig({
+                              text: { ...config.textToImage.text, size: parseInt(e.target.value) }
+                            })}
+                            min={12}
+                            max={72}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">文字顏色</label>
+                          <input
+                            type="color"
+                            value={config.textToImage.text.color}
+                            onChange={(e) => updateTextToImageConfig({
+                              text: { ...config.textToImage.text, color: e.target.value }
+                            })}
+                            className="w-full h-10 rounded-lg border border-border cursor-pointer"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">水平對齊</label>
+                          <select
+                            value={config.textToImage.text.align}
+                            onChange={(e) => updateTextToImageConfig({
+                              text: { ...config.textToImage.text, align: e.target.value as Align }
+                            })}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          >
+                            <option value="left">左對齊</option>
+                            <option value="center">置中</option>
+                            <option value="right">右對齊</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">垂直對齊</label>
+                          <select
+                            value={config.textToImage.text.vAlign}
+                            onChange={(e) => updateTextToImageConfig({
+                              text: { ...config.textToImage.text, vAlign: e.target.value as VAlign }
+                            })}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          >
+                            <option value="top">頂端</option>
+                            <option value="middle">置中</option>
+                            <option value="bottom">底部</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">最多行數</label>
+                          <input
+                            type="number"
+                            value={config.textToImage.text.maxLines}
+                            onChange={(e) => updateTextToImageConfig({
+                              text: { ...config.textToImage.text, maxLines: parseInt(e.target.value) }
+                            })}
+                            min={1}
+                            max={10}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium dual-text mb-2">每行最多字數</label>
+                          <input
+                            type="number"
+                            value={config.textToImage.text.maxCharsPerLine}
+                            onChange={(e) => updateTextToImageConfig({
+                              text: { ...config.textToImage.text, maxCharsPerLine: parseInt(e.target.value) || 0 }
+                            })}
+                            min={0}
+                            max={80}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                          />
+                          <div className="text-xs text-muted mt-1">0 代表不限制</div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-3 gap-3 mt-4">
-                    <div>
-                      <label className="block text-sm font-medium dual-text mb-2">文字對齊</label>
-                      <select
-                        value={templateData.config.image?.text?.align || 'center'}
-                        onChange={(e) => updateImageConfig('text', {
-                          ...templateData.config.image?.text,
-                          align: e.target.value
-                        })}
-                        className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:ring-1 focus:ring-primary/20 focus:border-primary"
-                      >
-                        <option value="left">左對齊</option>
-                        <option value="center">置中</option>
-                        <option value="right">右對齊</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium dual-text mb-2">字體粗細</label>
-                      <select
-                        value={templateData.config.image?.text?.weight || 'bold'}
-                        onChange={(e) => updateImageConfig('text', {
-                          ...templateData.config.image?.text,
-                          weight: e.target.value
-                        })}
-                        className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:ring-1 focus:ring-primary/20 focus:border-primary"
-                      >
-                        <option value="normal">一般</option>
-                        <option value="bold">粗體</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium dual-text mb-2">最多行數</label>
-                      <input
-                        type="number"
-                        value={templateData.config.image?.text?.maxLines || 6}
-                        onChange={(e) => updateImageConfig('text', {
-                          ...templateData.config.image?.text,
-                          maxLines: parseInt(e.target.value)
-                        })}
-                        min="1"
-                        max="20"
-                        className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:ring-1 focus:ring-primary/20 focus:border-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border border-border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={templateData.config.image?.logo?.enabled || false}
-                        onChange={(e) => updateImageConfig('logo', {
-                          ...templateData.config.image?.logo,
-                          enabled: e.target.checked
-                        })}
-                        className="rounded border-border focus:ring-primary/20 focus:border-primary"
-                      />
-                      <h3 className="font-medium dual-text">Logo 設定</h3>
-                    </div>
-                    
-                    <label className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors cursor-pointer text-sm">
-                      <Upload className="w-4 h-4" />
-                      上傳 Logo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleLogoUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                  
-                  {templateData.config.image?.logo?.enabled && (
-                    <>
-                      {templateData.config.image?.logo?.url && (
-                        <div className="mb-4 p-3 bg-muted/20 rounded-lg">
-                          <div className="text-sm font-medium dual-text mb-2">目前的 Logo</div>
-                          <div className="flex items-center gap-3">
-                            <img 
-                              src={templateData.config.image.logo.url} 
-                              alt="Logo 預覽" 
-                              className="w-16 h-16 object-contain bg-white border border-border rounded"
+                    {/* 浮水印設定 */}
+                    <div className="border border-border rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(config.textToImage.text.watermark?.enabled)}
+                          onChange={(e) => updateTextToImageConfig({
+                            text: {
+                              ...config.textToImage.text,
+                              watermark: { ...(config.textToImage.text.watermark || {}), enabled: e.target.checked }
+                            }
+                          })}
+                          className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                        />
+                        <label className="text-sm font-medium dual-text">超出截斷時顯示浮水印</label>
+                      </div>
+                      {config.textToImage.text.watermark?.enabled && (
+                        <div className="grid grid-cols-4 gap-4">
+                          <div className="col-span-2">
+                            <label className="block text-sm font-medium dual-text mb-2">浮水印文字</label>
+                            <input
+                              type="text"
+                              value={config.textToImage.text.watermark?.text || ''}
+                              onChange={(e) => updateTextToImageConfig({
+                                text: {
+                                  ...config.textToImage.text,
+                                  watermark: { ...(config.textToImage.text.watermark || {}), text: e.target.value }
+                                }
+                              })}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg"
                             />
-                            <div className="flex-1">
-                              <div className="text-sm text-muted">已上傳 Logo</div>
-                              <button
-                                onClick={() => updateImageConfig('logo', {
-                                  ...templateData.config.image?.logo,
-                                  url: undefined
-                                })}
-                                className="text-sm text-red-600 hover:text-red-700 mt-1"
-                              >
-                                移除 Logo
-                              </button>
-                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">字體大小</label>
+                            <input
+                              type="number"
+                              value={config.textToImage.text.watermark?.size || 20}
+                              onChange={(e) => updateTextToImageConfig({
+                                text: {
+                                  ...config.textToImage.text,
+                                  watermark: { ...(config.textToImage.text.watermark || {}), size: parseInt(e.target.value) || 20 }
+                                }
+                              })}
+                              min={10}
+                              max={48}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">顏色</label>
+                            <input
+                              type="color"
+                              value={config.textToImage.text.watermark?.color || '#666666'}
+                              onChange={(e) => updateTextToImageConfig({
+                                text: {
+                                  ...config.textToImage.text,
+                                  watermark: { ...(config.textToImage.text.watermark || {}), color: e.target.value }
+                                }
+                              })}
+                              className="w-full h-10 rounded-lg border border-border cursor-pointer"
+                            />
                           </div>
                         </div>
                       )}
-                      
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'photos' && (
+              <div className="p-6 space-y-6">
+                {/* 啟用開關 */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="photos_enabled"
+                    checked={config.photos.enabled}
+                    onChange={(e) => updatePhotosConfig({ enabled: e.target.checked })}
+                    className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                  />
+                  <label htmlFor="photos_enabled" className="text-lg font-medium dual-text">啟用相片模板</label>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                  <h3 className="font-medium text-green-800 mb-2">相片模板說明</h3>
+                  <p className="text-sm text-green-700">當貼文「有圖片附件」時的處理方式。支援兩種模式：合成模式與分開模式。</p>
+                </div>
+
+                {config.photos.enabled && (
+                  <>
+                    {/* 模式選擇 */}
+                    <div className="border border-border rounded-lg p-4">
+                      <h3 className="font-medium dual-text mb-3">處理模式</h3>
                       <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium dual-text mb-2">位置</label>
-                        <select
-                          value={templateData.config.image?.logo?.position || 'top-right'}
-                          onChange={(e) => updateImageConfig('logo', {
-                            ...templateData.config.image?.logo,
-                            position: e.target.value
-                          })}
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        <button
+                          onClick={() => updatePhotosConfig({ mode: 'combined' })}
+                          className={`p-4 border rounded-lg text-left transition-colors ${
+                            config.photos.mode === 'combined'
+                              ? 'border-primary bg-primary/5 text-primary'
+                              : 'border-border hover:border-muted-foreground'
+                          }`}
                         >
-                          <option value="top-left">左上角</option>
-                          <option value="top-center">上方中間</option>
-                          <option value="top-right">右上角</option>
-                          <option value="bottom-left">左下角</option>
-                          <option value="bottom-center">下方中間</option>
-                          <option value="bottom-right">右下角</option>
-                          <option value="center">中央</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium dual-text mb-2">大小</label>
-                        <input
-                          type="number"
-                          value={templateData.config.image?.logo?.size || 80}
-                          onChange={(e) => updateImageConfig('logo', {
-                            ...templateData.config.image?.logo,
-                            size: parseInt(e.target.value)
-                          })}
-                          min="20"
-                          max="200"
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
+                          <div className="font-medium mb-2">合成模式</div>
+                          <p className="text-sm opacity-70">文字與圖片合成為一張圖片</p>
+                        </button>
+                        <button
+                          onClick={() => updatePhotosConfig({ mode: 'separate' })}
+                          className={`p-4 border rounded-lg text-left transition-colors ${
+                            config.photos.mode === 'separate'
+                              ? 'border-primary bg-primary/5 text-primary'
+                              : 'border-border hover:border-muted-foreground'
+                          }`}
+                        >
+                          <div className="font-medium mb-2">分開模式</div>
+                          <p className="text-sm opacity-70">圖片跟文字分開處理</p>
+                        </button>
                       </div>
                     </div>
-                    </>
-                  )}
-                </div>
 
-                <div className="border border-border rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <input
-                      type="checkbox"
-                      checked={templateData.config.image?.timestamp?.enabled || false}
-                      onChange={(e) => updateImageConfig('timestamp', {
-                        ...templateData.config.image?.timestamp,
-                        enabled: e.target.checked
-                      })}
-                      className="rounded border-border focus:ring-primary/20 focus:border-primary"
-                    />
-                    <h3 className="font-medium dual-text">時間戳設定</h3>
-                  </div>
-                  
-                  {templateData.config.image?.timestamp?.enabled && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">位置</label>
-                          <select
-                            value={templateData.config.image?.timestamp?.position || 'bottom-right'}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              position: e.target.value
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          >
-                            <option value="top-left">左上角</option>
-                            <option value="top-center">上方中間</option>
-                            <option value="top-right">右上角</option>
-                            <option value="bottom-left">左下角</option>
-                            <option value="bottom-center">下方中間</option>
-                            <option value="bottom-right">右下角</option>
-                          </select>
+                    {/* 合成模式設定 - 精簡版，完整設定可在之後擴展 */}
+                    {config.photos.mode === 'combined' && (
+                      <div className="border border-border rounded-lg p-4">
+                        <h3 className="font-medium dual-text mb-3">合成設定</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">畫布寬度</label>
+                            <input
+                              type="number"
+                              value={config.photos.combined.canvas.width}
+                              onChange={(e) => updateCombinedConfig({
+                                canvas: {
+                                  ...config.photos.combined.canvas,
+                                  width: parseInt(e.target.value)
+                                }
+                              })}
+                              min={400}
+                              max={2000}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">畫布高度</label>
+                            <input
+                              type="number"
+                              value={config.photos.combined.canvas.height}
+                              onChange={(e) => updateCombinedConfig({
+                                canvas: {
+                                  ...config.photos.combined.canvas,
+                                  height: parseInt(e.target.value)
+                                }
+                              })}
+                              min={400}
+                              max={2000}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                            />
+                          </div>
                         </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">時間格式</label>
-                          <select
-                            value={templateData.config.image?.timestamp?.format || '24h'}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              format: e.target.value
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          >
-                            <option value="24h">24小時制</option>
-                            <option value="12h">12小時制 (AM/PM)</option>
-                          </select>
+                        <p className="text-xs text-muted mt-2">詳細設定將在模板啟用後可用</p>
+                      </div>
+                    )}
+
+                    {/* 分開模式設定 */}
+                    {config.photos.mode === 'separate' && (
+                      <div className="border border-border rounded-lg p-4">
+                        <h3 className="font-medium dual-text mb-3">分開處理設定</h3>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">最多圖片數量</label>
+                            <select
+                              value={config.photos.separate.photos.maxCount}
+                              onChange={(e) => updateSeparateConfig({
+                                photos: {
+                                  ...config.photos.separate.photos,
+                                  maxCount: parseInt(e.target.value) as 1 | 2 | 3 | 4
+                                }
+                              })}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                            >
+                              <option value={1}>單張圖片</option>
+                              <option value={2}>最多2張</option>
+                              <option value={3}>最多3張</option>
+                              <option value={4}>最多4張</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">縮放模式</label>
+                            <select
+                              value={config.photos.separate.photos.resizeMode}
+                              onChange={(e) => updateSeparateConfig({
+                                photos: {
+                                  ...config.photos.separate.photos,
+                                  resizeMode: e.target.value as any
+                                }
+                              })}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                            >
+                              <option value="none">保持原始大小</option>
+                              <option value="fit">等比例縮放</option>
+                              <option value="fill">填滿指定尺寸</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium dual-text mb-2">圖片品質</label>
+                            <input
+                              type="range"
+                              min={10}
+                              max={100}
+                              value={config.photos.separate.photos.quality}
+                              onChange={(e) => updateSeparateConfig({
+                                photos: {
+                                  ...config.photos.separate.photos,
+                                  quality: parseInt(e.target.value)
+                                }
+                              })}
+                              className="w-full"
+                            />
+                            <div className="text-xs text-muted text-center">{config.photos.separate.photos.quality}%</div>
+                          </div>
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={templateData.config.image?.timestamp?.showYear || false}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              showYear: e.target.checked
-                            })}
-                            className="rounded border-border focus:ring-primary/20 focus:border-primary"
-                          />
-                          <label className="text-sm dual-text">顯示年份</label>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={templateData.config.image?.timestamp?.showSeconds || false}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              showSeconds: e.target.checked
-                            })}
-                            className="rounded border-border focus:ring-primary/20 focus:border-primary"
-                          />
-                          <label className="text-sm dual-text">顯示秒數</label>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">字體大小</label>
-                          <input
-                            type="number"
-                            value={templateData.config.image?.timestamp?.size || 18}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              size: parseInt(e.target.value)
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">字體</label>
-                          <select
-                            value={templateData.config.image?.timestamp?.font || 'Noto Sans TC'}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              font: e.target.value
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          >
-                            <option value="Noto Sans TC">Noto Sans TC</option>
-                            {fonts.map(font => (
-                              <option key={font.font_family} value={font.font_family}>
-                                {font.display_name}
-                                {font.is_system_font && ' (系統)'}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">顏色</label>
-                          <input
-                            type="color"
-                            value={templateData.config.image?.timestamp?.color || '#666666'}
-                            onChange={(e) => updateImageConfig('timestamp', {
-                              ...templateData.config.image?.timestamp,
-                              color: e.target.value
-                            })}
-                            className="w-full h-10 rounded-lg border border-border cursor-pointer"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 貼文ID設定 */}
-                <div className="border border-border rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <input
-                      type="checkbox"
-                      checked={templateData.config.image?.postId?.enabled || false}
-                      onChange={(e) => updateImageConfig('postId', {
-                        ...templateData.config.image?.postId,
-                        enabled: e.target.checked
-                      })}
-                      className="rounded border-border focus:ring-primary/20 focus:border-primary"
-                    />
-                    <h3 className="font-medium dual-text">貼文ID設定</h3>
-                  </div>
-
-                  {templateData.config.image?.postId?.enabled && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">位置</label>
-                          <select
-                            value={templateData.config.image?.postId?.position || 'top-left'}
-                            onChange={(e) => updateImageConfig('postId', {
-                              ...templateData.config.image?.postId,
-                              position: e.target.value
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          >
-                            <option value="top-left">左上角</option>
-                            <option value="top-center">上方中間</option>
-                            <option value="top-right">右上角</option>
-                            <option value="bottom-left">左下角</option>
-                            <option value="bottom-center">下方中間</option>
-                            <option value="bottom-right">右下角</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">自定義文字</label>
-                          <input
-                            type="text"
-                            value={templateData.config.image?.postId?.text || ''}
-                            onChange={(e) => updateImageConfig('postId', {
-                              ...templateData.config.image?.postId,
-                              text: e.target.value
-                            })}
-                            placeholder="#匿名內中{id}"
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">字體大小</label>
-                          <input
-                            type="number"
-                            value={templateData.config.image?.postId?.size || 18}
-                            onChange={(e) => updateImageConfig('postId', {
-                              ...templateData.config.image?.postId,
-                              size: parseInt(e.target.value)
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">字體</label>
-                          <select
-                            value={templateData.config.image?.postId?.font || 'Noto Sans TC'}
-                            onChange={(e) => updateImageConfig('postId', {
-                              ...templateData.config.image?.postId,
-                              font: e.target.value
-                            })}
-                            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          >
-                            <option value="Noto Sans TC">Noto Sans TC</option>
-                            {fonts.map(font => (
-                              <option key={font.font_family} value={font.font_family}>
-                                {font.display_name}
-                                {font.is_system_font && ' (系統)'}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium dual-text mb-2">顏色</label>
-                          <input
-                            type="color"
-                            value={templateData.config.image?.postId?.color || '#666666'}
-                            onChange={(e) => updateImageConfig('postId', {
-                              ...templateData.config.image?.postId,
-                              color: e.target.value
-                            })}
-                            className="w-full h-10 rounded-lg border border-border cursor-pointer"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
+                    )}
+                  </>
+                )}
               </div>
             )}
 
             {activeTab === 'caption' && (
               <div className="p-6 space-y-6">
-                {/* 文案模板設定 */}
-                <div className="space-y-6">
+                {/* 啟用開關 */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="caption_enabled"
+                    checked={config.caption.enabled}
+                    onChange={(e) => updateCaptionConfig({ enabled: e.target.checked })}
+                    className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                  />
+                  <label htmlFor="caption_enabled" className="text-lg font-medium dual-text">啟用文案模板</label>
+                </div>
 
-                  {/* 開頭固定內容 */}
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">開頭內容 (只顯示一次)</label>
-                    <input
-                      type="text"
-                      value={templateData.config.multipost?.prefix || ''}
-                      onChange={(e) => updateMultipostConfig('prefix', e.target.value)}
-                      placeholder="[*]匿名內容不代表本版立場"
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <h3 className="font-medium text-blue-800 mb-2">文案模板說明</h3>
+                  <p className="text-sm text-blue-700">設計 Instagram 發文時的文字內容格式，分為標頭、重複內容、結尾三個部分。</p>
+                </div>
 
-                  {/* ID 格式設定 */}
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">ID 顯示格式</label>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium dual-text mb-2">ID 前綴</label>
-                        <input
-                          type="text"
-                          value={templateData.config.multipost?.idFormat?.prefix || ''}
-                          onChange={(e) => updateMultipostConfig('idFormat', {
-                            ...templateData.config.multipost?.idFormat,
-                            prefix: e.target.value
-                          })}
-                          placeholder="#匿名內中"
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium dual-text mb-2">補零位數</label>
-                        <input
-                          type="number"
-                          value={templateData.config.multipost?.idFormat?.digits || 0}
-                          onChange={(e) => updateMultipostConfig('idFormat', {
-                            ...templateData.config.multipost?.idFormat,
-                            digits: parseInt(e.target.value) || 0
-                          })}
-                          min="0"
-                          max="8"
-                          placeholder="0"
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                        <div className="text-xs text-muted-foreground mt-1">0 = 不補零</div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium dual-text mb-2">ID 後綴</label>
-                        <input
-                          type="text"
-                          value={templateData.config.multipost?.idFormat?.suffix || ''}
-                          onChange={(e) => updateMultipostConfig('idFormat', {
-                            ...templateData.config.multipost?.idFormat,
-                            suffix: e.target.value
-                          })}
-                          placeholder="(可選)"
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                      </div>
-                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                        <div className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">ℹ️ 使用說明</div>
-                        <div className="text-sm text-blue-800 dark:text-blue-200">
-                          文案中的 <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{"{id}"}</code> 會被替換為格式化後的貼文ID，
-                          例如貼文15520會顯示為：<strong>{(templateData.config.multipost?.idFormat?.prefix || '#') + '15520'}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 重複模板 */}
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">重複模板 (每篇貼文執行)</label>
-                    <textarea
-                      value={templateData.config.multipost?.template || ''}
-                      onChange={(e) => updateMultipostConfig('template', e.target.value)}
-                      placeholder="{id}&#10;{content}&#10;-----------------"
-                      rows={4}
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono text-sm"
-                    />
-                  </div>
-
-                  {/* 結尾固定內容 */}
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">結尾內容 (只顯示一次)</label>
-                    <input
-                      type="text"
-                      value={templateData.config.multipost?.suffix || ''}
-                      onChange={(e) => updateMultipostConfig('suffix', e.target.value)}
-                      placeholder="#匿名內中#台灣匿名聯合#匿名#黑特#靠北#告白#日更#內湖高中"
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
-                  </div>
-
-                  {/* Hashtag 設定 */}
-                  <div>
-                    <label className="block text-sm font-medium dual-text mb-2">新增標籤</label>
-                    <p className="text-xs text-muted mb-2">
-                      這些標籤會自動添加到所有從這個帳號發布的內容中。建議設定與你的學校或品牌相關的常用標籤。
-                    </p>
-                    <div className="flex items-center gap-2 mb-2">
+                {config.caption.enabled && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium dual-text mb-2">標頭內容</label>
                       <input
                         type="text"
-                        placeholder="輸入新標籤後按 Enter"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            let newTag = (e.target as HTMLInputElement).value.trim();
-                            // 自動添加 # 符號如果沒有的話
-                            if (newTag && !newTag.startsWith('#')) {
-                              newTag = '#' + newTag;
-                            }
-                            if (newTag && !templateData.config.caption?.autoHashtags?.includes(newTag)) {
-                              updateCaptionConfig('autoHashtags', [...(templateData.config.caption?.autoHashtags || []), newTag]);
-                              (e.target as HTMLInputElement).value = '';
-                            }
-                          }
-                        }}
-                        className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        value={config.caption.header}
+                        onChange={(e) => updateCaptionConfig({ header: e.target.value })}
+                        placeholder="例如: 貼文 {id}"
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono"
                       />
+                      <div className="text-xs text-muted mt-1">可用變數：{'{id}'}, {'{link}'}</div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(templateData.config.caption?.autoHashtags || []).map((tag, index) => (
-                        <div key={index} className="flex items-center gap-1 bg-muted/50 text-foreground rounded-full px-3 py-1 text-sm">
-                          <span>{tag}</span>
-                          <button
-                            onClick={() => {
-                              const newTags = [...(templateData.config.caption?.autoHashtags || [])];
-                              newTags.splice(index, 1);
-                              updateCaptionConfig('autoHashtags', newTags);
-                            }}
-                            className="text-muted hover:text-foreground"
+
+                    <div>
+                      <label className="block text-sm font-medium dual-text mb-2">重複內容</label>
+                      <textarea
+                        rows={3}
+                        value={config.caption.content}
+                        onChange={(e) => updateCaptionConfig({ content: e.target.value })}
+                        placeholder="例如: {content}"
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none font-mono"
+                      />
+                      <div className="text-xs text-muted mt-1">可用變數：{'{content}'}, {'{id}'}, {'{link}'}</div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium dual-text mb-2">結尾內容</label>
+                      <input
+                        type="text"
+                        value={config.caption.footer}
+                        onChange={(e) => updateCaptionConfig({ footer: e.target.value })}
+                        placeholder="例如: {hashtags}"
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono"
+                      />
+                      <div className="text-xs text-muted mt-1">可用變數：{'{hashtags}'}, {'{id}'}, {'{link}'}</div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium dual-text mb-2">自動標籤</label>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {config.caption.autoHashtags.map((tag, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-1 bg-muted/50 text-foreground rounded-full text-xs flex items-center gap-1"
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
+                            {tag}
+                            <button
+                              onClick={() => updateCaptionConfig({
+                                autoHashtags: config.caption.autoHashtags.filter((_, i) => i !== idx)
+                              })}
+                              className="text-muted hover:text-foreground"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="新增標籤..."
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const value = e.currentTarget.value.trim()
+                              if (value && !config.caption.autoHashtags.includes(value)) {
+                                updateCaptionConfig({ autoHashtags: [...config.caption.autoHashtags, value] })
+                                e.currentTarget.value = ''
+                              }
+                            }
+                          }}
+                          className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* 共用說明 */}
-                <div className="text-xs text-muted space-y-1">
-                  <div>可使用變數：</div>
-                  <div className="pl-2 space-y-1">
-                    <div>• <code className="bg-gray-100 px-1 rounded">{'{title}'}</code> - 論壇貼文標題</div>
-                    <div>• <code className="bg-gray-100 px-1 rounded">{'{content}'}</code> - 論壇貼文內容 (自動填入)</div>
-                    <div>• <code className="bg-gray-100 px-1 rounded">{'{author}'}</code> - 貼文作者</div>
-                    <div>• <code className="bg-gray-100 px-1 rounded">{'{id}'}</code> - 貼文編號</div>
-                  </div>
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium dual-text mb-2">最大字數限制：{config.caption.maxLength}</label>
+                      <input
+                        type="range"
+                        min={100}
+                        max={2200}
+                        value={config.caption.maxLength}
+                        onChange={(e) => updateCaptionConfig({ maxLength: parseInt(e.target.value) })}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-muted mt-1">
+                        <span>100</span>
+                        <span>2200</span>
+                      </div>
+                    </div>
 
-                {/* 字數限制 */}
-                <div>
-                  <label className="block text-sm font-medium dual-text mb-2">
-                    最大字數限制：{templateData.config.multipost?.maxLength || 2200}
-                  </label>
-                  <input
-                    type="range"
-                    min="100"
-                    max="2200"
-                    value={templateData.config.multipost?.maxLength || 2200}
-                    onChange={(e) => updateMultipostConfig('maxLength', parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-muted mt-1">
-                    <span>100</span>
-                    <span>2200 (IG 限制)</span>
-                  </div>
-                </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="includeOriginalLink"
+                        checked={config.caption.includeOriginalLink}
+                        onChange={(e) => updateCaptionConfig({ includeOriginalLink: e.target.checked })}
+                        className="rounded border-border focus:ring-primary/20 focus:border-primary"
+                      />
+                      <label htmlFor="includeOriginalLink" className="text-sm dual-text">包含原始貼文連結</label>
+                    </div>
+
+                    {config.caption.includeOriginalLink && (
+                      <div>
+                        <label className="block text-sm font-medium dual-text mb-2">連結文字格式</label>
+                        <input
+                          type="text"
+                          value={config.caption.linkText || ''}
+                          onChange={(e) => updateCaptionConfig({ linkText: e.target.value })}
+                          placeholder="查看完整內容：{link}"
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                        />
+                        <div className="text-xs text-muted mt-1">使用 {'{link}'} 來插入原始貼文連結</div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
-
           </div>
 
-          {/* Right Panel - Live Preview */}
+          {/* Right - Preview */}
           <div className="w-1/2 flex flex-col bg-muted/10">
             <div className="p-4 border-b border-border bg-muted/30">
               <div className="flex items-center gap-2">
-                <Eye className="w-5 h-5 text-primary" />
                 <h3 className="font-medium dual-text">即時預覽</h3>
               </div>
             </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* 自動真實數據預覽 */}
-              <div className="bg-background rounded-lg p-4 border border-border">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <h4 className="font-medium dual-text text-sm">使用真實平台數據</h4>
-                </div>
-                
+              {/* 貼文選擇器 */}
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">預覽數據來源</h4>
                 {loadingPosts ? (
-                  <div className="text-xs text-muted-foreground">正在載入真實貼文...</div>
-                ) : (
+                  <div className="text-sm text-muted">載入貼文中...</div>
+                ) : realPosts.length > 0 ? (
                   <div className="space-y-2">
-                    <div>
-                      <label className="block text-xs font-medium dual-text mb-1">標題</label>
-                      <div className="px-2 py-1.5 text-sm bg-muted/20 border border-border rounded">
-                        {previewContent.title}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-xs font-medium dual-text mb-1">作者</label>
-                      <div className="px-2 py-1.5 text-sm bg-muted/20 border border-border rounded">
-                        {previewContent.author}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-xs font-medium dual-text mb-1">內容預覽</label>
-                      <div className="px-2 py-1.5 text-sm bg-muted/20 border border-border rounded max-h-20 overflow-y-auto">
-                        {previewContent.content.length > 100 
-                          ? previewContent.content.substring(0, 100) + '...' 
-                          : previewContent.content}
-                      </div>
-                    </div>
-                    
-                    <button
-                      onClick={() => {
-                        setRealPosts([])
-                        fetchRecentPosts()
-                      }}
-                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                    <select
+                      value={selectedPostIndex}
+                      onChange={(e) => setSelectedPostIndex(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm"
                     >
-                      <RefreshCw className="w-3 h-3" />
-                      重新載入真實數據
-                    </button>
+                      {realPosts.map((post, index) => (
+                        <option key={post.id} value={index}>
+                          {post.id === 999 ? '(範例數據)' : `#${post.id}`} {post.title || '無標題'}
+                          {post.title && post.title.length > 20 ? '...' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {currentPost && (
+                      <div className="text-xs text-muted p-2 bg-gray-50 rounded">
+                        <div><strong>ID:</strong> {currentPost.id}</div>
+                        <div><strong>標題:</strong> {currentPost.title || '無標題'}</div>
+                        <div><strong>作者:</strong> {currentPost.author || '未知'}</div>
+                        <div><strong>學校:</strong> {currentPost.school?.name || '未設定'}</div>
+                        <div><strong>內容:</strong> {(currentPost.content || '').substring(0, 50)}{currentPost.content && currentPost.content.length > 50 ? '...' : ''}</div>
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  <div className="text-sm text-muted">無可用貼文數據</div>
                 )}
               </div>
 
-              {/* 文案預覽 */}
-              <div className="bg-background rounded-lg p-4 border border-border">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium dual-text text-sm">文案預覽</h4>
-                  <span className="text-xs text-muted">
-                    {generatePreviewCaption().length} / {templateData.config.multipost?.maxLength || 2200}
-                  </span>
-                </div>
-                
-                <div className="bg-muted/20 rounded p-3 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
-                  {generatePreviewCaption()}
-                </div>
-              </div>
+              {/* 貼文模板實際預覽 */}
+              {config.textToImage.enabled && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-sm">貼文模板效果</h4>
+                    <button
+                      onClick={() => generatePreviewImage('textToImage')}
+                      disabled={generating.textToImage || !currentPost}
+                      className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {generating.textToImage ? '生成中...' : '重新生成'}
+                    </button>
+                  </div>
 
-              {/* 圖片預覽 */}
-              <div className="bg-background rounded-lg p-6 border border-border">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-medium dual-text text-base">圖片預覽</h4>
-                  <span className="text-sm text-muted">
-                    {templateData.config.image?.width || 1080} × {templateData.config.image?.height || 1080}
-                  </span>
-                </div>
-                
-                <div className="bg-muted/10 rounded-lg p-6 text-center min-h-[600px] flex items-center justify-center">
-                  <ImagePreview
-                    content={previewContent}
-                    config={templateData.config.image}
-                    templateId={editingTemplate?.id}
-                    templateConfig={templateData.config}
-                  />
-                </div>
-              </div>
-
-              {/* 真實貼文選擇 (如果有的話) */}
-              {realPosts.length > 0 && (
-                <div className="bg-background rounded-lg p-4 border border-border">
-                  <h4 className="font-medium dual-text mb-3 text-sm">使用真實貼文預覽</h4>
-                  
-                  <div className="space-y-2">
-                    {realPosts.slice(0, 3).map((post, index) => (
+                  {generating.textToImage ? (
+                    <div className="border rounded-lg p-8 flex items-center justify-center bg-gray-50">
+                      <div className="text-sm text-muted">生成預覽圖片中...</div>
+                    </div>
+                  ) : previewImages.textToImage ? (
+                    <div className="space-y-2">
+                      <img
+                        src={previewImages.textToImage}
+                        alt="貼文模板預覽"
+                        className="border rounded-lg max-w-full h-auto"
+                        style={{ maxHeight: '400px' }}
+                      />
+                      <div className="text-xs text-muted">
+                        使用貼文: #{currentPost?.id} | 尺寸：{config.textToImage.width} × {config.textToImage.height}px
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded-lg p-8 text-center bg-gray-50">
+                      <div className="text-sm text-muted mb-2">尚無預覽圖片</div>
                       <button
-                        key={post.id}
-                        onClick={() => setPreviewContent({
-                          id: post.id,
-                          title: post.title || '無標題',
-                          content: post.content || '無內容',
-                          author: post.author?.username || '匿名用戶',
-                          hashtags: ['#校園生活', '#學生分享']
-                        })}
-                        className="w-full text-left p-2 bg-muted/30 hover:bg-muted/50 rounded text-xs transition-colors"
+                        onClick={() => generatePreviewImage('textToImage')}
+                        disabled={!currentPost}
+                        className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                       >
-                        <div className="font-medium text-foreground truncate">{post.title || '無標題'}</div>
-                        <div className="text-muted truncate mt-1">{post.content?.substring(0, 50)}...</div>
+                        生成預覽
                       </button>
-                    ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 相片模板實際預覽 */}
+              {config.photos.enabled && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-sm">相片模板效果 ({config.photos.mode === 'combined' ? '合成模式' : '分開模式'})</h4>
+                    <button
+                      onClick={() => generatePreviewImage('photos')}
+                      disabled={generating.photos || !currentPost}
+                      className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {generating.photos ? '生成中...' : '重新生成'}
+                    </button>
+                  </div>
+
+                  {generating.photos ? (
+                    <div className="border rounded-lg p-8 flex items-center justify-center bg-gray-50">
+                      <div className="text-sm text-muted">生成相片模板預覽中...</div>
+                    </div>
+                  ) : previewImages.photos ? (
+                    <div className="space-y-2">
+                      <img
+                        src={previewImages.photos}
+                        alt="相片模板預覽"
+                        className="border rounded-lg max-w-full h-auto"
+                        style={{ maxHeight: '400px' }}
+                      />
+                      <div className="text-xs text-muted">
+                        使用貼文: #{currentPost?.id} | 模式：{config.photos.mode}
+                        {config.photos.mode === 'combined' && ` | 尺寸：${config.photos.combined.canvas.width} × ${config.photos.combined.canvas.height}px`}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded-lg p-8 text-center bg-gray-50">
+                      <div className="text-sm text-muted mb-2">尚無相片模板預覽</div>
+                      <button
+                        onClick={() => generatePreviewImage('photos')}
+                        disabled={!currentPost}
+                        className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        生成預覽
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 文案模板即時預覽 */}
+              {config.caption.enabled && currentPost && (
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm">文案效果預覽</h4>
+                  <div className="bg-gray-50 border rounded-lg p-4">
+                    <div className="space-y-3 text-sm">
+                      {/* 標頭 */}
+                      {config.caption.header && (
+                        <div className="font-medium text-gray-800">
+                          {config.caption.header
+                            .replace('{id}', currentPost.id.toString())
+                            .replace('{link}', `https://example.com/post/${currentPost.id}`)}
+                        </div>
+                      )}
+
+                      {/* 內容 */}
+                      {config.caption.content && (
+                        <div className="text-gray-700 leading-relaxed">
+                          {config.caption.content
+                            .replace('{content}', currentPost.content || '此貼文沒有內容')
+                            .replace('{id}', currentPost.id.toString())
+                            .replace('{link}', `https://example.com/post/${currentPost.id}`)}
+                        </div>
+                      )}
+
+                      {/* 結尾 */}
+                      {config.caption.footer && (
+                        <div className="text-blue-600 text-sm">
+                          {config.caption.footer
+                            .replace('{hashtags}', config.caption.autoHashtags.join(' '))
+                            .replace('{id}', currentPost.id.toString())
+                            .replace('{link}', `https://example.com/post/${currentPost.id}`)}
+                        </div>
+                      )}
+
+                      {/* 原始連結 */}
+                      {config.caption.includeOriginalLink && config.caption.linkText && (
+                        <div className="text-gray-500 text-sm border-t pt-2">
+                          {config.caption.linkText.replace('{link}', `https://example.com/post/${currentPost.id}`)}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-muted mt-3 pt-3 border-t">
+                      字數統計：約 {[
+                        config.caption.header?.replace('{id}', currentPost.id.toString()).replace('{link}', `https://example.com/post/${currentPost.id}`),
+                        config.caption.content?.replace('{content}', currentPost.content || '此貼文沒有內容').replace('{id}', currentPost.id.toString()).replace('{link}', `https://example.com/post/${currentPost.id}`),
+                        config.caption.footer?.replace('{hashtags}', config.caption.autoHashtags.join(' ')).replace('{id}', currentPost.id.toString()).replace('{link}', `https://example.com/post/${currentPost.id}`),
+                        config.caption.includeOriginalLink && config.caption.linkText ? config.caption.linkText.replace('{link}', `https://example.com/post/${currentPost.id}`) : ''
+                      ].filter(Boolean).join('\n\n').length} / {config.caption.maxLength} 字
+                    </div>
+
+                    <div className="text-xs text-muted mt-2">
+                      使用貼文: #{currentPost.id} - {currentPost.title || '無標題'}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Loading 提示 */}
-              {loadingPosts && (
-                <div className="bg-background rounded-lg p-4 border border-border text-center">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                  <div className="text-xs text-muted">載入真實貼文中...</div>
+              {/* 模板狀態總覽 */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">模板狀態</h4>
+                <div className="space-y-2">
+                  <div className={`flex items-center gap-2 p-2 rounded ${config.textToImage.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+                    <div className={`w-2 h-2 rounded-full ${config.textToImage.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <span className="text-sm">貼文模板</span>
+                  </div>
+                  <div className={`flex items-center gap-2 p-2 rounded ${config.photos.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+                    <div className={`w-2 h-2 rounded-full ${config.photos.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <span className="text-sm">相片模板</span>
+                  </div>
+                  <div className={`flex items-center gap-2 p-2 rounded ${config.caption.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+                    <div className={`w-2 h-2 rounded-full ${config.caption.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <span className="text-sm">文案模板</span>
+                  </div>
                 </div>
-              )}
+
+                <div className={`p-3 rounded-lg border-2 ${isTemplateComplete ? 'border-green-500 bg-green-50' : 'border-yellow-500 bg-yellow-50'}`}>
+                  <div className="text-sm font-medium mb-1">
+                    {isTemplateComplete ? '配置完成' : '配置未完成'}
+                  </div>
+                  <div className="text-xs">
+                    {isTemplateComplete
+                      ? '所有模板均已啟用，可以儲存'
+                      : '請啟用所有三個模板才能儲存'
+                    }
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

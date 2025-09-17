@@ -125,10 +125,14 @@ class ContentGenerator:
             
             # 根據模板類型生成內容
             if template.template_type in [TemplateType.IMAGE, TemplateType.COMBINED]:
-                result['image_url'] = self._generate_image(content_data, template, custom_options)
+                images = self._generate_images(content_data, template, custom_options)
+                result['image_url'] = images[0] if images else None  # 主圖片（向後兼容）
+                result['image_urls'] = images  # 所有圖片
             elif template.template_type == TemplateType.TEXT:
                 # IG 發布需要圖片：即便是文字模板，也用預設圖片渲染一張文字卡
-                result['image_url'] = self._generate_image(content_data, template, custom_options)
+                images = self._generate_images(content_data, template, custom_options)
+                result['image_url'] = images[0] if images else None  # 主圖片（向後兼容）
+                result['image_urls'] = images  # 所有圖片
 
             if template.template_type in [TemplateType.TEXT, TemplateType.COMBINED]:
                 caption_data = self._generate_caption(content_data, template, custom_options)
@@ -167,6 +171,19 @@ class ContentGenerator:
                 first_line = first_line[:50] + '...'
             raw_title = first_line
 
+        # 處理媒體附件
+        media_urls = []
+        if hasattr(forum_post, 'media') and forum_post.media:
+            import os
+            cdn_base_url = os.getenv('PUBLIC_BASE_URL', '').rstrip('/') + '/uploads'
+            for media in forum_post.media:
+                if media.status == 'approved' and not media.is_deleted:
+                    # 檢查是否為圖片類型
+                    if media.mime_type and media.mime_type.startswith('image/'):
+                        media_path = media.path.lstrip('/')
+                        media_url = f"{cdn_base_url}/{media_path}"
+                        media_urls.append(media_url)
+
         return {
             'id': forum_post.id,
             'title': raw_title,
@@ -176,8 +193,42 @@ class ContentGenerator:
             'created_at': forum_post.created_at,
             'category': getattr(forum_post, 'category', '一般'),
             'tags': getattr(forum_post, 'tags', []),
+            'media_urls': media_urls,  # 新增：用戶上傳的圖片URL列表
+            'has_user_images': len(media_urls) > 0,  # 新增：是否有用戶上傳的圖片
         }
     
+    def _generate_images(
+        self,
+        content_data: Dict[str, Any],
+        template: ContentTemplate,
+        custom_options: Optional[Dict] = None
+    ) -> List[str]:
+        """生成圖片列表（支援用戶附件 + 文字圖片）"""
+        try:
+            images = []
+
+            # 1. 先加入用戶上傳的圖片
+            if content_data.get('has_user_images') and content_data.get('media_urls'):
+                images.extend(content_data['media_urls'])
+                logger.info(f"加入 {len(content_data['media_urls'])} 張用戶上傳的圖片")
+
+            # 2. 再生成文字圖片
+            text_image = self._generate_image(content_data, template, custom_options)
+            if text_image:
+                images.append(text_image)
+                logger.info("加入 1 張文字圖片")
+
+            return images
+
+        except Exception as e:
+            logger.error(f"生成圖片列表失敗: {e}")
+            # 回退到只生成文字圖片
+            try:
+                text_image = self._generate_image(content_data, template, custom_options)
+                return [text_image] if text_image else []
+            except Exception:
+                return []
+
     def _generate_image(
         self, 
         content_data: Dict[str, Any], 
@@ -190,23 +241,30 @@ class ContentGenerator:
             if custom_options and 'image' in custom_options:
                 config.update(custom_options['image'])
 
+            # 支援 cards 結構（text/timestamp/logo/postId 各自設定）
+            cards = config.get('cards', {}) if isinstance(config.get('cards', {}), dict) else {}
+            text_cfg = cards.get('text', config.get('text', {})) or {}
+            ts_cfg = cards.get('timestamp', config.get('timestamp', {})) or {}
+            logo_cfg = cards.get('logo', config.get('logo', {})) or {}
+            pid_cfg = cards.get('postId', config.get('postId', {})) or {}
+
             # 準備 Pillow 渲染配置
             pillow_config = {
                 'width': config.get('width', 1080),
                 'height': config.get('height', 1080),
                 'background_color': config.get('background', {}).get('value', '#ffffff'),
-                'font_family': config.get('text', {}).get('font', 'default'),
-                'font_size': config.get('text', {}).get('size', 32),
-                'text_color': config.get('text', {}).get('color', '#333333'),
+                'font_family': text_cfg.get('font', config.get('text', {}).get('font', 'default')),
+                'font_size': text_cfg.get('size', config.get('text', {}).get('size', 32)),
+                'text_color': text_cfg.get('color', config.get('text', {}).get('color', '#333333')),
                 'padding': config.get('padding', 60),
-                'line_spacing': config.get('text', {}).get('lineSpacing', 10),  # 改為像素值
-                'logo': config.get('logo', {}),
-                'timestamp': config.get('timestamp', {}),
-                'max_content_lines': config.get('text', {}).get('maxLines', 8)
+                'line_spacing': text_cfg.get('lineSpacing', config.get('text', {}).get('lineSpacing', 10)),  # 改為像素值
+                'logo': logo_cfg or {},
+                'timestamp': ts_cfg or {},
+                'max_content_lines': text_cfg.get('maxLines', config.get('text', {}).get('maxLines', 8))
             }
 
             # 處理格式化ID配置 - 優先使用 custom_options 中的 postId 配置
-            post_id_config = config.get('postId', {})
+            post_id_config = pid_cfg
             logger.info(f"[DEBUG] custom_options: {custom_options}")
             if custom_options and 'postId' in custom_options:
                 logger.info(f"[DEBUG] custom_options['postId']: {custom_options['postId']}")
@@ -241,14 +299,9 @@ class ContentGenerator:
                     custom_text = post_id_config.get('text')
                     # 檢查是否包含 {id} 佔位符，如果有則替換
                     if '{id}' in custom_text:
-                        # 如果自定義文字就是 {id}，直接使用格式化後的ID
-                        if custom_text.strip() == '{id}':
-                            formatted_id = self._format_id(actual_id, id_format)
-                        else:
-                            # 如果是複雜模板（如 #{id}），只替換數字部分，避免重複前綴
-                            formatted_actual_id = self._format_id(actual_id, {}) if id_format.get('prefix') and custom_text.startswith('#') else self._format_id(actual_id, id_format)
-                            formatted_id = custom_text.replace('{id}', str(formatted_actual_id))
-                        logger.info(f"[DEBUG] 替換自定義文字中的{{id}}: '{custom_text}' -> '{formatted_id}'")
+                        # {id} 只替換為純數字，不包含前綴後綴
+                        formatted_id = custom_text.replace('{id}', str(actual_id))
+                        logger.info(f"[DEBUG] 替換自定義文字中的{{id}}: '{custom_text}' -> '{formatted_id}' (實際ID: {actual_id})")
                     else:
                         formatted_id = custom_text
                         logger.info(f"[DEBUG] 使用 text 欄位的格式化ID: {formatted_id}")
@@ -279,6 +332,18 @@ class ContentGenerator:
             text_content = content_data.get('content', '')
             
             # 使用 Pillow 渲染器生成圖片（先產出文字底圖）
+            # 讀取輸出格式與文字排版設定
+            img_format = (config.get('imageFormat') or 'JPEG').upper()
+            if img_format not in ('JPEG', 'PNG'):
+                img_format = 'JPEG'
+            img_quality = int(config.get('quality', 90 if img_format == 'JPEG' else 92))
+
+            text_align = (text_cfg.get('align') or 'center')
+            v_align = (text_cfg.get('vAlign') or text_cfg.get('verticalAlign') or 'middle')
+            max_lines = pillow_config.get('max_content_lines') or text_cfg.get('maxLines')
+            max_chars_per_line = text_cfg.get('maxCharsPerLine') or text_cfg.get('maxPerLine')
+            wm_cfg = text_cfg.get('watermark', {}) if isinstance(text_cfg.get('watermark', {}), dict) else {}
+
             image_buffer = self.pillow_renderer.render_text_card(
                 content=text_content,
                 width=pillow_config.get('width', 1080),
@@ -288,7 +353,19 @@ class ContentGenerator:
                 font_name=pillow_config.get('font_family'),
                 font_size=pillow_config.get('font_size', 32),
                 padding=pillow_config.get('padding', 60),
-                line_spacing=pillow_config.get('line_spacing', 10)
+                line_spacing=pillow_config.get('line_spacing', 10),
+                text_align=text_align,
+                vertical_align=v_align,
+                max_lines=max_lines,
+                max_chars_per_line=max_chars_per_line,
+                apply_watermark_on_truncation=bool(wm_cfg.get('enabled', False)),
+                watermark_text=wm_cfg.get('text', '詳情請至平臺查看'),
+                watermark_font_name=wm_cfg.get('font'),
+                watermark_font_size=int(wm_cfg.get('size', 18) or 18),
+                watermark_color=wm_cfg.get('color', '#666666'),
+                watermark_position=wm_cfg.get('position', 'bottom-right'),
+                image_format=img_format,
+                quality=img_quality,
             )
 
             # 疊加圖層（Logo + 時間戳）
@@ -321,21 +398,36 @@ class ContentGenerator:
                                 alpha = alpha.point(lambda p: int(p * opacity))
                                 logo_img.putalpha(alpha)
 
-                            pos = (logo_cfg.get('position') or 'top-right').lower()
-                            if pos == 'top-left':
-                                x, y = pad, pad
-                            elif pos == 'top-center':
-                                x, y = (bw - size) // 2, pad
-                            elif pos == 'top-right':
-                                x, y = bw - pad - size, pad
-                            elif pos == 'bottom-left':
-                                x, y = pad, bh - pad - size
-                            elif pos == 'bottom-center':
-                                x, y = (bw - size) // 2, bh - pad - size
-                            elif pos == 'bottom-right':
-                                x, y = bw - pad - size, bh - pad - size
+                            # 自訂座標優先
+                            if isinstance(logo_cfg, dict) and ('x' in logo_cfg or 'y' in logo_cfg):
+                                try:
+                                    x = int(logo_cfg.get('x', 0))
+                                    y = int(logo_cfg.get('y', 0))
+                                    x, y = max(0, min(bw - size, x)), max(0, min(bh - size, y))
+                                except Exception:
+                                    x, y = pad, pad
                             else:
-                                x, y = (bw - size) // 2, (bh - size) // 2
+                                pos = (logo_cfg.get('position') or 'top-right').lower()
+                                if pos == 'top-left':
+                                    x, y = pad, pad
+                                elif pos == 'top-center':
+                                    x, y = (bw - size) // 2, pad
+                                elif pos == 'top-right':
+                                    x, y = bw - pad - size, pad
+                                elif pos in ('middle-left', 'left-center'):
+                                    x, y = pad, (bh - size) // 2
+                                elif pos in ('center', 'middle-center'):
+                                    x, y = (bw - size) // 2, (bh - size) // 2
+                                elif pos in ('middle-right', 'right-center'):
+                                    x, y = bw - pad - size, (bh - size) // 2
+                                elif pos == 'bottom-left':
+                                    x, y = pad, bh - pad - size
+                                elif pos == 'bottom-center':
+                                    x, y = (bw - size) // 2, bh - pad - size
+                                elif pos == 'bottom-right':
+                                    x, y = bw - pad - size, bh - pad - size
+                                else:
+                                    x, y = (bw - size) // 2, (bh - size) // 2
                             base.alpha_composite(logo_img, dest=(x, y))
                 except Exception as _e:
                     logger.warning(f"Logo 疊圖失敗或略過: {_e}")
@@ -386,19 +478,34 @@ class ContentGenerator:
                         tw = text_bbox[2] - text_bbox[0]
                         th = text_bbox[3] - text_bbox[1]
 
-                        pos = (ts_cfg.get('position') or 'bottom-right').lower()
-                        if pos == 'top-left':
-                            tx, ty = pad, pad
-                        elif pos == 'top-center':
-                            tx, ty = (bw - tw) // 2, pad
-                        elif pos == 'top-right':
-                            tx, ty = bw - pad - tw, pad
-                        elif pos == 'bottom-left':
-                            tx, ty = pad, bh - pad - th
-                        elif pos == 'bottom-center':
-                            tx, ty = (bw - tw) // 2, bh - pad - th
-                        else:  # bottom-right default
-                            tx, ty = bw - pad - tw, bh - pad - th
+                        # 自訂座標優先
+                        if isinstance(ts_cfg, dict) and ('x' in ts_cfg or 'y' in ts_cfg):
+                            try:
+                                tx = int(ts_cfg.get('x', 0))
+                                ty = int(ts_cfg.get('y', 0))
+                                tx, ty = max(0, min(bw - tw, tx)), max(0, min(bh - th, ty))
+                            except Exception:
+                                tx, ty = bw - pad - tw, bh - pad - th
+                        else:
+                            pos = (ts_cfg.get('position') or 'bottom-right').lower()
+                            if pos == 'top-left':
+                                tx, ty = pad, pad
+                            elif pos == 'top-center':
+                                tx, ty = (bw - tw) // 2, pad
+                            elif pos == 'top-right':
+                                tx, ty = bw - pad - tw, pad
+                            elif pos in ('middle-left', 'left-center'):
+                                tx, ty = pad, (bh - th) // 2
+                            elif pos in ('center', 'middle-center'):
+                                tx, ty = (bw - tw) // 2, (bh - th) // 2
+                            elif pos in ('middle-right', 'right-center'):
+                                tx, ty = bw - pad - tw, (bh - th) // 2
+                            elif pos == 'bottom-left':
+                                tx, ty = pad, bh - pad - th
+                            elif pos == 'bottom-center':
+                                tx, ty = (bw - tw) // 2, bh - pad - th
+                            else:  # bottom-right default
+                                tx, ty = bw - pad - tw, bh - pad - th
                         draw.text((tx, ty), ts_text, fill=color, font=font)
                 except Exception as _e:
                     logger.warning(f"時間戳繪製失敗或略過: {_e}")
@@ -408,10 +515,12 @@ class ContentGenerator:
                     post_id_cfg = pillow_config.get('postId') or {}
                     if isinstance(post_id_cfg, dict) and post_id_cfg.get('enabled', False):
                         id_text = post_id_cfg.get('text', '')
-                        # 替換 {id} 為實際的貼文ID
+                        # 注意：id_text 在這裡應該已經是格式化完成的文字了（從前面的邏輯處理過）
+                        # 但為了保險起見，如果還有 {id} 佔位符，就再替換一次
                         actual_id = content_data.get('id', 0)
                         if '{id}' in id_text:
                             id_text = id_text.replace('{id}', str(actual_id))
+                            logger.info(f"[DEBUG] 圖片渲染階段再次替換{{id}}: text='{id_text}', actual_id={actual_id}")
                         logger.info(f"[DEBUG] 格式化ID繪製: enabled={post_id_cfg.get('enabled')}, text='{id_text}', actual_id={actual_id}")
 
                         if id_text:
@@ -426,19 +535,34 @@ class ContentGenerator:
                             tw = text_bbox[2] - text_bbox[0]
                             th = text_bbox[3] - text_bbox[1]
 
-                            pos = (post_id_cfg.get('position') or 'top-left').lower()
-                            if pos == 'top-left':
-                                tx, ty = pad, pad
-                            elif pos == 'top-center':
-                                tx, ty = (bw - tw) // 2, pad
-                            elif pos == 'top-right':
-                                tx, ty = bw - pad - tw, pad
-                            elif pos == 'bottom-left':
-                                tx, ty = pad, bh - pad - th
-                            elif pos == 'bottom-center':
-                                tx, ty = (bw - tw) // 2, bh - pad - th
-                            else:  # bottom-right default
-                                tx, ty = bw - pad - tw, bh - pad - th
+                            # 自訂座標優先
+                            if isinstance(post_id_cfg, dict) and ('x' in post_id_cfg or 'y' in post_id_cfg):
+                                try:
+                                    tx = int(post_id_cfg.get('x', 0))
+                                    ty = int(post_id_cfg.get('y', 0))
+                                    tx, ty = max(0, min(bw - tw, tx)), max(0, min(bh - th, ty))
+                                except Exception:
+                                    tx, ty = pad, pad
+                            else:
+                                pos = (post_id_cfg.get('position') or 'top-left').lower()
+                                if pos == 'top-left':
+                                    tx, ty = pad, pad
+                                elif pos == 'top-center':
+                                    tx, ty = (bw - tw) // 2, pad
+                                elif pos == 'top-right':
+                                    tx, ty = bw - pad - tw, pad
+                                elif pos in ('middle-left', 'left-center'):
+                                    tx, ty = pad, (bh - th) // 2
+                                elif pos in ('center', 'middle-center'):
+                                    tx, ty = (bw - tw) // 2, (bh - th) // 2
+                                elif pos in ('middle-right', 'right-center'):
+                                    tx, ty = bw - pad - tw, (bh - th) // 2
+                                elif pos == 'bottom-left':
+                                    tx, ty = pad, bh - pad - th
+                                elif pos == 'bottom-center':
+                                    tx, ty = (bw - tw) // 2, bh - pad - th
+                                else:  # bottom-right default
+                                    tx, ty = bw - pad - tw, bh - pad - th
 
                             # 直接繪製（不處理透明度，保持簡潔）
                             draw.text((tx, ty), id_text, fill=color, font=font)
@@ -447,10 +571,13 @@ class ContentGenerator:
                 except Exception as _e:
                     logger.warning(f"格式化ID繪製失敗或略過: {_e}")
 
-                # 將合成後影像覆寫回緩衝區（以 JPEG 輸出）
+                # 將合成後影像覆寫回緩衝區（依設定輸出）
                 out_buf = BytesIO()
                 base = base.convert('RGB')
-                base.save(out_buf, format='JPEG', quality=90)
+                if img_format == 'PNG':
+                    base.save(out_buf, format='PNG')
+                else:
+                    base.save(out_buf, format='JPEG', quality=img_quality)
                 out_buf.seek(0)
                 image_buffer = out_buf
             except Exception as _e:
@@ -459,7 +586,8 @@ class ContentGenerator:
             # 儲存圖片（本機副本）
             post_id = content_data.get('id', 'preview')
             timestamp = int(datetime.now().timestamp())
-            filename = f"post_{post_id}_{timestamp}.jpg"
+            ext = 'png' if img_format == 'PNG' else 'jpg'
+            filename = f"post_{post_id}_{timestamp}.{ext}"
             file_path = os.path.join(self.output_dir, filename)
             
             with open(file_path, 'wb') as f:

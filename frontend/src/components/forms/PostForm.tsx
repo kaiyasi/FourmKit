@@ -6,6 +6,7 @@ import { validatePost } from '../../schemas/post'
 import { getClientId, newTxId } from '../../utils/client'
 import { getRole, canPublishAnnouncement } from '../../utils/auth'
 import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
+import { Link } from 'react-router-dom'
 import { textToHtml } from '@/utils/safeHtml'
 
 type School = { id: number; slug: string; name: string }
@@ -64,6 +65,34 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     try {
       let result
       
+      // 特殊語法：以 #<id> 開頭則視為回覆該貼文，改走留言 API，並以小字附註樣式（前綴 ※ ）
+      if (files.length === 0) {
+        const m = body.match(/^#(\d+)\s*(.*)$/s)
+        if (m) {
+          const targetId = parseInt(m[1], 10)
+          const replyText = (m[2] || '').trim()
+          const token = localStorage.getItem('token') || ''
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (token.trim()) headers['Authorization'] = `Bearer ${token}`
+          const resp = await fetch(`/api/posts/${targetId}/comments`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ content: `※#${targetId} ${replyText}` })
+          })
+          if (!resp.ok) {
+            const errJson = await resp.json().catch(()=>({error:'REPLY_FAILED'}))
+            throw new Error(errJson?.message || '回覆失敗')
+          }
+          // 成功後直接清空並提示，不再走發文流程
+          setContent('')
+          setFiles([])
+          setPublishType('normal')
+          setNotice(`已回覆貼文 #${targetId}`)
+          setBusy(false); setConfirmOpen(false)
+          return
+        }
+      }
+      
       if (files.length > 0) {
         // 有檔案時使用 FormData
         const fd = new FormData()
@@ -98,7 +127,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
       }
       
       // 後端已建立為 pending，前端不插入公開清單（保留私有占位即可），僅提示成功送審
-      validatePost(result) // 校驗結構
+      validatePost(result) // 校驗結構（一般貼文）
       setContent('')
       setFiles([])
       setPublishType('normal') // 重置為一般貼文
@@ -247,14 +276,32 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         <UploadArea value={files} onChange={setFiles} maxCount={6} />
       </div>
 
-      {/* 輕量預覽：轉為安全 HTML，使用閱讀樣式 */}
+      {/* 輕量預覽：回覆語法優先，否則 Markdown 預覽 */}
       {content.trim() && (
-        <div className="mt-3 rounded-2xl border border-border bg-surface/70 p-3 sm:p-4 preview-prose">
-          <div className="text-sm text-muted mb-2">預覽</div>
-          <div className="prose prose-sm max-w-none text-fg prose-rules">
-            <SafeHtmlContent html={textToHtml(content)} allowLinks={true} />
-          </div>
-        </div>
+        (() => {
+          const m = content.trim().match(/^#(\d+)\s*(.*)$/s)
+          if (m && files.length === 0) {
+            const replyId = m[1]
+            const replyText = (m[2] || '').trim()
+            return (
+              <div className="mt-3 rounded-2xl border border-border bg-surface/70 p-3 sm:p-4">
+                <div className="text-sm text-muted mb-2">預覽</div>
+                <div className="text-sm text-fg whitespace-pre-wrap">
+                  <Link to={`/posts/${replyId}`} className="text-xs text-muted mr-2 hover:underline">回覆貼文 #{replyId}</Link>
+                  {replyText || '（無內容）'}
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div className="mt-3 rounded-2xl border border-border bg-surface/70 p-3 sm:p-4 preview-prose">
+              <div className="text-sm text-muted mb-2">預覽</div>
+              <div className="prose prose-sm max-w-none text-fg prose-rules">
+                <SafeHtmlContent html={textToHtml(content)} allowLinks={true} />
+              </div>
+            </div>
+          )
+        })()
       )}
       
       {notice && <p className="text-sm text-green-700 dark:text-green-300 mt-2">{notice}</p>}

@@ -3,7 +3,7 @@ import { validateBeforeAdd, guessKindByName } from "../utils/validateFiles";
 
 type Props = { value: File[]; onChange: (files: File[]) => void; maxCount?: number; };
 
-export default function UploadArea({ value, onChange, maxCount = 6 }: Props) {
+export default function UploadArea({ value, onChange, maxCount = 4 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -39,9 +39,9 @@ export default function UploadArea({ value, onChange, maxCount = 6 }: Props) {
           ${dragOver ? "border-blue-500 bg-blue-50/10" : "border-neutral-600"}`}
         onClick={() => inputRef.current?.click()}
       >
-        <p className="text-sm text-neutral-300">拖放檔案到此，或點擊選擇（JPG/PNG/WebP/MP4/WebM）</p>
-        <p className="text-xs text-neutral-400 mt-1">最多 {maxCount} 個，圖片 ≤ 8MB，影片 ≤ 50MB</p>
-        <input ref={inputRef} type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" multiple className="hidden" onChange={onPick}/>
+        <p className="text-sm text-neutral-300">拖放圖片到此，或點擊選擇（JPG/PNG/WebP）</p>
+        <p className="text-xs text-neutral-400 mt-1">最多 {maxCount} 張圖片，每張 ≤ 8MB</p>
+        <input ref={inputRef} type="file" accept=".jpg,.jpeg,.png,.webp" multiple className="hidden" onChange={onPick}/>
       </div>
 
       {errors.length > 0 && (
@@ -61,9 +61,7 @@ export default function UploadArea({ value, onChange, maxCount = 6 }: Props) {
                         className="absolute top-1 right-1 bg-neutral-900/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100">
                   刪除
                 </button>
-                {kind === "image"
-                  ? <img src={url} alt={f.name} className="w-full h-32 object-cover rounded-lg" />
-                  : <video src={url} className="w-full h-32 rounded-lg" controls preload="metadata" />}
+                <img src={url} alt={f.name} className="w-full h-32 object-cover rounded-lg" />
                 <div className="mt-1 text-xs text-neutral-400 truncate">{f.name}</div>
               </div>
             );

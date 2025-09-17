@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User, Unlock } from 'lucide-react'
+import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User, Unlock, Lock } from 'lucide-react'
 import { formatLocalMinute } from '@/utils/time'
 import { getRoleDisplayName, Role } from '@/utils/auth'
 
@@ -59,6 +59,8 @@ export default function AdminUsersPage() {
   })
   const [showActivityModal, setShowActivityModal] = useState<{ user: User, activities: any[] } | null>(null)
   const [loadingActivities, setLoadingActivities] = useState(false)
+  const [ipStatus, setIpStatus] = useState<Record<number, boolean>>({})
+  const [suspendStatus, setSuspendStatus] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     const html = document.documentElement
@@ -113,6 +115,22 @@ export default function AdminUsersPage() {
       if (r.ok) {
         const j = await r.json().catch(()=>({}))
         setItems(Array.isArray(j?.items) ? j.items : [])
+        // 預取前幾位使用者的 IP 封鎖狀態（避免每張卡片都各打一次）
+        try {
+          const first = (Array.isArray(j?.items) ? j.items : []).slice(0, 12) as User[]
+          first.forEach(async (u) => {
+            try {
+              const resp = await fetch(`/api/admin/users/ip-status?user_id=${u.id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')||''}` } })
+              const data = await resp.json().catch(()=>({}))
+              if (data?.ok) setIpStatus(prev => ({ ...prev, [u.id]: Boolean(data.blocked) }))
+            } catch {}
+            try {
+              const r2 = await fetch(`/api/admin/users/suspend-status?user_id=${u.id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')||''}` } })
+              const d2 = await r2.json().catch(()=>({}))
+              if (d2?.ok) setSuspendStatus(prev => ({ ...prev, [u.id]: Boolean(d2.suspended) }))
+            } catch {}
+          })
+        } catch {}
       } else {
         setItems([])
       }
@@ -305,8 +323,54 @@ export default function AdminUsersPage() {
       }
 
       setMessage(`${username} 的 IP 限制已解除`)
+      setIpStatus(prev => ({ ...prev, [userId]: false }))
     } catch (e: any) {
       setMessage(e?.message || 'IP 解除失敗')
+    }
+  }
+
+  const blockUserIP = async (userId: number, username: string) => {
+    if (!confirm(`確定要封鎖 ${username} 的最近活動 IP 嗎？`)) return
+    try {
+      const response = await fetch('/api/admin/users/block-ip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')||''}`
+        },
+        body: JSON.stringify({ user_id: userId, all: true })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || '封鎖失敗')
+      setMessage(`${username} 的最近 IP 已封鎖`)
+      setIpStatus(prev => ({ ...prev, [userId]: true }))
+    } catch (e:any) {
+      setMessage(e?.message || '封鎖失敗')
+    }
+  }
+
+  const toggleSuspendUser = async (user: User) => {
+    const suspended = suspendStatus[user.id] === true
+    const confirmText = suspended
+      ? `確定要取消註銷 ${user.username} 嗎？帳號將恢復可登入。`
+      : `確定要註銷 ${user.username} 嗎？將封鎖其 Email 與最近活動 IP，並禁止登入。`
+    if (!confirm(confirmText)) return
+    try {
+      const url = suspended ? '/api/admin/users/unsuspend' : '/api/admin/users/suspend'
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')||''}`
+        },
+        body: JSON.stringify({ user_id: user.id })
+      })
+      const data = await resp.json().catch(()=>({}))
+      if (!resp.ok || !data?.ok) throw new Error(data?.error || '操作失敗')
+      setSuspendStatus(prev => ({ ...prev, [user.id]: !suspended }))
+      setMessage(suspended ? `已取消註銷 ${user.username}` : `已註銷 ${user.username}`)
+    } catch (e:any) {
+      setMessage(e?.message || '操作失敗')
     }
   }
 
@@ -380,7 +444,10 @@ export default function AdminUsersPage() {
       <NavBar pathname="/admin/users" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main
+        className={`mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8 ${showActivityModal ? 'pointer-events-none' : ''}`}
+        aria-hidden={showActivityModal ? true : false}
+      >
         {/* 頁首 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
@@ -587,9 +654,9 @@ export default function AdminUsersPage() {
                   <div className="grid grid-cols-2 gap-1 pt-2">
                     <button
                       onClick={() => loadUserActivity(user)}
-                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                      disabled={(suspendStatus[user.id]===true) || (user.username==='Kaiyasi') || loadingActivities}
+                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs disabled:opacity-50"
                       title="查看詳細資訊"
-                      disabled={loadingActivities}
                     >
                       <Activity className="w-3 h-3" />
                       詳細資訊
@@ -601,7 +668,8 @@ export default function AdminUsersPage() {
                         if (!newEmail || newEmail === user.email) return
                         await updateUserEmail(user.id, newEmail)
                       }}
-                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs"
+                      disabled={(suspendStatus[user.id]===true) || (user.username==='Kaiyasi')}
+                      className="btn-secondary flex items-center justify-center gap-1 px-2 py-1.5 text-xs disabled:opacity-50"
                       title="修改 Email"
                     >
                       <Mail className="w-3 h-3" />
@@ -633,22 +701,38 @@ export default function AdminUsersPage() {
                       密碼
                     </button>
 
-                    <button
-                      onClick={() => unblockUserIP(user.id, user.username)}
-                      className="px-2 py-1.5 text-xs rounded-lg border text-green-600 border-green-300 hover:bg-green-50 transition-colors flex items-center justify-center gap-1"
-                      title="解除 IP 限制"
-                    >
-                      <Unlock className="w-3 h-3" />
-                      解鎖IP
-                    </button>
+                    {(() => {
+                      const blocked = ipStatus[user.id] === true
+                      const disabled = (suspendStatus[user.id]===true) || (user.username==='Kaiyasi')
+                      return (
+                        <button
+                          onClick={() => blocked ? unblockUserIP(user.id, user.username) : blockUserIP(user.id, user.username)}
+                          disabled={disabled}
+                          className={`px-2 py-1.5 text-xs rounded-lg border flex items-center justify-center gap-1 ${blocked ? 'text-green-700 border-green-300 hover:bg-green-50' : 'text-red-600 border-red-300 hover:bg-red-50'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title={blocked ? '解除 IP 限制' : '封鎖最近 IP'}
+                        >
+                          {blocked ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                          {blocked ? '解鎖IP' : '封鎖IP'}
+                        </button>
+                      )
+                    })()}
 
                     <button
                       onClick={() => deleteUser(user.id)}
-                      className="px-2 py-1.5 text-xs rounded-lg border text-red-600 border-red-300 hover:bg-red-50 transition-colors flex items-center justify-center gap-1 col-span-2"
-                      title="刪除用戶"
+                      disabled={(suspendStatus[user.id]===true) || (user.username==='Kaiyasi')}
+                      className="px-2 py-1.5 text-xs rounded-lg border text-red-600 border-red-300 hover:bg-red-50 transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+                      title="刪除帳號（資料完全刪除）"
                     >
                       <Trash2 className="w-3 h-3" />
-                      刪除用戶
+                      刪除帳號
+                    </button>
+                    <button
+                      onClick={() => toggleSuspendUser(user)}
+                      className={`px-2 py-1.5 text-xs rounded-lg border transition-colors flex items-center justify-center gap-1 ${ (suspendStatus[user.id]===true) ? 'text-green-700 border-green-300 hover:bg-green-50' : 'text-amber-700 border-amber-300 hover:bg-amber-50'}`}
+                      title={(suspendStatus[user.id]===true) ? '取消註銷（恢復帳號）' : '註銷帳號（封鎖 Email + 最近 IP）'}
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      {(suspendStatus[user.id]===true) ? '取消註銷' : '註銷帳號'}
                     </button>
                   </div>
                 </div>
@@ -853,10 +937,11 @@ export default function AdminUsersPage() {
                   <div className="flex justify-between">
                     <span className="text-muted">會員狀態：</span>
                     <span className="font-medium">
-                      {showActivityModal.user.is_premium ? 
-                        `會員 ${showActivityModal.user.premium_until ? `至 ${formatLocalMinute(showActivityModal.user.premium_until)}` : '永久'}` : 
-                        '一般用戶'
-                      }
+                      {showActivityModal.user.role === 'dev_admin'
+                        ? '不適用'
+                        : (showActivityModal.user.is_premium
+                            ? `會員 ${showActivityModal.user.premium_until ? `至 ${formatLocalMinute(showActivityModal.user.premium_until)}` : '永久'}`
+                            : '一般用戶')}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -913,14 +998,18 @@ export default function AdminUsersPage() {
               </div>
             </div>
             
-            <div className="overflow-y-auto max-h-[60vh] space-y-3">
+            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[50vh] space-y-3">
+              <h3 className="font-semibold text-fg mb-2 flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                活動紀錄
+              </h3>
               {showActivityModal.activities.length === 0 ? (
                 <div className="text-center text-muted py-8">
                   暫無活動記錄
                 </div>
               ) : (
                 showActivityModal.activities.map((activity) => (
-                  <div key={activity.id} className="bg-surface-hover rounded-lg p-3 border border-border">
+                  <div key={activity.id} className="bg-surface rounded-lg p-3 border border-border">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
                         <div className="font-medium text-fg">{activity.title}</div>
@@ -985,6 +1074,7 @@ export default function AdminUsersPage() {
                   </div>
                 )))
               }
+              <div className="h-4" />
             </div>
           </div>
         </div>

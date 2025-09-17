@@ -476,14 +476,90 @@ export default function AdminInstagramPage() {
         : '/api/admin/social/templates'
       
       const method = editingTemplate ? 'PUT' : 'POST'
-      
+
+      // 後端目前以 config.image.* 為主；這裡把舊的 textToImage 轉成 image.cards 結構
+      const cfg = templateData?.config || {}
+      const tti = cfg.textToImage || {}
+      const ttiText = tti.text || {}
+
+      const imageConfig = {
+        width: tti.width ?? 1080,
+        height: tti.height ?? 1080,
+        background: { value: tti.background?.value ?? '#ffffff' },
+        // 舊路徑保留，便於後端向下相容
+        text: {
+          font: ttiText.font ?? 'Noto Sans TC',
+          size: ttiText.size ?? 32,
+          color: ttiText.color ?? '#333333',
+          align: ttiText.align ?? 'center',
+          maxLines: ttiText.maxLines ?? 6,
+        },
+        // 新路徑：分卡片配置
+        cards: {
+          text: {
+            font: ttiText.font ?? 'Noto Sans TC',
+            size: ttiText.size ?? 32,
+            color: ttiText.color ?? '#333333',
+            align: ttiText.align ?? 'center',
+            vAlign: (ttiText as any).vAlign ?? 'middle',
+            lineSpacing: (ttiText as any).lineSpacing ?? 10,
+            maxLines: ttiText.maxLines ?? 6,
+            maxCharsPerLine: (ttiText as any).maxCharsPerLine ?? undefined,
+            watermark: (ttiText as any).watermark ?? undefined,
+          },
+          logo: {
+            enabled: tti.logo?.enabled ?? false,
+            url: tti.logo?.url ?? undefined,
+            size: tti.logo?.size ?? undefined,
+            opacity: tti.logo?.opacity ?? undefined,
+            position: tti.logo?.position ?? undefined,
+            x: tti.logo?.x ?? undefined,
+            y: tti.logo?.y ?? undefined,
+          },
+          timestamp: {
+            enabled: tti.timestamp?.enabled ?? false,
+            format: tti.timestamp?.format ?? undefined,
+            showYear: tti.timestamp?.showYear ?? undefined,
+            showSeconds: tti.timestamp?.showSeconds ?? undefined,
+            size: tti.timestamp?.size ?? undefined,
+            font: tti.timestamp?.font ?? undefined,
+            color: tti.timestamp?.color ?? undefined,
+            position: tti.timestamp?.position ?? undefined,
+            x: tti.timestamp?.x ?? undefined,
+            y: tti.timestamp?.y ?? undefined,
+          },
+          postId: {
+            enabled: tti.postId?.enabled ?? false,
+            text: tti.postId?.text ?? undefined,
+            prefix: tti.postId?.prefix ?? undefined,
+            digits: tti.postId?.digits ?? undefined,
+            suffix: tti.postId?.suffix ?? undefined,
+            position: tti.postId?.position ?? undefined,
+            size: tti.postId?.size ?? undefined,
+            font: tti.postId?.font ?? undefined,
+            color: tti.postId?.color ?? undefined,
+            opacity: tti.postId?.opacity ?? undefined,
+            x: tti.postId?.x ?? undefined,
+            y: tti.postId?.y ?? undefined,
+          },
+        },
+      }
+
+      const payload = {
+        ...templateData,
+        config: {
+          ...cfg,
+          image: imageConfig,
+        },
+      }
+
       const response = await fetch(url, {
         method,
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(templateData)
+        body: JSON.stringify(payload)
       })
       
       const result = await response.json()

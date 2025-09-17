@@ -894,7 +894,17 @@ def create_app() -> Flask:
 
         if request.path.startswith("/api"):
             # IP 封鎖檢查（允許提交稽核報告來解封，以及管理員功能）
-            admin_paths = ['/api/audit_report', '/api/admin/users/unblock-ip', '/api/admin/auth']
+            admin_paths = [
+                '/api/audit_report',
+                '/api/admin/users/unblock-ip',
+                '/api/admin/users/block-ip',
+                '/api/admin/users/ip-status',
+                '/api/admin/users/suspend',
+                '/api/admin/users/unsuspend',
+                '/api/admin/users/suspend-status',
+                '/api/admin/users/revoke-email',
+                '/api/admin/auth'
+            ]
             if not any(request.path.startswith(path) for path in admin_paths) and is_ip_blocked():
                 return jsonify({
                     'ok': False,
@@ -904,6 +914,29 @@ def create_app() -> Flask:
                         'hint': 'POST /api/audit_report { contact?, reason?, message }'
                     }
                 }), 451
+            # 若使用者被註銷（停權），禁止使用 API（保留管理解除端點）
+            try:
+                ident = get_jwt_identity()
+                if ident is not None:
+                    cfg2 = load_config() or {}
+                    suspended = set(cfg2.get('suspended_users') or [])
+                    if int(ident) in suspended:
+                        # 放行管理員解除端點
+                        allowed = [
+                            '/api/admin/users/unsuspend',
+                            '/api/admin/users/suspend-status',
+                            '/api/admin/auth',
+                        ]
+                        if not any(request.path.startswith(p) for p in allowed):
+                            return jsonify({
+                                'ok': False,
+                                'error': {
+                                    'code': 'USER_SUSPENDED',
+                                    'message': '此帳號已註銷，請聯繫管理員恢復'
+                                }
+                            }), 403
+            except Exception:
+                pass
             cfg = load_config() or {}
             mode = cfg.get("mode", "normal")
             if mode == "maintenance":

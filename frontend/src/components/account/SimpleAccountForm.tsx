@@ -283,6 +283,7 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
               <p className="text-xs text-muted mt-1">請輸入 Facebook 粉專的 Page ID（不是個人 Facebook ID）。你也可以用下方診斷按鈕從 Token 自動列出並選擇。</p>
             </div>
 
+
             {/* 學校綁定選擇 */}
             <div>
               <label className="block text-sm font-medium dual-text mb-2">
@@ -353,6 +354,22 @@ export default function SimpleAccountForm({ isOpen, onClose, onSave }: SimpleAcc
                   <li>• Token 需要包含 instagram_basic 和 pages_read_engagement 權限</li>
                   <li>• 系統會自動驗證提供的資訊是否有效</li>
                   <li>• 請妥善保管你的 Access Token，不要分享給他人</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Token 說明 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-blue-800">
+                <div className="font-medium mb-2">關於 Instagram Token：</div>
+                <ul className="text-xs space-y-1">
+                  <li>• <span className="font-medium">短期 Token：</span>EAAJ開頭，有效期數小時，需要較頻繁更新</li>
+                  <li>• <span className="font-medium">長期 Token：</span>IGQVJY開頭，有效期約60天，推薦使用</li>
+                  <li>• <span className="font-medium">獲取方式：</span>從 Facebook 開發者平台的 Graph API Explorer</li>
+                  <li>• <span className="font-medium">管理：</span>Token 過期時請手動更新新的 Token</li>
                 </ul>
               </div>
             </div>

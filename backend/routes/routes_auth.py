@@ -254,6 +254,15 @@ def register_confirm():
         return jsonify({"msg": f"暱稱不符合規範：{whyu}"}), 400
 
     with get_session() as s:
+        # 檢查 Email 黑名單（註銷）
+        try:
+            from utils.config_handler import load_config
+            cfg = load_config() or {}
+            bl = set((cfg.get('email_blacklist') or []))
+            if email in bl:
+                return jsonify({"msg": "此 Email 已被註銷，無法註冊"}), 403
+        except Exception:
+            pass
         if s.query(User).filter(func.lower(User.email) == email).first():
             return jsonify({"msg": "Email 已被使用"}), 409
         if s.query(User).filter(User.username == username_norm).first():
@@ -488,15 +497,27 @@ def google_callback_post():
 
         with get_session() as s:  # type: Session
             u = s.query(User).filter(func.lower(User.email) == email).first()
-            if u:
-                token = create_access_token(identity=str(u.id), additional_claims={"role": u.role})
-                refresh = create_refresh_token(identity=str(u.id))
-                return jsonify({
-                    "success": True,
-                    "requiresRegistration": False,
-                    "user": {"id": u.id, "email": email, "username": u.username, "role": u.role, "school_id": getattr(u, 'school_id', None)},
-                    "tokens": {"access_token": token, "refresh_token": refresh},
-                })
+        if u:
+            # 若帳號被註銷（停權），拒絕登入
+            try:
+                from utils.config_handler import load_config
+                cfg = load_config() or {}
+                if int(u.id) in set(cfg.get('suspended_users') or []):
+                    return jsonify({
+                        "success": False,
+                        "error": "此帳號已被註銷，請聯繫管理員恢復",
+                        "errorCode": "E_USER_SUSPENDED"
+                    }), 403
+            except Exception:
+                pass
+            token = create_access_token(identity=str(u.id), additional_claims={"role": u.role})
+            refresh = create_refresh_token(identity=str(u.id))
+            return jsonify({
+                "success": True,
+                "requiresRegistration": False,
+                "user": {"id": u.id, "email": email, "username": u.username, "role": u.role, "school_id": getattr(u, 'school_id', None)},
+                "tokens": {"access_token": token, "refresh_token": refresh},
+            })
 
         # 需要快速註冊
         return jsonify({
@@ -551,6 +572,14 @@ def quick_register():
         return jsonify({"success": False, "error": f"暱稱不符合規範：{whyu}", "errorCode": "E_USERNAME_POLICY"}), 400
 
     with get_session() as s:  # type: Session
+        # 檢查 Email 黑名單
+        try:
+            from utils.config_handler import load_config
+            cfg = load_config() or {}
+            if email in set(cfg.get('email_blacklist') or []):
+                return jsonify({"success": False, "error": "此 Email 已被註銷，無法註冊", "errorCode": "E_EMAIL_REVOKED"}), 403
+        except Exception:
+            pass
         if s.query(User).filter(func.lower(User.email) == email).first():
             return jsonify({"success": False, "error": "Email 已被使用", "errorCode": "E_EMAIL_TAKEN"}), 409
         if s.query(User).filter(User.username == username_norm).first():

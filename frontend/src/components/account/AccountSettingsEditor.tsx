@@ -175,6 +175,7 @@ export default function AccountSettingsEditor({ isOpen, onClose, onSave, account
 
 
 
+
   const getTriggerDescription = (trigger: string) => {
     switch (trigger) {
       case 'immediate':
@@ -409,6 +410,7 @@ export default function AccountSettingsEditor({ isOpen, onClose, onSave, account
             )}
           </div>
 
+
           {/* Token 更新設定 */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -454,11 +456,11 @@ export default function AccountSettingsEditor({ isOpen, onClose, onSave, account
               <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-blue-800 dark:text-blue-300">
-                  <div className="font-medium mb-1">更新 Token 的原因：</div>
+                  <div className="font-medium mb-1">Token 管理說明：</div>
                   <ul className="space-y-0.5">
-                    <li>• Facebook/Instagram tokens 通常有60天有效期</li>
-                    <li>• 帳號權限變更時需要重新授權</li>
-                    <li>• 當帳號狀態顯示錯誤時，通常是 Token 過期</li>
+                    <li>• 支援短期 Token（EAAJ開頭，數小時有效）和長期 Token（IGQVJY開頭，約60天有效）</li>
+                    <li>• 建議使用長期 Token 以減少更新頻率</li>
+                    <li>• 當帳號狀態顯示錯誤時，通常是 Token 過期需要更新</li>
                   </ul>
                 </div>
               </div>

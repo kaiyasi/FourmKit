@@ -413,6 +413,12 @@ class AutoPublisher:
                 social_post.generated_image_url = content.get('image_url')
                 social_post.generated_caption = content.get('caption')
                 social_post.hashtags = content.get('hashtags', [])
+
+                # 儲存多張圖片資訊
+                image_urls = content.get('image_urls', [])
+                if len(image_urls) > 1:
+                    social_post.generated_image_urls = ','.join(image_urls)
+
                 if not social_post.generated_image_url:
                     raise ContentGenerationError('生成圖片為空')
                 social_post.updated_at = datetime.now(timezone.utc)
@@ -455,15 +461,38 @@ def publish_single_post(self, social_post_id: int):
             social_post.generated_image_url = content.get('image_url')
             social_post.generated_caption = content.get('caption')
             social_post.hashtags = content.get('hashtags', [])
-            
+
+            # 儲存多張圖片資訊
+            image_urls = content.get('image_urls', [])
+            if len(image_urls) > 1:
+                social_post.generated_image_urls = ','.join(image_urls)
+
             # 發布到平台
             publisher = get_platform_publisher(social_post.account.platform)
-            publish_result = publisher.publish_single_post(
-                account=social_post.account,
-                image_url=social_post.generated_image_url,
-                caption=social_post.generated_caption,
-                hashtags=social_post.hashtags
-            )
+
+            # 如果有多張圖片，使用輪播發布；否則使用單一貼文發布
+            if len(image_urls) > 1:
+                # 準備輪播項目
+                carousel_items = []
+                for i, image_url in enumerate(image_urls):
+                    carousel_items.append({
+                        'image_url': image_url,
+                        'caption': social_post.generated_caption if i == 0 else ''
+                    })
+
+                publish_result = publisher.publish_carousel(
+                    account=social_post.account,
+                    items=carousel_items,
+                    caption=social_post.generated_caption,
+                    hashtags=social_post.hashtags
+                )
+            else:
+                publish_result = publisher.publish_single_post(
+                    account=social_post.account,
+                    image_url=social_post.generated_image_url,
+                    caption=social_post.generated_caption,
+                    hashtags=social_post.hashtags
+                )
 
             # 檢查發布是否成功
             if not publish_result.get('success', False):
@@ -569,6 +598,12 @@ def publish_carousel(self, carousel_group_id: int):
                         post.generated_caption = content.get('caption')
                         post.hashtags = content.get('hashtags', [])
 
+                        # 儲存多張圖片資訊（新功能：支援用戶附件 + 文字圖片）
+                        image_urls = content.get('image_urls', [])
+                        if len(image_urls) > 1:
+                            # 如果有多張圖片，把額外的圖片資訊暫存
+                            post.generated_image_urls = ','.join(image_urls)  # 暫時用逗號分隔儲存
+
                     # 嚴格驗證圖片是否生成成功（輪播至少需要圖片）
                     if not post.generated_image_url:
                         post.status = PostStatus.FAILED
@@ -577,10 +612,19 @@ def publish_carousel(self, carousel_group_id: int):
                         db.commit()
                         continue
 
-                    carousel_items.append({
-                        'image_url': post.generated_image_url,
-                        'caption': post.generated_caption
-                    })
+                    # 處理多張圖片：為每張圖片建立輪播項目
+                    image_urls = []
+                    if hasattr(post, 'generated_image_urls') and post.generated_image_urls:
+                        image_urls = post.generated_image_urls.split(',')
+                    elif post.generated_image_url:
+                        image_urls = [post.generated_image_url]
+
+                    # 為每張圖片建立輪播項目
+                    for i, image_url in enumerate(image_urls):
+                        carousel_items.append({
+                            'image_url': image_url,
+                            'caption': post.generated_caption if i == 0 else ''  # 只有第一張圖片有文案
+                        })
                     
                 except Exception as e:
                     logger.error(f"生成貼文 {post.id} 內容失敗: {e}")

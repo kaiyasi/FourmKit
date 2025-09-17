@@ -58,11 +58,12 @@ class SocialAccount(Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)  # 顯示名稱
     
     # 認證資訊
-    # 認證資訊
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True) # 用戶提供的原始 Token 或短期 Token
     long_lived_access_token: Mapped[str | None] = mapped_column(Text, nullable=True) # 儲存的長期 Token
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True) # 長期 Token 的過期時間
+    app_id: Mapped[str | None] = mapped_column(String(255), nullable=True) # Facebook App ID
+    app_secret: Mapped[str | None] = mapped_column(Text, nullable=True) # Facebook App Secret（用於 Token 轉換）
     
     # 帳號設定
     status: Mapped[str] = mapped_column(String(16), default=AccountStatus.PENDING, nullable=False)
@@ -203,7 +204,8 @@ class SocialPost(Base):
     carousel_group_id: Mapped[int | None] = mapped_column(ForeignKey("carousel_groups.id"), nullable=True)
     
     # 生成內容
-    generated_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 生成的圖片 URL
+    generated_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 生成的圖片 URL（主圖片，向後兼容）
+    generated_image_urls: Mapped[str | None] = mapped_column(Text, nullable=True)  # 多張圖片 URL（以逗號分隔）
     generated_caption: Mapped[str | None] = mapped_column(Text, nullable=True)  # 生成的文案
     custom_caption: Mapped[str | None] = mapped_column(Text, nullable=True)  # 自訂文案
     hashtags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)

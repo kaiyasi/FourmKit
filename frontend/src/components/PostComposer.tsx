@@ -6,6 +6,7 @@ import AnonymousAccountDisplay from "./AnonymousAccountDisplay";
 import { canPublishAnnouncement, getRole } from "../utils/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
+import { Link } from 'react-router-dom'
 import { textToHtml } from '@/utils/safeHtml'
 
 export default function PostComposer({ token }: { token: string }) {
@@ -116,6 +117,24 @@ export default function PostComposer({ token }: { token: string }) {
         setContent(""); setFiles([]); setIsAnnouncement(false)
         console.log('created:', validatedPost)
       } else {
+        // 特殊語法：#<id> 視為回覆該貼文（僅純文字），改走留言 API，並以小字附註（前綴 ※ ）
+        const m = content.trim().match(/^#(\d+)\s*(.*)$/s)
+        if (m) {
+          const targetId = parseInt(m[1], 10)
+          const replyText = (m[2] || '').trim()
+          const token = localStorage.getItem('token') || ''
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (token.trim()) headers['Authorization'] = `Bearer ${token}`
+          const resp = await fetch(`/api/posts/${targetId}/comments`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ content: `※#${targetId} ${replyText}` })
+          })
+          if (!resp.ok) throw new HttpError(resp.status, '回覆失敗')
+          setMsg('已回覆，感謝參與討論')
+          setContent(""); setFiles([]); setIsAnnouncement(false)
+          return
+        }
         // 純文本發文
         const { postJSON } = await import('../lib/http')
         const payload: any = { content: content.trim() }
@@ -280,12 +299,30 @@ export default function PostComposer({ token }: { token: string }) {
 
       {/* 即時預覽（輕量）：轉義換行與連結，樣式與詳情頁一致 */}
       {content.trim() && (
-        <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4 shadow-soft">
-          <div className="text-sm text-muted mb-2">預覽</div>
-          <div className="prose prose-sm max-w-none text-fg prose-rules">
-            <SafeHtmlContent html={textToHtml(content)} allowLinks={true} />
-          </div>
-        </div>
+        (() => {
+          const m = content.trim().match(/^#(\d+)\s*(.*)$/s)
+          if (m && files.length === 0) {
+            const replyId = m[1]
+            const replyText = (m[2] || '').trim()
+            return (
+              <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4 shadow-soft">
+                <div className="text-sm text-muted mb-2">預覽</div>
+                <div className="text-sm text-fg whitespace-pre-wrap">
+                  <Link to={`/posts/${replyId}`} className="text-xs text-muted mr-2 hover:underline">回覆貼文 #{replyId}</Link>
+                  {replyText || '（無內容）'}
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4 shadow-soft">
+              <div className="text-sm text-muted mb-2">預覽</div>
+              <div className="prose prose-sm max-w-none text-fg prose-rules">
+                <SafeHtmlContent html={textToHtml(content)} allowLinks={true} />
+              </div>
+            </div>
+          )
+        })()
       )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

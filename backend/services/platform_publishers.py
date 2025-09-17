@@ -272,15 +272,29 @@ class InstagramPublisher(BasePlatformPublisher):
 
     def _get_permalink(self, account, media_id: str) -> str:
         """查詢已發布媒體的 permalink。"""
-        url = f"{self.api_base_url}/{media_id}"
-        r = requests.get(url, params={'fields': 'permalink,shortcode', 'access_token': account.access_token}, timeout=10)
-        r.raise_for_status()
-        j = r.json()
-        # 優先用 permalink；fallback 用 shortcode 組 URL
-        if j.get('permalink'):
-            return j['permalink']
-        if j.get('shortcode'):
-            return f"https://www.instagram.com/p/{j['shortcode']}/"
+        try:
+            url = f"{self.api_base_url}/{media_id}"
+            r = requests.get(url, params={'fields': 'permalink,shortcode', 'access_token': account.access_token}, timeout=10)
+
+            if r.status_code == 200:
+                j = r.json()
+                # 優先用 permalink；fallback 用 shortcode 組 URL
+                if j.get('permalink'):
+                    return j['permalink']
+                if j.get('shortcode'):
+                    return f"https://www.instagram.com/p/{j['shortcode']}/"
+            else:
+                # 如果查詢失敗，記錄詳細錯誤但不拋出異常
+                error_data = r.json() if r.content else {}
+                logger.warning(f"無法查詢媒體 permalink (media_id: {media_id}): {r.status_code} - {error_data}")
+
+                # 嘗試用基本的 Instagram URL 格式
+                if media_id:
+                    return f"https://www.instagram.com/p/{media_id}/"
+
+        except Exception as e:
+            logger.error(f"查詢 permalink 時發生錯誤: {e}")
+
         # 最後才退回（不建議）
         return f"https://www.instagram.com/"
 

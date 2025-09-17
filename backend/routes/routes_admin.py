@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import hmac, hashlib, base64, os, uuid
 
 # For the new unblock IP feature
-from utils.ratelimit import unblock_ip
+from utils.ratelimit import unblock_ip, block_ip, is_ip_blocked
 from utils.admin_events import log_security_event
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -2793,6 +2793,11 @@ def unblock_user_ip():
         if not actor:
             return jsonify({'ok': False, 'error': 'Actor not found'}), 401
 
+        # 禁止對特例帳號操作
+        tuser = s.get(User, int(user_id))
+        if tuser and (tuser.username == 'Kaiyasi'):
+            return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
+
         # 找到該使用者最近一次活動的 IP
         latest_event = s.query(SystemEvent).filter(
             SystemEvent.actor_id == user_id
@@ -2822,3 +2827,243 @@ def unblock_user_ip():
         except Exception as e:
             s.rollback()
             return jsonify({'ok': False, 'error': str(e)}), 500
+
+@bp.post('/users/block-ip')
+@jwt_required()
+@require_role("dev_admin")
+def block_user_ip():
+    """封鎖使用者的最近活動 IP"""
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    block_all = bool(data.get('all', False))
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'user_id is required'}), 400
+
+    with get_session() as s:
+        actor_id = get_jwt_identity()
+        actor = s.get(User, actor_id) if actor_id else None
+        if not actor:
+            return jsonify({'ok': False, 'error': 'Actor not found'}), 401
+        # 禁止對特例帳號操作
+        tuser = s.get(User, int(user_id))
+        if tuser and (tuser.username == 'Kaiyasi'):
+            return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
+
+        # 收集要封鎖的 IP
+        ips: list[str] = []
+        if block_all:
+            rows = (
+                s.query(SystemEvent.client_ip)
+                .filter(SystemEvent.actor_id == user_id, SystemEvent.client_ip.isnot(None))
+                .distinct()
+                .all()
+            )
+            ips = [row[0] for row in rows if row[0]]
+            if not ips:
+                return jsonify({'ok': False, 'error': 'No IP addresses found for this user.'}), 404
+        else:
+            latest_event = s.query(SystemEvent).filter(
+                SystemEvent.actor_id == user_id
+            ).order_by(SystemEvent.created_at.desc()).first()
+            if not latest_event or not latest_event.client_ip:
+                return jsonify({'ok': False, 'error': 'No recent IP address found for this user.'}), 404
+            ips = [latest_event.client_ip]
+        try:
+            for ip in ips:
+                try:
+                    block_ip(ip)
+                except Exception:
+                    pass
+            log_security_event(
+                event_type="ip_blocked",
+                description=f"管理員 {actor.username} 封鎖了使用者 ID {user_id} 的 IPs({', '.join(ips)})。",
+                severity="high",
+                actor_id=actor.id,
+                actor_name=actor.username,
+                metadata={"blocked_ips": ips, "target_user_id": user_id}
+            )
+            s.commit()
+            return jsonify({'ok': True, 'message': f'Blocked {len(ips)} IP(s) for user {user_id}.', 'count': len(ips), 'ips': ips})
+        except Exception as e:
+            s.rollback()
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
+@bp.get('/users/ip-status')
+@jwt_required()
+@require_role("dev_admin")
+def user_ip_status():
+    """查詢使用者最近活動 IP 是否被封鎖"""
+    user_id = request.args.get('user_id', type=int)
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'user_id is required'}), 400
+    with get_session() as s:
+        latest_event = s.query(SystemEvent).filter(SystemEvent.actor_id == user_id).order_by(SystemEvent.created_at.desc()).first()
+        if not latest_event or not latest_event.client_ip:
+            return jsonify({'ok': True, 'blocked': False, 'ip': None})
+        ip = latest_event.client_ip
+        try:
+            blocked = is_ip_blocked(ip)
+        except Exception:
+            blocked = False
+        return jsonify({'ok': True, 'blocked': bool(blocked), 'ip': ip})
+
+@bp.post('/users/suspend')
+@jwt_required()
+@require_role("dev_admin")
+def suspend_user():
+    """註銷帳號：加入停權名單 + 封鎖最近IP + 封鎖 Email 註冊"""
+    from utils.config_handler import load_config, save_config
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'user_id is required'}), 400
+    with get_session() as s:
+        u = s.get(User, int(user_id))
+        if not u:
+            return jsonify({'ok': False, 'error': 'user not found'}), 404
+        if u.username == 'Kaiyasi':
+            return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
+        # 禁止對特例帳號操作
+        if u.username == 'Kaiyasi':
+            return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
+        cfg = load_config() or {}
+        sus = set(cfg.get('suspended_users') or [])
+        sus.add(int(user_id))
+        cfg['suspended_users'] = list(sus)
+        # 封鎖 Email
+        if u.email:
+            bl = set(cfg.get('email_blacklist') or [])
+            bl.add(u.email.lower())
+            cfg['email_blacklist'] = list(bl)
+        save_config(cfg)
+        # 封鎖最近 IP
+        latest_event = s.query(SystemEvent).filter(SystemEvent.actor_id == user_id).order_by(SystemEvent.created_at.desc()).first()
+        if latest_event and latest_event.client_ip:
+            try:
+                block_ip(latest_event.client_ip)
+            except Exception:
+                pass
+        # 記錄事件
+        try:
+            actor_id = get_jwt_identity()
+            actor = s.get(User, actor_id) if actor_id else None
+            log_security_event(
+                event_type="user_suspended",
+                description=f"管理員 {actor.username if actor else ''} 註銷帳號 {u.username}(id={u.id})",
+                severity="high",
+                actor_id=(actor.id if actor else None),
+                actor_name=(actor.username if actor else None),
+                metadata={"user_id": u.id, "email": u.email}
+            )
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'message': '使用者已註銷'})
+
+@bp.post('/users/unsuspend')
+@jwt_required()
+@require_role("dev_admin")
+def unsuspend_user():
+    """取消註銷：移除停權名單 + 解除最近IP封鎖 + 移除 Email 黑名單"""
+    from utils.config_handler import load_config, save_config
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'user_id is required'}), 400
+    with get_session() as s:
+        u = s.get(User, int(user_id))
+        if not u:
+            return jsonify({'ok': False, 'error': 'user not found'}), 404
+        if u.username == 'Kaiyasi':
+            return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
+        # 禁止對特例帳號操作
+        if u.username == 'Kaiyasi':
+            return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
+        cfg = load_config() or {}
+        # 移除 suspended_users
+        sus = set(cfg.get('suspended_users') or [])
+        if int(user_id) in sus:
+            sus.remove(int(user_id))
+            cfg['suspended_users'] = list(sus)
+        # 移除 Email 黑名單
+        if u.email:
+            bl = set(cfg.get('email_blacklist') or [])
+            if u.email.lower() in bl:
+                bl.remove(u.email.lower())
+                cfg['email_blacklist'] = list(bl)
+        save_config(cfg)
+        # 解除最近 IP 封鎖
+        latest_event = s.query(SystemEvent).filter(SystemEvent.actor_id == user_id).order_by(SystemEvent.created_at.desc()).first()
+        if latest_event and latest_event.client_ip:
+            try:
+                # 即使沒被封鎖也不報錯
+                unblock_ip(latest_event.client_ip)
+            except Exception:
+                pass
+        # 記錄事件
+        try:
+            actor_id = get_jwt_identity()
+            actor = s.get(User, actor_id) if actor_id else None
+            log_security_event(
+                event_type="user_unsuspended",
+                description=f"管理員 {actor.username if actor else ''} 取消註銷 {u.username}(id={u.id})",
+                severity="medium",
+                actor_id=(actor.id if actor else None),
+                actor_name=(actor.username if actor else None),
+                metadata={"user_id": u.id, "email": u.email}
+            )
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'message': '使用者已恢復'})
+
+@bp.get('/users/suspend-status')
+@jwt_required()
+@require_role("dev_admin")
+def suspend_status():
+    user_id = request.args.get('user_id', type=int)
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'user_id is required'}), 400
+    from utils.config_handler import load_config
+    cfg = load_config() or {}
+    sus = set(cfg.get('suspended_users') or [])
+    return jsonify({'ok': True, 'suspended': (int(user_id) in sus)})
+
+@bp.post('/users/revoke-email')
+@jwt_required()
+@require_role("dev_admin")
+def revoke_user_email():
+    """將使用者 Email 加入黑名單，禁止未來註冊"""
+    from utils.config_handler import load_config, save_config
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    email = (data.get('email') or '').strip().lower()
+    if not user_id and not email:
+        return jsonify({'ok': False, 'error': 'user_id or email is required'}), 400
+    with get_session() as s:
+        if not email:
+            u = s.get(User, int(user_id))
+            if not u:
+                return jsonify({'ok': False, 'error': 'user not found'}), 404
+            email = (u.email or '').strip().lower()
+        if not email:
+            return jsonify({'ok': False, 'error': 'email empty'}), 400
+        cfg = load_config() or {}
+        blist = cfg.get('email_blacklist', [])
+        if email not in blist:
+            blist.append(email)
+            cfg['email_blacklist'] = blist
+            save_config(cfg)
+        # 記錄事件
+        try:
+            actor_id = get_jwt_identity()
+            actor = s.get(User, actor_id) if actor_id else None
+            log_security_event(
+                event_type="email_revoked",
+                description=f"管理員 {actor.username if actor else ''} 註銷 Email {email} (禁止再註冊)",
+                severity="medium",
+                actor_id=(actor.id if actor else None),
+                actor_name=(actor.username if actor else None),
+                metadata={"email": email, "target_user_id": user_id}
+            )
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'message': f'{email} 已加入黑名單，不可再註冊'})

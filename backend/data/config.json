@@ -4,5 +4,7 @@
   "maintenance_until": "",
   "login_mode": "admin_only",
   "enforce_min_post_chars": true,
-  "min_post_chars": 15
+  "min_post_chars": 15,
+  "email_blacklist": [],
+  "suspended_users": []
 }

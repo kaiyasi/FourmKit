@@ -36,7 +36,7 @@ def init_engine_session():
         candidates.append(DB_URL)
     else:
         # 預設優先 Postgres（與 docker-compose.yml 對齊）
-        candidates.append("postgresql+psycopg://forumkit:forumkit@127.0.0.1:12007/forumkit")
+        candidates.append("postgresql+psycopg://forumkit:forumkit_password@127.0.0.1:12007/forumkit")
         # 回退 SQLite
         candidates.append("sqlite:////data/forumkit.db")
 

@@ -1583,27 +1583,9 @@ def create_simple_account():
             try:
                 import requests
                 
-                # 步驟 0: 檢查是否為短期 token，如果是則轉換為長期 token
+                # v23 API 不需要 Token 轉換，直接使用提供的 token
                 final_user_token = user_token
-                # 改進判斷邏輯：短期Token通常以EAAJ開頭，且相對較短
-                # 或者嘗試轉換所有Token，因為轉換API對長期Token也是安全的
-                is_likely_short_term = (
-                    user_token.startswith('EAAJ') or  # Facebook短期Token格式
-                    len(user_token) < 200  # 短期Token通常較短
-                )
-
-                if is_likely_short_term or True:  # 總是嘗試轉換，因為對長期Token無害
-                    try:
-                        print(f"[Token轉換] 嘗試轉換Token為長期Token...")
-                        exchange_result = instagram_oauth_service.exchange_manual_token(user_token)
-                        if exchange_result.get('success') and exchange_result.get('access_token'):
-                            final_user_token = exchange_result['access_token']
-                            print(f"[Token轉換] Token成功轉換為長期Token")
-                        else:
-                            print(f"[Token轉換] 轉換失敗，使用原始Token")
-                    except InstagramOAuthError as e:
-                        print(f"[Token轉換] 轉換失敗: {e}，使用原始Token")
-                        # 不返回錯誤，繼續使用原始Token
+                print(f"[Token] 使用提供的 User Token（v23 不需要轉換）")
 
                 # 步驟 1: 使用 User Token 直接驗證 Facebook 用戶資訊
                 print(f"[除錯] 步驟 1: 驗證 User Token 和取得 Facebook 用戶資訊")
@@ -1809,110 +1791,51 @@ def update_account_token(account_id: int):
                     db.rollback()
                     return jsonify({'success': False, 'error': f'更新 Page ID 失敗: {str(e)}'}), 500
 
-            # 其餘情況：有提供 token（可能也有 page id）→ 嘗試轉換/驗證
+            # 其餘情況：有提供 token（可能也有 page id）→ 直接記錄，不做轉換
             try:
                 import requests
 
-                # 步驟0: 嘗試轉換Token為長期Token（60天有效期）
-                long_lived_token = None
-                token_expires_at = None
-                token_converted = False
+                # v23 API 不需要短期長期 token 轉換，直接使用提供的 token
+                final_user_token = new_user_token
 
+                # 簡化驗證：只檢查 token 是否可用（訪問 /me）
+                token_valid = False
                 try:
-                    print(f"[Token轉換] 嘗試轉換短期Token為長期Token（60天）...")
-                    exchange_result = instagram_oauth_service.exchange_manual_token(new_user_token)
-                    if exchange_result.get('success') and exchange_result.get('access_token'):
-                        long_lived_token = exchange_result['access_token']
-                        token_converted = True
-                        # 計算過期時間（IG 長期Token通常是60天）
-                        expires_in = exchange_result.get('expires_in', 60 * 24 * 3600)  # 預設60天
-                        token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                        print(f"[Token轉換] 成功轉換為長期Token，有效期至: {token_expires_at}")
-                    else:
-                        print(f"[Token轉換] 轉換回應異常，使用原始Token")
-                except InstagramOAuthError as e:
-                    print(f"[Token轉換] 轉換失敗: {e}，使用原始Token")
-                    # 不返回錯誤，繼續使用原始Token
-
-                # 使用長期Token（如果轉換成功）或原始Token來進行驗證
-                final_user_token = long_lived_token if long_lived_token else new_user_token
-
-                # 步驟1: 使用 User Token 列出 /me/accounts，鎖定「Page ID」而非 User ID
-                pages = []
-                pages_validation_error = None
-                try:
-                    pages_resp = requests.get(
-                        "https://graph.facebook.com/v23.0/me/accounts",
-                        params={
-                            'access_token': final_user_token,
-                            'fields': 'id,name,instagram_business_account'
-                        },
+                    me_resp = requests.get(
+                        'https://graph.facebook.com/v23.0/me',
+                        params={'access_token': final_user_token, 'fields': 'id,name'},
                         timeout=15
                     )
-                    if pages_resp.status_code == 200:
-                        pages = pages_resp.json().get('data', [])
+                    if me_resp.status_code == 200:
+                        token_valid = True
+                        user_info = me_resp.json()
+                        print(f"[Token驗證] Token 有效，用戶: {user_info.get('name', 'Unknown')}")
                     else:
-                        pages_validation_error = f"API 回應錯誤: {pages_resp.status_code}"
+                        print(f"[Token驗證] Token 無效: {me_resp.status_code}")
                 except Exception as e:
-                    pages_validation_error = str(e)
+                    print(f"[Token驗證] 發生錯誤: {e}")
 
-                # 1) 若前端有提供 Page ID，直接採用（但需驗證）
-                page_id_to_use = None
-                page_validation_success = True  # 移除過度驗證，信任用戶提供的Page ID
-
+                # 更新帳號資料
+                account.access_token = final_user_token
                 if new_facebook_id:
-                    page_id_to_use = str(new_facebook_id)
-                    print(f"[Page設定] 使用用戶提供的 Page ID: {page_id_to_use}")
+                    account.page_id = str(new_facebook_id)
+                    account.platform_user_id = str(new_facebook_id)
 
-                # 2) 否則嘗試從 Graph 資料選第一個有 IG 的 Page
-                if not page_id_to_use and pages:
-                    pg = next((p for p in pages if p.get('instagram_business_account')), None)
-                    if pg:
-                        page_id_to_use = str(pg.get('id'))
-                        page_validation_success = True
-                        print(f"[Page驗證] 自動選擇 Page ID: {page_id_to_use}")
-
-                # 3) 更新Token存儲邏輯：原始Token存在access_token，長期Token存在long_lived_access_token
-                account.access_token = new_user_token  # 儲存原始Token
-                if long_lived_token:
-                    account.long_lived_access_token = long_lived_token  # 儲存長期Token
-                    account.token_expires_at = token_expires_at
-                else:
-                    # 清空長期Token欄位，表示轉換失敗或未轉換
-                    account.long_lived_access_token = None
-                    account.token_expires_at = None
-
-                # 4) 確定帳號最終狀態
-                if page_id_to_use:
-                    account.page_id = page_id_to_use
-                    try:
-                        account.platform_user_id = page_id_to_use
-                    except Exception:
-                        pass
+                # 根據 token 驗證結果設定狀態
+                if token_valid:
                     account.status = AccountStatus.ACTIVE
-                    success_message = f"Token 已更新並成功綁定 Page ID: {page_id_to_use}"
-                    if token_converted:
-                        success_message += f"（已轉換為60天長期Token）"
-                elif page_id_to_use:
-                    account.page_id = page_id_to_use
-                    try:
-                        account.platform_user_id = page_id_to_use
-                    except Exception:
-                        pass
-                    account.status = AccountStatus.PENDING  # 需要進一步驗證
-                    success_message = f"Token 已更新，Page ID 已設定但需驗證: {page_id_to_use}"
-                    if token_converted:
-                        success_message += f"（已轉換為60天長期Token）"
+                    success_message = "Token 已更新並驗證有效"
                 else:
                     account.status = AccountStatus.PENDING
-                    success_message = "Token 已更新，但尚未綁定 Page ID"
-                    if token_converted:
-                        success_message += f"（已轉換為60天長期Token）"
+                    success_message = "Token 已更新，但驗證失敗（可能權限不足）"
+
+                if new_facebook_id:
+                    success_message += f"，Page ID: {new_facebook_id}"
 
                 account.updated_at = datetime.now(timezone.utc)
                 db.commit()
 
-                response_data = {
+                return jsonify({
                     'success': True,
                     'message': success_message,
                     'account': {
@@ -1921,16 +1844,8 @@ def update_account_token(account_id: int):
                         'display_name': account.display_name,
                         'status': account.status,
                         'updated_at': account.updated_at.isoformat()
-                    },
-                    'debug_info': {
-                        'token_converted': token_converted,
-                        'pages_found': len(pages),
-                        'page_id_used': page_id_to_use,
-                        'pages_validation_error': pages_validation_error
                     }
-                }
-
-                return jsonify(response_data)
+                })
                 
             except requests.exceptions.RequestException as e:
                 # 網路/Graph 錯誤：若仍有提供 Page ID，仍允許寫入資料庫避免完全卡住
@@ -2199,3 +2114,188 @@ def manual_publish_carousel():
 
     except Exception as e:
         return jsonify({'success': False, 'error': f'manual carousel failed: {str(e)}'}), 500
+
+@instagram_bp.route('/accounts/<int:account_id>/app-config', methods=['PUT'])
+@require_role('dev_admin', 'campus_admin', 'cross_admin')
+def update_app_config(account_id: int):
+    """更新 Instagram 帳號的 App 配置（App ID 和 App Secret）"""
+    try:
+        data = request.get_json()
+        app_id = (data.get('app_id') or '').strip()
+        app_secret = (data.get('app_secret') or '').strip()
+
+        if not app_id or not app_secret:
+            return jsonify({
+                'success': False,
+                'error': '請提供 App ID 和 App Secret'
+            }), 400
+
+        with get_session() as db:
+            account = db.query(SocialAccount).filter(
+                SocialAccount.id == account_id,
+                SocialAccount.platform == PlatformType.INSTAGRAM
+            ).first()
+
+            if not account:
+                return jsonify({
+                    'success': False,
+                    'error': '找不到指定的 Instagram 帳號'
+                }), 404
+
+            # 權限檢查
+            user_id = get_jwt_identity()
+            user = db.query(User).filter(User.id == user_id).first()
+
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'error': '用戶不存在'
+                }), 401
+
+            # 檢查權限
+            if user.role != 'dev_admin':
+                if user.role == 'campus_admin' and account.school_id != user.school_id:
+                    return jsonify({
+                        'success': False,
+                        'error': '沒有權限修改此帳號'
+                    }), 403
+                elif user.role not in ['campus_admin', 'cross_admin']:
+                    return jsonify({
+                        'success': False,
+                        'error': '權限不足'
+                    }), 403
+
+            # 更新 App 配置
+            account.app_id = app_id
+            account.app_secret = app_secret
+            account.updated_at = datetime.now(timezone.utc)
+
+            db.commit()
+
+            return jsonify({
+                'success': True,
+                'message': 'App 配置更新成功',
+                'account_id': account.id,
+                'app_id': app_id,
+                'app_secret_set': bool(app_secret)
+            })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'更新 App 配置失敗: {str(e)}'
+        }), 500
+
+@instagram_bp.route('/accounts/<int:account_id>/extend-token', methods=['POST'])
+@require_role('dev_admin', 'campus_admin', 'cross_admin')
+def extend_token(account_id: int):
+    """將短期 Token 轉換為長期 Token"""
+    try:
+        with get_session() as db:
+            account = db.query(SocialAccount).filter(
+                SocialAccount.id == account_id,
+                SocialAccount.platform == PlatformType.INSTAGRAM
+            ).first()
+
+            if not account:
+                return jsonify({
+                    'success': False,
+                    'error': '找不到指定的 Instagram 帳號'
+                }), 404
+
+            # 權限檢查
+            user_id = get_jwt_identity()
+            user = db.query(User).filter(User.id == user_id).first()
+
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'error': '用戶不存在'
+                }), 401
+
+            # 檢查權限
+            if user.role != 'dev_admin':
+                if user.role == 'campus_admin' and account.school_id != user.school_id:
+                    return jsonify({
+                        'success': False,
+                        'error': '沒有權限修改此帳號'
+                    }), 403
+                elif user.role not in ['campus_admin', 'cross_admin']:
+                    return jsonify({
+                        'success': False,
+                        'error': '權限不足'
+                    }), 403
+
+            # 檢查必要資訊
+            if not account.access_token:
+                return jsonify({
+                    'success': False,
+                    'error': '帳號沒有 Access Token'
+                }), 400
+
+            if not account.app_id or not account.app_secret:
+                return jsonify({
+                    'success': False,
+                    'error': '請先設定 App ID 和 App Secret'
+                }), 400
+
+            # 調用 Facebook Token 交換 API
+            exchange_url = "https://graph.facebook.com/v19.0/oauth/access_token"
+            params = {
+                'grant_type': 'fb_exchange_token',
+                'client_id': account.app_id,
+                'client_secret': account.app_secret,
+                'fb_exchange_token': account.access_token
+            }
+
+            response = requests.get(exchange_url, params=params, timeout=10)
+
+            if response.status_code == 200:
+                token_data = response.json()
+
+                if 'access_token' in token_data:
+                    long_lived_token = token_data['access_token']
+                    expires_in = token_data.get('expires_in', 5184000)  # 預設 60 天
+
+                    # 計算過期時間
+                    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+                    # 更新帳號資訊
+                    account.long_lived_access_token = long_lived_token
+                    account.access_token = long_lived_token  # 同時更新主 Token
+                    account.token_expires_at = expires_at
+                    account.updated_at = datetime.now(timezone.utc)
+
+                    db.commit()
+
+                    # 轉換時區用於顯示
+                    expires_taipei = expires_at + timedelta(hours=8)
+
+                    return jsonify({
+                        'success': True,
+                        'message': 'Token 轉換成功',
+                        'token_preview': long_lived_token[:50] + '...',
+                        'expires_in_seconds': expires_in,
+                        'expires_in_days': expires_in / 86400,
+                        'expires_at_utc': expires_at.isoformat(),
+                        'expires_at_taipei': expires_taipei.strftime('%Y-%m-%d %H:%M:%S'),
+                        'account_id': account.id
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Facebook API 沒有回傳 access_token'
+                    }), 400
+            else:
+                error_data = response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text
+                return jsonify({
+                    'success': False,
+                    'error': f'Token 轉換失敗: {error_data}',
+                    'status_code': response.status_code
+                }), 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Token 轉換失敗: {str(e)}'
+        }), 500
