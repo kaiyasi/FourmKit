@@ -7,6 +7,8 @@ export interface Post {
   media_count?: number;
   comment_count?: number;
   cover_path?: string | null;
+  // 回覆的目標貼文 ID（若為回覆則存在）
+  reply_to_id?: number | null;
   // 用於對應樂觀更新的暫時貼文（非後端主鍵）
   client_tx_id?: string;
   // 學校資訊（改為顯示學校名稱用）
@@ -49,6 +51,7 @@ export function validatePost(obj: any): Post {
     media_count: typeof obj.media_count === 'number' ? obj.media_count : undefined,
     comment_count: typeof obj.comment_count === 'number' ? obj.comment_count : undefined,
     cover_path: typeof obj.cover_path === 'string' ? obj.cover_path : (obj.cover_path === null ? null : undefined),
+    reply_to_id: typeof obj.reply_to_id === 'number' ? obj.reply_to_id : (obj.reply_to_id === null ? null : undefined),
     client_tx_id: typeof obj.client_tx_id === 'string' ? obj.client_tx_id : undefined,
     school_id: typeof obj.school_id === 'number' ? obj.school_id : (obj.school_id === null ? null : undefined),
     school: (obj.school && typeof obj.school === 'object' && typeof obj.school.id === 'number')

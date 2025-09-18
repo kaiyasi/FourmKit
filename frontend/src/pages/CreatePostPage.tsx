@@ -3,6 +3,7 @@ import PostComposer from '../components/PostComposer'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import MobileHeader from '@/components/MobileHeader'
 
 export default function CreatePostPage() {
   const [isMobile, setIsMobile] = useState(false)
@@ -28,11 +29,7 @@ export default function CreatePostPage() {
   if (isMobile) {
     return (
       <PageLayout pathname="/create">
-        {/* ForumKit 標題與副標題 */}
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold dual-text">ForumKit</h1>
-          <p className="text-sm text-muted mt-1">創建新的討論話題</p>
-        </div>
+        <MobileHeader subtitle="Create" />
         
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
           <PostComposer token={token} />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
+import MobileHeader from '@/components/MobileHeader'
 import { User, Shield, Bell, Save, Key, IdCard, Link as LinkIcon, Building2, BadgeCheck, Edit, AlertTriangle, LogOut, BellRing, Trash2, Eye, EyeOff, Crown } from 'lucide-react'
 import { listNotifications, clearNotifications, markNotificationRead, markAllNotificationsRead } from '@/utils/notifications'
 import { AccountAPI } from '@/services/api'
@@ -295,6 +296,7 @@ export default function SettingsPage() {
 
   return (
     <PageLayout pathname={pathname}>
+      <MobileHeader subtitle="Settings" />
         {/* 頁首 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">

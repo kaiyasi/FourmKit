@@ -28,6 +28,7 @@ import ServerStatusPage from './pages/admin/ServerStatusPage'
 import ProjectStatusPage from './pages/admin/ProjectStatusPage'
 import MemberManagementPage from './pages/admin/MemberManagementPage'
 import FontManagementPage from './pages/admin/FontManagementPage'
+import TokenManagementPage from './pages/admin/TokenManagementPage'
 import ResponsiveSupportPage from './pages/ResponsiveSupportPage'
 import TicketTrackPage from './pages/TicketTrackPage'
 import AboutPage from './pages/AboutPage'
@@ -219,6 +220,15 @@ const router = createBrowserRouter([
             element: (
                 <RequireRoles allow={['dev_admin']}>
                     <FontManagementPage />
+                </RequireRoles>
+            ),
+            errorElement: <RouteError />,
+        },
+        {
+            path: "/admin/tokens",
+            element: (
+                <RequireRoles allow={['dev_admin']}>
+                    <TokenManagementPage />
                 </RequireRoles>
             ),
             errorElement: <RouteError />,

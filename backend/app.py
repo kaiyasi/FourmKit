@@ -983,11 +983,17 @@ def create_app() -> Flask:
             resp.headers.setdefault('Referrer-Policy', 'no-referrer')
             if os.getenv('DISABLE_PERMISSIONS_POLICY', '0') not in {'1','true','yes','on'}:
                 resp.headers.setdefault('Permissions-Policy', "geolocation=(), microphone=(), camera=()")
-            # CSP（簡化版，允許 self 資源與 data/blob 圖片、ws 連線）
-            csp = os.getenv('CONTENT_SECURITY_POLICY') or \
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " \
-                "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss:; " \
-                "base-uri 'none'; frame-ancestors 'none'"
+            # CSP（簡化版，允許 self 資源與 data/blob 圖片、ws 連線）。
+            # 可選開放 Google Fonts：ALLOW_GOOGLE_FONTS=1 時，放行 fonts.googleapis.com / fonts.gstatic.com。
+            allow_gfonts = os.getenv('ALLOW_GOOGLE_FONTS', '0') in {'1','true','yes','on'}
+            default_csp = (
+                "default-src 'self'; script-src 'self'; "
+                + ("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " if allow_gfonts else "style-src 'self' 'unsafe-inline'; ")
+                + ("font-src 'self' data: https://fonts.gstatic.com; " if allow_gfonts else "font-src 'self' data:; ")
+                + "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss:; "
+                + "base-uri 'none'; frame-ancestors 'none'"
+            )
+            csp = os.getenv('CONTENT_SECURITY_POLICY') or default_csp
             resp.headers.setdefault('Content-Security-Policy', csp)
             # 可選 HSTS（僅 https）
             if os.getenv('ENABLE_HSTS', '0') in {'1','true','yes','on'} and request.scheme == 'https':

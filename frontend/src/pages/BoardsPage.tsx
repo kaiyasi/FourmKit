@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import PostList from '@/components/PostList'
 import { MobilePostList } from '@/components/mobile/MobilePostList'
 import { PageLayout } from '@/components/layout/PageLayout'
+import MobileHeader from '@/components/MobileHeader'
 import FilterBar from '@/components/FilterBar'
 
 export default function BoardsPage() {
@@ -22,6 +23,7 @@ export default function BoardsPage() {
   if (isMobile) {
     return (
       <PageLayout pathname="/boards">
+        <MobileHeader subtitle="Posts" />
         <MobilePostList injectedItems={injected} showAll={true} />
       </PageLayout>
     )
@@ -32,7 +34,7 @@ export default function BoardsPage() {
     <PageLayout pathname="/boards" maxWidth="max-w-5xl">
       {/* 頁首 */}
       <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
-        <h1 className="text-xl sm:text-2xl font-semibold dual-text">看板</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold dual-text">貼文</h1>
         <p className="text-sm text-muted mt-1">瀏覽已審核通過的貼文。依目前選擇的學校載入貼文。</p>
       </div>
 

@@ -448,6 +448,13 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
 
             <Cover />
 
+            {/* 回覆提示（灰色小字） */}
+            {isRealId(p.reply_to_id) && (
+              <div className="text-xs text-muted mb-2">
+                <Link to={`/posts/${p.reply_to_id}`} className="hover:underline">回覆貼文 #{p.reply_to_id}</Link>
+              </div>
+            )}
+
             {realId ? (
               <Link to={`/posts/${p.id}`} className="block hover:opacity-90 transition-opacity">
                 <SafeHtmlContent 

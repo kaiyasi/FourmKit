@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageLayout } from '@/components/layout/PageLayout';
+import MobileHeader from '@/components/MobileHeader'
 import { 
   PageHeader, 
   Toolbar, 
@@ -391,6 +392,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
   if (!isLoggedIn) {
     return (
       <PageLayout pathname="/support">
+        <MobileHeader subtitle="Support" />
         <div className="max-w-4xl mx-auto px-6 py-12">
           {/* Header */}
           <div className="text-center mb-12">

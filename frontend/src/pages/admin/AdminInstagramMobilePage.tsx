@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import TemplateEditor from '@/components/templates/TemplateEditor'
+import NewTemplateEditor from '@/components/templates/NewTemplateEditor'
 import AccountSettingsEditor from '@/components/account/AccountSettingsEditor'
 import SimpleAccountForm from '@/components/account/SimpleAccountForm'
 import TokenUpdateModal from '@/components/account/TokenUpdateModal'
@@ -856,7 +856,7 @@ export default function AdminInstagramMobilePage() {
       </main>
 
       {/* 模態框 */}
-      <TemplateEditor
+      <NewTemplateEditor
         isOpen={showTemplateEditor}
         onClose={() => {
           setShowTemplateEditor(false)

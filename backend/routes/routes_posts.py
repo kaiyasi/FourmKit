@@ -335,18 +335,36 @@ def list_posts():
         
         # 若要求僅跨校，優先忽略學校參數
         if cross_only:
-            q = q.filter(Post.school_id.is_(None))
+            q = q.filter(
+                sa.or_(
+                    Post.school_id.is_(None),
+                    # 回覆跨校貼文的回覆也算跨校
+                    sa.and_(
+                        Post.reply_to_post_id.isnot(None),
+                        Post.reply_to_post_id.in_(
+                            s.query(Post.id).filter(Post.school_id.is_(None))
+                        )
+                    )
+                )
+            )
 
         # 其餘情況：若指定了學校則用學校條件
         elif school_slug:
             school = s.query(School).filter(School.slug==school_slug).first()
             if school:
-                # 顯示本校貼文 + 全域內容（廣告、跨校/平台公告）
+                # 顯示本校貼文 + 全域內容（廣告、跨校/平台公告）+ 回覆本校貼文的回覆
                 q = q.filter(
                     sa.or_(
                         Post.school_id==school.id,
                         Post.is_advertisement==True,
-                        sa.and_(Post.is_announcement==True, Post.school_id.is_(None))
+                        sa.and_(Post.is_announcement==True, Post.school_id.is_(None)),
+                        # 回覆貼文：如果回覆的原貼文屬於本校，則顯示回覆
+                        sa.and_(
+                            Post.reply_to_post_id.isnot(None),
+                            Post.reply_to_post_id.in_(
+                                s.query(Post.id).filter(Post.school_id==school.id)
+                            )
+                        )
                     )
                 )
             else:
@@ -758,6 +776,7 @@ def list_posts_compat():
                 "is_advertisement": bool(getattr(p, "is_advertisement", False)),
                 "is_announcement": bool(getattr(p, "is_announcement", False)),
                 "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
+                "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
             })
         return _wrap_ok({
             "items": items,
@@ -858,6 +877,7 @@ def get_post(pid: int):
             "is_advertisement": bool(getattr(p, "is_advertisement", False)),
             "is_pinned": bool(getattr(p, "is_pinned", False)),
             "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
+            "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
         })
 
 
@@ -895,6 +915,17 @@ def create_post():
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
     
+    # 解析回覆目標（可選）
+    reply_to_id = None
+    try:
+        rid_raw = data.get("reply_to_id")
+        if isinstance(rid_raw, (int, str)):
+            rid_str = str(rid_raw).strip()
+            if rid_str.isdigit():
+                reply_to_id = int(rid_str)
+    except Exception:
+        reply_to_id = None
+
     with get_session() as s:
         # 獲取用戶信息
         user = s.query(User).get(uid)
@@ -952,6 +983,13 @@ def create_post():
             is_announcement=is_announcement,
             announcement_type=announcement_type
         )
+        if reply_to_id:
+            ref = s.query(Post).filter(Post.id == reply_to_id, Post.is_deleted == False).first()
+            if not ref:
+                return _wrap_err("REPLY_TARGET_NOT_FOUND", "無法回覆：目標貼文不存在", 404)
+            p.reply_to_post_id = reply_to_id
+            # 回覆貼文自動繼承被回覆貼文的學校設定
+            target_school_id = ref.school_id
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
@@ -1078,6 +1116,17 @@ def create_post_compat():
     max_len = int(os.getenv("POST_MAX_CHARS", "5000"))
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
+    # 解析回覆目標（可選）
+    reply_to_id = None
+    try:
+        rid_raw = data.get("reply_to_id")
+        if isinstance(rid_raw, (int, str)):
+            rid_str = str(rid_raw).strip()
+            if rid_str.isdigit():
+                reply_to_id = int(rid_str)
+    except Exception:
+        reply_to_id = None
+
     with get_session() as s:
         # 獲取用戶信息檢查是否為廣告帳號
         user = s.query(User).get(uid)
@@ -1122,6 +1171,12 @@ def create_post_compat():
             is_announcement=is_announcement,
             announcement_type=announcement_type
         )
+        if reply_to_id:
+            # 驗證目標貼文存在且未刪除
+            ref = s.query(Post).filter(Post.id == reply_to_id, Post.is_deleted == False).first()
+            if not ref:
+                return _wrap_err("REPLY_TARGET_NOT_FOUND", "無法回覆：目標貼文不存在", 404)
+            p.reply_to_post_id = reply_to_id
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
@@ -1175,6 +1230,7 @@ def create_post_compat():
             "content": p.content,
             "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
             "author_hash": author_label,
+            "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
         }
     # best-effort broadcast (optional)
     try:

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { canSetMode, getRole, getRoleDisplayName, canAccessAnnouncements } from '@/utils/auth'
-import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3, Instagram, Type } from 'lucide-react'
+import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3, Instagram, Type, Key } from 'lucide-react'
 import { MobileAdminDashboard } from '@/components/mobile/admin'
 
 export default function AdminDashboard() {
@@ -61,7 +61,7 @@ export default function AdminDashboard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <Card to="/admin/moderation" title="審核管理" desc="待審核貼文、今日已處理、待處理請求" icon={ShieldCheck} />
-          <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋與 CSV 匯出" icon={MessagesSquare} />
+          <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋" icon={MessagesSquare} />
           {/* 聊天室快捷卡片 */}
           <Card to="/admin/chat" title="聊天室" desc="待處理請求、即時溝通、支援自訂聊天室" icon={MessageSquareDot} />
           {/* 客服管理卡片 - 三個 _admin 可操作，其他管理角色唯讀 */}
@@ -108,6 +108,11 @@ export default function AdminDashboard() {
           {/* Instagram 整合管理 */}
           {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') && (
             <Card to="/admin/instagram" title="Instagram 整合" desc="帳號管理、模板設定、發布狀態與統計" icon={Instagram} />
+          )}
+
+          {/* Token 管理工具 */}
+          {role === 'dev_admin' && (
+            <Card to="/admin/tokens" title="Token 管理工具" desc="短期 Token 轉長期、Instagram API 密鑰管理" icon={Key} />
           )}
           
           {/* 字體管理 - dev_admin 完整權限，campus_admin 可申請，cross_admin 唯讀 */}

@@ -54,10 +54,8 @@ export function MobileAdminLayout({
             )}
             
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-semibold text-fg truncate">{title}</h1>
-              {subtitle && (
-                <p className="text-sm text-muted truncate">{subtitle}</p>
-              )}
+              <h1 className="text-lg font-extrabold text-fg tracking-wide truncate">ForumKit</h1>
+              <p className="text-sm text-muted truncate">{subtitle || title}</p>
             </div>
           </div>
 

@@ -68,11 +68,14 @@ services:
       - FLASK_ENV=${FLASK_ENV:-production}
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=${DATABASE_URL}
+      - SUPPORT_DATABASE_URL=${SUPPORT_DATABASE_URL:-}
       - REDIS_URL=${REDIS_URL}
       - UPLOAD_ROOT=/app/uploads
       # Ensure preview images published to CDN land in a shared folder
       - CDN_LOCAL_ROOT=/app/cdn-data
       - PUBLIC_CDN_URL=${PUBLIC_CDN_URL}
+      # Avoid noisy browser warning: Permissions-Policy: browsing-topics (not universally supported)
+      - DISABLE_PERMISSIONS_POLICY=${DISABLE_PERMISSIONS_POLICY:-1}
     volumes:
       - ./uploads:/app/uploads
       - ./data:/app/data
@@ -101,6 +104,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backups:/backups
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
     networks:
       - forumkit-net

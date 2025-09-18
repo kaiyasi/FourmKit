@@ -4,6 +4,7 @@ import { getJSON, HttpError } from '@/lib/http'
 import ErrorPage from '@/components/ui/ErrorPage'
 import { formatLocalMinute } from '@/utils/time'
 import ChatPanel from '@/components/ChatPanel'
+import MobileHeader from '@/components/MobileHeader'
 import { useParams, useNavigate } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
@@ -268,10 +269,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
 
   return (
     <PageLayout pathname={`/posts/${post.id}`} maxWidth="max-w-5xl">
-      <div className="mt-4 text-center mb-4 sm:hidden">
-        <h1 className="text-2xl font-bold text-fg">ForumKit</h1>
-        <p className="text-sm text-muted">Post details</p>
-      </div>
+      <MobileHeader subtitle="Post" />
       
       {/* 返回按鈕 */}
       <div className="mb-4">
@@ -313,6 +311,13 @@ export default function PostDetailPage({ id }: { id?: number }) {
           </div>
         </div>
         
+        {/* 回覆提示（灰色小字） */}
+        {(post as any).reply_to_id && (
+          <div className="text-xs text-muted mb-2">
+            <a href={`/posts/${(post as any).reply_to_id}`} className="hover:underline">回覆貼文 #{(post as any).reply_to_id}</a>
+          </div>
+        )}
+
         {/* 內容顯示（後端已轉為 HTML）。套用閱讀樣式，並在載入後掛上圖片燈箱。*/}
         <div id="post-content" className="max-w-none text-fg break-words [&>*:first-child]:mt-0">
           <SafeHtmlContent html={post.content || ''} className="prose prose-sm" allowLinks={true} />

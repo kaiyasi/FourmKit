@@ -232,8 +232,8 @@ def project_stats():
 
     try:
         from utils.db import get_session
-        from models import User, Post, School, Comment
-        from models.instagram import IGAccount, IGPost
+        # 模型匯入：原本引用 models.instagram（已移除），改為使用社群發布模組
+        from models import User, Post, School, Comment, SocialAccount, SocialPost
         from datetime import datetime, timezone, timedelta
         import os
         
@@ -294,11 +294,16 @@ def project_stats():
             avg_daily_posts = posts_this_week / 7.0
             
             # Instagram 整合狀態
-            ig_accounts = db.query(IGAccount).filter(IGAccount.status == 'active').count()
-            ig_posts_published = db.query(IGPost).filter(IGPost.status == 'published').count()
+            ig_accounts = db.query(SocialAccount).filter(SocialAccount.status == 'active').count()
+            ig_posts_published = db.query(SocialPost).filter(SocialPost.status == 'published').count()
             
             # 獲取最近的 IG 同步時間
-            latest_ig_post = db.query(IGPost).filter(IGPost.published_at != None).order_by(IGPost.published_at.desc()).first()
+            latest_ig_post = (
+                db.query(SocialPost)
+                .filter(SocialPost.published_at != None)
+                .order_by(SocialPost.published_at.desc())
+                .first()
+            )
             last_ig_sync = latest_ig_post.published_at.isoformat() if latest_ig_post and latest_ig_post.published_at else None
             
         # Discord Bot 狀態（檢查環境變數或配置）
@@ -372,4 +377,3 @@ def project_stats():
     except Exception as e:
         print(f"[ERROR] Failed to get project stats: {e}")
         return jsonify({ 'ok': False, 'error': { 'code': 'INTERNAL_ERROR', 'message': str(e) } }), 500
-

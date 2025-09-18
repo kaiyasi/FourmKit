@@ -43,7 +43,7 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     let abort = false
     ;(async()=>{
       try{
-        const res = await fetch('/api/schools/list?limit=1000&page=1')
+        const res = await fetch('/api/schools', { cache: 'no-store' })
         if(!res.ok) return
         const data = await res.json()
         if(abort) return
@@ -117,9 +117,22 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
       const dateQ = `${startStored ? `&start=${encodeURIComponent(startStored)}` : ''}${endStored ? `&end=${encodeURIComponent(endStored)}` : ''}`
       const kwQ = kwStored ? `&q=${encodeURIComponent(kwStored)}` : ''
       
-      const url = `/api/posts/list?limit=${perPage}&page=${p}${q}${dateQ}${kwQ}`
+      let url = `/api/posts/list?limit=${perPage}&page=${p}${q}${dateQ}${kwQ}`
       console.log('🌐 [DEBUG] API URL:', url)
-      const result = await getJSON<any>(url)
+      let result: any
+      try {
+        result = await getJSON<any>(url)
+      } catch (e) {
+        // 容錯：若指定學校導致 500，改以跨校作為降級備援
+        if (slug && slug !== '__ALL__') {
+          const fallbackUrl = `/api/posts/list?limit=${perPage}&page=${p}&cross_only=true${dateQ}${kwQ}`
+          console.warn('[MobilePostList] 初次請求失敗，回退為跨校：', slug, fallbackUrl)
+          url = fallbackUrl
+          result = await getJSON<any>(fallbackUrl)
+        } else {
+          throw e
+        }
+      }
       console.log('📦 [DEBUG] API Response:', result)
       // 後端此路由回傳 { items }（無分頁欄位），這裡做寬鬆相容
       let validated: PostListType

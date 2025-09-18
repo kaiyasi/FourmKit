@@ -1,6 +1,10 @@
 """
 支援工單專用資料庫連線管理
-解決支援工單路由無法連接到正確資料庫的問題
+改進：
+1) 支援以環境變數設定獨立的 SUPPORT_DATABASE_URL；
+2) 若未設定，且主資料庫（DATABASE_URL）存在，可直接共用主庫；
+3) 最後才回退到 SQLite 檔案（/app/data/forumkit_support.db）。
+這樣在你「換資料庫」時，不會因為支援系統還卡在 SQLite 而炸 SUPPORT_E_DB。
 """
 from __future__ import annotations
 import os
@@ -9,6 +13,13 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from models.base import Base
+
+def _normalize_url(url: str) -> str:
+    if not url:
+        return url
+    # 與主 DB 對齊：自動換到 psycopg v3 driver
+    return url.replace("postgresql://", "postgresql+psycopg://") if url.startswith("postgresql://") else url
+
 
 class SupportDatabaseManager:
     """支援工單資料庫管理器"""
@@ -23,16 +34,26 @@ class SupportDatabaseManager:
         if self._initialized:
             return
             
-        # 支援工單資料庫路徑
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'forumkit_support.db')
-        db_url = f"sqlite:///{os.path.abspath(db_path)}"
+        # 解析候選連線：
+        # 1) SUPPORT_DATABASE_URL
+        # 2) DATABASE_URL（與主庫共用）
+        # 3) SQLite fallback: /app/data/forumkit_support.db
+        sup_url = os.getenv("SUPPORT_DATABASE_URL", "").strip()
+        main_url = os.getenv("DATABASE_URL", "").strip()
+        db_url = ""
+        if sup_url:
+            db_url = _normalize_url(sup_url)
+        elif main_url:
+            db_url = _normalize_url(main_url)
+        else:
+            db_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'forumkit_support.db')
+            db_url = f"sqlite:///{os.path.abspath(db_path)}"
         
         try:
-            self.engine = create_engine(
-                db_url,
-                pool_pre_ping=True,
-                connect_args={"check_same_thread": False}
-            )
+            kw = {"pool_pre_ping": True}
+            if db_url.startswith("sqlite://"):
+                kw["connect_args"] = {"check_same_thread": False}
+            self.engine = create_engine(db_url, **kw)
             
             # 測試連線
             with self.engine.connect() as conn:
@@ -49,7 +70,18 @@ class SupportDatabaseManager:
             ])
             
             self._initialized = True
-            print(f"[SupportDB] 支援工單資料庫已連接: {db_url}")
+            # 避免把密碼打出來
+            def _mask(u: str) -> str:
+                try:
+                    if '://' not in u or '@' not in u:
+                        return u
+                    left, rest = u.split('://', 1)
+                    cred, host = rest.split('@', 1)
+                    user = cred.split(':', 1)[0]
+                    return f"{left}://{user}:***@{host}"
+                except Exception:
+                    return u
+            print(f"[SupportDB] 支援工單資料庫已連接: {_mask(db_url)}")
             
         except Exception as e:
             print(f"[SupportDB] 支援工單資料庫連接失敗: {e}")

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
+import MobileHeader from '@/components/MobileHeader'
 import { ChevronDown, ChevronUp, HelpCircle, MessageSquare, Settings, Shield, Users, Zap } from 'lucide-react'
 
 interface FAQItem {
@@ -118,6 +119,7 @@ export default function FAQPage() {
 
   return (
     <PageLayout pathname={pathname} maxWidth="max-w-4xl">
+      <MobileHeader subtitle="FAQ" />
       <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
         {/* Header */}
         <div className="p-6 border-b border-border">

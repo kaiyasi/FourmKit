@@ -11,27 +11,27 @@ from sqlalchemy.pool import StaticPool
 # 按服務功能分離的資料庫配置
 DB_SERVICES = {
     'core': {
-        'file': 'forumkit_core.db',
+        'database': 'forumkit_core',
         'description': '核心論壇功能（用戶、貼文、留言等）',
         'tables': ['users', 'posts', 'delete_requests', 'comments', 'post_reactions', 'comment_reactions', 'media', 'user_roles']
     },
     'support': {
-        'file': 'forumkit_support.db', 
+        'database': 'forumkit_support',
         'description': '客服支援系統',
         'tables': ['support_tickets', 'support_messages']
     },
     'chat': {
-        'file': 'forumkit_chat.db',
+        'database': 'forumkit_chat',
         'description': '聊天室系統',
         'tables': ['chat_messages', 'chat_rooms', 'chat_room_members']
     },
     'moderation': {
-        'file': 'forumkit_moderation.db',
+        'database': 'forumkit_moderation',
         'description': '審核和管理系統',
         'tables': ['moderation_logs', 'system_events', 'notification_preferences']
     },
     'organization': {
-        'file': 'forumkit_organization.db',
+        'database': 'forumkit_organization',
         'description': '組織管理（學校、公告等）',
         'tables': ['schools', 'school_settings', 'announcements', 'announcement_reads']
     }
@@ -39,87 +39,40 @@ DB_SERVICES = {
 
 class DatabaseService:
     """資料庫服務管理器"""
-    
-    def __init__(self, data_path: str = "./data"):
-        self.data_path = data_path
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 12007, user: str = "forumkit", password: str = "forumkit_password"):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
         self.engines = {}
         self.session_makers = {}
-        self._ensure_directory()
+        self._base_url = f"postgresql+psycopg://{user}:{password}@{host}:{port}"
     
-    def _ensure_directory(self):
-        """確保資料目錄存在"""
-        os.makedirs(self.data_path, exist_ok=True)
-        
-        # 創建資料庫資訊檔案
-        info_path = os.path.join(self.data_path, "database_info.md")
-        if not os.path.exists(info_path):
-            self._create_database_info_file(info_path)
-    
-    def _create_database_info_file(self, info_path: str):
-        """創建資料庫資訊檔案"""
-        content = "# ForumKit 多資料庫架構\n\n"
-        content += "## 資料庫分離說明\n\n"
-        content += "為了提高系統穩定性和維護性，ForumKit 採用多資料庫架構：\n\n"
-        
-        for service, config in DB_SERVICES.items():
-            content += f"### {service.upper()}\n"
-            content += f"- **檔案**: `{config['file']}`\n"
-            content += f"- **描述**: {config['description']}\n"
-            content += f"- **表格**: {', '.join(config['tables'])}\n\n"
-        
-        content += "## 優勢\n\n"
-        content += "1. **服務隔離**: 不同功能使用獨立資料庫，避免相互干擾\n"
-        content += "2. **備份靈活**: 可以針對不同服務進行獨立備份\n"
-        content += "3. **擴展性強**: 未來可以輕鬆將不同服務部署到不同伺服器\n"
-        content += "4. **故障隔離**: 單個服務的資料庫問題不會影響其他服務\n\n"
-        content += "## 使用方法\n\n"
-        content += "```python\n"
-        content += "from utils.db_multi import get_core_session, get_support_session\n\n"
-        content += "# 獲取核心功能資料庫會話\n"
-        content += "core_db = get_core_session()\n\n"
-        content += "# 獲取支援系統資料庫會話\n"
-        content += "support_db = get_support_session()\n"
-        content += "```\n"
-        
-        with open(info_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-    
-    def get_database_path(self, service: str) -> str:
-        """獲取資料庫檔案路徑"""
+    def get_database_url(self, service: str) -> str:
+        """獲取資料庫連線 URL"""
         if service not in DB_SERVICES:
             raise ValueError(f"Unknown service: {service}")
-        return os.path.join(self.data_path, DB_SERVICES[service]['file'])
-    
+        database_name = DB_SERVICES[service]['database']
+        return f"{self._base_url}/{database_name}"
+
     def get_engine(self, service: str):
         """獲取資料庫引擎"""
         if service not in self.engines:
-            db_path = self.get_database_path(service)
-            db_url = f"sqlite:///{db_path}"
-            
+            db_url = self.get_database_url(service)
+
             engine = create_engine(
                 db_url,
-                poolclass=StaticPool,
                 pool_pre_ping=True,
                 pool_recycle=300,
-                connect_args={
-                    "check_same_thread": False,
-                    "timeout": 30,
-                    "isolation_level": None
-                },
+                pool_size=10,
+                max_overflow=20,
                 echo=False
             )
-            
-            # 啟用 SQLite 優化
-            with engine.connect() as conn:
-                conn.execute(text("PRAGMA journal_mode=WAL"))
-                conn.execute(text("PRAGMA synchronous=NORMAL"))
-                conn.execute(text("PRAGMA cache_size=10000"))
-                conn.execute(text("PRAGMA temp_store=MEMORY"))
-                conn.commit()
-            
+
             self.engines[service] = engine
             self.session_makers[service] = sessionmaker(bind=engine)
-        
+
         return self.engines[service]
     
     def get_session(self, service: str) -> Session:
@@ -148,74 +101,94 @@ class DatabaseService:
     def get_database_status(self) -> Dict[str, dict]:
         """獲取所有資料庫狀態"""
         status = {}
-        
+
         for service, config in DB_SERVICES.items():
-            db_path = self.get_database_path(service)
-            exists = os.path.exists(db_path)
-            size = os.path.getsize(db_path) if exists else 0
-            
+            db_url = self.get_database_url(service)
+
             # 檢查連接狀態
             health = False
-            if exists:
-                try:
-                    engine = self.get_engine(service)
-                    with engine.connect() as conn:
-                        conn.execute(text("SELECT 1"))
-                    health = True
-                except Exception:
-                    health = False
-            
+            exists = False
+            size = 0
+            try:
+                engine = self.get_engine(service)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                    # 檢查資料庫是否存在並取得大小
+                    result = conn.execute(text("SELECT pg_database_size(current_database())"))
+                    size = result.scalar() or 0
+                    exists = True
+                health = True
+            except Exception as e:
+                health = False
+                exists = False
+
             status[service] = {
                 'description': config['description'],
-                'file': config['file'],
-                'path': db_path,
+                'database': config['database'],
+                'url': db_url.replace(f":{self.password}@", ":***@"),  # 隱藏密碼
                 'exists': exists,
                 'size': size,
                 'size_mb': round(size / 1024 / 1024, 2) if size > 0 else 0,
                 'health': health,
                 'tables': config['tables']
             }
-        
+
         return status
     
     def backup_database(self, service: str, backup_dir: str = "./backups") -> str:
         """備份指定服務的資料庫"""
         if service not in DB_SERVICES:
             raise ValueError(f"Unknown service: {service}")
-        
+
         os.makedirs(backup_dir, exist_ok=True)
-        
+
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        source_path = self.get_database_path(service)
-        backup_filename = f"{service}_{timestamp}.db"
+        database_name = DB_SERVICES[service]['database']
+        backup_filename = f"{service}_{timestamp}.sql"
         backup_path = os.path.join(backup_dir, backup_filename)
-        
-        if os.path.exists(source_path):
-            import shutil
-            shutil.copy2(source_path, backup_path)
-            return backup_path
-        else:
-            raise FileNotFoundError(f"Database file not found: {source_path}")
+
+        # 使用 pg_dump 備份 PostgreSQL 資料庫
+        import subprocess
+        try:
+            cmd = [
+                "pg_dump",
+                "-h", self.host,
+                "-p", str(self.port),
+                "-U", self.user,
+                "-d", database_name,
+                "-f", backup_path,
+                "--verbose"
+            ]
+            env = os.environ.copy()
+            env["PGPASSWORD"] = self.password
+
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            if result.returncode == 0:
+                return backup_path
+            else:
+                raise Exception(f"pg_dump failed: {result.stderr}")
+        except FileNotFoundError:
+            raise Exception("pg_dump command not found. Please install PostgreSQL client tools.")
     
     def cleanup_old_backups(self, backup_dir: str = "./backups", keep_days: int = 30):
         """清理舊備份檔案"""
         if not os.path.exists(backup_dir):
             return
-        
+
         from datetime import datetime, timedelta
         cutoff_date = datetime.now() - timedelta(days=keep_days)
-        
+
         removed_count = 0
         for filename in os.listdir(backup_dir):
-            if filename.endswith('.db'):
+            if filename.endswith('.sql'):
                 file_path = os.path.join(backup_dir, filename)
                 file_time = datetime.fromtimestamp(os.path.getctime(file_path))
-                
+
                 if file_time < cutoff_date:
                     os.remove(file_path)
                     removed_count += 1
-        
+
         print(f"🗑️ 清理了 {removed_count} 個舊備份檔案")
 
 # 全局實例

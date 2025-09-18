@@ -12,19 +12,47 @@
 
 ---
 
-## 最新版本（現行：V2.1.0）
+## 最新版本（現行：V2.1.1）
 
 *🗓️ 發布日期：2025-09-18*
 
-此版本重構了模板系統並增強了安全性管理功能。
+以「主畫面體驗」與「設計一致性」為核心的調整版。重點聚焦 Hero/Composer 體驗、權限規則、版面自適應與 Token 管理工具的主題對齊。
 
 ### 主要特性
 
-* **🎨 模板系統重構**：
-  * 修正原有的單一模板概念，新增 **貼文 (Post)**、**相片 (Photo)**、**文案 (Copywriting)** 三種獨立模板。
-  * 旨在更靈活地應對不同類型的自動化貼文需求。
-* **🔒 安全性增強**：
-  * 新增使用者 IP 限制管理機制，允許管理員對特定 IP 進行存取控制。
+* **🖼️ 首頁 Hero + Composer 重設計**
+  * Hero = Title(Playfair Display) + Slogan(Monsieur La Doulaise)，字級依裝置自適應。
+  * Composer（首頁專用款）：發佈範圍 + Segmented Tabs（一般/公告/廣告）、自動伸縮文字框（3–10 行）、2×2 縮圖、字數統計、行動端底部固定送出列。
+  * 上傳區與輸入框統一透明背景、主題化邊框/hover/focus 樣式。
+
+* **👮 權限與規則（首頁發文）**
+  * 非管理者：隱藏 Tabs，僅一般貼文。
+  * campus_admin：公告僅能「學校」；範圍固定自己的學校。
+  * cross_admin：公告僅能「跨校」；範圍固定跨校。
+  * dev_admin：公告類型隨發佈範圍同步（跨校→cross、指定學校→school）；廣告僅 dev_admin 可見。
+
+* **🧭 版面自適應與無捲動**
+  * 首頁使用 min-h: 100dvh + overflow hidden；量測 Hero 高度與視窗高度，計算 paddingTop，讓「發文卡上緣 ≈ 視窗中線」。
+  * 在可視高度不足時，動態縮放 Hero（手機最小 0.8、桌機 0.85），避免出現捲動條。
+
+* **🗂️ Token 管理工具主題化**
+  * 參考「內容審核」的設計語言，統一 PageLayout、字體階層、按鈕（btn-primary/ghost）與卡片（bg-surface/border-border/shadow-soft）。
+
+* **🔤 字體與 CSP**
+  * 於 index.html 加入 Google Fonts 預連線與載入（Playfair/Monsieur），並加入 ALLOW_GOOGLE_FONTS 控制項以放行 CSP。
+
+### 修正與最佳化
+
+* **📦 API 與相容性**
+  * MobilePostList 學校清單端點修正為 `/api/schools`（移除 `/list`）。
+  * 貼文列表 500 容錯：若校別查詢失敗，自動回退跨校。
+
+* **🧱 後端資料欄位**
+  * 新增 `posts.reply_to_post_id`，支援 `#<id>` 語法「回覆為新貼文」；請執行 Alembic 升級。
+
+* **🎛️ UI 細節**
+  * Tabs/Select 高度統一為 32px（select-compact），透明背景與膠囊形外觀。
+  * 上傳區 Dropzone 改透明，拖曳高亮與主題化邊框。
 
 ---
 

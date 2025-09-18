@@ -47,24 +47,14 @@ export function QuickPostFab({ onPostCreated }: QuickPostFabProps) {
 
     try {
       let result
-      
-      // 特殊語法：#<id> 視為回覆該貼文（僅純文字），改走留言 API，並以小字附註（前綴 ※ ）
+      // 特殊語法：#<id> → 發文但標記 reply_to_id
+      let replyToId: number | null = null
+      let textBody = content.trim()
       if (files.length === 0) {
-        const m = content.trim().match(/^#(\d+)\s*(.*)$/s)
+        const m = textBody.match(/^#(\d+)\s*(.*)$/s)
         if (m) {
-          const targetId = parseInt(m[1], 10)
-          const replyText = (m[2] || '').trim()
-          const token = localStorage.getItem('token') || ''
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-          if (token.trim()) headers['Authorization'] = `Bearer ${token}`
-          const r = await fetch(`/api/posts/${targetId}/comments`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ content: `※#${targetId} ${replyText}` })
-          })
-          if (!r.ok) throw new HttpError(r.status, '回覆失敗')
-          setContent(''); setFiles([]); setIsOpen(false)
-          return
+          replyToId = parseInt(m[1], 10)
+          textBody = (m[2] || '').trim()
         }
       }
 
@@ -80,10 +70,9 @@ export function QuickPostFab({ onPostCreated }: QuickPostFabProps) {
         }
         result = await postFormData('/api/posts/with-media', fd, { headers })
       } else {
-        result = await postJSON('/api/posts/create', {
-          content: content.trim(),
-          client_tx_id: txId
-        }, {
+        const payload: any = { content: textBody, client_tx_id: txId }
+        if (replyToId) payload.reply_to_id = replyToId
+        result = await postJSON('/api/posts/create', payload, {
           headers: { 'X-Client-Id': clientId, 'X-Tx-Id': txId }
         })
       }

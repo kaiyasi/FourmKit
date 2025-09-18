@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import desc, or_
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 from models.support import SupportTicket, SupportMessage, TicketStatus, TicketCategory, TicketPriority, AuthorType
 from models.base import User
@@ -333,7 +334,15 @@ def get_queue():
     篩選：status, priority, category, school_id, keyword
     """
     try:
-        user_id = int(get_jwt_identity())
+        ident = get_jwt_identity()
+        try:
+            user_id = int(ident) if ident is not None else None
+        except (TypeError, ValueError):
+            return jsonify({
+                "ok": False,
+                "error": "JWT_BAD_ID",
+                "msg": f"無效的使用者識別: {ident}"
+            }), 401
         status = (request.args.get('status') or '').strip().lower() or None
         priority = (request.args.get('priority') or '').strip().lower() or None
         category = (request.args.get('category') or '').strip().lower() or None
@@ -425,6 +434,9 @@ def get_queue():
                 "data": items,
                 "pagination": {"total": total, "limit": limit, "offset": offset, "has_more": offset + limit < total}
             })
+    except (OperationalError, SQLAlchemyError) as e:
+        current_app.logger.error(f"Support queue DB error: {e}")
+        return jsonify({"ok": False, "error": "SUPPORT_E_DB", "msg": "支援系統資料庫錯誤"}), 500
     except Exception as e:
         current_app.logger.error(f"Support queue error: {e}")
         return jsonify({"ok": False, "error": "SUPPORT_E_SERVER"}), 500

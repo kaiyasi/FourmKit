@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
+import MobileHeader from '@/components/MobileHeader'
 
 export default function RulesPage() {
   const { pathname } = useLocation()
@@ -25,6 +26,7 @@ export default function RulesPage() {
 
   return (
     <PageLayout pathname={pathname} maxWidth="max-w-3xl">
+      <MobileHeader subtitle="Rules" />
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
           <h1 className="text-xl sm:text-2xl font-semibold dual-text mb-3">社群規範</h1>
           {loading ? (

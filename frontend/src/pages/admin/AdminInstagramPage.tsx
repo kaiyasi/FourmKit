@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import TemplateEditor from '@/components/templates/TemplateEditor'
+import NewTemplateEditor from '@/components/templates/NewTemplateEditor'
 import InstagramStats from '@/components/charts/InstagramStats'
 import AccountSettingsEditor from '@/components/account/AccountSettingsEditor'
 import SimpleAccountForm from '@/components/account/SimpleAccountForm'
 import TokenUpdateModal from '@/components/account/TokenUpdateModal'
 import FontManagement from '@/components/admin/FontManagement'
-import { 
-  Instagram, 
-  Plus, 
-  Settings, 
-  BarChart3, 
-  Calendar, 
-  Hash, 
-  Image, 
+import {
+  Instagram,
+  Plus,
+  Settings,
+  BarChart3,
+  Calendar,
+  Hash,
+  Image,
   Eye,
   Edit,
   Trash2,
@@ -22,7 +22,9 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Key,
+  ExternalLink
 } from 'lucide-react'
 
 interface SocialAccount {
@@ -730,18 +732,29 @@ export default function AdminInstagramPage() {
               <Instagram className="w-6 h-6 text-pink-500" />
               <h1 className="text-xl sm:text-2xl font-semibold dual-text">Instagram 整合管理</h1>
             </div>
-            <button
-              onClick={() => {
-                setLoading(true)
-                fetchData()
-              }}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-              title="重新整理"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              重新整理
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href="/admin/tokens"
+                className="flex items-center gap-2 px-3 py-2 bg-stone-100 text-stone-700 rounded-lg hover:bg-stone-200 transition-colors text-sm"
+                title="Token 轉換工具"
+              >
+                <Key className="w-4 h-4" />
+                <span className="hidden sm:inline">Token 工具</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <button
+                onClick={() => {
+                  setLoading(true)
+                  fetchData()
+                }}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                title="重新整理"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                重新整理
+              </button>
+            </div>
           </div>
           
           {/* Stats Overview */}
@@ -1212,7 +1225,7 @@ export default function AdminInstagramPage() {
       </main>
 
       {/* 模板編輯器 */}
-      <TemplateEditor
+      <NewTemplateEditor
         isOpen={showTemplateEditor}
         onClose={() => {
           setShowTemplateEditor(false)

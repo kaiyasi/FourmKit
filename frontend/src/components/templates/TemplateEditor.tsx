@@ -249,6 +249,20 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
     }
   }, [isOpen])
 
+  // 防止背景滾動和互動
+  useEffect(() => {
+    if (isOpen) {
+      // 禁用背景滾動
+      const originalStyle = window.getComputedStyle(document.body).overflow
+      document.body.style.overflow = 'hidden'
+
+      // 清理函數：恢復原始樣式
+      return () => {
+        document.body.style.overflow = originalStyle
+      }
+    }
+  }, [isOpen])
+
   const fetchRealPosts = async () => {
     setLoadingPosts(true)
     try {
@@ -498,15 +512,39 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
   const isTemplateComplete = config.textToImage.enabled && config.photos.enabled && config.caption.enabled
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2">
-      <div className="bg-surface border border-border rounded-2xl w-full max-w-[95vw] h-[95vh] flex flex-col shadow-xl">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2"
+      onClick={(e) => {
+        // 點擊背景時關閉模態框（可選）
+        if (e.target === e.currentTarget) {
+          onClose()
+        }
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onScroll={(e) => e.stopPropagation()}
+      style={{
+        pointerEvents: 'all',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        overflow: 'hidden'
+      }}
+    >
+      <div
+        className="bg-surface border border-border rounded-2xl w-full max-w-[95vw] h-[95vh] flex flex-col shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <div>
             <h2 className="text-xl font-semibold dual-text">{editingTemplate ? '編輯模板' : '新增模板'}</h2>
             <p className="text-sm text-muted mt-1">設計你的 Instagram 貼文模板</p>
             {!isTemplateComplete && (
-              <div className="flex items-center gap-2 mt-2 text-yellow-600">
+              <div className="flex items-center gap-2 mt-2 text-amber-700">
                 <span className="text-xs">需要啟用所有三個模板才能儲存</span>
               </div>
             )}
@@ -570,7 +608,7 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{label}</span>
                       {enabled !== undefined && (
-                        <div className={`w-2 h-2 rounded-full ${enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <div className={`w-2 h-2 rounded-full ${enabled ? 'bg-stone-500' : 'bg-stone-400'}`} />
                       )}
                     </div>
                     {desc && <div className="text-xs opacity-60">{desc}</div>}
@@ -583,16 +621,16 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
             <div className="mt-6 p-3 bg-background rounded-lg border border-border">
               <h4 className="text-sm font-medium dual-text mb-2">模板狀態</h4>
               <div className="space-y-1 text-xs">
-                <div className={`flex items-center gap-2 ${config.textToImage.enabled ? 'text-green-600' : 'text-red-600'}`}>
-                  <div className={`w-2 h-2 rounded-full ${config.textToImage.enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                <div className={`flex items-center gap-2 ${config.textToImage.enabled ? 'text-stone-600' : 'text-stone-600'}`}>
+                  <div className={`w-2 h-2 rounded-full ${config.textToImage.enabled ? 'bg-stone-500' : 'bg-stone-400'}`} />
                   貼文模板
                 </div>
-                <div className={`flex items-center gap-2 ${config.photos.enabled ? 'text-green-600' : 'text-red-600'}`}>
-                  <div className={`w-2 h-2 rounded-full ${config.photos.enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                <div className={`flex items-center gap-2 ${config.photos.enabled ? 'text-stone-600' : 'text-stone-600'}`}>
+                  <div className={`w-2 h-2 rounded-full ${config.photos.enabled ? 'bg-stone-500' : 'bg-stone-400'}`} />
                   相片模板
                 </div>
-                <div className={`flex items-center gap-2 ${config.caption.enabled ? 'text-green-600' : 'text-red-600'}`}>
-                  <div className={`w-2 h-2 rounded-full ${config.caption.enabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                <div className={`flex items-center gap-2 ${config.caption.enabled ? 'text-stone-600' : 'text-stone-600'}`}>
+                  <div className={`w-2 h-2 rounded-full ${config.caption.enabled ? 'bg-stone-500' : 'bg-stone-400'}`} />
                   文案模板
                 </div>
               </div>
@@ -1386,15 +1424,15 @@ export default function TemplateEditor({ isOpen, onClose, onSave, accounts, edit
                 <h4 className="font-medium text-sm">模板狀態</h4>
                 <div className="space-y-2">
                   <div className={`flex items-center gap-2 p-2 rounded ${config.textToImage.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
-                    <div className={`w-2 h-2 rounded-full ${config.textToImage.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <div className={`w-2 h-2 rounded-full ${config.textToImage.enabled ? 'bg-stone-500' : 'bg-gray-400'}`} />
                     <span className="text-sm">貼文模板</span>
                   </div>
                   <div className={`flex items-center gap-2 p-2 rounded ${config.photos.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
-                    <div className={`w-2 h-2 rounded-full ${config.photos.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <div className={`w-2 h-2 rounded-full ${config.photos.enabled ? 'bg-stone-500' : 'bg-gray-400'}`} />
                     <span className="text-sm">相片模板</span>
                   </div>
                   <div className={`flex items-center gap-2 p-2 rounded ${config.caption.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
-                    <div className={`w-2 h-2 rounded-full ${config.caption.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <div className={`w-2 h-2 rounded-full ${config.caption.enabled ? 'bg-stone-500' : 'bg-gray-400'}`} />
                     <span className="text-sm">文案模板</span>
                   </div>
                 </div>

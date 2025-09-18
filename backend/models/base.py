@@ -83,6 +83,9 @@ class Post(Base):
     is_announcement: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     announcement_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # platform, cross, school
 
+    # 回覆貼文：若此貼文是回覆某一篇貼文，記錄其來源貼文 ID
+    reply_to_post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), nullable=True)
+
     delete_requests: Mapped[list["DeleteRequest"]] = relationship(
         back_populates="post", cascade="all, delete-orphan"
     )

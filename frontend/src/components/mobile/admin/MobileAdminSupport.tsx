@@ -248,8 +248,8 @@ export function MobileAdminSupport() {
 
   return (
     <MobileAdminLayout
-      title="客服管理"
-      subtitle={`${stats.awaitingAdmin} 項等待回覆`}
+      title="Support"
+      subtitle="Support"
       showSearch={true}
       actions={
         <button 

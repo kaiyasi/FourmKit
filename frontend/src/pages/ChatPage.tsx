@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import ChatPanel from '@/components/ChatPanel'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import MobileHeader from '@/components/MobileHeader'
 
 export default function ChatPage() {
   const { pathname } = useLocation()
@@ -12,6 +13,7 @@ export default function ChatPage() {
       <NavBar pathname={pathname} />
       <MobileBottomNav />
       <main className="mx-auto max-w-3xl px-3 sm:px-4 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+        <MobileHeader subtitle="Chat" />
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft mb-4">
           <h1 className="text-xl sm:text-2xl font-semibold dual-text mb-2">聊天室示範</h1>
           <p className="text-sm text-muted">輸入任意房間名稱（建議使用 post:&lt;id&gt; 格式）</p>

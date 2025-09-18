@@ -295,7 +295,7 @@ export default function AdminDashboardRedesigned() {
             <AdminCard 
               to="/admin/comments" 
               title="留言監控" 
-              desc="留言審核、統計分析、篩選搜尋與 CSV 匯出" 
+              desc="留言審核、統計分析、篩選搜尋" 
               icon={MessagesSquare}
               color="green"
             />

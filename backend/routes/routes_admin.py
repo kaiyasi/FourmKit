@@ -3067,3 +3067,89 @@ def revoke_user_email():
         except Exception:
             pass
         return jsonify({'ok': True, 'message': f'{email} 已加入黑名單，不可再註冊'})
+
+# Instagram Token 轉換工具
+@bp.post('/instagram/convert-token')
+@jwt_required()
+@require_role("dev_admin")
+def convert_instagram_token():
+    """將 Instagram 短期 Token 轉換為長期 Token"""
+    import requests
+
+    data = request.get_json(silent=True) or {}
+    short_lived_token = (data.get('short_lived_token') or '').strip()
+    app_id = (data.get('app_id') or '').strip()
+    app_secret = (data.get('app_secret') or '').strip()
+
+    # 驗證必要參數
+    if not short_lived_token or not app_id or not app_secret:
+        return jsonify({
+            'success': False,
+            'message': '缺少必要參數：short_lived_token, app_id, app_secret'
+        }), 400
+
+    try:
+        # 調用 Instagram Basic Display API 轉換 Token
+        url = 'https://graph.instagram.com/access_token'
+        params = {
+            'grant_type': 'ig_exchange_token',
+            'client_secret': app_secret,
+            'access_token': short_lived_token
+        }
+
+        response = requests.get(url, params=params, timeout=30)
+
+        if response.status_code == 200:
+            result = response.json()
+
+            # 記錄轉換事件
+            try:
+                actor_id = get_jwt_identity()
+                with get_session() as s:
+                    actor = s.get(User, actor_id) if actor_id else None
+                    log_security_event(
+                        event_type="instagram_token_converted",
+                        description=f"管理員 {actor.username if actor else ''} 轉換 Instagram Token",
+                        severity="low",
+                        actor_id=(actor.id if actor else None),
+                        actor_name=(actor.username if actor else None),
+                        metadata={"app_id": app_id}
+                    )
+            except Exception:
+                pass
+
+            return jsonify({
+                'success': True,
+                'message': 'Token 轉換成功',
+                'data': {
+                    'access_token': result.get('access_token'),
+                    'token_type': result.get('token_type', 'bearer'),
+                    'expires_in': result.get('expires_in')  # 通常是 5184000 (60天)
+                }
+            })
+        else:
+            error_data = response.json() if response.headers.get('Content-Type', '').startswith('application/json') else {}
+            error_message = error_data.get('error', {}).get('message', f'HTTP {response.status_code}')
+
+            return jsonify({
+                'success': False,
+                'message': f'Instagram API 錯誤: {error_message}'
+            }), 400
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'success': False,
+            'message': '請求超時，請稍後再試'
+        }), 500
+
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'success': False,
+            'message': '網路連接錯誤，請檢查網路狀態'
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'轉換失敗: {str(e)}'
+        }), 500

@@ -201,8 +201,8 @@ export function MobileAdminModeration() {
 
   return (
     <MobileAdminLayout
-      title="審核管理"
-      subtitle={`${stats.pending} 項待審核`}
+      title="Moderation"
+      subtitle="Moderation"
       showSearch={true}
       actions={
         <button 

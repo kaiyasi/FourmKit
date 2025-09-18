@@ -64,32 +64,14 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
     
     try {
       let result
-      
-      // 特殊語法：以 #<id> 開頭則視為回覆該貼文，改走留言 API，並以小字附註樣式（前綴 ※ ）
+      let replyToId: number | null = null
+      let textBody = body
+      // 特殊語法：以 #<id> 開頭 → 發文，但標記 reply_to_id
       if (files.length === 0) {
         const m = body.match(/^#(\d+)\s*(.*)$/s)
         if (m) {
-          const targetId = parseInt(m[1], 10)
-          const replyText = (m[2] || '').trim()
-          const token = localStorage.getItem('token') || ''
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-          if (token.trim()) headers['Authorization'] = `Bearer ${token}`
-          const resp = await fetch(`/api/posts/${targetId}/comments`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ content: `※#${targetId} ${replyText}` })
-          })
-          if (!resp.ok) {
-            const errJson = await resp.json().catch(()=>({error:'REPLY_FAILED'}))
-            throw new Error(errJson?.message || '回覆失敗')
-          }
-          // 成功後直接清空並提示，不再走發文流程
-          setContent('')
-          setFiles([])
-          setPublishType('normal')
-          setNotice(`已回覆貼文 #${targetId}`)
-          setBusy(false); setConfirmOpen(false)
-          return
+          replyToId = parseInt(m[1], 10)
+          textBody = (m[2] || '').trim()
         }
       }
       
@@ -117,12 +99,13 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
           'X-Client-Id': clientId, 
           'X-Tx-Id': txId 
         }
-        const payload: any = { content: body, client_tx_id: txId }
+        const payload: any = { content: textBody, client_tx_id: txId }
         if (finalSlug) payload.school_slug = finalSlug
         if (isAnnouncement) {
           payload.is_announcement = true
           payload.announcement_type = announcementType
         }
+        if (replyToId) payload.reply_to_id = replyToId
         result = await postJSON('/api/posts', payload, { headers })
       }
       

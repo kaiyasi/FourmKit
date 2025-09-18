@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import MobileUnderConstruction from '@/components/MobileUnderConstruction'
 import { getSocket } from '@/socket'
 import { ensurePostListener, ensureCommentListener, ensureAnnounceListener, ensureModerationListeners, ensureDeleteRequestListeners, ensureReactionListeners } from '@/services/realtime'
@@ -12,7 +12,7 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import NewAuthPage from '@/pages/NewAuthPage'
 import RegisterConfirmPage from '@/pages/RegisterConfirmPage'
 import PostList from '@/components/PostList'
-import PostForm from '@/components/forms/PostForm'
+import HomeComposer from '@/components/home/HomeComposer'
 import FilterBar from '@/components/FilterBar'
 import ChatPanel from '@/components/ChatPanel'
 import ChatPage from '@/pages/ChatPage'
@@ -22,6 +22,7 @@ import AdminCommentsMonitorPage from '@/pages/admin/AdminCommentsMonitorPage'
 import DiscordPage from '@/pages/admin/DiscordPage'
 import ProjectStatusPage from '@/pages/admin/ProjectStatusPage'
 import ServerStatusPage from '@/pages/admin/ServerStatusPage'
+import TokenManagementPage from '@/pages/admin/TokenManagementPage'
 import EventStatusCard from '@/components/admin/EventStatusCard'
 import ResizableSection from '@/components/ResizableSection'
 import { canSetMode, getUserId } from '@/utils/auth'
@@ -497,6 +498,13 @@ export default function App() {
   if (pathname === '/admin/platform') {
     return <ServerStatusPage />
   }
+
+  // /admin/tokens Token 管理工具（需權限，後端保護）
+  console.log('[RoutingDebug] 當前 pathname:', pathname)
+  if (pathname === '/admin/tokens') {
+    console.log('[TokenRoute] 路由匹配成功，載入 TokenManagementPage')
+    return <TokenManagementPage />
+  }
     
     // 支援功能已移除
 
@@ -756,20 +764,41 @@ export default function App() {
     )
   }
 
-  // 手機版主頁
+  // 手機版主頁：Hero(Title+Slogan) → Composer（動態置中 Composer 上緣於視窗中線）
   if (isSmallScreen) {
+    const token = (()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()
+    const heroRef = useRef<HTMLDivElement | null>(null)
+    const [padTop, setPadTop] = useState<number>(80)
+    useEffect(() => {
+      const calc = () => {
+        const vh = Math.max(320, window.innerHeight || 0)
+        const h = heroRef.current?.offsetHeight || 0
+        const raw = Math.round(vh * 0.5 - h)
+        const clamped = Math.min(140, Math.max(40, raw))
+        setPadTop(clamped)
+      }
+      calc()
+      window.addEventListener('resize', calc)
+      return () => window.removeEventListener('resize', calc)
+    }, [])
     return (
-      <div className="min-h-screen flex flex-col">
-        {/* 頂部標題欄 */}
-        <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border px-4 py-3">
-          <h1 className="font-semibold text-lg text-fg">ForumKit</h1>
-          <p className="text-sm text-muted">校園匿名討論平台</p>
-        </header>
-
-        {/* 貼文列表 */}
-        <div className="flex-1">
-          <MobilePostList injectedItems={injectedItems} />
-        </div>
+      <div className="min-h-[100dvh] flex flex-col overflow-hidden">
+        <main className="flex-1 px-4" style={{ paddingTop: padTop, paddingBottom: 'var(--fk-bottomnav-offset, 72px)' }}>
+          {/* Hero: Title + Slogan */}
+          <section ref={heroRef} className="max-w-[720px] mx-auto text-center mb-16">
+            <h1 className="font-playfair text-[40px] dual-text leading-tight">ForumKit</h1>
+            <p className="font-ml-doulaise font-ml-doulaise-strong text-[20px] text-muted mt-6 leading-snug">
+              I disapprove of what you say, but I will defend to the death your right to say it.
+              <span className="block text-xs text-muted not-italic mt-1">&mdash; Stephen G. Tallentyre</span>
+            </p>
+          </section>
+          {/* Composer */}
+          <section className="max-w-[720px] mx-auto mb-8">
+            <div className="rounded-2xl border border-border bg-surface/90 shadow-soft p-4">
+              <HomeComposer token={token} />
+            </div>
+          </section>
+        </main>
 
         {/* 統一手機版導航 */}
         <MobileBottomNav />
@@ -779,28 +808,46 @@ export default function App() {
     )
   }
 
-  // 桌面版主頁
+  // 桌面版主頁：Hero(Title+Slogan) → Composer（動態置中 Composer 上緣於視窗中線）
   return (
-    <div className="min-h-screen">
-      <NavBar pathname={pathname} />
-      <main className="mx-auto max-w-5xl px-3 sm:px-4 sm:pt-24 md:pt-28">
-        <section className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4 sm:mb-6">
-          <div className="flex items-center justify-between gap-3 sm:gap-4 mb-4">
-            <h1 className="text-xl sm:text-2xl font-semibold dual-text">ForumKit</h1>
-          </div>
-          <PostForm onCreated={handleNewPost} />
-        </section>
-        <section className="bg-surface/90 border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft">
-          <div className="mb-3">
-            <FilterBar />
-          </div>
-          <h2 className="font-semibold dual-text mb-3">最新貼文</h2>
-          <PostList injectedItems={injectedItems} />
-        </section>
-        {/* 已移除我的送審/已審區塊 */}
-      </main>
+      <div className="min-h-[100dvh] overflow-hidden">
+        <NavBar pathname={pathname} />
+        <DesktopHome />
       <RealtimeToastPanel onNewPost={handleNewPost} />
     </div>
+  )
+}
+
+function DesktopHome() {
+  const heroRef = useRef<HTMLDivElement | null>(null)
+  const [padTop, setPadTop] = useState<number>(100)
+  useEffect(() => {
+    const calc = () => {
+      const vh = Math.max(480, window.innerHeight || 0)
+      const h = heroRef.current?.offsetHeight || 0
+      const raw = Math.round(vh * 0.5 - h)
+      const clamped = Math.min(160, Math.max(60, raw))
+      setPadTop(clamped)
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [])
+  return (
+    <main className="mx-auto max-w-5xl px-3 sm:px-4" style={{ paddingTop: padTop }}>
+        {/* Hero */}
+        <section ref={heroRef} className="text-center mb-16">
+          <h1 className="font-playfair text-[64px] dual-text leading-tight">ForumKit</h1>
+          <p className="font-ml-doulaise font-ml-doulaise-strong text-[28px] text-muted mt-6 leading-snug">
+            I disapprove of what you say, but I will defend to the death your right to say it.
+            <span className="block text-sm text-muted not-italic mt-1">&mdash; Stephen G. Tallentyre</span>
+          </p>
+        </section>
+        {/* Composer */}
+        <section className="rounded-2xl border border-border bg-surface/90 shadow-soft p-6 max-w-[720px] mx-auto">
+          <HomeComposer token={(()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()} />
+        </section>
+    </main>
   )
 }
 
