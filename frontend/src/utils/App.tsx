@@ -80,6 +80,17 @@ export default function App() {
   // 取得響應式螢幕尺寸狀態（修正 ReferenceError）
   const { isSmallScreen, isTinyScreen } = useScreenSize()
 
+  // 站台標題（可由後端提供設定）
+  const [siteTitle, setSiteTitle] = useState<string>('ForumKit')
+  useEffect(() => {
+    let alive = true
+    fetch('/api/settings/site')
+      .then(r => r.json().catch(()=>({})))
+      .then(j => { if (!alive) return; const t = (j?.home_title || '').trim(); if (t) setSiteTitle(t) })
+      .catch(()=>{})
+    return () => { alive = false }
+  }, [])
+
   function useRealtimeToasts(onNewPost?: (payload: any) => void) {
     const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
     useEffect(() => {
@@ -580,7 +591,7 @@ export default function App() {
             {/* 頂部介紹卡 */}
             <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 md:p-8 shadow-soft">
               <div className="text-center mb-4 sm:mb-6 md:mb-8">
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold dual-text mb-2 sm:mb-3">ForumKit</h1>
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold dual-text mb-2 sm:mb-3">{siteTitle}</h1>
                 <h2 className="text-base sm:text-lg text-fg mb-3 sm:mb-4">校園匿名討論平台</h2>
                 <p className="leading-relaxed text-sm md:text-base text-fg px-2 sm:px-0">
                   ForumKit 是一個專為校園環境設計的現代化討論平台，提供安全、匿名且友善的交流空間。
@@ -764,7 +775,7 @@ export default function App() {
     )
   }
 
-  // 手機版主頁：Hero(Title+Slogan) → Composer（動態置中 Composer 上緣於視窗中線）
+  // 手機版主頁：Hero(Title+副標注意事項) → Composer（動態置中 Composer 上緣於視窗中線）
   if (isSmallScreen) {
     const token = (()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()
     const heroRef = useRef<HTMLDivElement | null>(null)
@@ -784,13 +795,10 @@ export default function App() {
     return (
       <div className="min-h-[100dvh] flex flex-col overflow-hidden">
         <main className="flex-1 px-4" style={{ paddingTop: padTop, paddingBottom: 'var(--fk-bottomnav-offset, 72px)' }}>
-          {/* Hero: Title + Slogan */}
+          {/* Hero（固定格式：標題 + 注意事項） */}
           <section ref={heroRef} className="max-w-[720px] mx-auto text-center mb-16">
-            <h1 className="font-playfair text-[40px] dual-text leading-tight">ForumKit</h1>
-            <p className="font-ml-doulaise font-ml-doulaise-strong text-[20px] text-muted mt-6 leading-snug">
-              I disapprove of what you say, but I will defend to the death your right to say it.
-              <span className="block text-xs text-muted not-italic mt-1">&mdash; Stephen G. Tallentyre</span>
-            </p>
+            <h1 className="font-playfair text-[40px] dual-text leading-tight text-glow">{siteTitle}</h1>
+            <p className="mt-2 text-xs text-muted">平台注意事項：友善發文，避免人身攻擊與個資外洩。</p>
           </section>
           {/* Composer */}
           <section className="max-w-[720px] mx-auto mb-8">
@@ -808,17 +816,19 @@ export default function App() {
     )
   }
 
-  // 桌面版主頁：Hero(Title+Slogan) → Composer（動態置中 Composer 上緣於視窗中線）
+  // 桌面版主頁：Hero(Title+副標注意事項) → Composer（動態置中 Composer 上緣於視窗中線）
   return (
       <div className="min-h-[100dvh] overflow-hidden">
         <NavBar pathname={pathname} />
-        <DesktopHome />
+        <DesktopHome siteTitle={siteTitle} />
       <RealtimeToastPanel onNewPost={handleNewPost} />
     </div>
   )
 }
 
-function DesktopHome() {
+function DesktopHome({ siteTitle = 'ForumKit' }: {
+  siteTitle?: string;
+}) {
   const heroRef = useRef<HTMLDivElement | null>(null)
   const [padTop, setPadTop] = useState<number>(100)
   useEffect(() => {
@@ -835,16 +845,13 @@ function DesktopHome() {
   }, [])
   return (
     <main className="mx-auto max-w-5xl px-3 sm:px-4" style={{ paddingTop: padTop }}>
-        {/* Hero */}
+        {/* Hero（固定格式：標題 + 注意事項） */}
         <section ref={heroRef} className="text-center mb-16">
-          <h1 className="font-playfair text-[64px] dual-text leading-tight">ForumKit</h1>
-          <p className="font-ml-doulaise font-ml-doulaise-strong text-[28px] text-muted mt-6 leading-snug">
-            I disapprove of what you say, but I will defend to the death your right to say it.
-            <span className="block text-sm text-muted not-italic mt-1">&mdash; Stephen G. Tallentyre</span>
-          </p>
+          <h1 className="font-playfair text-[64px] dual-text leading-tight text-glow">{siteTitle}</h1>
+          <p className="mt-3 text-sm text-muted">平台注意事項：友善發文，避免人身攻擊與個資外洩。</p>
         </section>
         {/* Composer */}
-        <section className="rounded-2xl border border-border bg-surface/90 shadow-soft p-6 max-w-[720px] mx-auto">
+        <section id="composer" className="rounded-2xl border border-border bg-surface/90 shadow-soft p-5 max-w-[720px] mx-auto">
           <HomeComposer token={(()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()} />
         </section>
     </main>

@@ -11,6 +11,8 @@ import logging
 from celery import Celery
 
 from utils.db import get_session
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 from models.social_publishing import (
     SocialAccount, ContentTemplate, CarouselGroup, SocialPost,
     PlatformType, AccountStatus, PublishTrigger, PostStatus
@@ -151,7 +153,7 @@ class AutoPublisher:
               .filter(ContentTemplate.account_id == account.id,
                       ContentTemplate.is_active == True,
                       ContentTemplate.template_type.in_(["combined", "image"]))
-              .order_by(ContentTemplate.is_default.desc(), ContentTemplate.created_at.desc())
+              .order_by(ContentTemplate.is_default.desc(), ContentTemplate.updated_at.desc(), ContentTemplate.created_at.desc())
               .first()
         )
         if preferred:
@@ -160,7 +162,7 @@ class AutoPublisher:
         return (
             db.query(ContentTemplate)
               .filter(ContentTemplate.account_id == account.id, ContentTemplate.is_active == True)
-              .order_by(ContentTemplate.is_default.desc(), ContentTemplate.created_at.desc())
+              .order_by(ContentTemplate.is_default.desc(), ContentTemplate.updated_at.desc(), ContentTemplate.created_at.desc())
               .first()
         )
     
@@ -190,15 +192,7 @@ class AutoPublisher:
     def _add_to_batch_queue(self, social_post: SocialPost, account: SocialAccount, db) -> Dict[str, any]:
         """加入批次佇列"""
         try:
-            # 查找或創建當前的輪播群組
-            carousel_group = self._get_or_create_carousel_group(account, db)
-            
-            # 將貼文加入輪播群組
-            social_post.carousel_group_id = carousel_group.id
-            social_post.position_in_carousel = carousel_group.collected_count
-            social_post.status = PostStatus.QUEUED
-            
-            # 預先生成內容（穩定路徑）：讓輪播時不再卡在生成階段
+            # 預先生成內容（先生成，失敗則不計入群組，避免膨脹 collected_count）
             try:
                 self._generate_post_content_with_retry(social_post, db, max_retries=2)
             except Exception as ge:
@@ -210,32 +204,62 @@ class AutoPublisher:
                 return {
                     'success': False,
                     'publish_type': 'batch_queued',
-                    'carousel_group_id': carousel_group.id,
-                    'current_count': carousel_group.collected_count,
+                    'carousel_group_id': None,
+                    'current_count': None,
                     'target_count': account.batch_size,
                     'message': '單篇內容生成失敗，已標記該貼文為失敗，不納入輪播'
                 }
 
-            # 更新群組統計
-            carousel_group.collected_count += 1
-            
+            # 查找或創建當前的輪播群組（非鎖）
+            carousel_group = self._get_or_create_carousel_group(account, db)
+
+            # 進入關鍵區（鎖住群組行，避免併發錯位與重複觸發）
+            locked_group = (
+                db.query(CarouselGroup)
+                  .filter(CarouselGroup.id == carousel_group.id)
+                  .with_for_update()
+                  .first()
+            )
+            if not locked_group:
+                # group 瞬間被刪或不存在，重取一次
+                carousel_group = self._get_or_create_carousel_group(account, db)
+                locked_group = (
+                    db.query(CarouselGroup)
+                      .filter(CarouselGroup.id == carousel_group.id)
+                      .with_for_update()
+                      .first()
+                )
+
+            # 設定貼文隊列資訊與位置（使用鎖後的 collected_count）
+            next_pos = int(locked_group.collected_count or 0)
+            social_post.carousel_group_id = locked_group.id
+            social_post.position_in_carousel = next_pos
+            social_post.status = PostStatus.QUEUED
+
+            # 更新群組統計（原子：在鎖內增量）
+            locked_group.collected_count = next_pos + 1
             db.commit()
-            
-            # 檢查是否達到發布閾值
-            if carousel_group.collected_count >= account.batch_size:
-                # 先確認群組中至少有 2 張已生成的圖片，避免立刻觸發後因不足而失敗
+
+            # 檢查是否達到發布閾值（仍在鎖內狀態下讀取最新資料）
+            current_count = int(locked_group.collected_count or 0)
+            if current_count >= int(account.batch_size or 0):
+                # 準備檢查實際可用圖片數（離鎖前操作查詢）
                 ready_items = db.query(SocialPost).filter(
-                    SocialPost.carousel_group_id == carousel_group.id,
+                    SocialPost.carousel_group_id == locked_group.id,
                     SocialPost.status != PostStatus.FAILED,
                     SocialPost.generated_image_url.isnot(None)
                 ).count()
 
-                if ready_items >= 2:
-                    task = publish_carousel.delay(carousel_group.id)
+                if getattr(locked_group, 'status', 'collecting') == 'collecting' and ready_items >= 2:
+                    # 標記為 queued（單一寫入，避免多次觸發）
+                    locked_group.status = 'queued'
+                    db.commit()
+                    # 解鎖後觸發 Celery（避免持鎖時間過長）
+                    task = publish_carousel.delay(locked_group.id)
                     return {
                         'success': True,
                         'publish_type': 'batch_triggered',
-                        'carousel_group_id': carousel_group.id,
+                        'carousel_group_id': locked_group.id,
                         'task_id': task.id,
                         'message': f'已達到批次閾值({account.batch_size})，觸發輪播發布'
                     }
@@ -243,20 +267,21 @@ class AutoPublisher:
                     return {
                         'success': True,
                         'publish_type': 'batch_wait_images',
-                        'carousel_group_id': carousel_group.id,
-                        'current_count': carousel_group.collected_count,
+                        'carousel_group_id': locked_group.id,
+                        'current_count': current_count,
                         'target_count': account.batch_size,
                         'message': '已達到數量但圖片尚未齊備，稍後由定時任務再嘗試'
                     }
-            else:
-                return {
-                    'success': True,
-                    'publish_type': 'batch_queued',
-                    'carousel_group_id': carousel_group.id,
-                    'current_count': carousel_group.collected_count,
-                    'target_count': account.batch_size,
-                    'message': f'已加入批次佇列 ({carousel_group.collected_count}/{account.batch_size})'
-                }
+
+            # 未達閾值
+            return {
+                'success': True,
+                'publish_type': 'batch_queued',
+                'carousel_group_id': locked_group.id,
+                'current_count': current_count,
+                'target_count': account.batch_size,
+                'message': f'已加入批次佇列 ({current_count}/{account.batch_size})'
+            }
                 
         except Exception as e:
             social_post.status = PostStatus.FAILED
@@ -561,6 +586,13 @@ def publish_carousel(self, carousel_group_id: int):
             
             if not carousel_group:
                 raise AutoPublishError(f"找不到輪播群組 ID: {carousel_group_id}")
+            # 併發保護：第一時間標記為 publishing，避免重複觸發
+            try:
+                if getattr(carousel_group, 'status', 'collecting') != 'publishing':
+                    carousel_group.status = 'publishing'
+                    db.commit()
+            except Exception:
+                db.rollback()
             
             # 獲取群組中的所有貼文
             # 注意：狀態欄位為 String(16)，避免 Enum 比對不一致，使用字串比對
@@ -732,7 +764,7 @@ def publish_carousel(self, carousel_group_id: int):
         raise
 
 def _combine_carousel_captions(posts: List[SocialPost]) -> str:
-    """組合輪播貼文的文案 - 支援 multipost 模板格式"""
+    """組合輪播貼文的文案 - 支援 multipost 與新版 caption 結構（header/repeating/footer/hashtags）。"""
     if not posts:
         return "📢 校園生活分享"
 
@@ -750,11 +782,15 @@ def _combine_carousel_captions(posts: List[SocialPost]) -> str:
 
         template_config = first_post.template.config
         multipost_config = template_config.get('multipost', {})
+        caption_cfg = template_config.get('caption', {}) or {}
         logger.info(f"模板配置: multipost_config={multipost_config}")
 
         # 檢查是否使用 multipost 格式
         if multipost_config and multipost_config.get('template') and '{id}' in multipost_config.get('template', ''):
             return _generate_multipost_caption(posts, multipost_config)
+        # 新版 caption 結構：以 caption.repeating/single/hashtags 合成整體輪播文案
+        if isinstance(caption_cfg, dict) and caption_cfg.get('repeating'):
+            return _generate_carousel_caption_newstyle(posts, caption_cfg)
         else:
             # 使用傳統邏輯
             if first_post.generated_caption:
@@ -767,6 +803,91 @@ def _combine_carousel_captions(posts: List[SocialPost]) -> str:
         if posts and posts[0].generated_caption:
             return posts[0].generated_caption
         return "📢 校園生活分享"
+
+def _generate_carousel_caption_newstyle(posts: List[SocialPost], cap_cfg: Dict) -> str:
+    """使用新版 caption 結構合併多篇輪播文案：
+    - 單次 header（first）
+    - 重複 repeating（每篇）
+    - 單次 footer（last）
+    - 單次 hashtags
+    """
+    def replace_placeholders(text: str, post: SocialPost) -> str:
+        if not text:
+            return ''
+        fp = post.forum_post
+        sample = {
+            'id': str(getattr(fp, 'id', '') or ''),
+            'content': str(getattr(fp, 'content', '') or ''),
+            'author': str(getattr(fp, 'author', None).username if getattr(fp, 'author', None) else '匿名'),
+            'title': str(getattr(fp, 'title', '') or ''),
+            'school_name': str(getattr(fp, 'school', None).name if getattr(fp, 'school', None) else '')
+        }
+        out = str(text)
+        for k, v in sample.items():
+            out = out.replace('{' + k + '}', v)
+        return out
+
+    parts: List[str] = []
+
+    single = cap_cfg.get('single', {}) or {}
+    header = single.get('header', {}) or {}
+    footer = single.get('footer', {}) or {}
+    repeating = cap_cfg.get('repeating', {}) or {}
+
+    # Header once
+    if header.get('enabled') and header.get('content'):
+        parts.append(replace_placeholders(header.get('content', ''), posts[0]))
+
+    # Repeating for each post
+    for idx, post in enumerate(posts):
+        rep_sections: List[str] = []
+        id_fmt = repeating.get('idFormat', {}) or {}
+        if id_fmt.get('enabled') and id_fmt.get('format'):
+            rep_sections.append(replace_placeholders(id_fmt.get('format', ''), post))
+        rep_content = repeating.get('content', {}) or {}
+        if rep_content.get('enabled') and rep_content.get('template'):
+            rep_sections.append(replace_placeholders(rep_content.get('template', ''), post))
+        sep = repeating.get('separator', {}) or {}
+        if sep.get('enabled') and sep.get('style'):
+            rep_sections.append(sep.get('style'))
+        if rep_sections:
+            parts.append('\n'.join([s for s in rep_sections if str(s).strip()]))
+
+    # Footer once
+    if footer.get('enabled') and footer.get('content'):
+        parts.append(replace_placeholders(footer.get('content', ''), posts[-1]))
+
+    # Hashtags once（使用模板內設定；平台層再附加帳號/貼文標籤）
+    try:
+        hashtags_cfg = cap_cfg.get('hashtags', {}) or {}
+        if hashtags_cfg.get('enabled') and hashtags_cfg.get('tags'):
+            max_tags = int(hashtags_cfg.get('maxTags', len(hashtags_cfg.get('tags'))))
+            tags = [t for t in hashtags_cfg.get('tags') if str(t).strip()][:max_tags]
+            if tags:
+                parts.append(' '.join(tags))
+    except Exception:
+        pass
+
+    # 清理空行
+    try:
+        lines = [ln.rstrip() for ln in '\n\n'.join([p for p in parts if str(p).strip()]).splitlines()]
+        cleaned: List[str] = []
+        empty = 0
+        for ln in lines:
+            if ln.strip() == '':
+                empty += 1
+                if empty <= 1:
+                    cleaned.append('')
+            else:
+                empty = 0
+                cleaned.append(ln)
+        while cleaned and cleaned[0] == '':
+            cleaned.pop(0)
+        while cleaned and cleaned[-1] == '':
+            cleaned.pop()
+        return '\n'.join(cleaned)
+    except Exception:
+        return '\n\n'.join([p for p in parts if str(p).strip()])
 
 def _generate_multipost_caption(posts: List[SocialPost], multipost_config: Dict) -> str:
     """使用 multipost 模板格式生成輪播文案"""

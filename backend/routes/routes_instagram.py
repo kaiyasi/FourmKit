@@ -26,6 +26,91 @@ from services.monitoring import get_queue_health, get_recent_events
 
 instagram_bp = Blueprint('instagram', __name__, url_prefix='/api/admin/social')
 
+# ---- Template hygiene: enforce minimal, Morandi-like style for IG templates ----
+import re
+def _strip_emoji(s: str) -> str:
+    try:
+        # Remove most emoji and pictographs
+        return re.sub(r"[\U0001F300-\U0001FAD6\U0001FAE0-\U0001FAFF\U00002700-\U000027BF\U0001F1E6-\U0001F1FF]", "", s)
+    except Exception:
+        return s
+
+def _sanitize_color(v: str, fallback: str = "#333333") -> str:
+    try:
+        sv = (v or '').strip()
+        if sv.startswith('#') and (3 <= len(sv) <= 7):
+            return sv
+        # Reject gradients/urls or named colors
+        return fallback
+    except Exception:
+        return fallback
+
+def _sanitize_template_config(cfg: dict) -> dict:
+    """Coerce template config to minimalist, no-gradient, no-emoji rules.
+    - Backgrounds must be solid color
+    - Disable heavy decorations (shadow/background overlays/logo/watermark)
+    - Caption text stripped of emoji/icons
+    """
+    try:
+        c = dict(cfg or {})
+
+        # textToImage
+        tti = c.get('textToImage') or {}
+        bg = (tti.get('background') or {})
+        bg['type'] = 'color'
+        bg['value'] = _sanitize_color(bg.get('value') or '#ffffff', '#ffffff')
+        tti['background'] = bg
+        txt = (tti.get('text') or {})
+        txt['color'] = _sanitize_color(txt.get('color') or '#333333', '#333333')
+        # watermark/logo/shadow/background overlays off
+        if isinstance(txt.get('watermark'), dict):
+            txt['watermark']['enabled'] = False
+        tti['logo'] = {'enabled': False}
+        tti['border'] = (tti.get('border') or {})
+        # keep border but ensure subtle color
+        tti['border']['color'] = _sanitize_color((tti['border'].get('color') if isinstance(tti['border'], dict) else '#e5e7eb') or '#e5e7eb', '#e5e7eb')
+        tti['text'] = txt
+        c['textToImage'] = tti
+
+        # photos.combined
+        photos = c.get('photos') or {}
+        comb = (photos.get('combined') or {})
+        canvas = (comb.get('canvas') or {})
+        cbg = (canvas.get('background') or {})
+        cbg['type'] = 'color'
+        cbg['value'] = _sanitize_color(cbg.get('value') or '#ffffff', '#ffffff')
+        canvas['background'] = cbg
+        comb['canvas'] = canvas
+        ctext = (comb.get('text') or {})
+        ctext['color'] = _sanitize_color(ctext.get('color') or '#333333', '#333333')
+        if isinstance(ctext.get('background'), dict):
+            ctext['background']['enabled'] = False
+        if isinstance(ctext.get('shadow'), dict):
+            ctext['shadow']['enabled'] = False
+        comb['text'] = ctext
+        # disable logos by default to reduce clutter
+        comb['logo'] = {'enabled': False}
+        photos['combined'] = comb
+        c['photos'] = photos
+
+        # caption: strip emoji/icons; limit autoHashtags; remove emojis from hashtags
+        cap = c.get('caption') or {}
+        cap['header'] = _strip_emoji(str(cap.get('header') or ''))
+        cap['content'] = _strip_emoji(str(cap.get('content') or ''))
+        cap['footer'] = _strip_emoji(str(cap.get('footer') or ''))
+        tags = cap.get('autoHashtags') or []
+        clean_tags = []
+        for t in tags[:5]:  # keep at most 5 to avoid noise
+            tt = _strip_emoji(str(t or '')).strip()
+            if tt:
+                clean_tags.append(tt)
+        cap['autoHashtags'] = clean_tags
+        c['caption'] = cap
+
+        return c
+    except Exception:
+        return cfg
+
 @instagram_bp.route('/health', methods=['GET'])
 def health_check():
     """健康檢查端點"""
@@ -189,6 +274,11 @@ def get_social_accounts():
                     'last_post_at': account.last_post_at.isoformat() if account.last_post_at else None,
                     'created_at': account.created_at.isoformat(),
                     'school_id': account.school_id,  # 新增：直接返回 school_id
+                    # Token 相關欄位
+                    'app_id': account.app_id,
+                    'app_secret': account.app_secret,
+                    'access_token': account.access_token,
+                    'token_expires_at': account.token_expires_at.isoformat() if account.token_expires_at else None,
                     'school': {
                         'id': account.school.id,
                         'name': account.school.name,
@@ -580,7 +670,8 @@ def get_sample_posts():
             # 構建查詢，只獲取已通過的貼文
             query = db.query(Post).options(
                 joinedload(Post.author),
-                joinedload(Post.school)
+                joinedload(Post.school),
+                joinedload(Post.media)
             ).filter(
                 Post.status == 'approved',
                 Post.is_deleted == False
@@ -594,6 +685,7 @@ def get_sample_posts():
             posts = query.order_by(desc(Post.created_at)).limit(limit).all()
             
             result = []
+            base_url = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
             for post in posts:
                 # 構建與 preview template 相同格式的數據
                 post_data = {
@@ -604,7 +696,8 @@ def get_sample_posts():
                     'school_name': post.school.name if post.school else '未指定學校',
                     'created_at': post.created_at.isoformat() if post.created_at else datetime.now().isoformat(),
                     'category': '論壇貼文',
-                    'tags': []  # Post 模型目前沒有 tags，使用空列表
+                    'tags': [],  # Post 模型目前沒有 tags，使用空列表
+                    'media_urls': []
                 }
                 
                 # 從內容生成標題（取前50字符）
@@ -614,6 +707,16 @@ def get_sample_posts():
                         title_text += '...'
                     post_data['title'] = title_text
                 
+                # 生成 media urls（如有）
+                try:
+                    media_urls = []
+                    for m in (post.media or []):
+                        rel = f"/uploads/{m.path}"
+                        media_urls.append(f"{base_url}{rel}" if base_url else rel)
+                    post_data['media_urls'] = media_urls
+                except Exception:
+                    post_data['media_urls'] = []
+
                 result.append(post_data)
             
             return jsonify({
@@ -1193,12 +1296,16 @@ def create_template():
     """創建新的內容模板"""
     try:
         data = request.get_json()
+        print(f"[創建模板] 接收到的數據: {data}")
+
         account_id = data.get('account_id')
         name = data.get('name')
         description = data.get('description')
         template_type = data.get('template_type')
         config = data.get('config', {})
         is_default = data.get('is_default', False)
+
+        print(f"[創建模板] 提取的參數: account_id={account_id}, name={name}, template_type={template_type}")
         
         # 驗證必要參數
         if not all([account_id, name, template_type]):
@@ -1244,13 +1351,16 @@ def create_template():
                     ContentTemplate.is_default == True
                 ).update({'is_default': False})
             
+            # 衛生化模板配置，避免過度漸層/彩色/emoji
+            safe_config = _sanitize_template_config(config)
+
             # 創建新模板
             new_template = ContentTemplate(
                 account_id=account_id,
                 name=name,
                 description=description,
                 template_type=template_type,
-                config=config,
+                config=safe_config,
                 is_default=is_default,
                 created_by=user_id
             )
@@ -1318,7 +1428,7 @@ def update_template(template_id: int):
             if 'template_type' in data and data['template_type'] in ['image', 'text', 'combined']:
                 template.template_type = data['template_type']
             if 'config' in data:
-                template.config = data['config']
+                template.config = _sanitize_template_config(data['config'] or {})
             if 'is_active' in data:
                 template.is_active = data['is_active']
             

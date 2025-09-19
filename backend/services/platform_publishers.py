@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 import requests
 import logging
 from datetime import datetime, timezone
+import os, json, time
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,13 @@ class InstagramPublisher(BasePlatformPublisher):
     ) -> Dict[str, Any]:
         """發布單一 Instagram 貼文"""
         try:
+            self._trace('single_pre', {
+                'account_id': getattr(account, 'id', None),
+                'image_url': image_url,
+                'caption': caption,
+                'hashtags': hashtags,
+                'mode': 'single'
+            })
             # 組合完整文案
             full_caption = self._build_caption(caption, hashtags)
             
@@ -76,15 +84,21 @@ class InstagramPublisher(BasePlatformPublisher):
             # Step 3: 取得 permalink（Graph 返回的 id 並非 shortcode，不能直接組 URL）
             permalink = self._get_permalink(account, publish_result['id'])
 
-            return {
+            result = {
                 'success': True,
                 'post_id': publish_result['id'],
                 'post_url': permalink,
                 'media_id': media_id
             }
+            self._trace('single_post', {
+                'account_id': getattr(account, 'id', None),
+                'result': result
+            })
+            return result
             
         except Exception as e:
             logger.error(f"Instagram 單一貼文發布失敗: {e}")
+            self._trace('single_error', {'error': str(e)})
             raise PlatformPublisherError(f"Instagram 發布失敗: {str(e)}")
     
     def publish_carousel(
@@ -104,9 +118,15 @@ class InstagramPublisher(BasePlatformPublisher):
                     caption, 
                     hashtags
                 )
-            
+
             # 組合完整文案
             full_caption = self._build_caption(caption, hashtags)
+            self._trace('carousel_pre', {
+                'account_id': getattr(account, 'id', None),
+                'items': items,
+                'caption': full_caption,
+                'mode': 'carousel'
+            })
             
             # Step 1: 上傳所有媒體項目
             media_ids = []
@@ -126,16 +146,22 @@ class InstagramPublisher(BasePlatformPublisher):
             # Step 4: 取得 permalink
             permalink = self._get_permalink(account, publish_result['id'])
 
-            return {
+            result = {
                 'success': True,
                 'post_id': publish_result['id'],
                 'post_url': permalink,
                 'carousel_id': carousel_id,
                 'media_count': len(media_ids)
             }
+            self._trace('carousel_post', {
+                'account_id': getattr(account, 'id', None),
+                'result': result
+            })
+            return result
             
         except Exception as e:
             logger.error(f"Instagram 輪播發布失敗: {e}")
+            self._trace('carousel_error', {'error': str(e)})
             raise PlatformPublisherError(f"Instagram 輪播發布失敗: {str(e)}")
     
     def validate_account(self, account) -> Dict[str, Any]:
@@ -181,6 +207,30 @@ class InstagramPublisher(BasePlatformPublisher):
             full_caption += f"\n\n{hashtag_text}"
         
         return full_caption
+
+    def _trace(self, name: str, data: Dict[str, Any]) -> None:
+        """可選的發布追蹤：當 SOCIAL_PUBLISH_TRACE 為真時，輸出追蹤檔案到 uploads/public/traces。
+        不影響主流程，所有錯誤都吞掉。
+        """
+        try:
+            flag = os.getenv('SOCIAL_PUBLISH_TRACE', '').strip().lower() in {'1','true','yes','on'}
+            if not flag:
+                return
+            root = os.getenv('UPLOAD_ROOT', 'uploads')
+            out_dir = os.path.join(root, 'public', 'traces')
+            os.makedirs(out_dir, exist_ok=True)
+            ts = int(time.time() * 1000)
+            path = os.path.join(out_dir, f'{ts}_{name}.json')
+            payload = {
+                'ts': ts,
+                'name': name,
+                'data': data
+            }
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception:
+            # 追蹤失敗不影響主流程
+            pass
     
     def _upload_media(self, account, image_url: str, caption: str) -> str:
         """上傳單一媒體到 Instagram"""

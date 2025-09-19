@@ -109,7 +109,7 @@ export default function TemplateInfoStep({
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-semibold">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-neutral-300 text-neutral-800 font-semibold">
                       {account.platform_username.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1">
@@ -139,20 +139,7 @@ export default function TemplateInfoStep({
             )}
           </div>
 
-          {selectedAccount && (
-            <div className="flex items-center gap-2 pt-2">
-              <input
-                type="checkbox"
-                id="is_default"
-                checked={templateInfo.is_default}
-                onChange={(e) => onUpdate({ is_default: e.target.checked })}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="is_default" className="text-sm text-gray-700">
-                設為 <span className="font-medium">@{selectedAccount.platform_username}</span> 的預設模板
-              </label>
-            </div>
-          )}
+          {/* 預設模板切換已移除，避免視覺與行為複雜度 */}
         </div>
       </div>
 

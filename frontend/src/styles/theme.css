@@ -32,28 +32,26 @@
   --danger-text: #7F3E3E;
   --danger-foreground: #FFFFFF;
   
-  /* 成功色彩 */
-  --success: #059669; 
-  --success-hover: #047857; 
-  --success-bg: #F0FDF4;
-  --success-border: #BBF7D0;
-  --success-text: #166534;
+  /* 成功/警告/信息色彩（Morandi 限制：低飽和度） */
+  --success: #8FA893; 
+  --success-hover: #7D9782; 
+  --success-bg: #EEF3EF;
+  --success-border: #CBD7CE;
+  --success-text: #56665B;
   --success-foreground: #FFFFFF;
   
-  /* 警告色彩 */
-  --warning: #D97706; 
-  --warning-hover: #B45309; 
-  --warning-bg: #FFFBEB;
-  --warning-border: #FED7AA;
-  --warning-text: #92400E;
+  --warning: #C0A16B; 
+  --warning-hover: #AD8F5B; 
+  --warning-bg: #F4F0E7;
+  --warning-border: #E1D6C3;
+  --warning-text: #6F5E3E;
   --warning-foreground: #FFFFFF;
   
-  /* 信息色彩 */
-  --info: #2563EB; 
-  --info-hover: #1D4ED8; 
-  --info-bg: #EFF6FF;
-  --info-border: #BFDBFE;
-  --info-text: #1E40AF;
+  --info: #8FA0B2; 
+  --info-hover: #7C8EA0; 
+  --info-bg: #EEF1F4;
+  --info-border: #CDD5DD;
+  --info-text: #556273;
   
   /* 導航色彩 */
   --nav-bg: rgba(255,255,255,0.78); 
@@ -67,9 +65,9 @@
   --shadow-soft: 0 1px 3px rgba(0,0,0,0.055); 
   --shadow-medium: 0 4px 12px rgba(0,0,0,0.09); 
   
-  /* 特殊色彩 */
-  --accent: #7C3AED; 
-  --accent-hover: #6D28D9; 
+  /* 特殊色彩（取消高飽和度紫，改用中性灰） */
+  --accent: #8A8F99; 
+  --accent-hover: #7B808A; 
   --neutral: #6B7280; 
   --neutral-hover: #9CA3AF; 
 }
@@ -101,28 +99,26 @@
   --danger-border: #E6C6C8;
   --danger-text: #7A4345;
   
-  /* 成功色彩 */
-  --success: #059669; 
-  --success-hover: #047857; 
-  --success-bg: #F0FDF4;
-  --success-border: #BBF7D0;
-  --success-text: #166534;
+  /* 成功/警告/信息色彩（Morandi 限制） */
+  --success: #8FA893; 
+  --success-hover: #7D9782; 
+  --success-bg: #EEF3EF;
+  --success-border: #CBD7CE;
+  --success-text: #56665B;
   --success-foreground: #FFFFFF;
   
-  /* 警告色彩 */
-  --warning: #D97706; 
-  --warning-hover: #B45309; 
-  --warning-bg: #FFFBEB;
-  --warning-border: #FED7AA;
-  --warning-text: #92400E;
+  --warning: #C0A16B; 
+  --warning-hover: #AD8F5B; 
+  --warning-bg: #F4F0E7;
+  --warning-border: #E1D6C3;
+  --warning-text: #6F5E3E;
   --warning-foreground: #FFFFFF;
   
-  /* 信息色彩 */
-  --info: #2563EB; 
-  --info-hover: #1D4ED8; 
-  --info-bg: #EFF6FF;
-  --info-border: #BFDBFE;
-  --info-text: #1E40AF;
+  --info: #8FA0B2; 
+  --info-hover: #7C8EA0; 
+  --info-bg: #EEF1F4;
+  --info-border: #CDD5DD;
+  --info-text: #556273;
   
   /* 導航色彩 */
   --nav-bg: rgba(255,255,255,0.80); 
@@ -137,8 +133,8 @@
   --shadow-medium: 0 4px 14px rgba(0,70,110,0.11); 
   
   /* 特殊色彩 */
-  --accent: #7C3AED; 
-  --accent-hover: #6D28D9; 
+  --accent: #8A8F99; 
+  --accent-hover: #7B808A; 
   --neutral: #6B7280; 
   --neutral-hover: #9CA3AF; 
 }
@@ -170,28 +166,26 @@
   --danger-border: #E2C0C0;
   --danger-text: #6E3A3A;
   
-  /* 成功色彩 */
-  --success: #059669; 
-  --success-hover: #047857; 
-  --success-bg: #F0FDF4;
-  --success-border: #BBF7D0;
-  --success-text: #166534;
+  /* 成功/警告/信息色彩（Morandi 限制） */
+  --success: #8FA893; 
+  --success-hover: #7D9782; 
+  --success-bg: #EEF3EF;
+  --success-border: #CBD7CE;
+  --success-text: #56665B;
   --success-foreground: #FFFFFF;
   
-  /* 警告色彩 */
-  --warning: #D97706; 
-  --warning-hover: #B45309; 
-  --warning-bg: #FFFBEB;
-  --warning-border: #FED7AA;
-  --warning-text: #92400E;
+  --warning: #C0A16B; 
+  --warning-hover: #AD8F5B; 
+  --warning-bg: #F4F0E7;
+  --warning-border: #E1D6C3;
+  --warning-text: #6F5E3E;
   --warning-foreground: #FFFFFF;
   
-  /* 信息色彩 */
-  --info: #2563EB; 
-  --info-hover: #1D4ED8; 
-  --info-bg: #EFF6FF;
-  --info-border: #BFDBFE;
-  --info-text: #1E40AF;
+  --info: #8FA0B2; 
+  --info-hover: #7C8EA0; 
+  --info-bg: #EEF1F4;
+  --info-border: #CDD5DD;
+  --info-text: #556273;
   
   /* 導航色彩 */
   --nav-bg: rgba(255,255,255,0.80); 
@@ -206,8 +200,8 @@
   --shadow-medium: 0 4px 14px rgba(20,80,40,0.13); 
   
   /* 特殊色彩 */
-  --accent: #7C3AED; 
-  --accent-hover: #6D28D9; 
+  --accent: #8A8F99; 
+  --accent-hover: #7B808A; 
   --neutral: #6B7280; 
   --neutral-hover: #9CA3AF; 
 }
@@ -309,28 +303,26 @@
   --danger-text: #F2CACA;
   --danger-foreground: #0A0A0A;
   
-  /* 成功色彩 */
-  --success: #10B981; 
-  --success-hover: #059669; 
-  --success-bg: #064E3B;
-  --success-border: #065F46;
-  --success-text: #6EE7B7;
+  /* 成功/警告/信息色彩（Morandi 暗色微調） */
+  --success: #6F8A76; 
+  --success-hover: #627A68; 
+  --success-bg: #1D2820;
+  --success-border: #2A3A2E;
+  --success-text: #BFD1C2;
   --success-foreground: #0A0A0A;
   
-  /* 警告色彩 */
-  --warning: #F59E0B; 
-  --warning-hover: #D97706; 
-  --warning-bg: #451A03;
-  --warning-border: #78350F;
-  --warning-text: #FCD34D;
+  --warning: #9E875D; 
+  --warning-hover: #8C774F; 
+  --warning-bg: #2A2418;
+  --warning-border: #3B3120;
+  --warning-text: #DCCBA9;
   --warning-foreground: #0A0A0A;
   
-  /* 信息色彩 */
-  --info: #3B82F6; 
-  --info-hover: #2563EB; 
-  --info-bg: #1E3A8A;
-  --info-border: #1E40AF;
-  --info-text: #93C5FD;
+  --info: #6F7F93; 
+  --info-hover: #607082; 
+  --info-bg: #182027;
+  --info-border: #27303A;
+  --info-text: #B9C4D1;
   
   /* 導航色彩 */
   --nav-bg: rgba(31,31,31,0.95); 
@@ -344,9 +336,9 @@
   --shadow-soft: 0 1px 3px rgba(0,0,0,0.8); 
   --shadow-medium: 0 4px 12px rgba(0,0,0,0.9); 
   
-  /* 特殊色彩 */
-  --accent: #8B5CF6; 
-  --accent-hover: #7C3AED; 
+  /* 特殊色彩（降低彩度） */
+  --accent: #8A8F99; 
+  --accent-hover: #7B808A; 
   --neutral: #6B7280; 
   --neutral-hover: #9CA3AF; 
 }

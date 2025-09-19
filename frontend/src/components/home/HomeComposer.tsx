@@ -19,6 +19,7 @@ export default function HomeComposer({ token }: { token: string }) {
   const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [lastSubmitTime, setLastSubmitTime] = useState(0)
   const maxChars = 800
 
   // autosize textarea
@@ -80,6 +81,20 @@ export default function HomeComposer({ token }: { token: string }) {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setMsg(null)
+
+    // 防止重複提交 - 檢查狀態和時間戳
+    const now = Date.now();
+    if (busy) {
+      console.log('[HomeComposer] Already submitting, ignoring duplicate request');
+      return;
+    }
+    if (now - lastSubmitTime < 1000) { // 1秒內不允許重複提交
+      console.log('[HomeComposer] Too fast submit, ignoring duplicate request');
+      return;
+    }
+
+    setLastSubmitTime(now);
+
     if (!content.trim() && files.length === 0) { setMsg('請先輸入內容或上傳附件'); return }
     setBusy(true)
     try {
@@ -191,11 +206,25 @@ export default function HomeComposer({ token }: { token: string }) {
 
       {/* Submit bar: desktop right-aligned inline; mobile fixed bottom */}
       <div className="hidden sm:flex items-center justify-end">
-        <button type="submit" disabled={busy} className="btn-primary disabled:opacity-50">{busy ? '送出中…' : '發佈'}</button>
+        <button
+          type="submit"
+          disabled={busy}
+          className="btn-primary disabled:opacity-50"
+          style={{ touchAction: 'manipulation' }}
+        >
+          {busy ? '送出中…' : '發佈'}
+        </button>
       </div>
       <div className="sm:hidden fixed left-0 right-0 bottom-0 z-40" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 72px)' }}>
         <div className="mx-4 mb-3 rounded-xl border border-border bg-surface shadow-soft p-2">
-          <button type="submit" disabled={busy} className="w-full btn-primary disabled:opacity-50">{busy ? '送出中…' : '發佈'}</button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full btn-primary disabled:opacity-50"
+            style={{ touchAction: 'manipulation' }}
+          >
+            {busy ? '送出中…' : '發佈'}
+          </button>
         </div>
       </div>
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar } from '@/components/layout/NavBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
-import { ArrowLeft, RefreshCw, FileText } from 'lucide-react';
+import { ArrowLeft, RefreshCw, FileText, Clock, User } from 'lucide-react';
  
 function formatError(err: any): string {
   if (!err) return '發生未知錯誤';
@@ -300,17 +300,16 @@ export default function SupportCenterPage() {
         </div>
       </div>
 
-      {/* 主要內容：左清單(2) / 右詳情(1) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <main className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
+        {/* 客服單隊列 */}
+        <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              客服單列表
+              客服單隊列
               {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
             </h2>
             <div className="flex items-center gap-2">
-              <div className="text-sm text-muted hidden sm:block">{error ? `錯誤：${error}` : `${filtered.length} 個工單`}</div>
               <button
                 onClick={reloadQueue}
                 className="p-2 text-muted hover:text-fg transition-colors"
@@ -320,89 +319,210 @@ export default function SupportCenterPage() {
               </button>
             </div>
           </div>
-          <ul className="space-y-2">
-            {filtered.map(t => (
-              <li key={t.id} className={`p-3 rounded-xl border border-border hover:bg-surface-hover transition-colors cursor-pointer ${active?.id===t.id ? 'bg-surface-hover' : ''}`} onClick={()=> setActiveId(t.id)}>
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-fg truncate">{t.subject}</h3>
-                      <span className="text-xs text-muted font-mono">{displayPublicId(t)}</span>
+
+          {/* 項目列表 */}
+          <div className="space-y-3">
+            {filtered.length === 0 ? (
+              <div className="text-center py-8 text-muted">
+                目前沒有待處理的客服工單。
+              </div>
+            ) : (
+              filtered.map((t) => (
+                <div
+                  key={t.id}
+                  className={`p-4 rounded-xl border border-border cursor-pointer transition-colors relative ${
+                    active?.id === t.id 
+                      ? 'ring-2 ring-primary bg-primary/5' 
+                      : 'bg-surface-hover hover:bg-surface'
+                  }`}
+                  onClick={() => setActiveId(t.id)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                        工單
+                      </span>
+                      <span className="text-xs text-muted">{displayPublicId(t)}</span>
+                      {t.school_name && (
+                        <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
+                          {t.school_name}
+                        </span>
+                      )}
+                      {t.unread_count ? (
+                        <span className="text-xs px-2 py-1 bg-red-600 text-white rounded-full">
+                          未讀 {t.unread_count}
+                        </span>
+                      ) : null}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted flex-wrap">
+                    <span className="text-xs text-muted">
+                      {new Date(t.last_activity_at).toLocaleString('zh-TW')}
+                    </span>
+                  </div>
+
+                  <div className="mb-2">
+                    <h3 className="font-medium text-fg mb-1 line-clamp-2">{t.subject}</h3>
+                    
+                    <div className="text-xs text-muted mb-2 space-y-1">
+                      <div>類別: {categoryDisplay(t.category)} | 優先級: {priorityDisplay[t.priority]}</div>
+                      <div>
+                        申請人: {t.requester_name || '匿名用戶'}
+                        {isDevAdmin && t.requester_ip && ` | IP: ${t.requester_ip}`}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-4 text-xs text-muted">
                       <Badge color={statusColor(t.status)}>{statusDisplay[t.status]}</Badge>
-                      <Badge>{categoryDisplay(t.category)}</Badge>
-                      <span>{t.school_name || '未指定學校'}</span>
-                      <span>•</span>
-                      <span>{t.requester_name ? `由：${t.requester_name}` : '由：匿名'}</span>
-                      {t.unread_count ? <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-1 rounded-md text-xs bg-primary/10 text-primary border border-primary/20">未讀 {t.unread_count}</span> : null}
+                      <span>來源: {t.source}</span>
+                      {t.assigned_to && (
+                        <span>指派給: {t.assigned_to}</span>
+                      )}
                     </div>
                   </div>
-                  <div className="text-right text-xs text-muted whitespace-nowrap">{new Date(t.last_activity_at).toLocaleString('zh-TW')}</div>
                 </div>
-              </li>
-            ))}
-          </ul>
-        </main>
+              ))
+            )}
+          </div>
+        </div>
 
-        <section className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-          {active ? (
-            <div className="flex flex-col">
-              <div className="flex items-start justify-between">
-                <div>
+        {/* 側邊欄 */}
+        <div className="space-y-6">
+          {/* 選中工單詳情 */}
+          {active && (
+            <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-2">
+              <h3 className="text-lg font-semibold text-fg mb-4">工單詳情</h3>
+              
+              <div className="space-y-3">
+                <div className="border-b border-border pb-3">
                   <div className="text-sm text-muted">{active.public_id}</div>
                   <h4 className="text-lg font-semibold text-fg">{active.subject}</h4>
-                  <div className="mt-1 text-xs text-muted">
+                  <div className="mt-2 text-xs text-muted space-y-1">
+                    <div>類別: {categoryDisplay(active.category)} | 優先級: {priorityDisplay[active.priority]}</div>
+                    <div>狀態: <Badge color={statusColor(active.status)}>{statusDisplay[active.status]}</Badge></div>
                     {isDevAdmin ? (
                       <>
-                        <span className="mr-2">用戶：{active.requester_name || '匿名'}</span>
-                        <span>IP：{active.requester_ip || '未知'}</span>
+                        <div>申請人: {active.requester_name || '匿名'}</div>
+                        <div>IP: {active.requester_ip || '未知'}</div>
                       </>
                     ) : (
                       <>
-                        <span className="mr-2">用戶：{active.requester_name || '匿名'}</span>
-                        <span>學校：{active.school_name || '未指定'}</span>
+                        <div>申請人: {active.requester_name || '匿名'}</div>
+                        <div>學校: {active.school_name || '未指定'}</div>
                       </>
+                    )}
+                    {active.assigned_to && (
+                      <div>指派給: {active.assigned_to}</div>
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge color={statusColor(active.status)}>{statusDisplay[active.status]}</Badge>
-                  <Badge>{priorityDisplay[active.priority]}</Badge>
-                </div>
-              </div>
-              {messagesAllowed && (messagesLoading || messages.length > 0) && (
-                <div className="mt-3 overflow-auto rounded-lg border border-border bg-surface-hover p-3 text-sm">
-                  {messagesLoading ? (
-                    <div className="text-muted">載入訊息中…</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {messages.map(m => (
-                        <div key={m.id} className={`max-w-[80%] p-2 rounded-lg ${m.from==='admin' ? 'bg-primary/10 text-fg ml-auto' : 'bg-surface text-fg'}`}>
-                          <div className="whitespace-pre-wrap break-words">{m.text}</div>
-                          <div className="text-[10px] text-muted mt-1 text-right">{new Date(m.at).toLocaleString('zh-TW')}</div>
-                        </div>
-                      ))}
+
+                {messagesAllowed && (messagesLoading || messages.length > 0) && (
+                  <div className="border border-border rounded-lg p-3 bg-surface-hover max-h-64 overflow-y-auto">
+                    <div className="text-sm font-medium mb-2">對話記錄</div>
+                    {messagesLoading ? (
+                      <div className="text-muted text-sm">載入訊息中…</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {messages.map(m => (
+                          <div key={m.id} className={`max-w-[80%] p-2 rounded-lg text-sm ${m.from==='admin' ? 'bg-primary/10 text-fg ml-auto' : 'bg-surface text-fg'}`}>
+                            <div className="whitespace-pre-wrap break-words">{m.text}</div>
+                            <div className="text-[10px] text-muted mt-1 text-right">{new Date(m.at).toLocaleString('zh-TW')}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <input 
+                      className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm" 
+                      placeholder="輸入回覆內容…" 
+                    />
+                    <button className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm">
+                      送出回覆
+                    </button>
+                  </div>
+                  
+                  {/* 狀態更新控件 */}
+                  <StatusUpdater publicId={active.public_id} current={active.status} onDone={reloadQueue} />
+                  
+                  {isDevAdmin && (
+                    <div className="flex items-center gap-2">
+                      <AssignButton publicId={active.public_id} onDone={reloadQueue} />
                     </div>
                   )}
                 </div>
-              )}
-              <div className="mt-3 grid grid-cols-12 gap-2">
-                <input className="col-span-9 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg" placeholder="輸入回覆內容…（Ctrl+Enter 送出）" />
-                <button className="col-span-3 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90">送出回覆</button>
               </div>
-              {/* 狀態更新控件 */}
-              <StatusUpdater publicId={active.public_id} current={active.status} onDone={reloadQueue} />
-              {isDevAdmin && active && (
-                <div className="mt-2 flex items-center gap-2">
-                  <AssignButton publicId={active.public_id} onDone={reloadQueue} />
+            </div>
+          )}
+
+          {/* 統計資訊 - 比照審核管理 */}
+          <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-1">
+            <h2 className="text-lg font-semibold text-fg mb-4">統計資訊</h2>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-muted">開啟工單</span>
+                <span className="text-sm font-medium">{filtered.filter(t => t.status === 'open').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-muted">處理中</span>
+                <span className="text-sm font-medium">{filtered.filter(t => t.status === 'in_progress').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-muted">等待用戶</span>
+                <span className="text-sm font-medium">{filtered.filter(t => t.status === 'pending').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-muted">已解決</span>
+                <span className="text-sm font-medium text-green-600">{filtered.filter(t => t.status === 'solved').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-muted">總工單數</span>
+                <span className="text-sm font-medium">{filtered.length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 最近活動 */}
+          <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
+            <h3 className="text-lg font-semibold text-fg mb-4">最近活動</h3>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {filtered.slice(0, 10).map((t) => (
+                <div key={t.id} className="p-3 bg-surface-hover rounded-lg border border-border/50">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        t.status === 'solved' ? 'bg-green-500' : 
+                        t.status === 'in_progress' ? 'bg-yellow-500' : 'bg-blue-500'
+                      }`}></span>
+                      <div>
+                        <div className="font-medium text-fg text-sm">{t.subject}</div>
+                        <div className="text-xs text-muted">{displayPublicId(t)}</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted">
+                      {new Date(t.last_activity_at).toLocaleString('zh-TW')}
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-muted">
+                    <Badge color={statusColor(t.status)}>{statusDisplay[t.status]}</Badge>
+                    <span className="ml-2">{categoryDisplay(t.category)}</span>
+                    {t.requester_name && (
+                      <span className="ml-2">by {t.requester_name}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {filtered.length === 0 && (
+                <div className="text-center py-8 text-muted">
+                  暫無活動記錄
                 </div>
               )}
             </div>
-          ) : (
-            <div className="h-[64vh] flex items-center justify-center text-sm text-muted">請從左側選擇一筆工單</div>
-          )}
-        </section>
+          </div>
+        </div>
       </div>
       </main>
     </div>

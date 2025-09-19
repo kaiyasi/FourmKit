@@ -130,11 +130,14 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
       const end = localStorage.getItem('posts_filter_end') || ''
       let q = ''
 
-      if ((raw === null || raw === '__ALL__') && role === 'dev_admin') {
+      if (raw === null || raw === '__ALL__') {
+        // 所有用戶選擇「全部」時都顯示所有學校的貼文
         q = '&all_schools=true'
-      } else if (!raw || raw === '__ALL__') {
+      } else if (!raw || raw === '') {
+        // 選擇「跨校」時只顯示跨校貼文
         q = '&cross_only=true'
       } else {
+        // 選擇特定學校
         q = `&school=${encodeURIComponent(raw)}`
       }
 

@@ -331,7 +331,7 @@ def preview_actual_image():
     """
     try:
         data = request.get_json() or {}
-        
+
         # 內容數據
         content = {
             "title": data.get("title", ""),
@@ -341,13 +341,18 @@ def preview_actual_image():
             "school_name": data.get("school_name", ""),
             "id": data.get("id", "")
         }
-        
+
         # 配置選項
         size = data.get("size", "square")
         template = data.get("template", "modern")
         config = data.get("config", {})
         logo_url = data.get("logo_url")
         quality = data.get("quality", 95)
+
+        # 調試日誌
+        print(f"[預覽圖片] 接收到的配置: {config}")
+        print(f"[預覽圖片] Logo URL: {logo_url}")
+        print(f"[預覽圖片] 內容數據: {content}")
         
         # 生成預覽圖片
         renderer = get_renderer()

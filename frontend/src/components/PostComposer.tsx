@@ -19,6 +19,7 @@ export default function PostComposer({ token }: { token: string }) {
   const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [isAd, setIsAd] = useState(false)
+  const [lastSubmitTime, setLastSubmitTime] = useState(0)
   const { role } = useAuth()
   const mySchoolId = (() => { try { const v = localStorage.getItem('school_id'); return v ? Number(v) : null } catch { return null } })()
   const defaultSlug = (() => {
@@ -97,6 +98,19 @@ export default function PostComposer({ token }: { token: string }) {
   }
 
   async function doSubmit(finalSlug: string | '') {
+    // 防止重複提交 - 檢查狀態和時間戳
+    const now = Date.now();
+    if (submitting) {
+      console.log('[PostComposer] Already submitting, ignoring duplicate request');
+      return;
+    }
+    if (now - lastSubmitTime < 1000) { // 1秒內不允許重複提交
+      console.log('[PostComposer] Too fast submit, ignoring duplicate request');
+      return;
+    }
+
+    setLastSubmitTime(now);
+
     setSubmitting(true)
     try {
       // 優先使用純文本API，如果有檔案則使用多媒體API
@@ -279,8 +293,15 @@ export default function PostComposer({ token }: { token: string }) {
               </div>
             )}
             <div className="flex items-center justify-end gap-2">
-              <button type="button" className="btn-ghost text-sm" onClick={()=>setConfirmOpen(false)}>取消</button>
-              <button type="button" className="btn-primary text-sm" onClick={()=>doSubmit(targetSlug)}>確認送出</button>
+              <button type="button" className="btn-ghost text-sm" onClick={()=>setConfirmOpen(false)} disabled={submitting}>取消</button>
+              <button
+                type="button"
+                className="btn-primary text-sm disabled:opacity-60"
+                onClick={()=>doSubmit(targetSlug)}
+                disabled={submitting}
+              >
+                {submitting ? "送出中…" : "確認送出"}
+              </button>
             </div>
           </div>
         </div>
@@ -325,7 +346,12 @@ export default function PostComposer({ token }: { token: string }) {
             })()}
           </div>
         </div>
-        <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-primary disabled:opacity-60"
+          style={{ touchAction: 'manipulation' }}
+        >
           {submitting ? "送出中…" : "發佈"}
         </button>
       </div>

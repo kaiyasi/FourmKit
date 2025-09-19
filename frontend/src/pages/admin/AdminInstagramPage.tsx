@@ -547,12 +547,22 @@ export default function AdminInstagramPage() {
         },
       }
 
+      // 確保必要參數存在 - 從 templateConfig 結構提取
       const payload = {
-        ...templateData,
+        account_id: templateData.info?.account_id,
+        name: templateData.info?.name,
+        description: templateData.info?.description || '',
+        template_type: 'combined', // 固定為 combined（支援圖文並茂）
+        is_default: templateData.info?.is_default || false,
         config: {
           ...cfg,
           image: imageConfig,
         },
+      }
+
+      // 檢查必要參數
+      if (!payload.account_id || !payload.name) {
+        throw new Error('缺少必要參數：帳號ID 或模板名稱')
       }
 
       const response = await fetch(url, {
@@ -575,10 +585,13 @@ export default function AdminInstagramPage() {
         setShowTemplateEditor(false)
         setEditingTemplate(null)
       } else {
-        throw new Error(result.error)
+        console.error('API 返回錯誤:', result)
+        throw new Error(result.error || '未知錯誤')
       }
     } catch (error) {
       console.error('Save template failed:', error)
+      console.error('發送的數據:', payload)
+      alert(`儲存失敗: ${error.message}`)
       throw error
     }
   }

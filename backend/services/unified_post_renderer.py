@@ -93,16 +93,42 @@ class PostRenderer:
                        logo_url: Optional[str] = None,
                        quality: int = 95) -> BytesIO:
         """
-        渲染為圖片 - 使用完全相同的 HTML
+        渲染為圖片 - 直接使用 Pillow 根據模板設定畫圖（不走 HTML 預覽）。
+        若 Pillow 繪製發生異常，回退到 HTML→圖片確保不會整體失敗。
         """
-        # 先生成 HTML（和預覽完全一樣）
-        html_content = self.render_html(content, size, template, config, logo_url)
-        
-        # 獲取尺寸
-        dimensions = self.SIZES[size]
-        
-        # 使用 Pillow 渲染
-        return self._html_to_image(html_content, dimensions, quality)
+        # 直接使用 Pillow 渲染，完全依照 config 作畫
+        safe_config = {**(config or {})}
+        if logo_url:
+            safe_config['logo_url'] = logo_url
+            # 若未顯式指定，預設視為啟用
+            if 'logo_enabled' not in safe_config:
+                safe_config['logo_enabled'] = True
+
+        try:
+            from services.pillow_renderer import PillowRenderer
+            renderer = PillowRenderer(
+                default_width=self.SIZES.get(size, self.SIZES[self.default_size])["width"],
+                default_height=self.SIZES.get(size, self.SIZES[self.default_size])["height"]
+            )
+            return renderer.render_instagram_post(content=content, config=safe_config, quality=quality)
+        except Exception as e:
+            logger.error(f"Pillow 渲染失敗，改用 HTML 回退: {e}")
+            # 回退：使用 HTML → 圖片（保底）
+            html_content = self.render_html(content, size, template, config, logo_url)
+            dimensions = self.SIZES[size]
+            custom_w = None
+            custom_h = None
+            try:
+                if config and isinstance(config, dict):
+                    cw = config.get("width")
+                    ch = config.get("height")
+                    if isinstance(cw, (int, float)) and isinstance(ch, (int, float)) and cw > 0 and ch > 0:
+                        custom_w = int(cw)
+                        custom_h = int(ch)
+            except Exception:
+                pass
+            dims = {"width": custom_w or dimensions["width"], "height": custom_h or dimensions["height"]}
+            return self._html_to_image(html_content, dims, quality)
     
     def get_preview_data(self,
                         content: Dict,
@@ -223,30 +249,29 @@ class PostRenderer:
         }}
         
         body {{
-            width: {width}px;
-            height: {height}px;
+            width: {config.get("width", width)}px;
+            height: {config.get("height", height)}px;
             font-family: '{config["font_family"]}', 'Noto Sans TC', sans-serif;
             background: {config["background_color"]};
             color: {config["primary_color"]};
             overflow: hidden;
             position: relative;
+            font-size: {config.get("font_size_content", 28)}px;
+            line-height: {config.get("line_height", 1.5)};
         }}
         
         .container {{
             width: 100%;
             height: 100%;
-            padding: {config["padding"]}px;
-            display: flex;
-            flex-direction: column;
             position: relative;
+            overflow: hidden;
         }}
         
         .logo {{
             position: absolute;
-            top: {config["padding"]}px;
-            right: {config["padding"]}px;
-            width: 60px;
-            height: 60px;
+            {self._get_logo_position_styles(config)}
+            width: {config.get("logo_size", 60)}px;
+            height: {config.get("logo_size", 60)}px;
             border-radius: 50%;
             overflow: hidden;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -254,6 +279,7 @@ class PostRenderer:
             display: flex;
             align-items: center;
             justify-content: center;
+            opacity: {config.get("logo_opacity", 0.85)};
         }}
         
         .logo img {{
@@ -275,30 +301,32 @@ class PostRenderer:
             color: #ccc;
         }}
         
+        .content-wrapper {{
+            position: absolute;
+            max-width: calc(100% - {config.get("padding", 60) * 2}px);
+            word-wrap: break-word;
+            z-index: 1;
+        }}
+
         .title {{
-            font-size: {config["font_size_title"]}px;
+            font-size: {config.get("font_size_title", config.get("font_size_content", 28))}px;
             font-weight: 700;
             line-height: 1.2;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             color: {config["primary_color"]};
         }}
-        
+
         .content {{
-            font-size: {config["font_size_content"]}px;
-            line-height: {config["line_height"]};
+            font-size: {config.get("font_size_content", 28)}px;
+            line-height: {config.get("line_height", 1.5)};
             color: {config["primary_color"]};
-            flex: 1;
-            display: flex;
-            align-items: center;
         }}
-        
+
         .meta {{
-            font-size: {config["font_size_meta"]}px;
-            color: {config["secondary_color"]};
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 30px;
+            position: absolute;
+            font-size: {config.get("metadata_size", config.get("font_size_meta", 12))}px;
+            color: {config.get("metadata_color", config.get("secondary_color", "#666666"))};
+            z-index: 2;
         }}
         
         .author {{
@@ -346,16 +374,56 @@ class PostRenderer:
         return class_map.get(template, "modern-gradient")
     
     def _build_modern_template(self, content: Dict, config: Dict) -> str:
-        """現代風格模板"""
+        """現代風格模板 - 完全支援用戶配置的所有參數"""
+
+        # 獲取文字位置和對齊設定
+        text_position = config.get('text_position', 'center')
+        text_align = config.get('text_align', 'center')
+        text_valign = config.get('text_valign', 'middle')
+
+        # 計算實際位置
+        position_styles = self._calculate_position_styles(text_position, config)
+
+        # 構建元數據區塊 - 根據配置決定顯示內容
+        meta_parts = []
+
+        # 作者 - 檢查是否為匿名貼文
+        author = content.get('author', '')
+        if author and author.lower() not in ['匿名', 'anonymous', ''] and author.strip():
+            meta_parts.append(f'<span class="author">{author}</span>')
+
+        # 時間戳 - 檢查配置是否啟用
+        show_timestamp = config.get('show_timestamp', False)
+        if show_timestamp and content.get('time'):
+            meta_parts.append(f'<span class="time">{content["time"]}</span>')
+
+        # 貼文ID - 檢查配置是否啟用
+        show_post_id = config.get('show_post_id', False)
+        if show_post_id and content.get('id'):
+            post_id_format = config.get('post_id_format', '#{id}')
+            formatted_id = post_id_format.replace('{id}', str(content['id']))
+            meta_parts.append(f'<span class="post-id">{formatted_id}</span>')
+
+        # 學校名稱
+        school = content.get('school', '')
+        if school and school.strip():
+            meta_parts.append(f'<span class="school">{school}</span>')
+
+        # 構建元數據HTML，根據配置決定位置
+        meta_html = ''
+        if meta_parts:
+            meta_position = self._get_metadata_position_styles(config)
+            meta_html = f'<div class="meta" style="{meta_position}">' + ' · '.join(meta_parts) + '</div>'
+
+        # 應用文字位置和對齊設定
+        content_styles = f"text-align: {text_align}; {position_styles}"
+
         return f"""
-        <div class="title">{content['title']}</div>
-        <div class="content">
-            <div>{content['text']}</div>
+        <div class="content-wrapper" style="{content_styles}">
+            <div class="title">{content.get('title', '') if content.get('title') and content.get('title').strip() else ''}</div>
+            <div class="content">{content.get('text', '')}</div>
         </div>
-        <div class="meta">
-            <span class="author">{content['author']}</span>
-            <span class="time">{content['time']}</span>
-        </div>"""
+        {meta_html}"""
     
     def _build_card_template(self, content: Dict, config: Dict) -> str:
         """卡片風格模板"""
@@ -433,6 +501,58 @@ class PostRenderer:
         
         return logo_url
     
+    def _calculate_position_styles(self, position: str, config: Dict) -> str:
+        """計算文字位置的 CSS 樣式"""
+        position_map = {
+            'top-left': 'position: absolute; top: 10%; left: 10%;',
+            'top-center': 'position: absolute; top: 10%; left: 50%; transform: translateX(-50%);',
+            'top-right': 'position: absolute; top: 10%; right: 10%;',
+            'middle-left': 'position: absolute; top: 50%; left: 10%; transform: translateY(-50%);',
+            'center': 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);',
+            'middle-right': 'position: absolute; top: 50%; right: 10%; transform: translateY(-50%);',
+            'bottom-left': 'position: absolute; bottom: 10%; left: 10%;',
+            'bottom-center': 'position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);',
+            'bottom-right': 'position: absolute; bottom: 10%; right: 10%;',
+        }
+
+        if position == 'custom':
+            x = config.get('text_custom_x', 50)
+            y = config.get('text_custom_y', 50)
+            return f'position: absolute; top: {y}%; left: {x}%; transform: translate(-50%, -50%);'
+
+        return position_map.get(position, position_map['center'])
+
+    def _get_metadata_position_styles(self, config: Dict) -> str:
+        """獲取元數據的位置樣式"""
+        # 簡化處理：元數據通常放在底部
+        metadata_size = config.get('metadata_size', 12)
+        metadata_color = config.get('metadata_color', '#666666')
+        return f'position: absolute; bottom: 20px; left: 20px; font-size: {metadata_size}px; color: {metadata_color};'
+
+    def _get_logo_position_styles(self, config: Dict) -> str:
+        """獲取 LOGO 位置的 CSS 樣式"""
+        logo_position = config.get('logo_position', 'bottom-right')
+        padding = config.get('padding', 60)
+
+        position_map = {
+            'top-left': f'top: {padding}px; left: {padding}px;',
+            'top-center': f'top: {padding}px; left: 50%; transform: translateX(-50%);',
+            'top-right': f'top: {padding}px; right: {padding}px;',
+            'middle-left': f'top: 50%; left: {padding}px; transform: translateY(-50%);',
+            'center': f'top: 50%; left: 50%; transform: translate(-50%, -50%);',
+            'middle-right': f'top: 50%; right: {padding}px; transform: translateY(-50%);',
+            'bottom-left': f'bottom: {padding}px; left: {padding}px;',
+            'bottom-center': f'bottom: {padding}px; left: 50%; transform: translateX(-50%);',
+            'bottom-right': f'bottom: {padding}px; right: {padding}px;',
+        }
+
+        if logo_position == 'custom':
+            x = config.get('logo_custom_x', 90)
+            y = config.get('logo_custom_y', 90)
+            return f'top: {y}%; left: {x}%; transform: translate(-50%, -50%);'
+
+        return position_map.get(logo_position, position_map['bottom-right'])
+
     def _file_to_data_url(self, file_path: str) -> str:
         """將本地檔案轉換為 data URL"""
         import mimetypes

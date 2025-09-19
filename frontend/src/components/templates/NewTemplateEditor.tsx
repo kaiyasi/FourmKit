@@ -4,7 +4,7 @@ import { X, Save, ChevronLeft, ChevronRight } from 'lucide-react'
 // 導入步驟組件
 import TemplateInfoStep from './steps/TemplateInfoStep'
 import PostTemplateStep from './steps/PostTemplateStep'
-import PhotoTemplateStep from './steps/PhotoTemplateStep'
+// 相片模板已合併到貼文模板（移除專用步驟）
 import NewCaptionTemplateStep from './steps/NewCaptionTemplateStep'
 import IGPreview from './IGPreview'
 
@@ -54,6 +54,11 @@ interface PostTemplateConfig {
       size: number
       color: string
     }
+  }
+  // 合併相片設定（相片顯示區塊）：大小與圓角
+  imageBox?: {
+    size: number
+    borderRadius: number
   }
 }
 
@@ -186,14 +191,15 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
       lineHeight: 1.5
     },
     logo: {
-      enabled: false,
+      enabled: false, // 預設關閉 LOGO，等待用戶上傳
       size: 80,
       position: 'bottom-right',
-      opacity: 0.85
+      opacity: 0.85,
+      url: '' // 用戶透過模板編輯器上傳
     },
     metadata: {
       showTimestamp: true,
-      showPostId: false,
+      showPostId: true, // 預設啟用貼文ID 顯示
       timestampFormat: 'relative',
       timestampPosition: 'bottom-left',
       postIdPosition: 'bottom-right',
@@ -202,6 +208,10 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
         size: 12,
         color: '#666666'
       }
+    },
+    imageBox: {
+      size: 380,
+      borderRadius: 12
     }
   },
   photo: {
@@ -286,11 +296,10 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
   }
 }
 
-// 步驟定義
+// 步驟定義（相片模板已合併到貼文模板）
 const STEPS = [
   { id: 'info', title: '模板資訊', desc: '基本設定' },
   { id: 'post', title: '貼文模板', desc: '文字轉圖片' },
-  { id: 'photo', title: '相片模板', desc: '圖片處理' },
   { id: 'caption', title: '文案模板', desc: 'IG文案格式' }
 ] as const
 
@@ -333,17 +342,30 @@ export default function NewTemplateEditor({
     }
   }, [editingTemplate, accounts])
 
-  // 初始化預覽數據
+  // 載入平台真實貼文數據用於預覽
   useEffect(() => {
-    // 模擬加載預覽貼文數據
-    setPreviewData({
-      id: 123,
-      title: '校園活動公告',
-      content: '本週六將舉辦校園音樂會，歡迎所有同學參與這個精彩的活動。活動時間為晚上7點到9點，地點在學生活動中心。',
-      author: '學生會',
-      school: { name: '台北市立大學' },
-      created_at: new Date().toISOString()
-    })
+    const loadSamplePost = async () => {
+      try {
+        const response = await fetch('/api/admin/social/posts/sample?limit=1', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        })
+        const result = await response.json()
+
+        if (result.success && result.posts && result.posts.length > 0) {
+          setPreviewData(result.posts[0])
+        } else {
+          // 如果沒有真實貼文，設為 null，讓 IGPreview 顯示提示
+          setPreviewData(null)
+        }
+      } catch (error) {
+        console.warn('無法載入範例貼文，使用空狀態:', error)
+        setPreviewData(null)
+      }
+    }
+
+    loadSamplePost()
   }, [])
 
   // 防止背景滾動和互動
@@ -517,12 +539,7 @@ export default function NewTemplateEditor({
                   onCanvasUpdate={(updates) => updateTemplateConfig({ canvas: { ...templateConfig.canvas, ...updates } })}
                 />
               )}
-              {currentStep === 'photo' && (
-                <PhotoTemplateStep
-                  config={templateConfig.photo}
-                  onUpdate={(updates) => updateTemplateConfig({ photo: { ...templateConfig.photo, ...updates } })}
-                />
-              )}
+              {/* 相片模板步驟已移除，合併到貼文模板 */}
               {currentStep === 'caption' && (
                 <NewCaptionTemplateStep
                   config={templateConfig.caption}

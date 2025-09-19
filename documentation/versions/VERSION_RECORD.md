@@ -12,7 +12,49 @@
 
 ---
 
-## 最新版本（現行：V2.1.1）
+## 最新版本（現行：V2.1.2）
+
+*🗓️ 發布日期：2025-09-20*
+
+專注於「Instagram 模板系統修復」與「前端體驗優化」的緊急修復版本。解決了 Instagram 自動發布的模板配置問題，修復了前端 JavaScript 錯誤，並針對管理功能進行了體驗優化。
+
+### 主要修復
+
+* **📸 Instagram 模板系統完全修復**
+  * **模板優先級問題修復** - 解決 multipost 配置覆蓋 caption 模板的核心問題
+  * **圖片生成元素修復** - LOGO、時間戳、貼文 ID 元素全部啟用並正確顯示
+  * **CDN 配置修復** - 解決環境變數未載入導致的 CDN 上傳失敗
+  * **模板配置清理** - 移除衝突的 multipost 配置，確保 caption 模板正確套用
+
+* **🛠️ 前端 JavaScript 錯誤修復**
+  * **heroLoaded 未定義錯誤修復** - 修正變數作用域問題
+  * **Home Hero 區塊還原** - 從動態載入改回固定格式，提升穩定性
+  * **管理頁面增強** - 新增 home-hero 編輯選項到管理後台
+
+### 技術改進
+
+* **🔧 ContentGenerator 重寫**
+  * 完全重寫 `_generate_caption` 方法，僅使用 caption 配置
+  * 移除 multipost 配置干擾，確保模板格式正確套用
+  * 修復模板合併邏輯：`config = {**caption_config, **multipost_config}` → 僅使用 caption
+
+* **📦 環境變數管理優化**
+  * 所有 Python 腳本統一載入 `.env` 檔案
+  * 確保 `PUBLIC_CDN_URL` 等關鍵配置正確載入
+
+### 修正的具體問題
+
+* Instagram 貼文模板從 `##044\n{content}\n---` 修正為 `📝 {content}\n\n#校園生活 #{school_name}`
+* 圖片生成正確顯示 LOGO、時間戳、貼文 ID 元素
+* 前端 ReferenceError: heroLoaded is not defined 完全解決
+* Admin 頁面新增 home-hero 編輯功能
+* CDN 上傳失敗問題完全修復
+
+---
+
+## 版本歷史
+
+### V2.1.1
 
 *🗓️ 發布日期：2025-09-18*
 

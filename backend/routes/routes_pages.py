@@ -79,8 +79,9 @@ def _render_html(md: str) -> str:
     md2 = re.sub(r"\*(.+?)\*", r"<em>\1</em>", md2)
     # Inline code
     md2 = re.sub(r"`([^`]+)`", r"<code>\1</code>", md2)
-    # Links [text](url)
-    md2 = re.sub(r"\[([^\]]+)\]\((https?://[^\s)]+)\)", r"<a href=\"\2\" target=\"_blank\" rel=\"nofollow noreferrer\">\1</a>", md2)
+    # Links [text](url) — 支援可選引號與空白，例如 [t]("https://..." )
+    link_re = re.compile(r"\[([^\]]+)\]\(\s*[\"']?(https?://[^)\s\"']+)[\"']?\s*\)")
+    md2 = link_re.sub(r"<a href=\"\2\" target=\"_blank\" rel=\"nofollow noreferrer\">\1</a>", md2)
     # Lists
     lines = md2.splitlines()
     out = []

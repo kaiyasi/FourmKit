@@ -537,6 +537,7 @@ def list_posts():
                 "is_announcement": bool(getattr(p, "is_announcement", False)),
                 "announcement_type": getattr(p, "announcement_type", None),
                 "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
+                "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
             })
         resp = jsonify({"items": items})
         try:

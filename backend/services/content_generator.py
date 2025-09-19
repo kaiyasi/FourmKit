@@ -177,8 +177,8 @@ class ContentGenerator:
             import os
             cdn_base_url = os.getenv('PUBLIC_BASE_URL', '').rstrip('/') + '/uploads'
             for media in forum_post.media:
-                if media.status == 'approved' and not media.is_deleted:
-                    # 檢查是否為圖片類型
+                # 放寬條件：只要非刪除且為圖片類型即納入
+                if not media.is_deleted:
                     if media.mime_type and media.mime_type.startswith('image/'):
                         media_path = media.path.lstrip('/')
                         media_url = f"{cdn_base_url}/{media_path}"
@@ -205,19 +205,23 @@ class ContentGenerator:
     ) -> List[str]:
         """生成圖片列表（支援用戶附件 + 文字圖片）"""
         try:
-            images = []
+            images: List[str] = []
 
-            # 1. 先加入用戶上傳的圖片
-            if content_data.get('has_user_images') and content_data.get('media_urls'):
-                images.extend(content_data['media_urls'])
-                logger.info(f"加入 {len(content_data['media_urls'])} 張用戶上傳的圖片")
+            has_user_images = bool(content_data.get('has_user_images') and content_data.get('media_urls'))
 
-            # 2. 再生成文字圖片
-            text_image = self._generate_image(content_data, template, custom_options)
-            if text_image:
-                images.append(text_image)
-                logger.info("加入 1 張文字圖片")
+            selected_url = None
+            if has_user_images:
+                try:
+                    # 有相片 → 產生「合成相片卡」作為唯一輸出
+                    selected_url = self._generate_image_with_photos(content_data, template, custom_options, content_data.get('media_urls', [])[:4])
+                except Exception as ce:
+                    logger.warning(f"合成相片卡生成失敗，退回純文字卡: {ce}")
+            if not selected_url:
+                # 無相片或合成失敗 → 使用純文字卡
+                selected_url = self._generate_image(content_data, template, custom_options)
 
+            if selected_url:
+                images = [selected_url]
             return images
 
         except Exception as e:
@@ -331,7 +335,7 @@ class ContentGenerator:
             # 準備文字內容用於 Pillow 渲染 - 只顯示內文，不顯示標題
             text_content = content_data.get('content', '')
             
-            # 使用 Pillow 渲染器生成圖片（先產出文字底圖）
+            # 使用統一渲染器生成圖片（與前端預覽一致）
             # 讀取輸出格式與文字排版設定
             img_format = (config.get('imageFormat') or 'JPEG').upper()
             if img_format not in ('JPEG', 'PNG'):
@@ -627,6 +631,148 @@ class ContentGenerator:
         except Exception as e:
             logger.error(f"圖片生成失敗: {e}")
             raise ContentGenerationError(f"圖片生成失敗: {str(e)} at output_dir={self.output_dir}")
+
+    def _generate_image_with_photos(
+        self,
+        content_data: Dict[str, Any],
+        template: ContentTemplate,
+        custom_options: Optional[Dict],
+        image_urls: List[str]
+    ) -> str:
+        """生成合成相片卡（將用戶相片按方塊規則與文字上下排列合併到一張圖片）。"""
+        try:
+            config = template.config.get('image', {})
+            if custom_options and 'image' in custom_options:
+                config.update(custom_options['image'])
+
+            cards = config.get('cards', {}) if isinstance(config.get('cards', {}), dict) else {}
+            text_cfg = cards.get('text', config.get('text', {})) or {}
+            ts_cfg = cards.get('timestamp', config.get('timestamp', {})) or {}
+            logo_cfg = cards.get('logo', config.get('logo', {})) or {}
+            pid_cfg = cards.get('postId', config.get('postId', {})) or {}
+
+            pillow_config = {
+                'width': config.get('width', 1080),
+                'height': config.get('height', 1080),
+                'background_color': config.get('background', {}).get('value', '#ffffff'),
+                'font_family': text_cfg.get('font', config.get('text', {}).get('font', 'default')),
+                'font_size': text_cfg.get('size', config.get('text', {}).get('size', 32)),
+                'text_color': text_cfg.get('color', config.get('text', {}).get('color', '#333333')),
+                'padding': config.get('padding', 60),
+                'line_spacing': text_cfg.get('lineSpacing', config.get('text', {}).get('lineSpacing', 10)),
+
+                # 文字排版（有相片）
+                'text_max_chars_per_line_with_photo': text_cfg.get('maxCharsPerLine', 24),
+                'text_max_lines_with_photo': text_cfg.get('maxLines', 6),
+                'with_photo_stacked': True,
+                'text_pos_x': text_cfg.get('posX', 10),
+                'text_pos_y': text_cfg.get('posY', 15),
+                'image_pos_x': config.get('imagePosX', 10),
+                'image_pos_y': config.get('imagePosY', 55),
+
+                # 相片方塊
+                'photo_square_size': config.get('photoSquareSize', max(120, int(min(config.get('width',1080), config.get('height',1080)) * 0.35))),
+                'photo_border_radius': config.get('photoBorderRadius', 12),
+
+                # 相片 URL 列表
+                'image_urls': image_urls
+            }
+
+            # 時間戳/貼文ID/Meta 樣式（與 Pillow 期望鍵對齊）
+            if ts_cfg:
+                pillow_config['show_timestamp'] = bool(ts_cfg.get('enabled', True))
+                fmt = ts_cfg.get('format') or ts_cfg.get('timestampFormat') or 'relative'
+                pillow_config['timestamp_format'] = fmt
+                if ts_cfg.get('position'):
+                    pillow_config['timestamp_position'] = ts_cfg.get('position')
+                if isinstance(ts_cfg.get('style'), dict):
+                    st = ts_cfg.get('style')
+                    pillow_config['metadata_size'] = st.get('size', pillow_config.get('font_size'))
+                    pillow_config['metadata_color'] = st.get('color', '#666666')
+                    if st.get('font'):
+                        pillow_config['metadata_font'] = st.get('font')
+            if pid_cfg:
+                pillow_config['show_post_id'] = bool(pid_cfg.get('enabled', False))
+                if pid_cfg.get('format'):
+                    pillow_config['post_id_format'] = pid_cfg.get('format')
+                if pid_cfg.get('position'):
+                    pillow_config['post_id_position'] = pid_cfg.get('position')
+
+            # 加上 LOGO 等
+            if logo_cfg:
+                pillow_config['logo_enabled'] = bool(logo_cfg.get('enabled', False))
+                if logo_cfg.get('url'):
+                    pillow_config['logo_url'] = logo_cfg.get('url')
+                pillow_config['logo_size'] = logo_cfg.get('size', 80)
+                pillow_config['logo_opacity'] = logo_cfg.get('opacity', 0.85)
+                pillow_config['logo_position'] = logo_cfg.get('position', 'bottom-right')
+
+            # 產生圖片（用 render_instagram_post）
+            # 透過 unified_post_renderer，確保與 IG 手機預覽一致
+            try:
+                from services.unified_post_renderer import get_renderer as _get_unified_renderer
+                _renderer = _get_unified_renderer()
+                image_buffer = _renderer.render_to_image(
+                    content={
+                        'title': content_data.get('title', ''),
+                        'text': content_data.get('content', ''),
+                        'author': content_data.get('author', ''),
+                        'school_name': content_data.get('school_name', ''),
+                        'created_at': content_data.get('created_at'),
+                        'id': content_data.get('id')
+                    },
+                    size='instagram_square',
+                    template='modern',
+                    config=pillow_config,
+                    logo_url=pillow_config.get('logo_url'),
+                    quality=int(config.get('quality', 90))
+                )
+            except Exception:
+                # 回退到直接使用 PillowRenderer（保底）
+                image_buffer = self.pillow_renderer.render_instagram_post(
+                    content={
+                        'title': content_data.get('title', ''),
+                        'text': content_data.get('content', ''),
+                        'author': content_data.get('author', ''),
+                        'school_name': content_data.get('school_name', ''),
+                        'created_at': content_data.get('created_at'),
+                        'id': content_data.get('id')
+                    },
+                    config=pillow_config,
+                    quality=int(config.get('quality', 90))
+                )
+
+            # 儲存與上傳（沿用 _generate_image 的流程）
+            os.makedirs(self.output_dir, exist_ok=True)
+            filename = f"composed_{content_data.get('id')}_{int(datetime.now(timezone.utc).timestamp()*1000)}.jpg"
+            file_path = os.path.join(self.output_dir, filename)
+            with open(file_path, 'wb') as f:
+                f.write(image_buffer.getvalue())
+            # 基本檔案驗證
+            try:
+                st = os.stat(file_path)
+                if st.st_size <= 0:
+                    raise ContentGenerationError("合成圖片為空檔案")
+            except FileNotFoundError:
+                raise ContentGenerationError(f"找不到合成圖片檔案: {file_path}")
+
+            # 上傳到 CDN
+            from utils.cdn_uploader import publish_to_cdn
+            cdn_url = publish_to_cdn(file_path, subdir="social_media")
+            if not cdn_url:
+                # 清理
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                except Exception:
+                    pass
+                raise ContentGenerationError("合成圖片 CDN 上傳失敗")
+
+            return cdn_url
+
+        except Exception as e:
+            logger.error(f"合成相片卡生成失敗: {e}")
+            raise
     
     def _build_preview_html(self, content_data: Dict[str, Any], config: Dict[str, Any]) -> str:
         """構建 HTML 內容用於圖片生成"""
@@ -737,58 +883,48 @@ class ContentGenerator:
         )
     
     def _generate_caption(
-        self, 
-        content_data: Dict[str, Any], 
+        self,
+        content_data: Dict[str, Any],
         template: ContentTemplate,
         custom_options: Optional[Dict] = None
     ) -> Dict[str, str]:
-        """生成文案"""
+        """生成文案 - 重寫版本，只使用 caption 配置"""
         try:
-            # 優先使用 multipost 配置，如果沒有則使用 caption 配置
-            multipost_config = template.config.get('multipost', {})
+            logger.info(f"開始生成文案 - Post ID: {content_data.get('id')}")
+
+            # 只使用 caption 配置，完全忽略 multipost
             caption_config = template.config.get('caption', {})
 
-            # 合併配置（multipost 優先）
-            config = {**caption_config, **multipost_config}
-
             if custom_options and 'caption' in custom_options:
-                config.update(custom_options['caption'])
+                caption_config = {**caption_config, **custom_options['caption']}
 
-            # 獲取文案模板
-            caption_template = config.get('template', '{content}')
-            max_length = config.get('maxLength', config.get('max_length', 2200))
-            
+            # 檢查是否啟用
+            if not caption_config.get('enabled', True):
+                logger.info("Caption 功能未啟用，回傳原始內容")
+                return {'caption': content_data.get('content', '')}
+
+            # 取得模板
+            caption_template = caption_config.get('template', '{content}')
+            max_length = caption_config.get('maxLength', 2200)
+
+            logger.info(f"使用 caption 模板: '{caption_template}'")
+
             # 生成標籤
             hashtags = self._generate_hashtags(content_data, template)
             hashtags_str = ' '.join(hashtags) if hashtags else ''
-            
-            # 檢查是否是多篇發布模板
-            if multipost_config and '{id}' in caption_template:
-                # 使用 multipost 格式化邏輯
-                formatted_id = self._format_id(content_data.get('id', ''), multipost_config.get('idFormat', {}))
-                caption = caption_template.format(
-                    content=content_data.get('content', ''),
-                    author=content_data.get('author', ''),
-                    id=formatted_id,
-                    title=content_data.get('title', ''),
-                    hashtags=hashtags_str,
-                    school_name=content_data.get('school_name', ''),
-                    category=content_data.get('category', '')
-                )
-                # 注意：prefix 和 suffix 在 multipost 場景中由調用方處理
-            else:
-                # 傳統單篇發布格式化
-                caption = caption_template.format(
-                    content=content_data.get('content', ''),
-                    author=content_data.get('author', ''),
-                    id=content_data.get('id', ''),
-                    title=content_data.get('title', ''),
-                    hashtags=hashtags_str,
-                    school_name=content_data.get('school_name', ''),
-                    category=content_data.get('category', '')
-                )
 
-            # 壓縮多餘空行（避免移除 {title} 後殘留大段空白）
+            # 格式化文案
+            caption = caption_template.format(
+                content=content_data.get('content', ''),
+                author=content_data.get('author', ''),
+                id=content_data.get('id', ''),
+                title=content_data.get('title', ''),
+                hashtags=hashtags_str,
+                school_name=content_data.get('school_name', ''),
+                category=content_data.get('category', '')
+            )
+
+            # 清理多餘空行
             try:
                 lines = [ln.rstrip() for ln in caption.splitlines()]
                 cleaned: list[str] = []
@@ -808,16 +944,97 @@ class ContentGenerator:
                 caption = '\n'.join(cleaned)
             except Exception:
                 pass
-            
+
             # 限制長度
             if len(caption) > max_length:
                 caption = caption[:max_length-3] + '...'
-            
+
+            logger.info(f"文案生成完成: '{caption[:50]}...'")
             return {'caption': caption}
-            
+
         except Exception as e:
             logger.error(f"文案生成失敗: {e}")
             return {'caption': content_data.get('title', '') or content_data.get('content', '')[:100]}
+
+    def _generate_caption_newstyle(self, content_data: Dict[str, Any], cap_cfg: Dict[str, Any]) -> str:
+        """依照新版前端 caption 結構生成 IG 文案（與手機預覽一致）。
+        結構：single.header/footer、repeating.idFormat/content/separator、hashtags
+        這裡為單帖文組裝（輪播合併由 auto_publisher 負責）。
+        """
+        def replace_placeholders(text: str) -> str:
+            if not text:
+                return ''
+            sample = {
+                'id': str(content_data.get('id') or ''),
+                'content': str(content_data.get('content') or ''),
+                'author': str(content_data.get('author') or ''),
+                'title': str(content_data.get('title') or ''),
+                'school_name': str(content_data.get('school_name') or '')
+            }
+            out = str(text)
+            for k, v in sample.items():
+                out = out.replace('{' + k + '}', v)
+            return out
+
+        parts: list[str] = []
+
+        # 1) Header（只顯示一次）
+        single = cap_cfg.get('single', {}) or {}
+        header = single.get('header', {}) or {}
+        if header.get('enabled') and header.get('content'):
+            parts.append(replace_placeholders(header.get('content', '')))
+
+        # 2) Repeating 區段（單帖文只組一次）
+        repeating = cap_cfg.get('repeating', {}) or {}
+        rep_parts: list[str] = []
+        # idFormat
+        id_fmt = repeating.get('idFormat', {}) or {}
+        if id_fmt.get('enabled') and id_fmt.get('format'):
+            rep_parts.append(replace_placeholders(id_fmt.get('format', '')))
+        # content
+        rep_content = repeating.get('content', {}) or {}
+        if rep_content.get('enabled') and rep_content.get('template'):
+            rep_parts.append(replace_placeholders(rep_content.get('template', '')))
+        # separator
+        sep = repeating.get('separator', {}) or {}
+        if sep.get('enabled') and sep.get('style'):
+            rep_parts.append(sep.get('style'))
+        if rep_parts:
+            parts.append('\n'.join([p for p in rep_parts if str(p).strip() != '']))
+
+        # 3) Footer（只顯示一次）
+        footer = single.get('footer', {}) or {}
+        if footer.get('enabled') and footer.get('content'):
+            parts.append(replace_placeholders(footer.get('content', '')))
+
+        # 4) Hashtags（新版模板中的固定標籤，避免與後續自動附加重複）
+        hashtags_cfg = cap_cfg.get('hashtags', {}) or {}
+        if hashtags_cfg.get('enabled') and hashtags_cfg.get('tags'):
+            max_tags = int(hashtags_cfg.get('maxTags', len(hashtags_cfg.get('tags'))))
+            tags = [t for t in hashtags_cfg.get('tags') if str(t).strip()][:max_tags]
+            if tags:
+                parts.append(' '.join(tags))
+
+        # 清理連續空行
+        try:
+            lines = [ln.rstrip() for ln in '\n\n'.join([p for p in parts if str(p).strip()]).splitlines()]
+            cleaned: list[str] = []
+            empty = 0
+            for ln in lines:
+                if ln.strip() == '':
+                    empty += 1
+                    if empty <= 1:
+                        cleaned.append('')
+                else:
+                    empty = 0
+                    cleaned.append(ln)
+            while cleaned and cleaned[0] == '':
+                cleaned.pop(0)
+            while cleaned and cleaned[-1] == '':
+                cleaned.pop()
+            return '\n'.join(cleaned)
+        except Exception:
+            return '\n\n'.join([p for p in parts if str(p).strip()])
     
     def _generate_hashtags(
         self, 
@@ -827,9 +1044,19 @@ class ContentGenerator:
         """生成標籤"""
         hashtags: List[str] = []
         
-        # 從模板獲取預設標籤
-        template_hashtags = template.config.get('hashtags', [])
-        hashtags.extend(template_hashtags)
+        # 新版 caption 若已定義 hashtags（在正文內組裝），這裡避免重複加入相同列表
+        caption_cfg = template.config.get('caption', {}) or {}
+        newstyle_hashtags = []
+        try:
+            if caption_cfg.get('hashtags', {}).get('enabled'):
+                newstyle_hashtags = caption_cfg.get('hashtags', {}).get('tags', []) or []
+        except Exception:
+            newstyle_hashtags = []
+        
+        # 舊版：模板固定 hashtags（若未使用新版 caption）
+        if not newstyle_hashtags:
+            template_hashtags = template.config.get('hashtags', [])
+            hashtags.extend(template_hashtags)
         
         # 從帳號獲取自動標籤
         with get_session() as db:

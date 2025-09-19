@@ -213,7 +213,7 @@ export default function InstagramStats({ overview, dailyTrends, accountStats }: 
                     <div className="flex items-center gap-2">
                       <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
                         <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                          className="h-full bg-primary-600 rounded-full transition-all duration-500"
                           style={{ width: `${Math.max(percentage, 2)}%` }}
                         />
                       </div>
