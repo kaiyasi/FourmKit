@@ -93,19 +93,118 @@ def _sanitize_template_config(cfg: dict) -> dict:
         photos['combined'] = comb
         c['photos'] = photos
 
-        # caption: strip emoji/icons; limit autoHashtags; remove emojis from hashtags
+        # caption: 處理新舊兩種結構，並移除 emoji
         cap = c.get('caption') or {}
-        cap['header'] = _strip_emoji(str(cap.get('header') or ''))
-        cap['content'] = _strip_emoji(str(cap.get('content') or ''))
-        cap['footer'] = _strip_emoji(str(cap.get('footer') or ''))
-        tags = cap.get('autoHashtags') or []
-        clean_tags = []
-        for t in tags[:5]:  # keep at most 5 to avoid noise
-            tt = _strip_emoji(str(t or '')).strip()
-            if tt:
-                clean_tags.append(tt)
-        cap['autoHashtags'] = clean_tags
+
+        # 新結構：支援 repeating 和 single 區段
+        if 'repeating' in cap or 'single' in cap:
+            # 處理重複區段
+            repeating = cap.get('repeating') or {}
+            if 'idFormat' in repeating:
+                id_format = repeating.get('idFormat') or {}
+                id_format['format'] = _strip_emoji(str(id_format.get('format') or ''))
+                repeating['idFormat'] = id_format
+            if 'content' in repeating:
+                content = repeating.get('content') or {}
+                content['template'] = _strip_emoji(str(content.get('template') or ''))
+                repeating['content'] = content
+            if 'separator' in repeating:
+                separator = repeating.get('separator') or {}
+                separator['style'] = _strip_emoji(str(separator.get('style') or ''))
+                repeating['separator'] = separator
+            cap['repeating'] = repeating
+
+            # 處理單次區段
+            single = cap.get('single') or {}
+            if 'header' in single:
+                header = single.get('header') or {}
+                header['content'] = _strip_emoji(str(header.get('content') or ''))
+                single['header'] = header
+            if 'footer' in single:
+                footer = single.get('footer') or {}
+                footer['content'] = _strip_emoji(str(footer.get('content') or ''))
+                # 保留 customLink，但不處理它（允許用戶設定連結）
+                if 'customLink' in footer:
+                    footer['customLink'] = str(footer.get('customLink') or '')
+                single['footer'] = footer
+            cap['single'] = single
+
+            # 處理 hashtags
+            hashtags = cap.get('hashtags') or {}
+            tags = hashtags.get('tags') or []
+            clean_tags = []
+            for t in tags[:5]:  # keep at most 5 to avoid noise
+                tt = _strip_emoji(str(t or '')).strip()
+                if tt:
+                    clean_tags.append(tt)
+            hashtags['tags'] = clean_tags
+            cap['hashtags'] = hashtags
+        else:
+            # 舊結構：保持向下相容
+            cap['header'] = _strip_emoji(str(cap.get('header') or ''))
+            cap['content'] = _strip_emoji(str(cap.get('content') or ''))
+            cap['footer'] = _strip_emoji(str(cap.get('footer') or ''))
+            tags = cap.get('autoHashtags') or []
+            clean_tags = []
+            for t in tags[:5]:  # keep at most 5 to avoid noise
+                tt = _strip_emoji(str(t or '')).strip()
+                if tt:
+                    clean_tags.append(tt)
+            cap['autoHashtags'] = clean_tags
+
         c['caption'] = cap
+
+        # 處理前端 metadata 格式轉換為後端 cards 格式
+        # 這樣時間戳和貼文ID才能正確顯示在生成的圖片上
+        if 'post' in c:
+            post_config = c['post']
+            metadata = post_config.get('metadata', {})
+
+            # 初始化 cards 結構如果不存在
+            if 'cards' not in post_config:
+                post_config['cards'] = {}
+
+            cards = post_config['cards']
+
+            # 轉換時間戳設置
+            if 'showTimestamp' in metadata:
+                if 'timestamp' not in cards:
+                    cards['timestamp'] = {}
+                cards['timestamp']['enabled'] = metadata.get('showTimestamp', False)
+
+                # 複製其他時間戳設置
+                if 'timestampPosition' in metadata:
+                    cards['timestamp']['position'] = metadata['timestampPosition']
+                if 'timestampStyle' in metadata:
+                    ts_style = metadata['timestampStyle']
+                    cards['timestamp'].update({
+                        'size': ts_style.get('size', 18),
+                        'color': ts_style.get('color', '#666666'),
+                        'font': ts_style.get('font', 'Noto Sans TC')
+                    })
+
+            # 轉換貼文ID設置
+            if 'showPostId' in metadata:
+                if 'postId' not in cards:
+                    cards['postId'] = {}
+                cards['postId']['enabled'] = metadata.get('showPostId', False)
+
+                # 設置貼文ID格式
+                if 'postIdFormat' in metadata:
+                    cards['postId']['text'] = metadata['postIdFormat']
+                else:
+                    cards['postId']['text'] = 'ID: {id}'  # 預設格式
+
+                # 複製其他貼文ID設置
+                if 'postIdPosition' in metadata:
+                    cards['postId']['position'] = metadata['postIdPosition']
+                if 'postIdStyle' in metadata:
+                    pid_style = metadata['postIdStyle']
+                    cards['postId'].update({
+                        'size': pid_style.get('size', 20),
+                        'color': pid_style.get('color', '#0066cc'),
+                        'font': pid_style.get('font', 'Noto Sans TC')
+                    })
 
         return c
     except Exception:
@@ -687,6 +786,21 @@ def get_sample_posts():
             result = []
             base_url = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
             for post in posts:
+                # 處理回覆貼文資訊
+                reply_to_id = None
+                reply_to_author = None
+                reply_to_content = None
+
+                if hasattr(post, 'reply_to_post_id') and post.reply_to_post_id:
+                    reply_to_id = post.reply_to_post_id
+                    # 查詢被回覆的貼文
+                    reply_post = db.query(Post).options(joinedload(Post.author)).filter(
+                        Post.id == post.reply_to_post_id
+                    ).first()
+                    if reply_post:
+                        reply_to_author = reply_post.author.username if reply_post.author else '匿名'
+                        reply_to_content = reply_post.content or ''
+
                 # 構建與 preview template 相同格式的數據
                 post_data = {
                     'id': post.id,
@@ -697,7 +811,11 @@ def get_sample_posts():
                     'created_at': post.created_at.isoformat() if post.created_at else datetime.now().isoformat(),
                     'category': '論壇貼文',
                     'tags': [],  # Post 模型目前沒有 tags，使用空列表
-                    'media_urls': []
+                    'media_urls': [],
+                    # 新增回覆貼文資訊
+                    'reply_to_id': reply_to_id,
+                    'reply_to_author': reply_to_author,
+                    'reply_to_content': reply_to_content
                 }
                 
                 # 從內容生成標題（取前50字符）
@@ -1294,6 +1412,7 @@ def get_carousel_groups():
 @require_role('dev_admin', 'campus_admin', 'cross_admin')
 def create_template():
     """創建新的內容模板"""
+    print(f"[DEBUG] create_template endpoint called!")
     try:
         data = request.get_json()
         print(f"[創建模板] 接收到的數據: {data}")

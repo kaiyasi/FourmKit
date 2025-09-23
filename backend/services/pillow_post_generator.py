@@ -41,20 +41,11 @@ class PillowPostGenerator:
         self.fonts_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 初始化 Pillow 渲染器
+        # 初始化 Pillow 渲染器 (不再提供硬編碼預設值)
         self.renderer = PillowRenderer()
-        
-        # 預設配置
-        self.default_config = {
-            "width": 1080,
-            "height": 1080,
-            "background_color": "#ffffff",
-            "text_color": "#333333",
-            "font_name": None,  # 使用預設字體
-            "font_size": 36,
-            "padding": 60,
-            "line_spacing": 10,
-        }
+
+        # 移除硬編碼預設配置 - 所有配置必須來自資料庫模板
+        self.default_config = None  # 強制使用資料庫模板配置
         
         # 支援的尺寸
         self.sizes = {
@@ -83,12 +74,26 @@ class PillowPostGenerator:
             BytesIO: 生成的圖片
         """
         try:
-            # 合併配置
-            final_config = {**self.default_config}
+            # 檢查是否提供了必要的配置
+            if config is None:
+                raise PillowPostGeneratorError("必須提供完整的模板配置，不可使用硬編碼預設值")
+
+            # 合併配置 (移除硬編碼預設值依賴)
+            final_config = {}
+
+            # 添加尺寸配置（如果指定了尺寸類型）
             if size in self.sizes:
                 final_config.update(self.sizes[size])
+
+            # 應用模板配置（這是主要的配置來源）
             if config:
                 final_config.update(config)
+
+            # 驗證必要配置項
+            required_keys = ['width', 'height', 'background_color', 'text_color', 'font_size', 'padding']
+            missing_keys = [key for key in required_keys if key not in final_config]
+            if missing_keys:
+                raise PillowPostGeneratorError(f"模板配置缺少必要項目: {missing_keys}")
             
             # 根據模板生成內容
             if template == "minimal":

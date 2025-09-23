@@ -39,37 +39,34 @@ class PostImageGenerator:
         # 確保目錄存在
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 預設配置
-        self.default_config = {
-            "width": 1080,
-            "height": 1080,
-            "background_color": "#ffffff",
-            "font_size": 32,
-            "text_color": "#333333",
-            "padding": 60,
-            "title_color": "#2c3e50",
-            "title_size": 48,
-            "line_spacing": 10
-        }
+        # 移除硬編碼預設配置，所有配置必須來自資料庫模板
+        self.default_config = None
     
-    def generate_image(self, 
+    def generate_image(self,
                       content: Dict,
                       config: Optional[Dict] = None) -> BytesIO:
         """
         生成貼文圖片
-        
+
         Args:
             content: 貼文內容 {"title": "標題", "text": "內容", "author": "作者", ...}
-            config: 自訂配置，會覆蓋預設值
-            
+            config: 完整的模板配置，必須提供所有必要參數
+
         Returns:
             BytesIO: 圖片資料流
         """
-        # 合併配置
-        final_config = {**self.default_config, **(config or {})}
-        
+        # 檢查是否提供了必要的配置
+        if config is None:
+            raise ImageGeneratorError("必須提供完整的模板配置，不可使用硬編碼預設值")
+
+        # 驗證必要配置項
+        required_keys = ['width', 'height', 'background_color', 'font_size', 'text_color', 'padding', 'title_color', 'title_size', 'line_spacing']
+        missing_keys = [key for key in required_keys if key not in config]
+        if missing_keys:
+            raise ImageGeneratorError(f"模板配置缺少必要項目: {missing_keys}")
+
         # 使用 Pillow 生成圖片
-        return self._render_with_pillow(content, final_config)
+        return self._render_with_pillow(content, config)
     
     def _render_with_pillow(self, content: Dict, config: Dict) -> BytesIO:
         """使用 Pillow 渲染圖片"""
@@ -323,16 +320,45 @@ class PostImageGenerator:
             logger.debug(f"繪製學校徽章失敗: {e}")
     
     def _clean_text(self, text: str) -> str:
-        """清理文字"""
+        """清理文字，移除 HTML 標籤和 Markdown 符號"""
         if not text:
             return ""
-        
+
+        text = str(text)
+
         # 移除 HTML 標籤
         text = re.sub(r'<[^>]+>', '', text)
-        
+
+        # 移除 Markdown 符號
+        # 移除圖片 ![alt](url) -> alt (需要在連結之前處理)
+        text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+        # 移除連結 [text](url) -> text
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+        # 移除粗體 **text** 或 __text__ -> text
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'__([^_]+)__', r'\1', text)
+        # 移除斜體 *text* 或 _text_ -> text
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        text = re.sub(r'(?<!\w)_([^_]+)_(?!\w)', r'\1', text)
+        # 移除刪除線 ~~text~~ -> text
+        text = re.sub(r'~~([^~]+)~~', r'\1', text)
+        # 移除代碼塊 ```code``` -> code
+        text = re.sub(r'```[^`]*```', '', text)
+        # 移除行內代碼 `code` -> code
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        # 移除標題符號 ### Title -> Title
+        text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+        # 移除引用符號 > quote -> quote
+        text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+        # 移除列表符號 - item 或 * item 或 1. item -> item
+        text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
+        # 移除水平線 --- 或 ***
+        text = re.sub(r'^[\s]*[-*_]{3,}[\s]*$', '', text, flags=re.MULTILINE)
+
         # 移除多餘空白
         text = re.sub(r'\s+', ' ', text).strip()
-        
+
         return text
     
     def _render_simple_fallback(self, config: Dict) -> BytesIO:

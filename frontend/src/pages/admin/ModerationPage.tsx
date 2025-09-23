@@ -215,7 +215,14 @@ export default function ModerationPage() {
             reason: req.reason,
             requester_ip: req.requester_ip
           }));
-          console.log('✅ 設定刪文請求項目:', convertedItems);
+          // 依建立時間排序（先送出的在上面）
+          convertedItems.sort((a: any, b: any) => {
+            const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (ta !== tb) return ta - tb; // ASC
+            return (a.id || 0) - (b.id || 0);
+          });
+          console.log('✅ 設定刪文請求項目（已排序）:', convertedItems);
           setItems(convertedItems);
         } catch (error) {
           console.log('❌ 刪文請求 API 回應不正確:', error);
@@ -233,8 +240,15 @@ export default function ModerationPage() {
           console.log('📥 API 回應:', response);
           
           const list = (response as any)?.data?.items || (response as any)?.items || (response as any)?.posts || [];
-          console.log('✅ 設定項目:', list);
-          setItems(list);
+          // 依建立時間排序（先送出的在上面）
+          const sorted = [...list].sort((a: any, b: any) => {
+            const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (ta !== tb) return ta - tb; // ASC
+            return (a.id || 0) - (b.id || 0);
+          });
+          console.log('✅ 設定項目（已排序）:', sorted);
+          setItems(sorted);
         } catch (error) {
           console.log('❌ API 回應不正確:', error);
         }

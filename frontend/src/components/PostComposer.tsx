@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import UploadArea from "./UploadArea";
 import { postFormData, HttpError } from "../lib/http";
 import { validatePost } from "../schemas/post";
@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
 import { Link } from 'react-router-dom'
 import { textToHtml } from '@/utils/safeHtml'
+import { Bold, Italic, Link as LinkIcon, List, Quote, Code, Eye, Paperclip } from 'lucide-react'
 
 export default function PostComposer({ token }: { token: string }) {
   const [content, setContent] = useState("");
@@ -18,6 +19,7 @@ export default function PostComposer({ token }: { token: string }) {
   const [announcementType, setAnnouncementType] = useState<'platform' | 'cross' | 'school'>('school');
   const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [schoolSearch, setSchoolSearch] = useState('')
   const [isAd, setIsAd] = useState(false)
   const [lastSubmitTime, setLastSubmitTime] = useState(0)
   const { role } = useAuth()
@@ -35,6 +37,10 @@ export default function PostComposer({ token }: { token: string }) {
     }
   })()
   const [targetSlug, setTargetSlug] = useState<string | ''>(defaultSlug)
+  const [mobilePreview, setMobilePreview] = useState(false)
+  const [showUploads, setShowUploads] = useState(true)
+  const [toolbarOpen, setToolbarOpen] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   // 載入學校清單，預設使用 Navbar 的選擇（localStorage）
   useEffect(() => {
@@ -96,6 +102,33 @@ export default function PostComposer({ token }: { token: string }) {
     }
     setConfirmOpen(true)
   }
+
+  // Mobile editor helpers
+  const insertText = (before: string, after = '', placeholder = '') => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selectedText = content.slice(start, end)
+    const replacement = before + (selectedText || placeholder) + after
+    const newText = content.slice(0, start) + replacement + content.slice(end)
+    setContent(newText)
+    // restore caret
+    setTimeout(() => {
+      const newCursorPos = start + before.length + (selectedText || placeholder).length
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+      textarea.focus()
+    }, 0)
+  }
+
+  const toolbarButtons = [
+    { Icon: Bold, onClick: () => insertText('**', '**', '粗體'), title: '粗體' },
+    { Icon: Italic, onClick: () => insertText('*', '*', '斜體'), title: '斜體' },
+    { Icon: LinkIcon, onClick: () => insertText('[', '](https://)', '連結文字'), title: '連結' },
+    { Icon: List, onClick: () => insertText('- ', '', '清單項目'), title: '清單' },
+    { Icon: Quote, onClick: () => insertText('> ', '', '引用'), title: '引用' },
+    { Icon: Code, onClick: () => insertText('`', '`', '程式碼'), title: '行內程式碼' },
+  ]
 
   async function doSubmit(finalSlug: string | '') {
     // 防止重複提交 - 檢查狀態和時間戳
@@ -168,7 +201,7 @@ export default function PostComposer({ token }: { token: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 max-w-2xl mx-auto">
+    <form onSubmit={onSubmit} className="space-y-4 max-w-2xl mx-auto md:pb-0">
       {/* 桌面版：發佈範圍內嵌選擇器（行動版維持送出前彈窗） */}
       <div className="hidden md:flex items-center gap-3">
         <label className="text-sm text-muted">發佈範圍</label>
@@ -234,23 +267,35 @@ export default function PostComposer({ token }: { token: string }) {
       {confirmOpen && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={()=>setConfirmOpen(false)}></div>
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] sm:w-[480px] rounded-2xl border border-border bg-surface shadow-2xl p-4">
-            <h3 className="font-semibold dual-text mb-2">選擇發文範圍</h3>
-            <p className="text-sm text-muted mb-3">請確認要發佈到哪裡：</p>
-            <div className="space-y-2 mb-3">
-              {/* 所有人可選擇任一學校 */}
-              {schools.map(school => (
-                <label key={school.id} className="flex items-center gap-2">
-                  <input type="radio" name="scope" checked={targetSlug === school.slug}
-                         onChange={()=> setTargetSlug(school.slug) } />
-                  <span className="text-sm">{school.name}</span>
-                </label>
-              ))}
-              <label className="flex items-center gap-2">
-                <input type="radio" name="scope" checked={targetSlug === ''}
-                       onChange={()=> setTargetSlug('') } />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] sm:w-[520px] rounded-2xl border border-border bg-surface shadow-2xl p-4">
+            <h3 className="font-semibold dual-text mb-2">選擇發佈目標</h3>
+            <div className="flex items-center gap-2 mb-3">
+              <button type="button" className={`px-3 py-1.5 rounded-full border text-sm ${targetSlug===''?'bg-primary text-primary-foreground border-primary':'dual-btn'}`} onClick={()=>setTargetSlug('')}>跨校</button>
+              {mySchoolId && (
+                <button type="button" className={`px-3 py-1.5 rounded-full border text-sm ${targetSlug=== (schools.find(s=>s.id===mySchoolId)?.slug||'') ? 'bg-primary text-primary-foreground border-primary':'dual-btn'}`} onClick={()=>{ const my = schools.find(s=>s.id===mySchoolId)?.slug||''; setTargetSlug(my) }}>我的學校</button>
+              )}
+              <div className="ml-auto w-40">
+                <input value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)} placeholder="搜尋學校" className="form-control form-control--compact w-full" />
+              </div>
+            </div>
+            <div className="space-y-2 mb-3 max-h-[50vh] overflow-y-auto pr-1">
+              <label className="flex items-center gap-2 p-2 rounded hover:bg-surface-hover">
+                <input type="radio" name="scope" checked={targetSlug === ''} onChange={()=> setTargetSlug('')} />
                 <span className="text-sm">跨校（全部）</span>
               </label>
+              {schools
+                .filter(s => {
+                  const q = schoolSearch.trim().toLowerCase()
+                  if (!q) return true
+                  return s.name.toLowerCase().includes(q) || s.slug.toLowerCase().includes(q)
+                })
+                .map(school => (
+                  <label key={school.id} className="flex items-center gap-2 p-2 rounded hover:bg-surface-hover">
+                    <input type="radio" name="scope" checked={targetSlug === school.slug} onChange={()=> setTargetSlug(school.slug) } />
+                    <span className="text-sm">{school.name}</span>
+                    <span className="text-xs text-muted ml-auto">{school.slug}</span>
+                  </label>
+                ))}
             </div>
             {/* 公告選項 - 依角色顯示不同選項 */}
             {token && canPublishAnnouncement() && (
@@ -306,11 +351,51 @@ export default function PostComposer({ token }: { token: string }) {
           </div>
         </div>
       )}
-      <textarea className="form-control min-h-[140px]" placeholder="匿名分享你的想法..." value={content} onChange={(e) => setContent(e.target.value)}/>
-      <UploadArea value={files} onChange={setFiles} maxCount={6} />
+      {/* Mobile quick scope chip */}
+      <div className="md:hidden -mt-2">
+        <button type="button" onClick={()=>setConfirmOpen(true)} className="text-xs px-2 py-1 rounded-full bg-surface-hover border border-border text-muted">
+          目標：{(() => { const f = schools.find(s=>s.slug===targetSlug); return f?.name || '跨校'; })()}
+        </button>
+      </div>
+
+      {/* Mobile markdown toolbar (compact, toggleable) */}
+      {toolbarOpen && (
+        <div className="md:hidden flex items-center gap-1 p-2 rounded-xl border border-border bg-surface/70">
+          {toolbarButtons.map(({ Icon, onClick, title }, i) => (
+            <button key={i} type="button" onClick={onClick} title={title} className="p-2 rounded-lg hover:bg-surface-hover">
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+          <div className="ml-auto text-xs text-muted">{content.length} 字</div>
+        </div>
+      )}
+
+      <textarea
+        ref={textareaRef}
+        className="form-control min-h-[120px]"
+        placeholder="匿名分享你的想法..."
+        value={content}
+        onChange={(e) => {
+          setContent(e.target.value)
+          try {
+            const ta = textareaRef.current
+            if (ta) {
+              ta.style.height = 'auto'
+              ta.style.height = Math.min(Math.max(ta.scrollHeight, 120), 280) + 'px'
+            }
+          } catch {}
+        }}
+      />
+
+      {(showUploads || files.length > 0) && (
+        <div id="composer-uploads">
+          <UploadArea value={files} onChange={setFiles} maxCount={6} />
+        </div>
+      )}
 
       {/* 即時預覽（輕量）：轉義換行與連結，樣式與詳情頁一致 */}
-      {content.trim() && (
+      {/* Desktop or mobile preview (toggle) */}
+      {(content.trim() && (mobilePreview || window.innerWidth >= 768)) && (
         (() => {
           const m = content.trim().match(/^#(\d+)\s*(.*)$/s)
           if (m && files.length === 0) {
@@ -336,10 +421,11 @@ export default function PostComposer({ token }: { token: string }) {
           )
         })()
       )}
-      <div className="flex items-center justify-between">
+      <div className="hidden md:flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted">{files.length} 個附件</div>
-          <div className="text-sm text-muted">
+          {/* 行動版隱藏「將發佈至」提示，避免與上方選單重複 */}
+          <div className="text-sm text-muted hidden md:block">
             將發佈至：{(() => {
               const found = schools.find(s=>s.slug===targetSlug)
               return (found?.name) || '跨校'
@@ -356,6 +442,46 @@ export default function PostComposer({ token }: { token: string }) {
         </button>
       </div>
       {msg && <div className="text-sm text-warning">{msg}</div>}
+      {/* Sticky bottom action bar (mobile) */}
+      <div className="md:hidden fixed left-0 right-0 bottom-0 border-t border-border bg-surface/95 backdrop-blur p-2">
+        <div className="max-w-2xl mx-auto flex items-center gap-2">
+          <button
+            type="button"
+            className={`px-3 py-2 rounded-xl border dual-btn flex items-center gap-2 ${toolbarOpen ? 'bg-surface-hover' : ''}`}
+            onClick={() => setToolbarOpen(v=>!v)}
+          >
+            <Code className="w-4 h-4" /> 格式
+          </button>
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl border dual-btn flex items-center gap-2"
+            onClick={() => {
+              setShowUploads(true)
+              setTimeout(() => {
+                const el = document.getElementById('composer-uploads');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+              }, 50)
+            }}
+          >
+            <Paperclip className="w-4 h-4" /> 附件
+          </button>
+          <button
+            type="button"
+            className={`px-3 py-2 rounded-xl border dual-btn flex items-center gap-2 ${mobilePreview ? 'bg-surface-hover' : ''}`}
+            onClick={()=> setMobilePreview(v=>!v)}
+          >
+            <Eye className="w-4 h-4" /> {mobilePreview ? '隱藏預覽' : '預覽'}
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="ml-auto btn-primary disabled:opacity-60"
+            style={{ touchAction: 'manipulation' }}
+          >
+            {submitting ? '送出中…' : '發佈'}
+          </button>
+        </div>
+      </div>
     </form>
   );
 }

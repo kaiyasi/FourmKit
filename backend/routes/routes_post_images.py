@@ -273,61 +273,12 @@ def get_config():
         }), 500
 
 
-@bp.route('/preview-html', methods=['POST'])
+@bp.route('/publish-image', methods=['POST'])
 @jwt_required()
-def preview_html_only():
+@require_role("admin", "dev_admin")
+def generate_publish_image():
     """
-    只返回 HTML（用於前端即時預覽）
-    """
-    try:
-        data = request.get_json() or {}
-        
-        content = {
-            "title": data.get("title", ""),
-            "text": data.get("text", ""),
-            "author": data.get("author", ""),
-            "created_at": data.get("created_at"),
-            "school_name": data.get("school_name", ""),
-            "id": data.get("id", "")
-        }
-        
-        size = data.get("size", "square")
-        template = data.get("template", "modern")
-        config = data.get("config", {})
-        logo_url = data.get("logo_url")
-        
-        renderer = get_renderer()
-        html = renderer.render_html(
-            content=content,
-            size=size,
-            template=template,
-            config=config,
-            logo_url=logo_url
-        )
-        
-        dimensions = renderer.SIZES.get(size, {})
-        
-        return jsonify({
-            "success": True,
-            "html": html,
-            "width": dimensions.get("width", 1080),
-            "height": dimensions.get("height", 1080)
-        })
-        
-    except Exception as e:
-        logger.error(f"HTML 預覽失敗: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-
-@bp.route('/preview-image', methods=['POST'])
-@jwt_required()
-def preview_actual_image():
-    """
-    生成實際的預覽圖片（不推送到 Instagram）
-    用於本地檢查最終效果，避免觸及 API 限制
+    生成發布圖片 - 儲存到 /uploads/public/post/instagram/
     """
     try:
         data = request.get_json() or {}
@@ -343,99 +294,191 @@ def preview_actual_image():
         }
 
         # 配置選項
-        size = data.get("size", "square")
+        size = data.get("size", "instagram_square")
         template = data.get("template", "modern")
         config = data.get("config", {})
         logo_url = data.get("logo_url")
-        quality = data.get("quality", 95)
+        quality = data.get("quality", 95)  # 發布用高品質
+        custom_filename = data.get("custom_filename")  # 可自訂檔名
 
-        # 調試日誌
-        print(f"[預覽圖片] 接收到的配置: {config}")
-        print(f"[預覽圖片] Logo URL: {logo_url}")
-        print(f"[預覽圖片] 內容數據: {content}")
-        
-        # 生成預覽圖片
+        # 使用統一渲染器生成並保存發布圖片
         renderer = get_renderer()
-        
-        try:
-            image_data = renderer.render_to_image(
-                content=content,
-                size=size,
-                template=template,
-                config=config,
-                logo_url=logo_url,
-                quality=quality
-            )
-            
-            # 儲存到預覽目錄
-            timestamp = int(time.time() * 1000)
-            filename = f"preview_{timestamp}.jpg"
-            
-            upload_root = os.getenv('UPLOAD_ROOT', 'uploads')
-            preview_dir = os.path.join(upload_root, 'public', 'previews')
-            os.makedirs(preview_dir, exist_ok=True)
-            
-            file_path = os.path.join(preview_dir, filename)
-            with open(file_path, 'wb') as f:
-                f.write(image_data.getvalue())
-            
-            # 生成 URL
-            base_url = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
-            if base_url:
-                image_url = f"{base_url}/uploads/public/previews/{filename}"
-            else:
-                image_url = f"/uploads/public/previews/{filename}"
-            
-            # 獲取圖片資訊
-            dimensions = renderer.SIZES.get(size, {})
-            file_size = len(image_data.getvalue())
-            
+        result = renderer.save_image(
+            content=content,
+            size=size,
+            template=template,
+            config=config,
+            logo_url=logo_url,
+            quality=quality,
+            purpose="publish",
+            custom_filename=custom_filename
+        )
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "image_url": result["full_url"],
+                "filename": result["filename"],
+                "file_path": result["url_path"],
+                "dimensions": result["dimensions"],
+                "file_size": result["file_size"],
+                "purpose": "publish"
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"生成發布圖片失敗: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# 移除 HTML 預覽端點，所有預覽都使用真實圖片
+# 原因：上傳到 Instagram 需要真實的圖片檔案，HTML 無法使用
+# @bp.route('/preview-html', methods=['POST']) - 已移除
+
+
+@bp.route('/preview-image', methods=['POST'])
+@jwt_required()
+def preview_actual_image():
+    """
+    生成實際的預覽圖片 - 使用統一渲染器並上傳到 CDN
+    """
+    try:
+        # 設定 CDN 環境變數
+        os.environ.setdefault('PUBLIC_CDN_URL', 'https://cdn.serelix.xyz')
+
+        data = request.get_json() or {}
+
+        # 內容數據
+        content = {
+            "title": data.get("title", ""),
+            "text": data.get("text", ""),
+            "author": data.get("author", ""),
+            "created_at": data.get("created_at"),
+            "school_name": data.get("school_name", ""),
+            "id": data.get("id", "")
+        }
+
+        # 配置選項
+        size = data.get("size", "instagram_square")
+        template = data.get("template", "modern")
+        config = data.get("config", {})
+        logo_url = data.get("logo_url")
+        quality = data.get("quality", 90)  # 預覽用稍低品質
+
+        # **重要修復**: 檢查並補充必要的模板配置參數
+        # 如果前端配置不完整，提供預覽用的最小配置
+        required_keys = [
+            'width', 'height', 'background_color', 'padding', 'font_size_content',
+            'primary_color', 'line_spacing', 'text_align', 'vertical_align', 'max_lines',
+            'timestamp_enabled', 'timestamp_position', 'timestamp_size', 'timestamp_color',
+            'timestamp_format', 'timestamp_font', 'post_id_enabled', 'post_id_position',
+            'post_id_size', 'post_id_color', 'post_id_format', 'post_id_font',
+            'logo_enabled', 'logo_url', 'logo_size', 'logo_opacity', 'logo_position'
+        ]
+
+        # 為手機預覽提供最小可用配置
+        preview_defaults = {
+            'width': 1080,
+            'height': 1080,
+            'background_color': '#f8f9fa',
+            'padding': 60,
+            'font_family': '',
+            'font_size_content': 32,
+            'primary_color': '#2c3e50',
+            'text_color': '#2c3e50',
+            'line_spacing': 12,
+            'text_align': 'center',
+            'vertical_align': 'middle',
+            'max_lines': 15,
+            'timestamp_enabled': True,
+            'timestamp_position': 'bottom-right',
+            'timestamp_size': 18,
+            'timestamp_color': '#7f8c8d',
+            'timestamp_format': 'relative',  # 使用相對時間格式（如"5分鐘前"）
+            'timestamp_font': '',
+            'post_id_enabled': True,
+            'post_id_position': 'top-left',
+            'post_id_size': 20,
+            'post_id_color': '#3498db',
+            'post_id_format': '#{id}',
+            'post_id_font': '',
+            'logo_enabled': False,
+            'logo_url': '',
+            'logo_size': 80,
+            'logo_opacity': 0.85,
+            'logo_position': 'bottom-right'
+        }
+
+        # 合併配置：前端配置優先，缺少的使用預設值
+        for key, default_value in preview_defaults.items():
+            if key not in config or config[key] is None:
+                config[key] = default_value
+
+        logger.info(f"[預覽API] 已補充配置，共 {len(config)} 個參數")
+
+        # 對於嵌套配置，也採用相同邏輯
+        if "image" in config and "cards" in config["image"]:
+            if "text" in config["image"]["cards"] and "font" in config["image"]["cards"]["text"]:
+                if not config["image"]["cards"]["text"]["font"].strip():
+                    config["image"]["cards"]["text"]["font"] = ""
+            if "timestamp" in config["image"]["cards"] and "font" in config["image"]["cards"]["timestamp"]:
+                if not config["image"]["cards"]["timestamp"]["font"].strip():
+                    config["image"]["cards"]["timestamp"]["font"] = ""
+            if "postId" in config["image"]["cards"] and "font" in config["image"]["cards"]["postId"]:
+                if not config["image"]["cards"]["postId"]["font"].strip():
+                    config["image"]["cards"]["postId"]["font"] = ""
+
+        logger.info(f"[預覽圖片] 內容: {content.get('text', '')[:50]}...")
+        logger.info(f"[預覽圖片] 配置: {config}")
+
+        # **DEBUG**: 詳細檢查貼文ID配置
+        print(f"[DEBUG preview-image] 收到的貼文ID配置:")
+        print(f"[DEBUG preview-image] post_id_enabled: {config.get('post_id_enabled')}")
+        print(f"[DEBUG preview-image] post_id_format: {config.get('post_id_format')}")
+        print(f"[DEBUG preview-image] post_id_position: {config.get('post_id_position')}")
+        print(f"[DEBUG preview-image] post_id_size: {config.get('post_id_size')}")
+        print(f"[DEBUG preview-image] post_id_color: {config.get('post_id_color')}")
+        print(f"[DEBUG preview-image] 內容ID: {content.get('id')}")
+        print(f"[DEBUG preview-image] 完整config keys: {list(config.keys())}")
+
+        # 使用統一渲染器生成並保存圖片
+        renderer = get_renderer()
+        result = renderer.save_image(
+            content=content,
+            size=size,
+            template=template,
+            config=config,
+            logo_url=logo_url,
+            quality=quality,
+            purpose="preview"
+        )
+
+        if result["success"]:
             return jsonify({
                 "success": True,
                 "data": {
-                    "image_url": image_url,
-                    "filename": filename,
-                    "file_path": file_path,
+                    "image_url": result["full_url"],
+                    "filename": result["filename"],
+                    "file_path": result["url_path"],
+                    "dimensions": result["dimensions"],
+                    "file_size": result["file_size"],
+                    "purpose": "preview",
                     "size": size,
                     "template": template,
-                    "dimensions": dimensions,
-                    "file_size": file_size,
                     "quality": quality,
                     "has_logo": bool(logo_url),
-                    "created_at": timestamp
+                    "created_at": int(time.time() * 1000)
                 },
                 "message": "預覽圖片生成成功"
             })
-            
-        except Exception as render_error:
-            # 如果 Pillow 渲染失敗，嘗試回退到 HTML 預覽
-            try:
-                html = renderer.render_html(
-                    content=content,
-                    size=size,
-                    template=template,
-                    config=config,
-                    logo_url=logo_url
-                )
-                
-                dimensions = renderer.SIZES.get(size, {})
-                
-                return jsonify({
-                    "success": False,
-                    "error": f"圖片生成失敗: {str(render_error)}",
-                    "fallback": {
-                        "html": html,
-                        "width": dimensions.get("width", 1080),
-                        "height": dimensions.get("height", 1080),
-                        "message": "已回退到 HTML 預覽模式"
-                    }
-                }), 202  # 202 Accepted (部分成功)
-            except Exception:
-                # 如果連 HTML 預覽都失敗了
-                raise render_error
-        
+        else:
+            raise Exception("統一渲染器保存失敗")
+
     except Exception as e:
-        logger.error(f"預覽圖片生成失敗: {e}")
+        logger.error(f"預覽圖片生成失敗: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)

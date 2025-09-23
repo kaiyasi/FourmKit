@@ -11,45 +11,70 @@ import os
 import traceback
 
 from services.celery_app import celery_app
+
+
+def def _convert_legacy_template_data(template_data: Dict) -> Dict:
+    """轉換舊版和新版模板數據格式為 Pillow 渲染器可用的平面格式"""
+    if not template_data:
+        return {}
+
+    # 如果已經是新格式（直接包含 TemplateConfig 欄位），則直接返回
+    if any(key in template_data for key in ['background_color', 'font_family', 'text_color']):
+        return template_data
+
+    config = {}
+    # 新版前端格式優先
+    if 'canvas' in template_data:
+        canvas = template_data['canvas']
+        if isinstance(canvas, dict):
+            if 'background' in canvas: config['background_color'] = canvas['background']
+            if 'width' in canvas: config['width'] = canvas['width']
+            if 'height' in canvas: config['height'] = canvas['height']
+
+    if 'post' in template_data:
+        post = template_data['post']
+        if isinstance(post, dict):
+            if 'text' in post and isinstance(post['text'], dict):
+                text = post['text']
+                config['font_family'] = text.get('font', 'Noto Sans TC')
+                config['font_size_content'] = text.get('size', 28)
+                config['text_color'] = text.get('color', '#333333')
+                config['primary_color'] = text.get('color', '#333333')
+                config['text_align'] = text.get('align', 'center')
+                config['line_spacing'] = text.get('lineHeight', 1.5) * 10
+
+            if 'logo' in post and isinstance(post['logo'], dict):
+                logo = post['logo']
+                config['logo_enabled'] = logo.get('enabled', True)
+                config['logo_size'] = logo.get('size', 80)
+                config['logo_position'] = logo.get('position', 'top-right')
+                config['logo_opacity'] = logo.get('opacity', 0.8)
+
+            if 'metadata' in post and isinstance(post['metadata'], dict):
+                meta = post['metadata']
+                if 'timestampStyle' in meta and isinstance(meta['timestampStyle'], dict):
+                    ts = meta['timestampStyle']
+                    config['timestamp_enabled'] = meta.get('showTimestamp', True)
+                    config['timestamp_format'] = meta.get('timestampFormat', '%Y-%m-%d %H:%M')
+                    config['timestamp_size'] = ts.get('size', 16)
+                    config['timestamp_color'] = ts.get('color', '#666666')
+                    config['timestamp_position'] = meta.get('timestampPosition', 'bottom-left')
+                
+                if 'postIdStyle' in meta and isinstance(meta['postIdStyle'], dict):
+                    pid = meta['postIdStyle']
+                    config['post_id_enabled'] = meta.get('showPostId', True)
+                    config['post_id_format'] = meta.get('postIdFormat', '#{ID}')
+                    config['post_id_size'] = pid.get('size', 14)
+                    config['post_id_color'] = pid.get('color', '#999999')
+                    config['post_id_position'] = meta.get('postIdPosition', 'top-left')
+
+    # 補全必要欄位，避免渲染器出錯
+    config.setdefault('padding', 60)
+    config.setdefault('line_spacing', 12)
+
+    return config
 from services.instagram_api_service import InstagramAPIService, InstagramAPIError
-try:
-    from services.html_renderer import HtmlRenderer, HtmlRenderError
-except Exception:
-    HtmlRenderer = None  # type: ignore
-    HtmlRenderError = Exception  # type: ignore
-try:
-    from services.html_builder import build_post_html
-except Exception:
-    build_post_html = None  # type: ignore
 
-def _resolve_canvas_size(template_data: Optional[Dict]) -> tuple[int, int]:
-    # 允許以環境變數強制尺寸（例如 1080x1080 或 1080）
-    env_sz = os.getenv('IG_CANVAS_SIZE', '1080x1080').lower().strip()
-    try:
-        if 'x' in env_sz:
-            w, h = env_sz.split('x', 1)
-            return max(1, int(w)), max(1, int(h))
-        val = int(env_sz)
-        return val, val
-    except Exception:
-        pass
-
-    # 後備：讀取模板配置
-    try:
-        can = (template_data or {}).get('canvas') or {}
-        preset = str((can.get('preset') or '')).strip().lower()
-        if preset == 'portrait':
-            return 1080, 1350
-        if preset == 'landscape':
-            return 1080, 608
-        if isinstance(can.get('width'), int) and isinstance(can.get('height'), int):
-            return int(can['width']), int(can['height'])
-        if preset == 'square':
-            return 1080, 1080
-    except Exception:
-        pass
-    # 預設採用 1080x1080，避免從 800 放大造成排版誤差
-    return 1080, 1080
 from services.media_service import MediaService
 from utils.db import get_session
 from models.instagram import IGAccount, IGTemplate, IGPost, PostStatus
@@ -92,23 +117,15 @@ def publish_carousel_for_account(self, account_id: int, max_items: int = 5, capt
             used_post_ids: list[int] = []
             now_utc = datetime.now(timezone.utc)
 
-            # 準備渲染器（可選）
-            try:
-                from services.html_renderer import HtmlRenderer, HtmlRenderError
-                from services.html_builder import build_post_html
-                html_renderer_available = True
-            except Exception:
-                html_renderer_available = False
+
 
             for igp in posts:
-                # 若尚未生成圖片，走與單貼文相同的 HTML 渲染邏輯
+                # 若尚未生成圖片，使用統一的 Pillow 渲染器生成
                 if not igp.generated_image:
-                    if not html_renderer_available:
-                        return {"success": False, "error": "Playwright/Html 渲染器未就緒，無法生成圖片"}
-
                     forum_post = db.query(ForumPost).filter(ForumPost.id == igp.forum_post_id).first()
                     template = db.query(IGTemplate).filter(IGTemplate.id == igp.template_id).first()
                     if not (forum_post and template):
+                        logger.warning(f"輪播貼文 {igp.id} 缺少 forum_post 或 template，跳過圖片生成。")
                         continue
 
                     # 構建內容
@@ -119,6 +136,7 @@ def publish_carousel_for_account(self, account_id: int, max_items: int = 5, capt
                         'school_name': getattr(forum_post, 'school_name', ''),
                         'created_at': forum_post.created_at,
                     }
+                    
                     # 選擇 logo
                     effective_logo_path = None
                     try:
@@ -132,36 +150,38 @@ def publish_carousel_for_account(self, account_id: int, max_items: int = 5, capt
                             ).first()
                         tmpl_logo = (template.template_data or {}).get('logo', {})
                         effective_logo_path = tmpl_logo.get('image_url') or (school_logo.logo_url if school_logo else None)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"為輪播貼文 {igp.id} 選擇 Logo 時出錯: {e}")
 
-                    width, height = _resolve_canvas_size(template.template_data if template else None)
-                    html_str = build_post_html(template.template_data or {}, post_content, effective_logo_path)
-                    renderer = HtmlRenderer(viewport_width=width, viewport_height=height)
-                    img_buf = renderer.render_html_to_image(html_str, width=width, height=height, image_type='jpeg', quality=95)
+                    # 使用 Pillow 渲染器
+                    from services.unified_post_renderer import get_renderer
+                    renderer = get_renderer()
+                    
+                    template_data_raw = template.template_data or {}
+                    template_data = _convert_legacy_template_data(template_data_raw)
+                    size_preset = template_data.get("size", "instagram_square")
+                    template_name = template_data.get("template", "modern")
 
-                    import os
-                    root_dir = os.getenv('UPLOAD_ROOT', 'uploads')
-                    out_dir = os.path.join(root_dir, 'public', 'instagram')
-                    os.makedirs(out_dir, exist_ok=True)
-                    fname = f"ig_post_{igp.id}_{int(datetime.now().timestamp())}.jpg"
-                    fpath = os.path.join(out_dir, fname)
-                    with open(fpath, 'wb') as f:
-                        f.write(img_buf.getvalue())
+                    result = renderer.save_image(
+                        content=post_content,
+                        size=size_preset,
+                        template=template_name,
+                        config=template_data,
+                        logo_url=effective_logo_path,
+                        quality=95,
+                        purpose="publish",
+                        custom_filename=f"ig_post_{igp.id}"
+                    )
 
-                    cdn_base = (os.getenv('PUBLIC_CDN_URL') or '').rstrip('/')
-                    base = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
-                    if cdn_base:
-                        img_url = f"{cdn_base}/instagram/{fname}"
-                    elif base:
-                        img_url = f"{base}/uploads/public/instagram/{fname}"
+                    if result.get("success") and result.get("full_url"):
+                        igp.generated_image = result["full_url"]
+                        igp.status = PostStatus.queued
+                        igp.updated_at = now_utc
+                        db.commit()
                     else:
-                        img_url = f"/uploads/public/instagram/{fname}"
-
-                    igp.generated_image = img_url
-                    igp.status = PostStatus.queued
-                    igp.updated_at = now_utc
-                    db.commit()
+                        logger.error(f"為輪播貼文 {igp.id} 動態生成圖片失敗: {result.get('error', '未知錯誤')}")
+                        # 跳過此貼文，繼續處理輪播中的其他貼文
+                        continue
 
                 if igp.generated_image:
                     image_urls.append(igp.generated_image)
@@ -170,31 +190,31 @@ def publish_carousel_for_account(self, account_id: int, max_items: int = 5, capt
             if not image_urls:
                 return {"success": False, "error": "找不到可用圖片"}
 
-            # 製作 caption
-            def _safe(text: str) -> str:
-                return (text or '').strip()
+            # --- 全新的文案生成邏輯 for Carousel ---
+            # 假設所有貼文使用相同的模板
+            template = db.query(IGTemplate).filter(IGTemplate.id == posts[0].template_id).first()
+            caption_config = (template.template_data or {}).get('caption') if template else None
 
-            caption = ""
-            if caption_mode == 'custom' and custom_caption:
-                caption = custom_caption
-            elif caption_mode == 'join_titles':
-                parts: list[str] = []
-                for igp in posts:
-                    fp = db.query(ForumPost).filter(ForumPost.id == igp.forum_post_id).first()
-                    title = _safe(getattr(fp, 'title', '') if fp else '')
-                    if not title and fp:
-                        content = _safe(fp.content)
-                        title = (content[:100] + '...') if len(content) > 100 else content
-                    if title:
-                        parts.append(title)
-                caption = "\n".join(parts[:10])
-            else:  # first_title (default)
+            if caption_config and caption_config.get('enabled', False):
+                # 獲取所有輪播貼文對應的 ForumPost
+                forum_post_ids = [p.forum_post_id for p in posts]
+                forum_posts = db.query(ForumPost).filter(ForumPost.id.in_(forum_post_ids)).all()
+                # 保持順序一致
+                forum_posts_map = {fp.id: fp for fp in forum_posts}
+                ordered_forum_posts = [forum_posts_map[pid] for pid in forum_post_ids if pid in forum_posts_map]
+                
+                caption = _generate_caption_from_template_new(caption_config, posts, ordered_forum_posts)
+            else:
+                # --- 舊版文案生成邏輯 (作為後備) ---
+                def _safe(text: str) -> str:
+                    return (text or '').strip()
+                
                 igp0 = posts[0]
                 fp0 = db.query(ForumPost).filter(ForumPost.id == igp0.forum_post_id).first()
                 title = _safe(getattr(fp0, 'title', '') if fp0 else '')
                 if not title and fp0:
                     c0 = _safe(fp0.content)
-                    title = (c0[:100] + '...') if len(c0) > 100 else c0
+                    title = (c0[:150] + '...') if len(c0) > 150 else c0
                 caption = title
 
             # 模式：dry run 僅回傳計畫
@@ -312,40 +332,38 @@ def process_post_for_instagram(self, ig_post_id: int) -> Dict:
             except Exception:
                 effective_logo_path = school_logo_path
 
-            if HtmlRenderer and build_post_html:
-                # HTML → JPEG（直接由 Playwright 輸出）
-                html = build_post_html(template.template_data or {}, post_content, effective_logo_path)
-                # 設定畫布尺寸
-                width, height = _resolve_canvas_size(template.template_data if template else None)
-                renderer = HtmlRenderer(viewport_width=width, viewport_height=height)
-                image_buffer = renderer.render_html_to_image(html, width=width, height=height, image_type='jpeg', quality=95)
-            else:
-                raise HtmlRenderError('HTML 渲染器未就緒，請確認 Playwright 安裝')
+            # 全面改用 Pillow 渲染器以確保預覽和發布一致
+            from services.unified_post_renderer import get_renderer
             
-            # 上傳圖片到儲存（本地 or CDN）。實際發佈需可公開取用 URL。
-            import os
-            root_dir = os.getenv('UPLOAD_ROOT', 'uploads')
-            # 與 docker-compose 的 cdn 服務對齊：公開目錄為 uploads/public
-            upload_dir = os.path.join(root_dir, 'public', 'instagram')
-            os.makedirs(upload_dir, exist_ok=True)
+            renderer = get_renderer()
             
-            image_filename = f"ig_post_{ig_post.id}_{int(datetime.now().timestamp())}.jpg"
-            image_path = os.path.join(upload_dir, image_filename)
+            # 轉換模板資料為 Pillow 渲染器可用的平面格式
+            template_data_raw = template.template_data or {}
+            template_data = _convert_legacy_template_data(template_data_raw)
             
-            with open(image_path, 'wb') as f:
-                f.write(image_buffer.getvalue())
+            # 從轉換後的資料獲取尺寸和模板名稱
+            size_preset = template_data.get("size", "instagram_square")
+            template_name = template_data.get("template", "modern")
             
-            # 生成 URL：
-            # 1) 若設了 PUBLIC_CDN_URL（指向 cdn 服務，uploads/public 綁在 /），用它
-            # 2) 否則用 PUBLIC_BASE_URL + /uploads/public/instagram/<file>
-            cdn_base = os.getenv('PUBLIC_CDN_URL', '').rstrip('/')
-            base = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
-            if cdn_base:
-                image_url = f"{cdn_base}/instagram/{image_filename}"
-            elif base:
-                image_url = f"{base}/uploads/public/instagram/{image_filename}"
-            else:
-                image_url = f"/uploads/public/instagram/{image_filename}"
+            # 呼叫 Pillow 渲染器生成並保存圖片
+            # save_image 內部會處理上傳和 URL 生成
+            result = renderer.save_image(
+                content=post_content,
+                size=size_preset,
+                template=template_name,
+                config=template_data,
+                logo_url=effective_logo_path,
+                quality=95,
+                purpose="publish",
+                custom_filename=f"ig_post_{ig_post.id}"
+            )
+            
+            if not result.get("success"):
+                raise Exception(f"Pillow 圖片生成失敗: {result.get('error', '未知錯誤')}")
+            
+            image_url = result.get("full_url")
+            if not image_url:
+                raise Exception("Pillow 圖片生成成功，但未返回有效的 URL")
             
             # 更新貼文記錄
             ig_post.generated_image = image_url
@@ -480,6 +498,107 @@ def process_html_to_image(self, ig_post_id: int, html_content: str) -> Dict:
             except Exception:
                 return {"success": False, "error": str(e), "ig_post_id": ig_post_id}
 
+def _replace_template_variables_new(template: str, forum_post: ForumPost, ig_post: IGPost, is_footer: bool = False, custom_link: str = None) -> str:
+    """替換模板變數 (移植自 ig_unified_system)"""
+    result = template
+
+    # 基本變數替換
+    variables = {
+        'id': str(forum_post.id),
+        'content': forum_post.content or '',
+        'author': forum_post.author_name or '',
+        'reply_to_author': '', # 此模型暫無回覆功能
+        'reply_to_content': '', # 此模型暫無回覆功能
+    }
+
+    # 處理連結變數
+    if is_footer and custom_link:
+        # 結尾區段使用自定義連結
+        variables['link'] = custom_link
+    else:
+        # 重複區段使用貼文連結
+        base_url = os.getenv('PUBLIC_BASE_URL', 'https://forum.serelix.xyz').rstrip('/')
+        variables['link'] = f"{base_url}/posts/{forum_post.id}"
+
+    # 執行變數替換
+    for key, value in variables.items():
+        result = result.replace(f'{{{key}}}', str(value))
+
+    return result
+
+def _generate_caption_from_template_new(caption_config: dict, ig_posts: List[IGPost], forum_posts: List[ForumPost]) -> str:
+    """使用新的 caption 模板生成文案 (移植自 ig_unified_system)"""
+    caption_parts = []
+    
+    # Assume the first post's data for header/footer context
+    main_ig_post = ig_posts[0]
+    main_forum_post = forum_posts[0]
+
+    # 處理開頭區段
+    single_config = caption_config.get('single', {})
+    header_config = single_config.get('header', {})
+    if header_config.get('enabled', False) and header_config.get('content'):
+        header_text = _replace_template_variables_new(
+            header_config['content'],
+            main_forum_post,
+            main_ig_post,
+            is_footer=False
+        )
+        caption_parts.append(header_text)
+
+    # 處理重複區段（每個貼文）
+    repeating_config = caption_config.get('repeating', {})
+    for i, ig_post in enumerate(ig_posts):
+        forum_post = forum_posts[i]
+        post_parts = []
+
+        # ID 格式
+        id_format_config = repeating_config.get('idFormat', {})
+        if id_format_config.get('enabled', False) and id_format_config.get('format'):
+            id_text = _replace_template_variables_new(
+                id_format_config['format'], forum_post, ig_post, is_footer=False
+            )
+            post_parts.append(id_text)
+
+        # 貼文內容
+        content_config = repeating_config.get('content', {})
+        if content_config.get('enabled', False) and content_config.get('template'):
+            content_text = _replace_template_variables_new(
+                content_config['template'], forum_post, ig_post, is_footer=False
+            )
+            post_parts.append(content_text)
+
+        # 分隔線 (不在最後一則貼文後顯示)
+        separator_config = repeating_config.get('separator', {})
+        if i < len(ig_posts) - 1 and separator_config.get('enabled', False) and separator_config.get('style'):
+            post_parts.append(separator_config['style'])
+
+        if post_parts:
+            caption_parts.append('\n'.join(post_parts))
+
+    # 處理結尾區段
+    footer_config = single_config.get('footer', {})
+    if footer_config.get('enabled', False) and footer_config.get('content'):
+        footer_text = _replace_template_variables_new(
+            footer_config['content'],
+            main_forum_post,
+            main_ig_post,
+            is_footer=True,
+            custom_link=footer_config.get('customLink')
+        )
+        caption_parts.append(footer_text)
+
+    # 處理 hashtags (從 caption 模板)
+    hashtags_config = caption_config.get('hashtags', {})
+    if hashtags_config.get('enabled', False) and hashtags_config.get('tags'):
+        tags = hashtags_config.get('tags', [])[:hashtags_config.get('maxTags', 10)]
+        hashtag_text = ' '.join([f'#{tag.strip()}' for tag in tags if tag.strip()])
+        if hashtag_text:
+            caption_parts.append(hashtag_text)
+
+    return '\n\n'.join(caption_parts)
+
+
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=120)
 def publish_to_instagram(self, ig_post_id: int) -> Dict:
     """
@@ -510,19 +629,33 @@ def publish_to_instagram(self, ig_post_id: int) -> Dict:
             if not ig_post.generated_image:
                 raise ValueError("圖片尚未生成")
             
-            # 準備文案
-            caption = ig_post.custom_caption or forum_post.content
-            
-            # 添加預設標籤
-            hashtags = ig_post.hashtags.copy() if ig_post.hashtags else []
-            if account.auto_hashtags:
-                hashtags.extend(account.auto_hashtags)
-            
-            # 移除重複標籤並格式化
-            unique_hashtags = list(set(hashtags))
-            if unique_hashtags:
-                hashtag_text = ' '.join(f'#{tag.strip("#")}' for tag in unique_hashtags)
-                caption = f"{caption}\n\n{hashtag_text}"
+            # --- 全新的文案生成邏輯 ---
+            template = db.query(IGTemplate).filter(IGTemplate.id == ig_post.template_id).first()
+            caption_config = (template.template_data or {}).get('caption')
+
+            if caption_config and caption_config.get('enabled', False):
+                # 使用新的模板生成文案
+                caption = _generate_caption_from_template_new(caption_config, ig_post, forum_post)
+            else:
+                # --- 舊版文案生成邏輯 (作為後備) ---
+                caption = ig_post.custom_caption or forum_post.content or ''
+                
+                # 添加標籤
+                hashtags = ig_post.hashtags.copy() if ig_post.hashtags else []
+                if account.auto_hashtags:
+                    hashtags.extend(account.auto_hashtags)
+                
+                unique_hashtags = list(set(hashtags))
+                if unique_hashtags:
+                    hashtag_text = ' '.join(f'#{tag.strip("#")}' for tag in unique_hashtags)
+                    caption = f"{caption}\n\n{hashtag_text}"
+
+                # 舊邏輯也補上 {link} 替換
+                if '{link}' in caption:
+                    base_url = os.getenv('PUBLIC_BASE_URL', 'https://forum.serelix.xyz').rstrip('/')
+                    post_url = f"{base_url}/posts/{forum_post.id}"
+                    caption = caption.replace('{link}', post_url)
+            # --- 文案邏輯結束 ---
             
             # 限制文案長度
             if len(caption) > 2200:

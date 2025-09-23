@@ -367,170 +367,110 @@ class ImageGenerator:
             return canvas
     
     def _get_font(self, font_family: str, size: int, *, font_url: Optional[str] = None, font_weight: Optional[str] = None) -> ImageFont.FreeTypeFont:
-        """獲取字體 - 優先使用 Google Fonts"""
-        cache_key = f"{font_family}:{size}:{font_url or ''}:{font_weight or ''}"
-        
+        """
+        獲取字體 - 支援多種字體來源及 fallback 機制
+
+        Args:
+            font_family: 字體族群名稱
+            size: 字體大小
+            font_url: 字體 URL（不再支援）
+            font_weight: 字體粗細（不再支援）
+
+        Returns:
+            ImageFont.FreeTypeFont: 字體對象
+
+        Raises:
+            ImageGenerationError: 當所有字體載入失敗時拋出錯誤
+        """
+        cache_key = f"{font_family}:{size}"
+
         if cache_key in self.font_cache:
             return self.font_cache[cache_key]
-        
+
+        # 嘗試多種字體來源
+        font_errors = []
+
+        # 1. 首先嘗試平台字體管理系統
         try:
-            # 1. 優先使用指定的遠端字體 URL（Google Fonts）
-            if isinstance(font_url, str) and font_url.startswith('http'):
-                font = self._load_remote_font(font_url, size)
-                if font:
-                    self.font_cache[cache_key] = font
-                    return font
+            from utils.db import get_session
+            from models.fonts import FontFile
 
-            # 2. 根據字體族群自動選擇 Google Fonts URL
-            google_font_url = self._get_google_font_url(font_family, font_weight)
-            if google_font_url:
-                font = self._load_remote_font(google_font_url, size)
-                if font:
-                    self.font_cache[cache_key] = font
-                    return font
+            with get_session() as session:
+                # 查找符合 font_family 的字體檔案
+                font_file = session.query(FontFile).filter(
+                    FontFile.font_family == font_family,
+                    FontFile.is_active == True
+                ).first()
 
-            # 3. 回退到本地字體檔案
-            if font_family in self.default_fonts:
-                font_path = self.default_fonts[font_family]
-                if font_path and os.path.exists(font_path):
+                if font_file and os.path.exists(font_file.file_path):
+                    try:
+                        font = ImageFont.truetype(font_file.file_path, size)
+                        self.font_cache[cache_key] = font
+                        logger.info(f"成功載入平台字體: {font_file.display_name} ({font_file.file_path})")
+                        return font
+                    except Exception as e:
+                        font_errors.append(f"平台字體載入失敗: {font_file.display_name} - {str(e)}")
+
+        except Exception as e:
+            font_errors.append(f"平台字體系統查詢失敗: {str(e)}")
+
+        # 2. 嘗試本地字體檔案
+        local_fonts = {
+            'Noto Sans TC': [
+                'assets/fonts/NotoSansTC-Regular.otf',
+                'data/fonts/NotoSansTC-Regular.otf',
+                'backend/assets/fonts/NotoSansTC-Regular.otf'
+            ],
+            'chinese': [
+                'assets/fonts/NotoSansTC-Regular.otf',
+                'data/fonts/NotoSansTC-Regular.otf'
+            ]
+        }
+
+        if font_family in local_fonts:
+            for font_path in local_fonts[font_family]:
+                if os.path.exists(font_path):
+                    try:
+                        font = ImageFont.truetype(font_path, size)
+                        self.font_cache[cache_key] = font
+                        logger.info(f"成功載入本地字體: {font_path}")
+                        return font
+                    except Exception as e:
+                        font_errors.append(f"本地字體載入失敗: {font_path} - {str(e)}")
+
+        # 3. 嘗試系統字體
+        system_fonts = [
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/System/Library/Fonts/Arial.ttf'  # macOS
+        ]
+
+        for font_path in system_fonts:
+            if os.path.exists(font_path):
+                try:
                     font = ImageFont.truetype(font_path, size)
-                else:
-                    # 系統字體備援（Docker 已安裝 fonts-noto-cjk）
-                    candidates = []
-                    if font_family == 'chinese':
-                        candidates = [
-                            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-                            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
-                            '/usr/share/fonts/noto/NotoSansCJK-Regular.ttc',
-                            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-                            '/usr/share/fonts/truetype/noto/NotoSansTC-Regular.otf',
-                        ]
-                    elif font_family == 'english':
-                        candidates = [
-                            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-                            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-                        ]
-                    font = None
-                    for p in candidates:
-                        try:
-                            if os.path.exists(p):
-                                font = ImageFont.truetype(p, size)
-                                break
-                        except Exception:
-                            continue
-                    # 最後嘗試下載字體到 assets/fonts 再載入（若允許）
-                    if font is None and font_family == 'chinese':
-                        try:
-                            from backend.download_fonts import ensure_fonts_available  # type: ignore
-                        except Exception:
-                            try:
-                                from download_fonts import ensure_fonts_available  # type: ignore
-                            except Exception:
-                                ensure_fonts_available = None  # type: ignore
-                        try:
-                            if ensure_fonts_available:
-                                ensure_fonts_available()
-                                local_fp = os.path.join(self.assets_path, 'fonts', 'NotoSansTC-Regular.otf')
-                                if os.path.exists(local_fp):
-                                    font = ImageFont.truetype(local_fp, size)
-                        except Exception:
-                            pass
-                    if font is None:
-                        font = ImageFont.load_default()
-            else:
-                # 嘗試系統字體
-                try:
-                    font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', size)
-                except Exception:
-                    font = ImageFont.load_default()
-            
+                    self.font_cache[cache_key] = font
+                    logger.warning(f"使用系統字體作為 fallback: {font_path}")
+                    return font
+                except Exception as e:
+                    font_errors.append(f"系統字體載入失敗: {font_path} - {str(e)}")
+
+        # 4. 最終 fallback 到預設字體
+        try:
+            font = ImageFont.load_default()
             self.font_cache[cache_key] = font
+            logger.warning(f"使用預設字體作為最終 fallback")
             return font
-            
         except Exception as e:
-            logger.warning(f"字體載入失敗: {e}")
-            return ImageFont.load_default()
+            font_errors.append(f"預設字體載入失敗: {str(e)}")
 
-    def _get_google_font_url(self, font_family: str, font_weight: Optional[str] = None) -> Optional[str]:
-        """根據字體族群獲取 Google Fonts 的 TTF 下載 URL"""
-        try:
-            # 使用可靠的字體 URL
-            font_urls = {
-                'chinese': {
-                    '400': 'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansTC-Regular.otf',
-                    '300': 'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansTC-Light.otf',
-                    '500': 'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansTC-Medium.otf',
-                    '700': 'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansTC-Bold.otf'
-                },
-                'english': {
-                    '400': 'https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf',
-                    '300': 'https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Light.ttf',
-                    '500': 'https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Medium.ttf',
-                    '700': 'https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf'
-                }
-            }
-            
-            if font_family not in font_urls:
-                return None
-                
-            weight = font_weight or '400'
-            if weight not in font_urls[font_family]:
-                weight = '400'
-                
-            url = font_urls[font_family][weight]
-            logger.info(f"使用 Google Fonts URL: {url}")
-            return url
-                
-        except Exception as e:
-            logger.warning(f"獲取 Google Fonts URL 失敗: {e}")
-            return None
+        # 所有方法都失敗
+        error_msg = f"無法載入字體 {font_family}，所有嘗試都失敗:\n" + "\n".join(font_errors)
+        raise ImageGenerationError(error_msg)
 
-    def _load_remote_font(self, url: str, size: int) -> Optional[ImageFont.FreeTypeFont]:
-        """從遠端安全抓取 TTF/OTF（用完即刪）。"""
-        try:
-            from urllib.parse import urlparse
-            import tempfile
-            import requests
+    # Google Fonts 相關方法已移除，請使用平台字體管理系統
 
-            if not url.lower().startswith('https://') and not os.getenv('ALLOW_HTTP_REMOTE_FONT'):
-                raise ValueError('remote font must be https')
-            pr = urlparse(url)
-            host = pr.hostname or ''
-            allowed = [h.strip() for h in (os.getenv('FONT_ALLOWED_HOSTS','fonts.gstatic.com,fonts.googleapis.com,raw.githubusercontent.com,cdn.jsdelivr.net,github.com').split(','))]
-            if host not in allowed and os.getenv('STRICT_FONT_HOSTS','1') not in {'0','false','no'}:
-                raise ValueError(f'host {host} not allowed for remote font')
-
-            r = requests.get(url, timeout=8, stream=True)
-            r.raise_for_status()
-            total = 0
-            maxb = int(os.getenv('FONT_MAX_BYTES','5242880'))
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(pr.path)[1] or '.ttf')
-            try:
-                for chunk in r.iter_content(8192):
-                    if not chunk:
-                        continue
-                    total += len(chunk)
-                    if total > maxb:
-                        raise ValueError('remote font too large')
-                    tmp.write(chunk)
-                tmp.flush(); tmp.close()
-                # 嘗試載入
-                font = ImageFont.truetype(tmp.name, size)
-                # 立即刪除臨時檔
-                try:
-                    os.unlink(tmp.name)
-                except Exception:
-                    pass
-                return font
-            finally:
-                try:
-                    if os.path.exists(tmp.name):
-                        os.unlink(tmp.name)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning(f'remote font load failed: {e}')
-            return None
     
     def _load_image(self, image_path: str) -> Optional[Image.Image]:
         """載入圖片 (支援 URL 和本地路徑)"""

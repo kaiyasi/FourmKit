@@ -475,49 +475,50 @@ def publish_single_post(self, social_post_id: int):
             except Exception:
                 pass
             
-            # 生成內容
-            generator = ContentGenerator()
-            content = generator.generate_content(
-                social_post.forum_post, 
-                social_post.template
-            )
-            
-            # 更新生成的內容
-            social_post.generated_image_url = content.get('image_url')
-            social_post.generated_caption = content.get('caption')
-            social_post.hashtags = content.get('hashtags', [])
+            # 使用修復後的 IG 統一系統
+            from services.ig_unified_system import IGUnifiedSystem
 
-            # 儲存多張圖片資訊
-            image_urls = content.get('image_urls', [])
-            if len(image_urls) > 1:
-                social_post.generated_image_urls = ','.join(image_urls)
+            ig_system = IGUnifiedSystem()
+
+            # 生成圖片和內容
+            try:
+                template_config = ig_system.get_template_config(social_post.template.id)
+                content_data = ig_system.get_content_data(
+                    social_post.forum_post_id,
+                    getattr(social_post, 'custom_caption', ''),
+                    getattr(social_post, 'hashtags', [])
+                )
+                logo_url = ig_system.get_logo_url(social_post.account.id, template_config)
+
+                # 獲取原始模板數據以支持獨立的時間戳和貼文ID設定
+                instagram_template_data = social_post.template.config if social_post.template.config else {}
+
+                render_result = ig_system.template_engine.render_to_image(
+                    template_config, content_data, logo_url, instagram_template_data
+                )
+
+                if not render_result.success:
+                    raise AutoPublishError(f"圖片生成失敗: {render_result.error_message}")
+
+                # 更新生成的內容
+                social_post.generated_image_url = render_result.image_url
+                social_post.generated_caption = content_data.content
+                social_post.hashtags = getattr(social_post, 'hashtags', [])
+
+            except Exception as e:
+                raise AutoPublishError(f"內容生成失敗: {str(e)}")
+
+            # 目前只支援單張圖片，直接發布
+            db.commit()  # 保存生成的內容
 
             # 發布到平台
             publisher = get_platform_publisher(social_post.account.platform)
-
-            # 如果有多張圖片，使用輪播發布；否則使用單一貼文發布
-            if len(image_urls) > 1:
-                # 準備輪播項目
-                carousel_items = []
-                for i, image_url in enumerate(image_urls):
-                    carousel_items.append({
-                        'image_url': image_url,
-                        'caption': social_post.generated_caption if i == 0 else ''
-                    })
-
-                publish_result = publisher.publish_carousel(
-                    account=social_post.account,
-                    items=carousel_items,
-                    caption=social_post.generated_caption,
-                    hashtags=social_post.hashtags
-                )
-            else:
-                publish_result = publisher.publish_single_post(
-                    account=social_post.account,
-                    image_url=social_post.generated_image_url,
-                    caption=social_post.generated_caption,
-                    hashtags=social_post.hashtags
-                )
+            publish_result = publisher.publish_single_post(
+                account=social_post.account,
+                image_url=social_post.generated_image_url,
+                caption=social_post.generated_caption,
+                hashtags=social_post.hashtags
+            )
 
             # 檢查發布是否成功
             if not publish_result.get('success', False):

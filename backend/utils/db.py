@@ -26,8 +26,7 @@ def init_engine_session():
     """
     初始化資料庫：
     1) 若設了 DATABASE_URL -> 直接使用
-    2) 未設時，優先嘗試連本機 12007 的 Postgres（docker-compose 映射）
-    3) 若連不上則回退到 SQLite /data/forumkit.db
+    2) 未設時，嘗試連本機 12007 的 Postgres（docker-compose 映射）
     """
     global _engine, SessionLocal, db_session
 
@@ -35,10 +34,8 @@ def init_engine_session():
     if DB_URL:
         candidates.append(DB_URL)
     else:
-        # 預設優先 Postgres（與 docker-compose.yml 對齊）
+        # 預設 Postgres（與 docker-compose.yml 對齊）
         candidates.append("postgresql+psycopg://forumkit:forumkit_password@127.0.0.1:12007/forumkit")
-        # 回退 SQLite
-        candidates.append("sqlite:////data/forumkit.db")
 
     last_err: Exception | None = None
     for raw in candidates:

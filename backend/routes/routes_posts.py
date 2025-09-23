@@ -7,6 +7,7 @@ from utils.db import get_session
 from utils.auth import get_effective_user_id
 from utils.ratelimit import get_client_ip
 from models import Post, Media, User, School, SchoolSetting, Comment
+from models.comments import PostReaction
 from utils.upload_validation import is_allowed, sniff_kind
 from utils.sanitize import sanitize_content
 from utils.config_handler import load_config
@@ -55,11 +56,19 @@ def _get_author_display_name(user: User, client_id: str = None) -> str:
     except Exception:
         return '匿名'
 
+def _post_reaction_stats(s: Session, pid: int) -> dict:
+    """計算貼文的反應統計"""
+    types = ["like","dislike","love","laugh","angry"]
+    out = {}
+    for t in types:
+        out[t] = int(s.query(func.count(PostReaction.id)).filter(PostReaction.post_id==pid, PostReaction.reaction_type==t).scalar() or 0)
+    return out
+
 def _markdown_to_html(md: str) -> str:
     """將Markdown轉換為HTML"""
     if not md:
         return ""
-    
+
     # 檢測是否已經是HTML格式（包含HTML標籤）
     if re.search(r'<[^>]+>', md):
         # 如果已經是HTML，直接返回，但進行安全清理
@@ -532,6 +541,7 @@ def list_posts():
                 "school": school_info,
                 "school_name": school_name,
                 "comment_count": int((comment_map.get(p.id) if 'comment_map' in locals() else 0) or 0),
+                "reaction_counts": _post_reaction_stats(s, p.id),
                 "is_pinned": bool(getattr(p, "is_pinned", False)),
                 "is_advertisement": bool(getattr(p, "is_advertisement", False)),
                 "is_announcement": bool(getattr(p, "is_announcement", False)),
@@ -773,6 +783,7 @@ def list_posts_compat():
                 "school": school_info,
                 "school_name": school_name,
                 "comment_count": int(comment_map.get(p.id, 0)),
+                "reaction_counts": _post_reaction_stats(s, p.id),
                 "is_pinned": bool(getattr(p, "is_pinned", False)),
                 "is_advertisement": bool(getattr(p, "is_advertisement", False)),
                 "is_announcement": bool(getattr(p, "is_announcement", False)),

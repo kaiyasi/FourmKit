@@ -79,9 +79,24 @@ def _render_html(md: str) -> str:
     md2 = re.sub(r"\*(.+?)\*", r"<em>\1</em>", md2)
     # Inline code
     md2 = re.sub(r"`([^`]+)`", r"<code>\1</code>", md2)
-    # Links [text](url) — 支援可選引號與空白，例如 [t]("https://..." )
-    link_re = re.compile(r"\[([^\]]+)\]\(\s*[\"']?(https?://[^)\s\"']+)[\"']?\s*\)")
-    md2 = link_re.sub(r"<a href=\"\2\" target=\"_blank\" rel=\"nofollow noreferrer\">\1</a>", md2)
+    # Links [text](url)
+    # - 支援可選的引號（ASCII 與常見全形引號）與空白，例如 [t]("https://..." )、[t](“https://...”) 等
+    # - 只抓取 http/https 絕對網址，避免相對路徑誤判
+    link_re = re.compile(
+        r"\[([^\]]+)\]"            # [text]
+        r"\(\s*"                    # (
+        r"[\"'“”‘’]?"               # optional opening quote
+        r"(https?://[^)\s\"'“”‘’]+)"  # url (no spaces/quotes/parens)
+        r"[\"'“”‘’]?"               # optional closing quote
+        r"\s*\)"                    # )
+    )
+    def _link_sub(m):
+        text = m.group(1)
+        url = m.group(2)
+        # 修剪可能出現的各式引號（若仍殘留）
+        url = url.strip().strip('\"\'“”‘’')
+        return f'<a href="{url}" target="_blank" rel="nofollow noreferrer noopener">{text}</a>'
+    md2 = link_re.sub(_link_sub, md2)
     # Lists
     lines = md2.splitlines()
     out = []

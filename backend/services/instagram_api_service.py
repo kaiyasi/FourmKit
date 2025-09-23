@@ -8,7 +8,10 @@ import requests
 from datetime import datetime, timezone, timedelta
 import json
 import time
+import logging
 from urllib.parse import urlencode
+
+logger = logging.getLogger(__name__)
 
 class InstagramAPIError(Exception):
     """Instagram API 相關錯誤"""
@@ -21,7 +24,7 @@ class InstagramAPIError(Exception):
 class InstagramAPIService:
     """Instagram Graph API 服務類"""
     
-    BASE_URL = "https://graph.facebook.com/v18.0"
+    BASE_URL = "https://graph.facebook.com/v23.0"
     TIMEOUT = 30
     
     def __init__(self):
@@ -277,34 +280,53 @@ class InstagramAPIService:
         except Exception as e:
             raise InstagramAPIError(f"獲取 Instagram 帳號資訊失敗: {str(e)}")
     
-    def create_media_container(self, ig_user_id: str, page_token: str, 
+    def create_media_container(self, ig_user_id: str, page_token: str,
                               image_url: str, caption: str) -> str:
         """
         創建媒體容器
-        
+
         Args:
             ig_user_id: Instagram User ID
-            page_token: Page Access Token  
+            page_token: Page Access Token
             image_url: 圖片 URL (必須是公開可訪問的)
             caption: 貼文文案
-            
+
         Returns:
             str: 媒體容器 ID
         """
         try:
+            # 驗證圖片 URL 格式
+            if not image_url or not image_url.startswith('http'):
+                raise InstagramAPIError(f"無效的圖片 URL: {image_url}", error_code="INVALID_IMAGE_URL")
+
+            # 確保是公開可存取的 HTTPS URL
+            if not image_url.startswith('https://'):
+                if image_url.startswith('http://'):
+                    image_url = image_url.replace('http://', 'https://')
+                else:
+                    raise InstagramAPIError(f"圖片 URL 必須是 HTTPS: {image_url}", error_code="NON_HTTPS_URL")
+
+            logger.info(f"創建媒體容器，圖片URL: {image_url}")
+
             url = f"{self.BASE_URL}/{ig_user_id}/media"
-            
+
             # 準備貼文數據
             data = {
                 "image_url": image_url,
                 "caption": caption,
+                "media_type": "IMAGE",  # 關鍵修復：明確指定媒體類型
                 "access_token": page_token
             }
-            
+
             response = requests.post(url, data=data, timeout=self.TIMEOUT)
             response.raise_for_status()
-            
+
             result = response.json()
+
+            if "id" not in result:
+                raise InstagramAPIError(f"API 回應中缺少 creation_id: {result}", error_code="MISSING_CREATION_ID")
+
+            logger.info(f"媒體容器創建成功，creation_id: {result['id']}")
             return result["id"]
             
         except requests.RequestException as e:
@@ -392,15 +414,35 @@ class InstagramAPIService:
         建立輪播子項目（子媒體容器），回傳 creation_id。
         """
         try:
+            # 驗證圖片 URL 格式
+            if not image_url or not image_url.startswith('http'):
+                raise InstagramAPIError(f"無效的圖片 URL: {image_url}", error_code="INVALID_IMAGE_URL")
+
+            # 確保是公開可存取的 HTTPS URL
+            if not image_url.startswith('https://'):
+                # 如果是 http，嘗試轉換為 https
+                if image_url.startswith('http://'):
+                    image_url = image_url.replace('http://', 'https://')
+                else:
+                    raise InstagramAPIError(f"圖片 URL 必須是 HTTPS: {image_url}", error_code="NON_HTTPS_URL")
+
+            logger.info(f"建立輪播子項目，圖片URL: {image_url}")
+
             url = f"{self.BASE_URL}/{ig_user_id}/media"
             data = {
                 "image_url": image_url,
                 "is_carousel_item": True,
+                "media_type": "IMAGE",  # 明確指定媒體類型
                 "access_token": page_token,
             }
             response = requests.post(url, data=data, timeout=self.TIMEOUT)
             response.raise_for_status()
             result = response.json()
+
+            if "id" not in result:
+                raise InstagramAPIError(f"API 回應中缺少 creation_id: {result}", error_code="MISSING_CREATION_ID")
+
+            logger.info(f"輪播子項目建立成功，creation_id: {result['id']}")
             return result["id"]
         except requests.RequestException as e:
             try:

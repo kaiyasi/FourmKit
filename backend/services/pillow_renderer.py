@@ -8,6 +8,7 @@ from io import BytesIO
 from datetime import datetime, timezone
 import os
 import logging
+import re  # 新增：用於 Markdown 清理
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
 
@@ -22,21 +23,24 @@ class PillowRenderer:
     def __init__(
         self,
         *,
-        default_width: int = 1080,
-        default_height: int = 1350,
-        default_font_size: int = 36,
+        default_width: int = None,
+        default_height: int = None,
+        default_font_size: int = None,
         default_font_path: Optional[str] = None,
     ) -> None:
-        self.default_width = default_width
-        self.default_height = default_height
-        self.default_font_size = default_font_size
+        # 移除硬編碼預設值，所有配置必須來自資料庫模板
+        self.default_width = default_width  # 將由模板配置提供
+        self.default_height = default_height  # 將由模板配置提供
+        self.default_font_size = default_font_size  # 將由模板配置提供
         self.default_font_path = default_font_path
         
-        # 字體目錄 - 支援多個路徑
+        # 字體目錄 - 支援多個路徑，按優先級排序
         self.font_dirs = [
-            os.path.join("/data", "fonts"),
+            "/mnt/data_pool_b/kaiyasi/ForumKit/data/fonts",  # 實際字體目錄（最高優先級）
+            os.path.join("/app", "data", "fonts"),  # 主要字體目錄（對應容器掛載）
             os.path.join(os.getcwd(), "assets", "fonts"),
-            os.path.join(os.getcwd(), "backend", "assets", "fonts")
+            os.path.join(os.getcwd(), "backend", "assets", "fonts"),
+            os.path.join("/data", "fonts")          # 備用路徑
         ]
         
         # 創建可寫的字體目錄
@@ -68,102 +72,160 @@ class PillowRenderer:
                 self.font_dir = os.getcwd()  # 最後的最後，用當前目錄
     
     def get_font(self, font_name: Optional[str] = None, size: int = None) -> ImageFont.ImageFont:
-        """獲取字體對象"""
+        """
+        獲取字體對象 - 支援檔案名和font_family查詢，增強錯誤處理
+
+        Args:
+            font_name: 字體檔案名稱或font_family名稱
+            size: 字體大小
+
+        Returns:
+            ImageFont.ImageFont: 字體對象
+
+        Raises:
+            PillowRenderError: 當字體載入失敗時拋出錯誤
+        """
         if size is None:
+            if self.default_font_size is None:
+                raise PillowRenderError("字體大小必須由模板配置提供，不可使用硬編碼預設值")
             size = self.default_font_size
-            
-        # 如果指定了字體名稱，嘗試從多個字體目錄加載
+
+        # 如果指定了字體名稱，先嘗試檔案系統查詢（優先級更高）
         if font_name:
+            logger.info(f"[DEBUG] 嘗試載入指定字體: {font_name}")
+
+            # 1. 首先嘗試直接檔案名匹配
+            possible_names = [
+                font_name,
+                f"{font_name}.ttf",
+                f"{font_name}.otf",
+                f"{font_name}.ttc"
+            ]
+
+            # 2. 如果是 "Noto Sans TC" 或類似，嘗試對應的檔案名
+            if "Noto Sans TC" in font_name:
+                possible_names.extend([
+                    "NotoSansTC-Medium.ttf",
+                    "NotoSansTC-Regular.ttf",
+                    "NotoSansTC-Bold.ttf"
+                ])
+
             for font_dir in self.font_dirs:
-                font_path = os.path.join(font_dir, font_name)
-                if os.path.exists(font_path):
-                    try:
-                        return ImageFont.truetype(font_path, size)
-                    except Exception as e:
-                        logger.warning(f"無法載入字體 {font_name} (從 {font_path}): {e}")
-                        continue
-        
-        # 嘗試使用預設字體路徑
+                for name in possible_names:
+                    font_path = os.path.join(font_dir, name)
+                    if os.path.exists(font_path):
+                        try:
+                            font = ImageFont.truetype(font_path, size)
+                            logger.info(f"[DEBUG] 成功從檔案系統載入字體: {font_path}")
+                            return font
+                        except Exception as e:
+                            logger.warning(f"[DEBUG] 字體載入失敗 {font_path}: {e}")
+                            continue
+
+            # 3. 如果檔案系統找不到，記錄警告
+            logger.warning(f"[DEBUG] 在檔案系統中找不到字體: {font_name}，嘗試使用預設字體")
+
+        # 嘗試使用平台主要字體 NotoSansTC-Medium.ttf
+        for font_dir in self.font_dirs:
+            noto_path = os.path.join(font_dir, "NotoSansTC-Medium.ttf")
+            if os.path.exists(noto_path):
+                try:
+                    font = ImageFont.truetype(noto_path, size)
+                    logger.info(f"[DEBUG] 使用平台主要字體: {noto_path}")
+                    return font
+                except Exception as e:
+                    logger.error(f"[DEBUG] 平台主要字體載入失敗: {e}")
+
+        # 如果有自定義預設字體路徑，嘗試使用
         if self.default_font_path and os.path.exists(self.default_font_path):
             try:
-                return ImageFont.truetype(self.default_font_path, size)
-            except Exception:
-                pass
-        
-        # 嘗試查找系統中文字體
+                font = ImageFont.truetype(self.default_font_path, size)
+                logger.info(f"[DEBUG] 使用自定義預設字體: {self.default_font_path}")
+                return font
+            except Exception as e:
+                logger.error(f"[DEBUG] 自定義預設字體載入失敗: {e}")
+
+        # 最後回退到系統字體
+        logger.warning("嘗試使用系統字體作為最後回退")
         system_fonts = [
-            # Windows 中文字體
-            "C:/Windows/Fonts/msjh.ttc",  # 微軟正黑體
-            "C:/Windows/Fonts/msjhbd.ttc",
-            "C:/Windows/Fonts/kaiu.ttf",  # 標楷體
-            # macOS 中文字體  
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            # Linux 中文字體
-            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+            '/System/Library/Fonts/PingFang.ttc',  # macOS
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',  # Linux
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux fallback
+            '/Windows/Fonts/msyh.ttc',  # Windows
+            '/Windows/Fonts/simhei.ttf',  # Windows fallback
         ]
-        
+
         for system_font in system_fonts:
             if os.path.exists(system_font):
                 try:
-                    return ImageFont.truetype(system_font, size)
-                except Exception:
+                    font = ImageFont.truetype(system_font, size)
+                    logger.info(f"使用系統字體: {system_font}")
+                    return font
+                except Exception as e:
+                    logger.warning(f"系統字體載入失敗 {system_font}: {e}")
                     continue
-        
-        # 最後使用 PIL 預設字體
+
+        # 最後的最後，使用 Pillow 預設字體
+        logger.warning("使用 Pillow 預設字體")
         try:
             return ImageFont.load_default()
-        except Exception:
-            # 如果都失敗了，使用 PIL 的基本字體
-            return ImageFont.load_default()
+        except Exception as e:
+            logger.error(f"預設字體載入失敗: {e}")
+            raise PillowRenderError(f"所有字體載入失敗，包括預設字體: {str(e)}")
     
     def render_text_card(
         self,
         content: str,
         *,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        background_color: str = "#ffffff",
-        text_color: str = "#000000",
+        width: int,
+        height: int,
+        background_color: str,
+        text_color: str,
         font_name: Optional[str] = None,
-        font_size: Optional[int] = None,
-        padding: int = 40,
-        line_spacing: int = 10,
-        # 新增：排版與輸出控制
-        text_align: str = "center",           # left | center | right
-        vertical_align: str = "middle",       # top | middle | bottom
-        max_lines: Optional[int] = None,       # 最大行數（超出將截斷）
+        font_size: int,
+        padding: int,
+        line_spacing: int,
+        # 新增：排版與輸出控制 - 移除預設值，強制使用模板配置
+        text_align: str,           # left | center | right
+        vertical_align: str,       # top | middle | bottom
+        max_lines: int,       # 最大行數（超出將截斷）
         max_chars_per_line: Optional[int] = None,  # 每行最大字數
         ellipsis: bool = True,                 # 截斷時是否加上 …
         # 文字截斷浮水印
         apply_watermark_on_truncation: bool = False,
         watermark_text: str = "",
         watermark_font_name: Optional[str] = None,
-        watermark_font_size: int = 18,
-        watermark_color: str = "#666666",
+        watermark_font_size: int,
+        watermark_color: str,
         watermark_position: Optional[object] = None,  # str 位置名 或 {x:int,y:int}
         image_format: str = "JPEG",
         quality: int = 92,
     ) -> BytesIO:
         """渲染文字卡片為圖片"""
         try:
-            # 設定尺寸
-            img_width = width or self.default_width
-            img_height = height or self.default_height
-            font_size = font_size or self.default_font_size
+            # 驗證必要參數 - 不提供預設值
+            if not width or not height or not font_size:
+                raise ValueError("width, height, font_size 必須由模板配置提供，不可為空或使用預設值")
+
+            logger.info(f"[DEBUG] render_text_card 開始，尺寸: {width}x{height}，字體大小: {font_size}")
+            logger.info(f"[DEBUG] 內容長度: {len(content)} 字符")
+
+            # 檢查內容是否為空
+            if not content or not content.strip():
+                raise ValueError("內容不可為空，必須提供有效內容")
             
             # 創建圖片
-            img = Image.new("RGB", (img_width, img_height), background_color)
+            img = Image.new("RGB", (width, height), background_color)
             draw = ImageDraw.Draw(img)
             
             # 獲取字體
+            logger.info(f"[DEBUG] 嘗試載入字體: {font_name}")
             font = self.get_font(font_name, font_size)
+            logger.info(f"[DEBUG] 字體載入成功")
             
             # 計算文字區域
-            text_width = img_width - (padding * 2)
-            text_height = img_height - (padding * 2)
+            text_width = width - (padding * 2)
+            text_height = height - (padding * 2)
             
             # 自動換行
             wrapped = self._wrap_text(content, font, text_width)
@@ -282,10 +344,20 @@ class PillowRenderer:
             buf = BytesIO()
             if image_format.upper() == "PNG":
                 img.save(buf, format="PNG")
+                logger.info(f"[DEBUG] 圖片已保存為 PNG 格式")
             else:
                 img.save(buf, format="JPEG", quality=quality)
-            
-            buf.seek(0)
+                logger.info(f"[DEBUG] 圖片已保存為 JPEG 格式，品質: {quality}")
+
+            buf.seek(0, 2)  # 移動到結尾檢查大小
+            buffer_size = buf.tell()
+            buf.seek(0)  # 重置到開頭
+
+            logger.info(f"[DEBUG] render_text_card 完成，buffer 大小: {buffer_size} bytes")
+
+            if buffer_size == 0:
+                raise PillowRenderError("生成的圖片 buffer 為空")
+
             return buf
             
         except Exception as e:
@@ -421,17 +493,9 @@ class PillowRenderer:
         return None
 
     def _resolve_font(self, family: Optional[str], size: int) -> ImageFont.ImageFont:
-        """綜合映射與系統 fallback 取得字體。"""
-        filename = self._map_font_family(family)
-        if filename:
-            try:
-                for d in self.font_dirs:
-                    path = os.path.join(d, filename)
-                    if os.path.exists(path):
-                        return ImageFont.truetype(path, size)
-            except Exception:
-                pass
-        return self.get_font(None, size)
+        """綜合映射與系統 fallback 取得字體 - 使用統一的字體載入邏輯"""
+        # 直接使用統一的 get_font 方法，支援 font_family 和檔案名查詢
+        return self.get_font(family, size)
 
     def _place_anchor(self, img_w: int, img_h: int, box_w: int, box_h: int, position: str, padding: int,
                       custom_x: Optional[float] = None, custom_y: Optional[float] = None) -> tuple[int, int]:
@@ -540,6 +604,53 @@ class PillowRenderer:
                 x = x0 + (w - lw) // 2
             draw.text((x, start_y), line, fill=color, font=font)
             start_y += line_h
+
+    def _clean_markdown(self, text: str) -> str:
+        """清理 HTML 標籤和 Markdown 符號，移除所有格式化標記"""
+        if not text:
+            return ""
+
+        text = str(text)
+
+        # 修復：先移除 HTML 標籤，再處理 Markdown
+        # 1. 移除 HTML 標籤
+        text = re.sub(r'<[^>]+>', '', text)
+
+        # 2. HTML 實體解碼
+        from html import unescape
+        text = unescape(text)
+
+        # 3. 移除 Markdown 符號
+        # 移除圖片 ![alt](url) -> alt (需要在連結之前處理)
+        text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+        # 移除連結 [text](url) -> text
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+        # 移除粗體 **text** 或 __text__ -> text
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'__([^_]+)__', r'\1', text)
+        # 移除斜體 *text* 或 _text_ -> text
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        text = re.sub(r'(?<!\w)_([^_]+)_(?!\w)', r'\1', text)
+        # 移除刪除線 ~~text~~ -> text
+        text = re.sub(r'~~([^~]+)~~', r'\1', text)
+        # 移除代碼區塊 ```code``` -> code
+        text = re.sub(r'```[^`]*```', '', text)
+        # 移除行內代碼 `code` -> code
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        # 移除標題符號 ### Title -> Title
+        text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+        # 移除引用符號 > quote -> quote
+        text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+        # 移除列表符號 - item 或 * item 或 1. item -> item
+        text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
+        # 移除水平線 --- 或 ***
+        text = re.sub(r'^[\s]*[-*_]{3,}[\s]*$', '', text, flags=re.MULTILINE)
+
+        # 移除多餘空白
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        return text
 
     def _load_image(self, source: str) -> Optional[Image.Image]:
         """嘗試用多種來源載入圖片：data URL, http(s), 本機路徑, 以 / 開頭相對路徑。"""
@@ -659,6 +770,9 @@ class PillowRenderer:
     def _parse_datetime(self, value: object) -> datetime:
         """將各種輸入轉為 datetime（盡量容錯）。"""
         if isinstance(value, datetime):
+            # 修復：確保返回的 datetime 有時區資訊
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
             return value
         if value is None:
             return datetime.now(timezone.utc)
@@ -667,7 +781,11 @@ class PillowRenderer:
             # 處理結尾 Z
             if s.endswith('Z'):
                 s = s.replace('Z', '+00:00')
-            return datetime.fromisoformat(s)
+            dt = datetime.fromisoformat(s)
+            # 確保有時區資訊
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
         except Exception:
             try:
                 # Unix timestamp（秒）
@@ -699,9 +817,12 @@ class PillowRenderer:
         若 fmt 含 '%'，直接視為 strftime 格式。
         """
         dt = self._parse_datetime(created_at)
-        # 相對時間
+        # 相對時間 - 修復時區問題
         if not fmt or fmt.lower() == 'relative':
-            now = datetime.now(dt.tzinfo or timezone.utc)
+            # 確保兩個時間都有相同的時區資訊
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(dt.tzinfo)
             delta = now - dt
             secs = int(delta.total_seconds())
             if secs < 60:
@@ -736,34 +857,79 @@ class PillowRenderer:
         """依據模板設定，使用 Pillow 直接渲染 IG 預覽圖片。
         支援：畫布尺寸/顏色、文字樣式與位置、Logo、Meta（時間/ID）。
         """
+        # 修復：確保 content 和 config 不為空，提供預設值
+        content = content or {}
+        config = config or {}
+
         # 基本設定
         width = int(config.get('width') or self.default_width)
         height = int(config.get('height') or self.default_height)
-        bg = config.get('background_color', '#ffffff')
-        primary = config.get('primary_color', '#333333')
-        metadata_color = config.get('metadata_color', '#666666')
-        padding = int(config.get('padding', 60))
-        line_height = float(config.get('line_height', 1.5))
+        # 移除預設值，強制使用模板配置
+        if 'background_color' not in config:
+            raise ValueError("模板配置缺少 background_color")
+        if 'primary_color' not in config:
+            raise ValueError("模板配置缺少 primary_color")
+        if 'padding' not in config:
+            raise ValueError("模板配置缺少 padding")
+        if 'line_height' not in config:
+            raise ValueError("模板配置缺少 line_height")
+
+        bg = config['background_color']
+        primary = config['primary_color']
+        padding = int(config['padding'])
+        line_height = float(config['line_height'])
+
+        # 修復：記錄調試訊息
+        logger.info(f"[Pillow渲染] 開始渲染，尺寸: {width}x{height}, 內容: {content.keys() if content else 'None'}, 配置: {list(config.keys()) if config else 'None'}")
 
         # 建立底圖
         img = Image.new('RGB', (width, height), bg)
         draw = ImageDraw.Draw(img)
 
-        # 字體
-        title_size = int(config.get('font_size_title', 36))
-        content_size = int(config.get('font_size_content', 28))
-        meta_size = int(config.get('metadata_size', int(config.get('font_size_meta', 12))))
+        # 字體 - 移除預設值，強制使用模板配置
+        if 'font_size_title' not in config:
+            raise ValueError("模板配置缺少 font_size_title")
+        if 'font_size_content' not in config:
+            raise ValueError("模板配置缺少 font_size_content")
+
+        title_size = int(config['font_size_title'])
+        content_size = int(config['font_size_content'])
         family = config.get('font_family')
-        title_font = self._resolve_font(family, title_size)
-        content_font = self._resolve_font(family, content_size)
-        meta_font = self._resolve_font(family, meta_size)
+
+        # 修復：安全地載入字體，並記錄過程
+        logger.info(f"[Pillow渲染] 載入字體：family={family}, title_size={title_size}, content_size={content_size}")
+        try:
+            title_font = self._resolve_font(family, title_size)
+            logger.info(f"[Pillow渲染] 標題字體載入成功")
+        except Exception as e:
+            logger.warning(f"[Pillow渲染] 標題字體載入失敗，使用預設字體: {e}")
+            title_font = ImageFont.load_default()
+
+        try:
+            content_font = self._resolve_font(family, content_size)
+            logger.info(f"[Pillow渲染] 內容字體載入成功")
+        except Exception as e:
+            logger.warning(f"[Pillow渲染] 內容字體載入失敗，使用預設字體: {e}")
+            content_font = ImageFont.load_default()
 
         # 照片方格（合併到貼文模板）
         image_urls = config.get('image_urls') or []
-        photo_square_size = int(config.get('photo_square_size', max(120, int(min(width, height) * 0.35))))
-        photo_border_radius = int(config.get('photo_border_radius', 12))
-        with_photo_stacked = bool(config.get('with_photo_stacked', True))
-        img_anchor = {'x': float(config.get('image_pos_x', 10)), 'y': float(config.get('image_pos_y', 55))}
+        # 照片配置 - 移除硬編碼預設值
+        if 'photo_square_size' not in config:
+            raise ValueError("模板配置缺少 photo_square_size")
+        if 'photo_border_radius' not in config:
+            raise ValueError("模板配置缺少 photo_border_radius")
+        if 'with_photo_stacked' not in config:
+            raise ValueError("模板配置缺少 with_photo_stacked")
+        if 'image_pos_x' not in config:
+            raise ValueError("模板配置缺少 image_pos_x")
+        if 'image_pos_y' not in config:
+            raise ValueError("模板配置缺少 image_pos_y")
+
+        photo_square_size = int(config['photo_square_size'])
+        photo_border_radius = int(config['photo_border_radius'])
+        with_photo_stacked = bool(config['with_photo_stacked'])
+        img_anchor = {'x': float(config['image_pos_x']), 'y': float(config['image_pos_y'])}
 
         if isinstance(image_urls, list) and len(image_urls) > 0:
             try:
@@ -772,17 +938,29 @@ class PillowRenderer:
             except Exception as e:
                 logger.warning(f"繪製相片方格失敗：{e}")
 
-        # 文字內容
+        # 文字內容 - 修復：加入 Markdown 清理
         title = str(content.get('title') or '').strip()
         text = str(content.get('text') or '').strip()
+
+        # 清理 Markdown 符號
+        title = self._clean_markdown(title)
+        text = self._clean_markdown(text)
         # 換行與限制參數
         has_images = isinstance(image_urls, list) and len(image_urls) > 0
         if has_images:
-            max_cpl = int(config.get('text_max_chars_per_line_with_photo', 24))
-            max_lines = int(config.get('text_max_lines_with_photo', 6))
+            if 'text_max_chars_per_line_with_photo' not in config:
+                raise ValueError("模板配置缺少 text_max_chars_per_line_with_photo")
+            if 'text_max_lines_with_photo' not in config:
+                raise ValueError("模板配置缺少 text_max_lines_with_photo")
+            max_cpl = int(config['text_max_chars_per_line_with_photo'])
+            max_lines = int(config['text_max_lines_with_photo'])
         else:
-            max_cpl = int(config.get('text_max_chars_per_line_text_only', 30))
-            max_lines = int(config.get('text_max_lines_text_only', 8))
+            if 'text_max_chars_per_line_text_only' not in config:
+                raise ValueError("模板配置缺少 text_max_chars_per_line_text_only")
+            if 'text_max_lines_text_only' not in config:
+                raise ValueError("模板配置缺少 text_max_lines_text_only")
+            max_cpl = int(config['text_max_chars_per_line_text_only'])
+            max_lines = int(config['text_max_lines_text_only'])
 
         # 換行計算寬度（保守使用整體內距）
         box_w = max(10, width - padding * 2)
@@ -838,10 +1016,17 @@ class PillowRenderer:
             total_h -= int(per_line_h[-1] - (per_line_h[-1] / line_height))  # 近似移除最後一行的額外行距
 
         # 文字區塊位置：有照片時採用上下排列與自訂座標（不疊加）
-        align = (config.get('text_align', 'center') or 'center').lower()
+        # 文字對齊 - 移除硬編碼預設值
+        if 'text_align' not in config:
+            raise ValueError("模板配置缺少 text_align")
+        align = config['text_align'].lower()
         if has_images and with_photo_stacked:
-            tx = float(config.get('text_pos_x', 10))
-            ty = float(config.get('text_pos_y', 15))
+            if 'text_pos_x' not in config:
+                raise ValueError("模板配置缺少 text_pos_x")
+            if 'text_pos_y' not in config:
+                raise ValueError("模板配置缺少 text_pos_y")
+            tx = float(config['text_pos_x'])
+            ty = float(config['text_pos_y'])
             x0 = max(0, min(width - box_w, int(tx / 100.0 * width)))
             y0 = max(0, min(height - total_h, int(ty / 100.0 * height)))
         else:
@@ -863,39 +1048,102 @@ class PillowRenderer:
             y += lh
 
         # 繪製 Meta：時間與貼文 ID
-        show_ts = bool(config.get('show_timestamp', False))
-        show_id = bool(config.get('show_post_id', False))
-        ts_pos = config.get('timestamp_position', 'bottom-left')
-        id_pos = config.get('post_id_position', 'bottom-right')
-        post_id_fmt = str(config.get('post_id_format', '#{id}'))
+        # 時間戳
+        # 時間戳 - 移除硬編碼預設值
+        if 'show_timestamp' not in config:
+            raise ValueError("模板配置缺少 show_timestamp")
 
-        meta_items: List[tuple[str, str]] = []  # (text, position)
-        if show_ts:
+        if bool(config['show_timestamp']):
+            if 'timestamp_position' not in config:
+                raise ValueError("模板配置缺少 timestamp_position")
+            if 'timestamp_format' not in config:
+                raise ValueError("模板配置缺少 timestamp_format")
+            if 'timestamp_font' not in config:
+                raise ValueError("模板配置缺少 timestamp_font")
+            if 'timestamp_size' not in config:
+                raise ValueError("模板配置缺少 timestamp_size")
+
+            ts_pos = config['timestamp_position']
             ts_raw = content.get('created_at') or content.get('time')
-            # 支援兩種鍵名（timestamp_format / timestampFormat）
-            fmt_cfg = config.get('timestamp_format')
-            if fmt_cfg is None:
-                fmt_cfg = config.get('timestampFormat')
-            ts_text = self._format_timestamp(ts_raw, str(fmt_cfg or 'relative'))
-            meta_items.append((ts_text, ts_pos))
-        if show_id and content.get('id'):
-            meta_items.append((post_id_fmt.replace('{id}', str(content.get('id'))), id_pos))
+            ts_text = self._format_timestamp(ts_raw, str(config['timestamp_format']))
 
-        for text_value, pos in meta_items:
-            tb = draw.textbbox((0, 0), text_value, font=meta_font)
-            tw = tb[2] - tb[0]
-            th = tb[3] - tb[1]
-            mx, my = self._place_anchor(width, height, tw, th, pos or 'bottom-left', padding, None, None)
-            draw.text((mx, my), text_value, fill=metadata_color, font=meta_font)
+            ts_family = config['timestamp_font']
+            ts_size = int(config['timestamp_size'])
+            if 'timestamp_color' not in config:
+                raise ValueError("模板配置缺少 timestamp_color")
+            ts_color = config['timestamp_color']
+            ts_font = self._resolve_font(ts_family, ts_size)
 
-        # Logo
-        if bool(config.get('logo_enabled', False)):
+            logger.info(f"[Pillow渲染] 渲染時間戳: {ts_text}, 字體大小: {ts_size}, 位置: {ts_pos}")
+
+            tb = draw.textbbox((0, 0), ts_text, font=ts_font)
+            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+            mx, my = self._place_anchor(width, height, tw, th, ts_pos or 'bottom-left', padding, None, None)
+            draw.text((mx, my), ts_text, fill=ts_color, font=ts_font)
+
+        # 貼文 ID
+        # 貼文ID - 移除硬編碼預設值
+        if 'post_id_enabled' not in config and 'show_post_id' not in config:
+            raise ValueError("模板配置缺少 post_id_enabled 或 show_post_id")
+        post_id_enabled = bool(config.get('post_id_enabled') or config.get('show_post_id'))
+        post_id = content.get('id')
+        logger.info(f"[DEBUG] 貼文ID檢查: enabled={post_id_enabled}, post_id={post_id}, config={config.get('post_id_enabled')}")
+
+        if post_id_enabled and post_id:
+            if 'post_id_position' not in config:
+                raise ValueError("模板配置缺少 post_id_position")
+            if 'post_id_format' not in config:
+                raise ValueError("模板配置缺少 post_id_format")
+            id_pos = config['post_id_position']
+            post_id_fmt = str(config['post_id_format'])
+            # 支援多種格式：{id}, {ID}, #{id}, #{ID}
+            id_text = (post_id_fmt
+                      .replace('#{ID}', f'#{post_id}')
+                      .replace('#{id}', f'#{post_id}')
+                      .replace('{ID}', str(post_id))
+                      .replace('{id}', str(post_id)))
+
+            # Post ID-specific font - 修復：增大字體大小使其可見
+            if 'post_id_font' not in config:
+                raise ValueError("模板配置缺少 post_id_font")
+            if 'post_id_size' not in config:
+                raise ValueError("模板配置缺少 post_id_size")
+            if 'post_id_color' not in config:
+                raise ValueError("模板配置缺少 post_id_color")
+            id_family = config['post_id_font']
+            id_size = int(config['post_id_size'])
+            id_color = config['post_id_color']
+            id_font = self._resolve_font(id_family, id_size)
+
+            logger.info(f"[Pillow渲染] 開始渲染貼文ID: {id_text}, 字體大小: {id_size}, 位置: {id_pos}, 顏色: {id_color}")
+
+            tb = draw.textbbox((0, 0), id_text, font=id_font)
+            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+            mx, my = self._place_anchor(width, height, tw, th, id_pos or 'bottom-right', padding, None, None)
+            logger.info(f"[Pillow渲染] 貼文ID繪製座標: x={mx}, y={my}, 文字='{id_text}', 尺寸={tw}x{th}")
+            draw.text((mx, my), id_text, fill=id_color, font=id_font)
+            logger.info(f"[Pillow渲染] 貼文ID已繪製完成")
+
+        # Logo - 移除硬編碼預設值
+        if 'logo_enabled' not in config:
+            raise ValueError("模板配置缺少 logo_enabled")
+
+        if bool(config['logo_enabled']):
+            if 'logo_url' not in config:
+                raise ValueError("模板配置缺少 logo_url")
+            if 'logo_size' not in config:
+                raise ValueError("模板配置缺少 logo_size")
+            if 'logo_opacity' not in config:
+                raise ValueError("模板配置缺少 logo_opacity")
+            if 'logo_position' not in config:
+                raise ValueError("模板配置缺少 logo_position")
+
             self._draw_logo(
                 img,
-                config.get('logo_url') or '',
-                int(config.get('logo_size', 80)),
-                float(config.get('logo_opacity', 0.85)),
-                str(config.get('logo_position', 'bottom-right')),
+                config['logo_url'],
+                int(config['logo_size']),
+                float(config['logo_opacity']),
+                str(config['logo_position']),
                 padding,
                 config.get('logo_custom_x'),
                 config.get('logo_custom_y'),

@@ -245,12 +245,46 @@ class ContentGenerator:
             if custom_options and 'image' in custom_options:
                 config.update(custom_options['image'])
 
-            # 支援 cards 結構（text/timestamp/logo/postId 各自設定）
+            # 從 post.metadata 讀取時間戳和貼文ID配置
+            post_config = template.config.get('post', {})
+            if not post_config:
+                raise ContentGenerationError("模板配置缺少 post 項目")
+
+            metadata = post_config.get('metadata', {})
+            if not metadata:
+                raise ContentGenerationError("模板配置缺少 post.metadata 項目")
+
+            # 構建時間戳配置
+            ts_cfg = {
+                'enabled': metadata.get('showTimestamp', False),
+                'position': metadata.get('timestampPosition'),
+                'format': metadata.get('timestampFormat'),
+                'size': metadata.get('timestampStyle', {}).get('size'),
+                'color': metadata.get('timestampStyle', {}).get('color'),
+                'font': metadata.get('timestampStyle', {}).get('font')
+            }
+
+            # 構建貼文ID配置
+            pid_cfg = {
+                'enabled': metadata.get('showPostId', False),
+                'position': metadata.get('postIdPosition'),
+                'format': metadata.get('postIdFormat'),
+                'size': metadata.get('postIdStyle', {}).get('size'),
+                'color': metadata.get('postIdStyle', {}).get('color'),
+                'font': metadata.get('postIdStyle', {}).get('font')
+            }
+
+            # 其他配置
             cards = config.get('cards', {}) if isinstance(config.get('cards', {}), dict) else {}
             text_cfg = cards.get('text', config.get('text', {})) or {}
-            ts_cfg = cards.get('timestamp', config.get('timestamp', {})) or {}
             logo_cfg = cards.get('logo', config.get('logo', {})) or {}
-            pid_cfg = cards.get('postId', config.get('postId', {})) or {}
+
+            # DEBUG: 記錄完整配置
+            logger.info(f"[IG發布] post.metadata 原始配置: {metadata}")
+            logger.info(f"[IG發布] 時間戳配置: {ts_cfg}")
+            logger.info(f"[IG發布] 貼文ID配置: {pid_cfg}")
+            logger.info(f"[IG發布] Logo配置: {logo_cfg}")
+            logger.info(f"[IG發布] 文字配置: {text_cfg}")
 
             # 準備 Pillow 渲染配置
             pillow_config = {
@@ -348,32 +382,65 @@ class ContentGenerator:
             max_chars_per_line = text_cfg.get('maxCharsPerLine') or text_cfg.get('maxPerLine')
             wm_cfg = text_cfg.get('watermark', {}) if isinstance(text_cfg.get('watermark', {}), dict) else {}
 
-            image_buffer = self.pillow_renderer.render_text_card(
-                content=text_content,
-                width=pillow_config.get('width', 1080),
-                height=pillow_config.get('height', 1080),
-                background_color=pillow_config.get('background_color', '#ffffff'),
-                text_color=pillow_config.get('text_color', '#333333'),
-                font_name=pillow_config.get('font_family'),
-                font_size=pillow_config.get('font_size', 32),
-                padding=pillow_config.get('padding', 60),
-                line_spacing=pillow_config.get('line_spacing', 10),
-                text_align=text_align,
-                vertical_align=v_align,
-                max_lines=max_lines,
-                max_chars_per_line=max_chars_per_line,
-                apply_watermark_on_truncation=bool(wm_cfg.get('enabled', False)),
-                watermark_text=wm_cfg.get('text', '詳情請至平臺查看'),
-                watermark_font_name=wm_cfg.get('font'),
-                watermark_font_size=int(wm_cfg.get('size', 18) or 18),
-                watermark_color=wm_cfg.get('color', '#666666'),
-                watermark_position=wm_cfg.get('position', 'bottom-right'),
-                image_format=img_format,
-                quality=img_quality,
+            # 使用 unified_post_renderer 替代直接調用 pillow_renderer
+            logger.info(f"[IG發布] 使用 unified_post_renderer 生成圖片 - Post ID: {content_data.get('id')}")
+            from services.unified_post_renderer import get_renderer as _get_unified_renderer
+
+            # 將 pillow_config 轉換為 unified_post_renderer 格式
+            unified_config = {
+                'width': pillow_config.get('width', 1080),
+                'height': pillow_config.get('height', 1080),
+                'background_color': pillow_config.get('background_color', '#ffffff'),
+                'primary_color': pillow_config.get('text_color', '#333333'),
+                'font_family': pillow_config.get('font_family', ''),
+                'font_size_content': pillow_config.get('font_size', 32),
+                'padding': pillow_config.get('padding', 60),
+                'line_spacing': pillow_config.get('line_spacing', 10),
+                'text_align': text_align,
+                'vertical_align': v_align,
+                'max_lines': max_lines,
+                'max_chars_per_line': max_chars_per_line,
+                # Logo 配置
+                'logo_enabled': pillow_config.get('logo', {}).get('enabled', False),
+                'logo_url': pillow_config.get('logo', {}).get('url', ''),
+                'logo_size': pillow_config.get('logo', {}).get('size', 80),
+                'logo_position': pillow_config.get('logo', {}).get('position', 'bottom-right'),
+                'logo_opacity': pillow_config.get('logo', {}).get('opacity', 0.8),
+                # 時間戳配置
+                'timestamp_enabled': ts_cfg.get('enabled', False),
+                'timestamp_format': ts_cfg.get('format', 'relative'),
+                'timestamp_position': ts_cfg.get('position', 'bottom-right'),
+                'timestamp_size': ts_cfg.get('size', 18),
+                'timestamp_color': ts_cfg.get('color', '#666666'),
+                # 貼文ID配置
+                'post_id_enabled': pid_cfg.get('enabled', False),
+                'post_id_format': pid_cfg.get('format', '#{id}'),  # 使用 format 而非 text
+                'post_id_position': pid_cfg.get('position', 'top-center'),
+                'post_id_size': pid_cfg.get('size', 24),
+                'post_id_color': pid_cfg.get('color', '#666666'),
+            }
+
+            logger.info(f"[IG發布] 傳遞給 unified_post_renderer 的完整配置: {unified_config}")
+
+            _renderer = _get_unified_renderer()
+            image_buffer = _renderer.render_to_image(
+                content={
+                    'title': content_data.get('title', ''),
+                    'text': text_content,
+                    'author': content_data.get('author', ''),
+                    'school_name': content_data.get('school_name', ''),
+                    'created_at': content_data.get('created_at'),
+                    'id': content_data.get('id')
+                },
+                size='instagram_square',
+                template='modern',
+                config=unified_config,
+                logo_url=unified_config.get('logo_url'),
+                quality=img_quality
             )
 
-            # 疊加圖層（Logo + 時間戳）
-            try:
+            # 舊的疊加圖層邏輯 - 已被 unified_post_renderer 取代，避免重複渲染
+            if False:  # 停用舊邏輯
                 base = Image.open(image_buffer).convert('RGBA')
                 bw, bh = base.size
                 pad = int(pillow_config.get('padding', 60) or 60)
@@ -514,78 +581,17 @@ class ContentGenerator:
                 except Exception as _e:
                     logger.warning(f"時間戳繪製失敗或略過: {_e}")
 
-                # 3) 格式化ID文字（簡化版本，參考時間戳寫法）
-                try:
-                    post_id_cfg = pillow_config.get('postId') or {}
-                    if isinstance(post_id_cfg, dict) and post_id_cfg.get('enabled', False):
-                        id_text = post_id_cfg.get('text', '')
-                        # 注意：id_text 在這裡應該已經是格式化完成的文字了（從前面的邏輯處理過）
-                        # 但為了保險起見，如果還有 {id} 佔位符，就再替換一次
-                        actual_id = content_data.get('id', 0)
-                        if '{id}' in id_text:
-                            id_text = id_text.replace('{id}', str(actual_id))
-                            logger.info(f"[DEBUG] 圖片渲染階段再次替換{{id}}: text='{id_text}', actual_id={actual_id}")
-                        logger.info(f"[DEBUG] 格式化ID繪製: enabled={post_id_cfg.get('enabled')}, text='{id_text}', actual_id={actual_id}")
+                # unified_post_renderer 已處理所有疊加圖層（包括貼文ID），無需額外繪製
 
-                        if id_text:
-                            # 繪製（簡化版本，跟時間戳一樣）
-                            draw = ImageDraw.Draw(base)
-                            font_size = int(post_id_cfg.get('size', 20) or 20)
-                            font_name = post_id_cfg.get('font')
-                            font = self.pillow_renderer.get_font(font_name, font_size)
-                            color = post_id_cfg.get('color', '#0066cc')
-
-                            text_bbox = draw.textbbox((0, 0), id_text, font=font)
-                            tw = text_bbox[2] - text_bbox[0]
-                            th = text_bbox[3] - text_bbox[1]
-
-                            # 自訂座標優先
-                            if isinstance(post_id_cfg, dict) and ('x' in post_id_cfg or 'y' in post_id_cfg):
-                                try:
-                                    tx = int(post_id_cfg.get('x', 0))
-                                    ty = int(post_id_cfg.get('y', 0))
-                                    tx, ty = max(0, min(bw - tw, tx)), max(0, min(bh - th, ty))
-                                except Exception:
-                                    tx, ty = pad, pad
-                            else:
-                                pos = (post_id_cfg.get('position') or 'top-left').lower()
-                                if pos == 'top-left':
-                                    tx, ty = pad, pad
-                                elif pos == 'top-center':
-                                    tx, ty = (bw - tw) // 2, pad
-                                elif pos == 'top-right':
-                                    tx, ty = bw - pad - tw, pad
-                                elif pos in ('middle-left', 'left-center'):
-                                    tx, ty = pad, (bh - th) // 2
-                                elif pos in ('center', 'middle-center'):
-                                    tx, ty = (bw - tw) // 2, (bh - th) // 2
-                                elif pos in ('middle-right', 'right-center'):
-                                    tx, ty = bw - pad - tw, (bh - th) // 2
-                                elif pos == 'bottom-left':
-                                    tx, ty = pad, bh - pad - th
-                                elif pos == 'bottom-center':
-                                    tx, ty = (bw - tw) // 2, bh - pad - th
-                                else:  # bottom-right default
-                                    tx, ty = bw - pad - tw, bh - pad - th
-
-                            # 直接繪製（不處理透明度，保持簡潔）
-                            draw.text((tx, ty), id_text, fill=color, font=font)
-                            logger.info(f"[DEBUG] 格式化ID已繪製在位置 ({tx}, {ty}): '{id_text}'")
-
-                except Exception as _e:
-                    logger.warning(f"格式化ID繪製失敗或略過: {_e}")
-
-                # 將合成後影像覆寫回緩衝區（依設定輸出）
-                out_buf = BytesIO()
-                base = base.convert('RGB')
-                if img_format == 'PNG':
-                    base.save(out_buf, format='PNG')
-                else:
-                    base.save(out_buf, format='JPEG', quality=img_quality)
-                out_buf.seek(0)
-                image_buffer = out_buf
-            except Exception as _e:
-                logger.warning(f"合成圖層階段失敗或略過: {_e}")
+            # 將合成後影像覆寫回緩衝區（依設定輸出）
+            out_buf = BytesIO()
+            base = base.convert('RGB')
+            if img_format == 'PNG':
+                base.save(out_buf, format='PNG')
+            else:
+                base.save(out_buf, format='JPEG', quality=img_quality)
+            out_buf.seek(0)
+            image_buffer = out_buf
             
             # 儲存圖片（本機副本）
             post_id = content_data.get('id', 'preview')
@@ -709,38 +715,24 @@ class ContentGenerator:
 
             # 產生圖片（用 render_instagram_post）
             # 透過 unified_post_renderer，確保與 IG 手機預覽一致
-            try:
-                from services.unified_post_renderer import get_renderer as _get_unified_renderer
-                _renderer = _get_unified_renderer()
-                image_buffer = _renderer.render_to_image(
-                    content={
-                        'title': content_data.get('title', ''),
-                        'text': content_data.get('content', ''),
-                        'author': content_data.get('author', ''),
-                        'school_name': content_data.get('school_name', ''),
-                        'created_at': content_data.get('created_at'),
-                        'id': content_data.get('id')
-                    },
-                    size='instagram_square',
-                    template='modern',
-                    config=pillow_config,
-                    logo_url=pillow_config.get('logo_url'),
-                    quality=int(config.get('quality', 90))
-                )
-            except Exception:
-                # 回退到直接使用 PillowRenderer（保底）
-                image_buffer = self.pillow_renderer.render_instagram_post(
-                    content={
-                        'title': content_data.get('title', ''),
-                        'text': content_data.get('content', ''),
-                        'author': content_data.get('author', ''),
-                        'school_name': content_data.get('school_name', ''),
-                        'created_at': content_data.get('created_at'),
-                        'id': content_data.get('id')
-                    },
-                    config=pillow_config,
-                    quality=int(config.get('quality', 90))
-                )
+            logger.info(f"[IG發布] 使用 unified_post_renderer 生成圖片 - Post ID: {content_data.get('id')}")
+            from services.unified_post_renderer import get_renderer as _get_unified_renderer
+            _renderer = _get_unified_renderer()
+            image_buffer = _renderer.render_to_image(
+                content={
+                    'title': content_data.get('title', ''),
+                    'text': content_data.get('content', ''),
+                    'author': content_data.get('author', ''),
+                    'school_name': content_data.get('school_name', ''),
+                    'created_at': content_data.get('created_at'),
+                    'id': content_data.get('id')
+                },
+                size='instagram_square',
+                template='modern',
+                config=pillow_config,
+                logo_url=pillow_config.get('logo_url'),
+                quality=int(config.get('quality', 90))
+            )
 
             # 儲存與上傳（沿用 _generate_image 的流程）
             os.makedirs(self.output_dir, exist_ok=True)
@@ -968,8 +960,8 @@ class ContentGenerator:
                 'id': str(content_data.get('id') or ''),
                 'content': str(content_data.get('content') or ''),
                 'author': str(content_data.get('author') or ''),
-                'title': str(content_data.get('title') or ''),
-                'school_name': str(content_data.get('school_name') or '')
+                'school_name': str(content_data.get('school_name') or ''),
+                'link': str(content_data.get('link') or content_data.get('platform_link') or content_data.get('forum_link') or '')
             }
             out = str(text)
             for k, v in sample.items():

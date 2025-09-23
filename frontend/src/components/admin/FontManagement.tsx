@@ -81,6 +81,19 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
   const [previewFont, setPreviewFont] = useState<FontFile | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [previewText, setPreviewText] = useState('這是字體預覽文字 ABC 123')
+  const [previewSize, setPreviewSize] = useState(32)
+  const [previewBackground, setPreviewBackground] = useState('#ffffff')
+  const [previewTextColor, setPreviewTextColor] = useState('#333333')
+  const [previewSample, setPreviewSample] = useState('custom')
+
+  const fontSamples = {
+    custom: previewText,
+    chinese: '這是中文字體測試，包含繁體與簡體字。',
+    english: 'The quick brown fox jumps over the lazy dog.',
+    numbers: '0123456789 +-*/=%$@#&()[]{}',
+    mixed: '混合測試 Mixed Test 123 ！？@#$',
+    lorem: '在這個美麗的世界裡，我們用最好的字體展現文字之美。Typography matters in design.'
+  }
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({})
   const [selectedRequest, setSelectedRequest] = useState<FontRequest | null>(null)
   const [selectedFont, setSelectedFont] = useState<FontFile | null>(null)
@@ -95,6 +108,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
   // 表單狀態
   const [uploadForm, setUploadForm] = useState({
     font_file: null as File | null,
+    font_family: '',
     display_name: '',
     description: '',
     is_chinese_supported: false,
@@ -123,11 +137,24 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
         }
       })
 
+      if (!response.ok) {
+        console.error('獲取字體列表 HTTP 失敗:', response.status, response.statusText)
+        setFonts([])
+        return
+      }
+
       const result = await response.json()
+      console.log('字體列表 API 回應:', result)
+
       if (result.success) {
-        setFonts(result.fonts || [])
+        // 修復：API 回應結構是 result.data.fonts
+        const fontList = result.data?.fonts || result.fonts || []
+        setFonts(fontList)
+        console.log('設定字體列表:', fontList.length, '個字體')
+        console.log('字體資料:', fontList)
       } else {
-        console.error('獲取字體列表失敗:', result.error)
+        console.error('獲取字體列表失敗:', result.error || result.message)
+        setFonts([])
       }
     } catch (error) {
       console.error('獲取字體列表失敗:', error)
@@ -158,10 +185,12 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
+      const fileName = file.name.split('.')[0]
       setUploadForm(prev => ({
         ...prev,
         font_file: file,
-        display_name: prev.display_name || file.name.split('.')[0]
+        font_family: prev.font_family || fileName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+        display_name: prev.display_name || fileName
       }))
     }
   }
@@ -176,6 +205,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
     try {
       const formData = new FormData()
       formData.append('font_file', uploadForm.font_file)
+      formData.append('font_family', uploadForm.font_family)
       formData.append('display_name', uploadForm.display_name)
       formData.append('description', uploadForm.description)
       formData.append('is_chinese_supported', uploadForm.is_chinese_supported.toString())
@@ -190,12 +220,31 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
         body: formData
       })
 
+      if (!response.ok) {
+        // 如果響應不是 2xx，嘗試解析錯誤信息
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        try {
+          const errorResult = await response.json()
+          errorMessage = errorResult.error || errorResult.message || errorMessage
+        } catch {
+          // 如果解析 JSON 失敗，使用原始錯誤信息
+        }
+        alert(`上傳失敗: ${errorMessage}`)
+        console.error('Upload failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries())
+        })
+        return
+      }
+
       const result = await response.json()
       if (result.success) {
         alert('字體上傳成功！')
         setShowUploadForm(false)
         setUploadForm({
           font_file: null,
+          font_family: '',
           display_name: '',
           description: '',
           is_chinese_supported: false,
@@ -498,7 +547,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                   >
                     申請
                     {(requests || []).filter(r => r.status === 'pending').length > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">
+                      <span className="ml-1 px-1.5 py-0.5 bg-danger text-danger-foreground text-xs rounded-full">
                         {(requests || []).filter(r => r.status === 'pending').length}
                       </span>
                     )}
@@ -556,7 +605,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                       key={font.id}
                       className={`p-4 rounded-xl border border-border cursor-pointer transition-colors ${
                         selectedFont?.id === font.id
-                          ? 'ring-2 ring-primary bg-primary bg-opacity-5'
+                          ? 'ring-2 ring-primary'
                           : 'bg-surface-hover hover:bg-surface'
                       }`}
                       onClick={() => setSelectedFont(font)}
@@ -565,18 +614,18 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                         <div className="flex items-center gap-2">
                           <span className={`text-xs px-2 py-1 rounded-full ${
                             font.is_active
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-success-bg text-success-text'
+                              : 'bg-surface-hover text-muted'
                           }`}>
                             {font.is_active ? '已啟用' : '已停用'}
                           </span>
                           {font.is_chinese_supported && (
-                            <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                            <span className="text-xs px-2 py-1 bg-info-bg text-info-text rounded-full">
                               中文
                             </span>
                           )}
                           {font.is_system_font && (
-                            <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">
+                            <span className="text-xs px-2 py-1 bg-accent text-surface rounded-full">
                               系統
                             </span>
                           )}
@@ -615,7 +664,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                       key={request.id}
                       className={`p-4 rounded-xl border border-border cursor-pointer transition-colors ${
                         selectedRequest?.id === request.id
-                          ? 'ring-2 ring-primary bg-primary bg-opacity-5'
+                          ? 'ring-2 ring-primary'
                           : request.status === 'pending'
                             ? 'bg-surface border-primary border-opacity-20 hover:bg-primary hover:bg-opacity-5'
                             : 'bg-surface-hover border-border hover:bg-surface'
@@ -625,9 +674,9 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className={`text-xs px-2 py-1 rounded-full ${
-                            request.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                            request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                            'bg-red-100 text-red-800'
+                            request.status === 'pending' ? 'bg-warning-bg text-warning-text' :
+                            request.status === 'approved' ? 'bg-success-bg text-success-text' :
+                            'bg-danger-bg text-danger-text'
                           }`}>
                             {request.status === 'pending' ? '待審核' :
                              request.status === 'approved' ? '已核准' : '已拒絕'}
@@ -725,8 +774,8 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                             disabled={actionLoading[`toggle-${selectedFont.id}`]}
                             className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                               selectedFont.is_active
-                                ? 'bg-orange-500 text-white hover:bg-orange-600'
-                                : 'bg-green-500 text-white hover:bg-green-600'
+                                ? 'bg-warning text-warning-foreground hover:bg-warning-hover'
+                                : 'bg-success text-success-foreground hover:bg-success-hover'
                             }`}
                           >
                             {actionLoading[`toggle-${selectedFont.id}`] ? (
@@ -742,7 +791,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                           <button
                             onClick={() => handleDeleteFont(selectedFont.id, selectedFont.display_name)}
                             disabled={actionLoading[`delete-${selectedFont.id}`]}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-danger text-danger-foreground rounded-lg hover:bg-danger-hover transition-colors"
                           >
                             {actionLoading[`delete-${selectedFont.id}`] ? (
                               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -760,9 +809,9 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                     <div>
                       <h4 className="font-semibold text-fg text-lg">{selectedRequest.font_name}</h4>
                       <div className={`text-xs px-2 py-1 rounded-full inline-block mt-2 ${
-                        selectedRequest.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                        selectedRequest.status === 'approved' ? 'bg-green-100 text-green-800' :
-                        'bg-red-100 text-red-800'
+                        selectedRequest.status === 'pending' ? 'bg-warning-bg text-warning-text' :
+                        selectedRequest.status === 'approved' ? 'bg-success-bg text-success-text' :
+                        'bg-danger-bg text-danger-text'
                       }`}>
                         {selectedRequest.status === 'pending' ? '待審核' :
                          selectedRequest.status === 'approved' ? '已核准' : '已拒絕'}
@@ -833,7 +882,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                         <button
                           onClick={() => handleRequestAction(selectedRequest.id, 'approve')}
                           disabled={actionLoading[`request-approve-${selectedRequest.id}`]}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-success text-success-foreground rounded-lg hover:bg-success-hover transition-colors"
                         >
                           {actionLoading[`request-approve-${selectedRequest.id}`] ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -851,7 +900,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                             }
                           }}
                           disabled={actionLoading[`request-reject-${selectedRequest.id}`]}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-danger text-danger-foreground rounded-lg hover:bg-danger-hover transition-colors"
                         >
                           {actionLoading[`request-reject-${selectedRequest.id}`] ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -877,26 +926,26 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted">已啟用</span>
-                  <span className="text-sm font-medium text-green-600">
+                  <span className="text-sm font-medium text-success">
                     {(fonts || []).filter(f => f.is_active).length}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted">中文字體</span>
-                  <span className="text-sm font-medium text-blue-600">
+                  <span className="text-sm font-medium text-info">
                     {(fonts || []).filter(f => f.is_chinese_supported).length}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted">系統字體</span>
-                  <span className="text-sm font-medium text-purple-600">
+                  <span className="text-sm font-medium text-accent">
                     {(fonts || []).filter(f => f.is_system_font).length}
                   </span>
                 </div>
                 {(isDev || isCampus) && (
                   <div className="flex justify-between">
                     <span className="text-sm text-muted">待審申請</span>
-                    <span className="text-sm font-medium text-orange-600">
+                    <span className="text-sm font-medium text-warning">
                       {(requests || []).filter(r => r.status === 'pending').length}
                     </span>
                   </div>
@@ -909,7 +958,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
 
       {/* Upload Form Modal */}
       {isDev && showUploadForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+        <div className="fixed inset-0 bg-fg bg-opacity-50 flex items-center justify-center z-[9999] p-4"
              onClick={(e) => {
                if (e.target === e.currentTarget) {
                  setShowUploadForm(false)
@@ -918,8 +967,8 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
           <div className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-xl"
                onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                <Upload className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <div className="p-2 bg-info-bg rounded-lg">
+                <Upload className="w-5 h-5 text-info" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-fg">上傳字體檔案</h3>
@@ -946,6 +995,20 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                 </div>
                 <p className="text-xs text-muted mt-1">
                   支援格式: TTF, OTF, WOFF, WOFF2 (最大 10MB)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium dual-text mb-2">字體族群名稱</label>
+                <input
+                  type="text"
+                  value={uploadForm.font_family}
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, font_family: e.target.value }))}
+                  placeholder="font_family (用於程式識別)"
+                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
+                />
+                <p className="text-xs text-muted mt-1">
+                  用於程式識別，建議使用英文小寫和底線，如: noto_sans_tc
                 </p>
               </div>
 
@@ -1015,7 +1078,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleUpload}
-                disabled={uploading || !uploadForm.font_file}
+                disabled={uploading || !uploadForm.font_file || !uploadForm.font_family.trim()}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors disabled:opacity-50"
               >
                 {uploading ? (
@@ -1043,7 +1106,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
 
       {/* Request Form Modal */}
       {isCampus && showRequestForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+        <div className="fixed inset-0 bg-fg bg-opacity-50 flex items-center justify-center z-[9999] p-4"
              onClick={(e) => {
                if (e.target === e.currentTarget) {
                  setShowRequestForm(false)
@@ -1052,8 +1115,8 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
           <div className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-xl"
                onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
-                <Send className="w-5 h-5 text-green-600 dark:text-green-400" />
+              <div className="p-2 bg-success-bg rounded-lg">
+                <Send className="w-5 h-5 text-success" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-fg">申請新字體</h3>
@@ -1116,7 +1179,7 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
         </div>
       )}
 
-      {/* Preview Modal */}
+      {/* Enhanced Preview Modal */}
       {previewFont && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
              onClick={(e) => {
@@ -1125,43 +1188,187 @@ export default function FontManagement({ isOpen, onClose }: FontManagementProps)
                  setPreviewImage(null)
                }
              }}>
-          <div className="bg-surface border border-border rounded-2xl w-full max-w-3xl p-6 shadow-xl"
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl"
                onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
-                  <Eye className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                  <Type className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-fg">字體預覽</h3>
-                  <p className="text-sm text-muted">{previewFont.display_name}</p>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">字體預覽</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{previewFont.display_name}</p>
                 </div>
               </div>
               <button
                 onClick={() => setPreviewFont(null)}
-                className="p-2 text-muted hover:text-fg rounded-lg hover:bg-surface-hover transition-colors"
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium dual-text mb-2">預覽文字</label>
-                <input
-                  type="text"
-                  value={previewText}
-                  onChange={(e) => setPreviewText(e.target.value)}
-                  className="w-full p-3 bg-surface-hover border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 focus:border-primary"
-                />
+            <div className="p-6 space-y-6">
+              {/* Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Sample Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">文字樣本</label>
+                  <select
+                    value={previewSample}
+                    onChange={(e) => setPreviewSample(e.target.value)}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  >
+                    <option value="custom">自定義</option>
+                    <option value="chinese">中文樣本</option>
+                    <option value="english">英文樣本</option>
+                    <option value="numbers">數字符號</option>
+                    <option value="mixed">混合樣本</option>
+                    <option value="lorem">段落樣本</option>
+                  </select>
+                </div>
+
+                {/* Font Size */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">字體大小</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="12"
+                      max="72"
+                      value={previewSize}
+                      onChange={(e) => setPreviewSize(parseInt(e.target.value))}
+                      className="flex-1"
+                    />
+                    <span className="text-sm text-gray-600 dark:text-gray-400 w-8">{previewSize}</span>
+                  </div>
+                </div>
+
+                {/* Background Color */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">背景色</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={previewBackground}
+                      onChange={(e) => setPreviewBackground(e.target.value)}
+                      className="w-8 h-8 rounded border"
+                    />
+                    <div className="flex gap-1">
+                      {['#ffffff', '#f3f4f6', '#1f2937', '#000000'].map(color => (
+                        <button
+                          key={color}
+                          onClick={() => setPreviewBackground(color)}
+                          className="w-6 h-6 rounded border-2 border-gray-300"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Text Color */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">文字色</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={previewTextColor}
+                      onChange={(e) => setPreviewTextColor(e.target.value)}
+                      className="w-8 h-8 rounded border"
+                    />
+                    <div className="flex gap-1">
+                      {['#000000', '#374151', '#6b7280', '#ffffff'].map(color => (
+                        <button
+                          key={color}
+                          onClick={() => setPreviewTextColor(color)}
+                          className="w-6 h-6 rounded border-2 border-gray-300"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-surface-hover rounded-lg p-4 min-h-[200px] flex items-center justify-center">
+              {/* Custom Text Input */}
+              {previewSample === 'custom' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">自定義文字</label>
+                  <textarea
+                    value={previewText}
+                    onChange={(e) => setPreviewText(e.target.value)}
+                    rows={3}
+                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="輸入要預覽的文字..."
+                  />
+                </div>
+              )}
+
+              {/* Preview Area */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">即時預覽</h4>
+                </div>
+                <div
+                  className="p-8 min-h-[200px] flex items-center justify-center"
+                  style={{ backgroundColor: previewBackground }}
+                >
+                  <div
+                    style={{
+                      fontFamily: `"${previewFont.font_family}", system-ui, sans-serif`,
+                      fontSize: `${previewSize}px`,
+                      color: previewTextColor,
+                      lineHeight: 1.4,
+                      textAlign: 'center',
+                      maxWidth: '100%',
+                      wordBreak: 'break-word'
+                    }}
+                  >
+                    {fontSamples[previewSample as keyof typeof fontSamples]}
+                  </div>
+                </div>
+              </div>
+
+              {/* Font Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div>
+                  <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">字體資訊</h5>
+                  <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                    <div>家族名稱：{previewFont.font_family}</div>
+                    <div>檔案格式：{previewFont.file_format.toUpperCase()}</div>
+                    <div>檔案大小：{(previewFont.file_size / 1024 / 1024).toFixed(2)} MB</div>
+                  </div>
+                </div>
+                <div>
+                  <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">字體特性</h5>
+                  <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                    <div>粗細：{previewFont.weight}</div>
+                    <div>樣式：{previewFont.style}</div>
+                    <div>中文支援：{previewFont.is_chinese_supported ? '是' : '否'}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Server Preview (Optional) */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">服務器渲染預覽</h4>
+                  <button
+                    onClick={() => handlePreviewFont(previewFont)}
+                    className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    生成圖片
+                  </button>
+                </div>
                 {previewImage ? (
-                  <img src={previewImage} alt="字體預覽" className="max-w-full max-h-full rounded" />
+                  <div className="bg-white dark:bg-gray-700 p-4 rounded-lg">
+                    <img src={previewImage} alt="服務器預覽" className="max-w-full rounded" />
+                  </div>
                 ) : (
-                  <div className="text-center">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
+                  <div className="bg-gray-50 dark:bg-gray-700 p-8 rounded-lg text-center text-gray-500 dark:text-gray-400">
+                    點擊上方按鈕生成服務器渲染的預覽圖片
                     <p className="text-muted">生成預覽中...</p>
                   </div>
                 )}

@@ -25,7 +25,7 @@ class InstagramOAuthService:
         self.app_secret = os.getenv('FACEBOOK_APP_SECRET')
         self.redirect_uri = os.getenv('INSTAGRAM_REDIRECT_URI', 'http://localhost:12005/api/auth/instagram/callback')
         self.base_url = "https://api.instagram.com"
-        self.graph_url = "https://graph.facebook.com/v18.0"
+        self.graph_url = "https://graph.facebook.com/v23.0"
         
         if not self.app_id or not self.app_secret:
             logger.warning("Instagram OAuth 配置不完整，請檢查環境變數 FACEBOOK_APP_ID 和 FACEBOOK_APP_SECRET")

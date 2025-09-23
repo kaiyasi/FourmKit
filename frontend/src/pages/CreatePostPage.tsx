@@ -29,17 +29,19 @@ export default function CreatePostPage() {
   if (isMobile) {
     return (
       <PageLayout pathname="/create">
-        <MobileHeader subtitle="Create" />
-        
-        <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
-          <PostComposer token={token} />
-          {!token && (
-            <div className="mt-4 p-3 rounded-xl bg-warning/10 border border-warning/20">
-              <div className="text-sm text-warning-text">
-                <strong>匿名模式：</strong> 您目前以匿名身分發文，系統會以裝置識別碼標示來源。
+        <MobileHeader subtitle="Post your IDEA" />
+        {/* 置中卡片，避免上頂/下空；預留大約 140px 給頂部導覽 */}
+        <div className="min-h-[calc(100vh-140px)] flex items-center justify-center">
+          <div className="w-full bg-surface border border-border rounded-2xl p-4 shadow-soft">
+            <PostComposer token={token} />
+            {!token && (
+              <div className="mt-4 p-3 rounded-xl bg-warning/10 border border-warning/20">
+                <div className="text-sm text-warning-text">
+                  <strong>匿名模式：</strong> 您目前以匿名身分發文，系統會以裝置識別碼標示來源。
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </PageLayout>
     )

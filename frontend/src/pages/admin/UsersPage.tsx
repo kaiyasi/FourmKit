@@ -998,7 +998,7 @@ export default function AdminUsersPage() {
               </div>
             </div>
             
-            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[50vh] space-y-3">
+            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[30vh] space-y-3">
               <h3 className="font-semibold text-fg mb-2 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 活動紀錄

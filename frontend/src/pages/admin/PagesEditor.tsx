@@ -5,7 +5,7 @@ import { Eye, Save, Upload, Download, Bold, Italic, Link, List, Quote, Code, Arr
 import { getRole, getRoleDisplayName } from '@/utils/auth'
 import { useAuth } from '@/contexts/AuthContext'
 
-type PageSlug = 'about' | 'rules' | 'home-hero'
+type PageSlug = 'about' | 'rules'
 type Scope = 'school' | 'cross' | 'global'
 
 export default function AdminPagesEditor() {
@@ -207,7 +207,6 @@ export default function AdminPagesEditor() {
                 >
                   <option value="about">關於我們</option>
                   <option value="rules">版規</option>
-                  <option value="home-hero">首頁 Hero 區塊</option>
                 </select>
               </div>
               <div className="flex items-center gap-2">
