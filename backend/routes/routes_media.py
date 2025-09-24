@@ -26,12 +26,15 @@ SIZE_LIMITS = {
 }
 
 @bp.post("/upload")
-@jwt_required()
+@jwt_required(optional=True)
 def upload_media():
     """分塊上傳媒體檔案"""
     try:
         user_id = get_jwt_identity()
         post_id = request.form.get('post_id', type=int)
+        # 完全公開：未登入時，一律視為公共資產上傳（忽略 post_id）
+        if not user_id:
+            post_id = None
         chunk_index = request.form.get('chunk', type=int, default=0)
         total_chunks = request.form.get('chunks', type=int, default=1)
         file_hash = request.form.get('hash', '').strip()
@@ -67,6 +70,10 @@ def upload_media():
         if file_size > SIZE_LIMITS[file_type] * 1024 * 1024:
             return jsonify({"ok": False, "error": f"檔案太大，最大 {SIZE_LIMITS[file_type]}MB"}), 400
             
+        # 若指定要綁定貼文，仍需登入
+        if post_id and not user_id:
+            return jsonify({"ok": False, "error": "需要登入以綁定貼文附件"}), 401
+
         # 若沒有提供 post_id，視為「獨立資產上傳」（例如模板 Logo），使用 Logo 處理器
         if not post_id:
             from services.logo_handler import get_logo_handler, LogoError

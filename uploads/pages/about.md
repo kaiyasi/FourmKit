@@ -1,4 +1,4 @@
-# ForumKit  
+# ForumKit_about us
 這是一個專為校園打造的匿名討論平台
 
 ForumKit 由 Serelix Studio 開發，目的是提供一個安全、自在又友善的交流空間。你可以選擇單純匿名參與，或是透過學校帳號登入，享有更多功能。
@@ -58,6 +58,5 @@ ForumKit 希望讓學生能放心分享學習與生活經驗，同時兼顧言�
 - 平台 IG：[Forumkit_IG](https://www.instagram.com/forumkit.serelix?igsh=MThtNDRzMGZqMnRhdw%3D%3D&utm_source=qr)  
 - 平台 Gmail：forumkit.serelix@gmail.com  
 
----
 
 **平台不會公開個人資料，只有在警方或司法機關依法提出請求時，才會依規定提供必要資訊。**

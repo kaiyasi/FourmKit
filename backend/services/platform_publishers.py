@@ -235,10 +235,11 @@ class InstagramPublisher(BasePlatformPublisher):
     def _upload_media(self, account, image_url: str, caption: str) -> str:
         """上傳單一媒體到 Instagram"""
         url = f"{self.api_base_url}/{account.platform_user_id}/media"
-        
+
         data = {
             'image_url': image_url,
             'caption': caption,
+            'media_type': 'IMAGE',
             'access_token': account.access_token
         }
         
@@ -251,10 +252,11 @@ class InstagramPublisher(BasePlatformPublisher):
     def _upload_carousel_item(self, account, image_url: str) -> str:
         """上傳輪播項目媒體"""
         url = f"{self.api_base_url}/{account.platform_user_id}/media"
-        
+
         data = {
             'image_url': image_url,
             'is_carousel_item': True,
+            'media_type': 'IMAGE',
             'access_token': account.access_token
         }
         

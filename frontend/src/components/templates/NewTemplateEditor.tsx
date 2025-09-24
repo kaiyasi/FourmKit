@@ -60,6 +60,20 @@ interface PostTemplateConfig {
     size: number
     borderRadius: number
   }
+  // 文字排版設定
+  textLayout?: {
+    textOnly: {
+      maxCharsPerLine: number
+      maxLines: number
+    }
+    withPhoto: {
+      maxCharsPerLine: number
+      maxLines: number
+      textPos?: { x: number; y: number } // %
+      imagePos?: { x: number; y: number } // %
+      stacked?: boolean
+    }
+  }
 }
 
 interface PhotoTemplateConfig {
@@ -129,6 +143,7 @@ interface CaptionTemplateConfig {
       enabled: boolean
       content: string
       position: 'first' | 'last'
+      customLink?: string // 自定義連結，用於結尾區段的 {link} 變數
     }
   }
   hashtags: {
@@ -201,11 +216,17 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
       showTimestamp: true,
       showPostId: true, // 預設啟用貼文ID 顯示
       timestampFormat: 'relative',
+      postIdFormat: '#{ID}', // 添加預設貼文ID格式
       timestampPosition: 'bottom-left',
       postIdPosition: 'bottom-right',
-      metadataStyle: {
+      timestampStyle: {
         font: 'Noto Sans TC',
-        size: 12,
+        size: 18,
+        color: '#666666'
+      },
+      postIdStyle: {
+        font: 'Noto Sans TC',
+        size: 18,
         color: '#666666'
       }
     },
@@ -249,11 +270,17 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
       showTimestamp: true,
       showPostId: false,
       timestampFormat: 'relative',
+      postIdFormat: '#{ID}', // 添加預設貼文ID格式
       timestampPosition: 'bottom-left',
       postIdPosition: 'bottom-right',
-      metadataStyle: {
+      timestampStyle: {
         font: 'Noto Sans TC',
-        size: 12,
+        size: 18,
+        color: '#666666'
+      },
+      postIdStyle: {
+        font: 'Noto Sans TC',
+        size: 18,
         color: '#666666'
       }
     }
@@ -283,7 +310,8 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
       footer: {
         enabled: true,
         content: '查看完整內容：{link}',
-        position: 'last'
+        position: 'last',
+        customLink: 'https://forum.serelix.xyz'
       }
     },
     hashtags: {
@@ -317,20 +345,84 @@ export default function NewTemplateEditor({
   const [saving, setSaving] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
 
-  // 初始化模板數據
   useEffect(() => {
     if (editingTemplate && accounts.length > 0) {
-      // 從現有模板加載數據
-      setTemplateConfig({
-        ...DEFAULT_TEMPLATE,
-        info: {
-          name: editingTemplate.name || '',
-          description: editingTemplate.description || '',
-          account_id: editingTemplate.account_id || accounts[0]?.id || 0,
-          is_default: Boolean(editingTemplate.is_default)
+      // Deep merge default config with editingTemplate
+      const mergedConfig = JSON.parse(JSON.stringify(DEFAULT_TEMPLATE));
+
+      const deepMerge = (target: any, source: any) => {
+        for (const key in source) {
+          if (source[key] instanceof Object && key in target) {
+            Object.assign(source[key], deepMerge(target[key], source[key]))
+          }
         }
-        // TODO: 映射現有配置到新結構
-      })
+        Object.assign(target || {}, source)
+        return target
+      }
+
+      // 先處理 config 的合併
+      if (editingTemplate.config) {
+        console.log('[DEBUG] editingTemplate.config:', editingTemplate.config)
+        if (editingTemplate.config.caption) {
+          console.log('[DEBUG] editingTemplate.config.caption:', editingTemplate.config.caption)
+          mergedConfig.caption = { ...mergedConfig.caption, ...editingTemplate.config.caption }
+        }
+        if (editingTemplate.config.canvas) {
+          mergedConfig.canvas = { ...mergedConfig.canvas, ...editingTemplate.config.canvas }
+        }
+        if (editingTemplate.config.post) {
+          mergedConfig.post = { ...mergedConfig.post, ...editingTemplate.config.post }
+        }
+        if (editingTemplate.config.photo) {
+          mergedConfig.photo = { ...mergedConfig.photo, ...editingTemplate.config.photo }
+        }
+      }
+
+      deepMerge(mergedConfig, editingTemplate);
+
+      // Migrate old metadataStyle if it exists
+      const migrateMetadata = (metadata: any) => {
+        if (metadata && metadata.metadataStyle) {
+          metadata.timestampStyle = { ...metadata.metadataStyle, ...(metadata.timestampStyle || {}) };
+          metadata.postIdStyle = { ...metadata.metadataStyle, ...(metadata.postIdStyle || {}) };
+          delete metadata.metadataStyle;
+        }
+        return metadata;
+      };
+
+      if (mergedConfig.post?.metadata) {
+        mergedConfig.post.metadata = migrateMetadata(mergedConfig.post.metadata);
+      }
+      if (mergedConfig.photo?.metadata) {
+        mergedConfig.photo.metadata = migrateMetadata(mergedConfig.photo.metadata);
+      }
+
+      // Ensure account_id is correctly set
+      mergedConfig.info.account_id = editingTemplate.account_id || accounts[0]?.id || 0;
+
+      // Fix: Ensure template info (name, description) is correctly filled from editingTemplate
+      if (editingTemplate.name) {
+        mergedConfig.info.name = editingTemplate.name;
+      }
+      if (editingTemplate.description) {
+        mergedConfig.info.description = editingTemplate.description;
+      }
+      if (editingTemplate.is_default !== undefined) {
+        mergedConfig.info.is_default = editingTemplate.is_default;
+      }
+      // Also copy metadata if available
+      if (editingTemplate.created_at) {
+        mergedConfig.info.created_at = editingTemplate.created_at;
+      }
+      if (editingTemplate.updated_at) {
+        mergedConfig.info.updated_at = editingTemplate.updated_at;
+      }
+      if (editingTemplate.usage_count !== undefined) {
+        mergedConfig.info.usage_count = editingTemplate.usage_count;
+      }
+
+      setTemplateConfig(mergedConfig);
+
     } else if (accounts.length > 0) {
       setTemplateConfig(prev => ({
         ...prev,

@@ -26,9 +26,11 @@ class AlternativeImageGenerator:
             from PIL import Image, ImageDraw, ImageFont
             import textwrap
             
-            # 圖片尺寸設定
-            width = template_config.get('width', 1080)
-            height = template_config.get('height', 1080)
+            # 圖片尺寸設定 - 移除硬編碼預設值
+            if 'width' not in template_config or 'height' not in template_config:
+                raise Exception("模板配置必須包含 width 和 height")
+            width = template_config['width']
+            height = template_config['height']
             
             # 創建畫布
             img = Image.new('RGB', (width, height), color='white')

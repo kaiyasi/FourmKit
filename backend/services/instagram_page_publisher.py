@@ -198,50 +198,84 @@ class InstagramPagePublisher:
                 'error': f"取得 Page 資訊失敗: {str(e)}"
             }
     
-    def _create_media_container(self, ig_account_id: str, page_token: str, 
+    def _create_media_container(self, ig_account_id: str, page_token: str,
                               image_url: str, caption: str) -> str:
         """建立 Media Container"""
+        # 驗證並確保 HTTPS URL
+        if not image_url or not image_url.startswith('http'):
+            raise Exception(f"無效的圖片 URL: {image_url}")
+
+        if not image_url.startswith('https://'):
+            if image_url.startswith('http://'):
+                image_url = image_url.replace('http://', 'https://')
+            else:
+                raise Exception(f"圖片 URL 必須是 HTTPS: {image_url}")
+
+        logger.info(f"建立 Media Container，圖片URL: {image_url}")
+
         url = f"{self.api_base_url}/{ig_account_id}/media"
-        
+
         data = {
             'image_url': image_url,
             'caption': caption,
+            'media_type': 'IMAGE',  # 關鍵修復：明確指定媒體類型
             'access_token': page_token
         }
-        
+
         response = requests.post(url, data=data, timeout=self.timeout)
-        
+
         if response.status_code != 200:
             error_data = response.json()
+            logger.error(f"建立 Media Container 失敗，狀態碼: {response.status_code}, 錯誤: {error_data}")
             raise Exception(f"建立 Media Container 失敗: {error_data.get('error', {}).get('message', 'Unknown error')}")
-        
+
         result = response.json()
         media_id = result.get('id')
-        
+
         if not media_id:
+            logger.error(f"Media Container 回應缺少ID: {result}")
             raise Exception("Media Container ID 為空")
-        
+
         logger.info(f"Media Container 建立成功: {media_id}")
         return media_id
     
-    def _create_carousel_item(self, ig_account_id: str, page_token: str, 
+    def _create_carousel_item(self, ig_account_id: str, page_token: str,
                             image_url: str) -> str:
         """建立輪播項目"""
+        # 驗證並確保 HTTPS URL
+        if not image_url or not image_url.startswith('http'):
+            raise Exception(f"無效的圖片 URL: {image_url}")
+
+        if not image_url.startswith('https://'):
+            if image_url.startswith('http://'):
+                image_url = image_url.replace('http://', 'https://')
+            else:
+                raise Exception(f"圖片 URL 必須是 HTTPS: {image_url}")
+
+        logger.info(f"建立輪播項目，圖片URL: {image_url}")
+
         url = f"{self.api_base_url}/{ig_account_id}/media"
-        
+
         data = {
             'image_url': image_url,
             'is_carousel_item': True,
+            'media_type': 'IMAGE',  # 明確指定媒體類型
             'access_token': page_token
         }
-        
+
         response = requests.post(url, data=data, timeout=self.timeout)
-        
+
         if response.status_code != 200:
             error_data = response.json()
+            logger.error(f"建立輪播項目失敗，狀態碼: {response.status_code}, 錯誤: {error_data}")
             raise Exception(f"建立輪播項目失敗: {error_data.get('error', {}).get('message', 'Unknown error')}")
-        
+
         result = response.json()
+        if 'id' not in result:
+            logger.error(f"輪播項目回應缺少ID: {result}")
+            raise Exception(f"API 回應中缺少 creation_id: {result}")
+
+        logger.info(f"輪播項目建立成功，creation_id: {result['id']}")
         return result['id']
     
     def _create_carousel_container(self, ig_account_id: str, page_token: str,

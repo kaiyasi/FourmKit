@@ -50,9 +50,11 @@ from routes.routes_support_admin import bp as support_admin_bp
 from routes.routes_admin_members import bp as admin_members_bp
 from routes.routes_instagram import instagram_bp
 from routes.routes_fonts import bp as fonts_bp
-from routes.routes_cdn import bp as cdn_bp
+from routes.routes_cdn import bp as cdn_bp, public_bp as uploads_public_bp
+from routes.routes_cdn import cdn_home as _cdn_home_page
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
+from routes.routes_protected_assets import bp as protected_assets_bp
 
 APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.1.0")
 
@@ -584,6 +586,38 @@ def create_app() -> Flask:
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=refresh_expires_days)
     jwt = JWTManager(app)
 
+    # 掃描/爆破防護：在已知探測路徑上回傳設計過的警告，並記 strike（升級為 CAPTCHA/封鎖）
+    @app.before_request
+    def _probe_guard():
+        try:
+            if request.method != 'GET':
+                return
+            if os.getenv('SECURITY_PROBE_GUARD', '1').strip().lower() not in {'1','true','yes'}:
+                return
+            p = (request.path or '').lower().strip()
+            bad_prefix = (
+                p.startswith('/wp-') or p.startswith('/phpmyadmin') or p.startswith('/cgi-bin') or
+                p.startswith('/vendor') or p.startswith('/server-status') or p.startswith('/.git')
+            )
+            bad_exact = p in {'/.env','/config.php','/composer.json','/composer.lock','/id_rsa','/shell.php'}
+            bad_suffix = p.endswith('.php') or p.endswith('.bak') or p.endswith('.sql') or p.endswith('.env')
+            if bad_prefix or bad_exact or bad_suffix:
+                try:
+                    from utils.ratelimit import add_ip_strike, get_client_ip
+                    ip = get_client_ip()
+                    add_ip_strike(ip)
+                except Exception:
+                    pass
+                return jsonify({
+                    'ok': False,
+                    'error': {
+                        'code': 'SECURITY_WARNING',
+                        'message': '本服務已啟用安全防護。若你是研究人員，請聯繫管理員並遵循負責任揭露流程。'
+                    }
+                }), 451
+        except Exception:
+            pass
+
     # 優先初始化資料庫，並（若啟用）以環境變數確保單一開發者帳號存在
     try:
         init_engine_session()
@@ -869,8 +903,16 @@ def create_app() -> Flask:
     ]
     allowed_origins = (
         [o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-        if os.getenv("ALLOWED_ORIGINS") else default_http_origins
+        if os.getenv("ALLOWED_ORIGINS") else list(default_http_origins)
     )
+    # 自動加上 PUBLIC_BASE_URL / PUBLIC_CDN_URL（若存在），避免忘記設定造成 CORS 被擋
+    try:
+        for env_key in ("PUBLIC_BASE_URL", "PUBLIC_CDN_URL"):
+            v = (os.getenv(env_key) or "").strip()
+            if v and v not in allowed_origins:
+                allowed_origins.append(v)
+    except Exception:
+        pass
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
     # 初始化 SocketIO（只在這裡做一次）
@@ -968,6 +1010,22 @@ def create_app() -> Flask:
         return None
 
     app.before_request(_ctx)
+
+    # CDN 根路徑保底：若 Host 為 CDN 網域，直接提供 CDN 首頁，避免 404
+    @app.get("/")
+    @app.get("/admin")
+    @app.get("/admin/")
+    def _maybe_cdn_home():  # type: ignore[override]
+        try:
+            host = (request.host or '').split(':')[0].lower()
+            # 可透過環境變數指定 CDN 網域；否則以 'cdn.' 開頭為判斷
+            cdn_host = (os.getenv('PUBLIC_CDN_HOST') or os.getenv('CDN_PUBLIC_HOST') or '').strip().lower()
+            if (cdn_host and host == cdn_host) or (host.startswith('cdn.')):
+                return _cdn_home_page()  # 交給 CDN 首頁渲染
+        except Exception:
+            pass
+        # 非 CDN 網域：回傳最小健康訊號，避免覆蓋前端靜態頁（通常由 Nginx 提供）
+        return jsonify({"ok": True, "service": "ForumKit backend"})
 
     @app.after_request
     def add_resp_id(resp: Response) -> Response:
@@ -1476,13 +1534,23 @@ def create_app() -> Flask:
     # Instagram 基於 Page ID 的新路由（強制掛載，失敗時直接顯錯，避免前端打到 404）
     from routes.routes_instagram_page_based import register_instagram_page_routes  # type: ignore
     register_instagram_page_routes(app)
-    
+
+    # Instagram 統一系統路由
+    try:
+        from routes.routes_ig_unified import bp as ig_unified_bp
+        app.register_blueprint(ig_unified_bp)
+        print('[ForumKit] Instagram unified routes mounted successfully')
+    except Exception as _e:
+        print('[ForumKit] Instagram unified routes not mounted:', _e)
+
     # 字體管理系統
     app.register_blueprint(fonts_bp)
     
     
-    # CDN 靜態檔案服務
+    # CDN 靜態檔案服務 + /uploads 相容路徑
     app.register_blueprint(cdn_bp)
+    app.register_blueprint(uploads_public_bp)
+    app.register_blueprint(protected_assets_bp)
 
     # 新的統一貼文圖片生成系統
     try:

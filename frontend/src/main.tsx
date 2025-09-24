@@ -46,6 +46,7 @@ import LoginRestrictedPage from './pages/LoginRestrictedPage'
 import { initRestartCheck, startPeriodicRestartCheck } from './utils/auth'
 import { AuthProvider } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
+import { initAntiInspect } from './lib/antiInspect'
 
 // 在應用啟動時檢查重啟
 initRestartCheck().catch(console.error);
@@ -57,6 +58,9 @@ const stopPeriodicCheck = startPeriodicRestartCheck();
 window.addEventListener('beforeunload', () => {
   stopPeriodicCheck();
 });
+
+// 啟用前端反檢視/反開發者工具（非管理員）
+try { initAntiInspect({ enabled: true, exemptRoles: ['dev_admin','campus_admin','cross_admin'] }) } catch {}
 
 const router = createBrowserRouter([
 	{ path: "/", element: <App />, errorElement: <RouteError /> },

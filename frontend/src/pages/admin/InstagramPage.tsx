@@ -21,7 +21,7 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadFonts, renderNodeToImage } from '@/utils/font-safe-render';
+import { renderNodeToImage } from '@/utils/font-safe-render';
 
 interface IGAccount {
   id: number;
@@ -78,6 +78,7 @@ const InstagramPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [availableIgAccounts, setAvailableIgAccounts] = useState<any[]>([]);
   const [selectedAutoIndex, setSelectedAutoIndex] = useState<number>(0);
+  const [platformFonts, setPlatformFonts] = useState<any[]>([]);
   const [showManualInput, setShowManualInput] = useState(false);
   const [tokenValidated, setTokenValidated] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -103,12 +104,12 @@ const InstagramPage: React.FC = () => {
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState(0);
   const [previewData, setPreviewData] = useState<any>({
     background: { type: 'color', color: '#FFFFFF', image: null, url: null },
-    content_block: { 
-      enabled: true, 
-      font_family: 'Noto Sans TC', 
-      font_weight: '400', 
-      font_size: 28, 
-      color: '#000000', 
+    content_block: {
+      enabled: true,
+      font_family: '',
+      font_weight: '400',
+      font_size: 28,
+      color: '#000000',
       align: 'left',
       max_lines: 15
     },
@@ -119,15 +120,24 @@ const InstagramPage: React.FC = () => {
       image: null,
       url: null
     },
-    timestamp: { 
-      enabled: true, 
-      hour_format: '24', 
+    timestamp: {
+      enabled: true,
+      hour_format: '24',
       font_size: 16,
       color: '#666666',
       position: { x: 0.1, y: 0.9 },
       format: '%Y-%m-%d %H:%M',
-      font_family: 'english',
+      font_family: '',
       font_weight: '400'
+    },
+    post_id: {
+      enabled: false,
+      font_family: '',
+      font_weight: '400',
+      font_size: 14,
+      color: '#999999',
+      position: { x: 0.9, y: 0.9 },
+      prefix: '#'
     }
   });
   // 自動輪播設定
@@ -158,30 +168,47 @@ const InstagramPage: React.FC = () => {
     return (window as any).html2canvas;
   };
 
-  // 動態載入 Google Fonts（<link> + preconnect），並等待 document.fonts 就緒
-  const loadGoogleFonts = async (href: string): Promise<void> => {
-    if (!href || !/^https?:\/\//.test(href)) return;
-    const add = (rel: string, url: string, attrs?: Record<string,string>) => {
-      const l = document.createElement('link');
-      l.rel = rel; l.href = url;
-      if (attrs) Object.entries(attrs).forEach(([k,v]) => l.setAttribute(k, v));
-      document.head.appendChild(l);
-    };
-    if (!document.getElementById('gf-preconnect-1')) add('preconnect','https://fonts.googleapis.com',{});
-    if (!document.getElementById('gf-preconnect-2')) add('preconnect','https://fonts.gstatic.com',{ crossorigin:'anonymous' });
-    if (!document.getElementById('gf-dyn')) {
-      const l = document.createElement('link');
-      l.id = 'gf-dyn'; l.rel = 'stylesheet'; l.href = href; l.setAttribute('crossorigin','anonymous');
-      document.head.appendChild(l);
-    }
+  // 載入平台字體列表
+  const fetchPlatformFonts = async () => {
     try {
-      // 最多等待 4 秒，避免無限卡住
-      await Promise.race([ (document as any).fonts.ready, new Promise(res => setTimeout(res, 4000)) ]);
-      // 盡量拉幾個常用字體大小，以提高命中率
-      try { await (document as any).fonts.load('400 24px "Huninn"'); } catch {}
-      try { await (document as any).fonts.load('400 24px "Noto Sans TC"'); } catch {}
-    } catch {}
+      console.log('開始載入平台字體...');
+      const token = localStorage.getItem('token');
+      console.log('Token exists:', !!token);
+
+      const response = await fetch('/api/admin/fonts/list', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      console.log('字體 API 回應狀態:', response.status);
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('字體 API 回應內容:', result);
+        if (result.success) {
+          // 修復：後端返回 result.data.fonts 結構
+          console.log('完整回應對象:', JSON.stringify(result, null, 2));
+
+          const fonts = result.data?.fonts || [];
+          console.log('字體數組內容:', JSON.stringify(fonts, null, 2));
+          console.log('設定字體列表:', fonts.length, '個字體');
+          setPlatformFonts(fonts);
+        } else {
+          console.warn('字體 API 回應失敗:', result);
+          setPlatformFonts([]);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('字體 API 請求失敗:', response.status, errorText);
+        setPlatformFonts([]);
+      }
+    } catch (error) {
+      console.error('載入平台字體失敗:', error);
+      setPlatformFonts([]);
+    }
   };
+
 
   // 將指定選擇器的節點複製到離屏舞台（固定 1080x1350），渲染為 JPEG 上傳並建立 IG 任務
   const handleClientRenderPublish = async () => {
@@ -193,13 +220,6 @@ const InstagramPage: React.FC = () => {
 
     setClientPublishLoading(true);
     try {
-      // 載入字體：與後端保持一致的字體配置
-      await loadFonts([
-        { family: 'Noto Sans TC', href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap', weights: ['300','400','500','700'] },
-        { family: 'Roboto', href: 'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap', weights: ['300','400','500','700'] },
-        { family: 'Huninn', href: 'https://fonts.googleapis.com/css2?family=Huninn&display=swap', weights: ['400'] },
-      ]);
-
       const src = document.querySelector(clientStageSelector) as HTMLElement | null;
       if (!src) { alert(`找不到預覽容器：${clientStageSelector}`); return; }
 
@@ -250,6 +270,7 @@ const InstagramPage: React.FC = () => {
     if (isAdmin) {
       loadData();
       loadSchools();
+      fetchPlatformFonts();
     }
   }, [activeTab, isAdmin]);
 
@@ -384,9 +405,9 @@ const InstagramPage: React.FC = () => {
           image: editingTemplate.template_data.background?.image || null,
           url: editingTemplate.template_data.background?.image_url || editingTemplate.template_data.background?.image || null
         },
-        content_block: editingTemplate.template_data.content_block || { 
-          enabled: true, 
-          font_family: 'Noto Sans TC', 
+        content_block: editingTemplate.template_data.content_block || {
+          enabled: true,
+          font_family: '',
           font_weight: '400',
           font_size: 28,
           color: '#000000',
@@ -408,46 +429,22 @@ const InstagramPage: React.FC = () => {
           color: editingTemplate.template_data.timestamp?.color || '#666666',
           position: editingTemplate.template_data.timestamp?.position || { x: 0.1, y: 0.9 },
           format: editingTemplate.template_data.timestamp?.format || '%Y-%m-%d %H:%M',
-          font_family: editingTemplate.template_data.timestamp?.font_family || 'english',
+          font_family: editingTemplate.template_data.timestamp?.font_family || '',
           font_weight: editingTemplate.template_data.timestamp?.font_weight || '400'
+        },
+        post_id: {
+          enabled: editingTemplate.template_data.post_id?.enabled ?? false,
+          font_family: editingTemplate.template_data.post_id?.font_family || '',
+          font_weight: editingTemplate.template_data.post_id?.font_weight || '400',
+          font_size: editingTemplate.template_data.post_id?.font_size || 14,
+          color: editingTemplate.template_data.post_id?.color || '#999999',
+          position: editingTemplate.template_data.post_id?.position || { x: 0.9, y: 0.9 },
+          prefix: editingTemplate.template_data.post_id?.prefix || '#'
         }
       });
     }
   }, [editingTemplate]);
 
-  // 動態載入 Google Fonts
-  useEffect(() => {
-    try {
-      const fam = previewData?.content_block?.font_family || 'Noto Sans TC';
-      const w = String(previewData?.content_block?.font_weight || '400');
-      const familyParam = fam.trim().replace(/\s+/g, '+');
-      const href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(familyParam)}:wght@${encodeURIComponent(w)}&display=swap`;
-      let link = document.getElementById('ig-template-google-font') as HTMLLinkElement | null;
-      if (!link) {
-        link = document.createElement('link');
-        link.id = 'ig-template-google-font';
-        link.rel = 'stylesheet';
-        document.head.appendChild(link);
-      }
-      if (link.href !== href) link.href = href;
-    } catch {}
-  }, [previewData?.content_block?.font_family, previewData?.content_block?.font_weight]);
-
-  // 動態載入 Google Fonts（內容、時間戳各自的 css2 連結）
-  React.useEffect(() => {
-    const ensureLink = (id: string, href?: string) => {
-      if (!href) return;
-      let link = document.getElementById(id) as HTMLLinkElement | null;
-      if (!link) { link = document.createElement('link'); link.id=id; link.rel='stylesheet'; document.head.appendChild(link); }
-      if (link.href !== href) link.href = href;
-    };
-    try {
-      const contentHref = previewData?.content_block?.font_css_url as string | undefined;
-      const tsHref = previewData?.timestamp?.font_css_url as string | undefined;
-      ensureLink('ig-template-google-font-content', contentHref);
-      ensureLink('ig-template-google-font-timestamp', tsHref);
-    } catch {}
-  }, [previewData?.content_block?.font_css_url, previewData?.timestamp?.font_css_url]);
 
   // 檔案上傳：呼叫 API 取得 URL（若 API 不存在則回傳 null）
   const uploadImageAndGetUrl = async (file: File): Promise<string | null> => {
@@ -698,7 +695,7 @@ const InstagramPage: React.FC = () => {
         width: baseW,
         height: baseH,
         background_color: previewData?.background?.color || '#ffffff',
-        font_family: previewData?.content_block?.font_family || 'Noto Sans TC',
+        font_family: previewData?.content_block?.font_family || '',
         font_size: previewData?.content_block?.font_size || 28,
         text_color: previewData?.content_block?.color || '#333333',
         text_align: previewData?.content_block?.align || 'left',
@@ -853,7 +850,7 @@ const InstagramPage: React.FC = () => {
     const isDefault = editingTemplate ? (typeof formData.get('is_default') === 'string' ? incomingIsDefault : !!editingTemplate.is_default) : incomingIsDefault;
     const hourFormat = (formData.get('timestamp_hour_format') as string) || '24';
     const tsFormatInput = (formData.get('timestamp_format') as string) || '';
-    const tsFontFamily = (formData.get('timestamp_font_family') as string) || 'Noto Sans TC';
+    const tsFontFamily = (formData.get('timestamp_font_family') as string) || '';
     const tsFontWeight = (formData.get('timestamp_font_weight') as string) || '400';
         const templateData = {
       name: formData.get('template_name') as string,
@@ -868,8 +865,8 @@ const InstagramPage: React.FC = () => {
         },
         content_block: {
           enabled: formData.get('content_enabled') === 'on',
-          font_family: (formData.get('content_font_family') as string) || 'Noto Sans TC',
-          font_family_name: (formData.get('content_font_family') as string) || 'Noto Sans TC',
+          font_family: (formData.get('content_font_family') as string) || '',
+          font_family_name: (formData.get('content_font_family') as string) || '',
                     font_weight: (formData.get('content_font_weight') as string) || '400',
           font_size: parseInt(formData.get('content_font_size') as string) || 28,
           color: formData.get('content_color') as string || '#000000',
@@ -904,6 +901,19 @@ const InstagramPage: React.FC = () => {
           font_family: tsFontFamily,
           font_family_name: tsFontFamily,
                     font_weight: tsFontWeight
+        },
+        post_id: {
+          enabled: formData.get('post_id_enabled') === 'on',
+          font_size: parseInt(formData.get('post_id_font_size') as string) || 14,
+          color: (formData.get('post_id_color') as string) || '#999999',
+          position: {
+            x: parseFloat(formData.get('post_id_x') as string) || 0.9,
+            y: parseFloat(formData.get('post_id_y') as string) || 0.9
+          },
+          font_family: (formData.get('post_id_font_family') as string) || '',
+          font_family_name: (formData.get('post_id_font_family') as string) || '',
+          font_weight: (formData.get('post_id_font_weight') as string) || '400',
+          prefix: (formData.get('post_id_prefix') as string) || '#'
         }
       },
       is_default: isDefault,
@@ -1977,7 +1987,7 @@ const InstagramPage: React.FC = () => {
                   </button>
                 </div>
                 
-                <form id="template-form" onSubmit={handleSaveTemplate} className="space-y-6">
+                <form id="template-form" key={editingTemplate?.id || 'new'} onSubmit={handleSaveTemplate} className="space-y-6">
                   {/* 基本資訊 */}
                   <div className="space-y-4">
                     <h4 className="text-md font-semibold text-fg">基本資訊</h4>
@@ -2084,15 +2094,26 @@ const InstagramPage: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-fg mb-2">Google Font 字體名稱</label>
-                        <input
-                          type="text"
+                        <label className="block text-sm font-medium text-fg mb-2">平台字體</label>
+                        <select
                           name="content_font_family"
-                          placeholder="例如: Noto Sans TC, Roboto"
-                          defaultValue={editingTemplate?.template_data?.content_block?.font_family || 'Noto Sans TC'}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
+                          defaultValue={editingTemplate?.template_data?.content_block?.font_family}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-fg"
                           onChange={(e) => updatePreviewData('content_block.font_family', e.target.value)}
-                        />
+                        >
+                          {platformFonts.length === 0 ? (
+                            <option value="">平台內當前無字體</option>
+                          ) : (
+                            <>
+                              <option value="">選擇字體</option>
+                              {platformFonts.map(font => (
+                                <option key={font.id} value={font.font_family}>
+                                  {font.display_name || font.font_family}
+                                </option>
+                              ))}
+                            </>
+                          )}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-fg mb-2">字重</label>
@@ -2314,7 +2335,7 @@ const InstagramPage: React.FC = () => {
                           name="timestamp_font_size"
                           min="10"
                           max="24"
-                          defaultValue={editingTemplate?.template_data?.timestamp?.font_size || 16}
+                          value={previewData.timestamp?.font_size || 16}
                           className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
                           onChange={(e) => updatePreviewData('timestamp.font_size', parseInt(e.target.value))}
                         />
@@ -2331,15 +2352,26 @@ const InstagramPage: React.FC = () => {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-fg mb-2">Google Font 字體名稱</label>
-                        <input
-                          type="text"
+                        <label className="block text-sm font-medium text-fg mb-2">平台字體</label>
+                        <select
                           name="timestamp_font_family"
-                          placeholder="例如: Noto Sans TC, Roboto"
-                          defaultValue={editingTemplate?.template_data?.timestamp?.font_family || 'Noto Sans TC'}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
+                          defaultValue={editingTemplate?.template_data?.timestamp?.font_family}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-fg"
                           onChange={(e) => updatePreviewData('timestamp.font_family', e.target.value)}
-                        />
+                        >
+                          {platformFonts.length === 0 ? (
+                            <option value="">平台內當前無字體</option>
+                          ) : (
+                            <>
+                              <option value="">選擇字體</option>
+                              {platformFonts.map(font => (
+                                <option key={font.id} value={font.font_family}>
+                                  {font.display_name || font.font_family}
+                                </option>
+                              ))}
+                            </>
+                          )}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-fg mb-2">字重</label>
@@ -2361,7 +2393,7 @@ const InstagramPage: React.FC = () => {
                         <input
                           type="color"
                           name="timestamp_color"
-                          defaultValue={editingTemplate?.template_data?.timestamp?.color || '#666666'}
+                          value={previewData.timestamp?.color || '#666666'}
                           className="w-full h-10 border border-border rounded cursor-pointer"
                           onChange={(e) => updatePreviewData('timestamp.color', e.target.value)}
                         />
@@ -2391,6 +2423,123 @@ const InstagramPage: React.FC = () => {
                             defaultValue={editingTemplate?.template_data?.timestamp?.position?.y || 0.9}
                             className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
                             onChange={(e) => updatePreviewData('timestamp.position.y', parseFloat(e.target.value))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 貼文ID設定 */}
+                  <div className="space-y-4">
+                    <h4 className="text-md font-semibold text-fg">貼文ID設定</h4>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        name="post_id_enabled"
+                        id="post_id_enabled"
+                        defaultChecked={editingTemplate?.template_data?.post_id?.enabled ?? false}
+                        className="mr-2"
+                        onChange={(e) => updatePreviewData('post_id.enabled', e.target.checked)}
+                      />
+                      <label htmlFor="post_id_enabled" className="text-sm text-fg">顯示貼文ID</label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-fg mb-2">平台字體</label>
+                        <select
+                          name="post_id_font_family"
+                          defaultValue={editingTemplate?.template_data?.post_id?.font_family}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-fg"
+                          onChange={(e) => updatePreviewData('post_id.font_family', e.target.value)}
+                        >
+                          {platformFonts.length === 0 ? (
+                            <option value="">平台內當前無字體</option>
+                          ) : (
+                            <>
+                              <option value="">選擇字體</option>
+                              {platformFonts.map(font => (
+                                <option key={font.id} value={font.font_family}>
+                                  {font.display_name || font.font_family}
+                                </option>
+                              ))}
+                            </>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-fg mb-2">字重</label>
+                        <select
+                          name="post_id_font_weight"
+                          defaultValue={editingTemplate?.template_data?.post_id?.font_weight || '400'}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-fg"
+                          onChange={(e) => updatePreviewData('post_id.font_weight', e.target.value)}
+                        >
+                          <option value="300">300 - Light</option>
+                          <option value="400">400 - Regular</option>
+                          <option value="500">500 - Medium</option>
+                          <option value="600">600 - Semi Bold</option>
+                          <option value="700">700 - Bold</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-fg mb-2">字體大小</label>
+                        <input
+                          type="number"
+                          name="post_id_font_size"
+                          min="10"
+                          max="32"
+                          value={previewData.post_id?.font_size || 14}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
+                          onChange={(e) => updatePreviewData('post_id.font_size', parseInt(e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-fg mb-2">顏色</label>
+                        <input
+                          type="color"
+                          name="post_id_color"
+                          value={previewData.post_id?.color || '#999999'}
+                          className="w-full h-10 border border-border rounded cursor-pointer"
+                          onChange={(e) => updatePreviewData('post_id.color', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-fg mb-2">前綴符號</label>
+                        <input
+                          type="text"
+                          name="post_id_prefix"
+                          placeholder="例如: # 或 Post："
+                          defaultValue={editingTemplate?.template_data?.post_id?.prefix || '#'}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
+                          onChange={(e) => updatePreviewData('post_id.prefix', e.target.value)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-fg mb-2">X 位置 (0-1)</label>
+                          <input
+                            type="number"
+                            name="post_id_x"
+                            min="0"
+                            max="1"
+                            step="0.001"
+                            defaultValue={editingTemplate?.template_data?.post_id?.position?.x || 0.9}
+                            className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
+                            onChange={(e) => updatePreviewData('post_id.position.x', parseFloat(e.target.value))}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-fg mb-2">Y 位置 (0-1)</label>
+                          <input
+                            type="number"
+                            name="post_id_y"
+                            min="0"
+                            max="1"
+                            step="0.001"
+                            defaultValue={editingTemplate?.template_data?.post_id?.position?.y || 0.9}
+                            className="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg"
+                            onChange={(e) => updatePreviewData('post_id.position.y', parseFloat(e.target.value))}
                           />
                         </div>
                       </div>
@@ -2451,7 +2600,7 @@ const InstagramPage: React.FC = () => {
                           const logoY = (previewData.logo?.position?.y ?? 0.1) * 100;
                           const tsX = (previewData.timestamp?.position?.x ?? 0.1) * 100;
                           const tsY = (previewData.timestamp?.position?.y ?? 0.9) * 100;
-                          const fontFamily = previewData.content_block?.font_family || 'Noto Sans TC';
+                          const fontFamily = previewData.content_block?.font_family || '';
                           const fontWeight = previewData.content_block?.font_weight || '400';
                           const fontSize = (previewData.content_block?.font_size || 28) * scale;
                           const textColor = previewData.content_block?.color || '#000000';
@@ -2459,7 +2608,7 @@ const InstagramPage: React.FC = () => {
                           const timestampText = formatPreviewTime(sample?.published_at || sample?.created_at);
                           const timestampSize = (previewData.timestamp?.font_size || 16) * scale;
                           const timestampColor = previewData.timestamp?.color || '#666666';
-                          const tsFontFamily = previewData.timestamp?.font_family || 'Noto Sans TC';
+                          const tsFontFamily = previewData.timestamp?.font_family || '';
                           const tsFontWeight = previewData.timestamp?.font_weight || '400';
                           const contentX = (previewData.content_block?.position?.x ?? 0.05) * 100;
                           const contentY = (previewData.content_block?.position?.y ?? 0.05) * 100;

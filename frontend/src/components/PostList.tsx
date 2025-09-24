@@ -18,6 +18,25 @@ const isRealId = (v: unknown): v is number => typeof v === 'number' && Number.is
 // true-ish：true / 1 / '1' / 'true' / 'yes'
 const isTrue = (v: any) => v === true || v === 1 || v === '1' || (typeof v === 'string' && ['true','yes'].includes(v.toLowerCase()))
 
+function isVideoPath(path: string | null | undefined, kind?: string | null): boolean {
+  if ((kind || '').toLowerCase() === 'video') return true
+  const p = (path || '').toLowerCase()
+  return /\.(mp4|webm|mov)$/i.test(p)
+}
+
+function hasImageAttachment(p: any): boolean {
+  try {
+    // 後端若提供 has_media 且不是影片，直接用
+    if (p?.has_media && !isVideoPath(p?.cover_path, p?.media_kind)) return true
+    // 以 cover_path 判斷常見影像
+    const cover = (p?.cover_path || '').toLowerCase()
+    if (cover && !isVideoPath(cover, p?.media_kind)) return true
+    // 僅有 media_count 時，以 >0 做寬鬆顯示（列表提示用）
+    if (typeof p?.media_count === 'number' && p.media_count > 0) return true
+  } catch {}
+  return false
+}
+
 // 簡化的公告偵測：與 PostDetailPage 保持一致
 function getAnnouncementInfo(p: any): { isAnnouncement: boolean; label: string } {
   // 只檢查 is_announcement 欄位，與 PostDetailPage 邏輯一致
@@ -434,6 +453,14 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400">
                     <Megaphone className="w-3 h-3" />
                     {ann.label}
+                  </span>
+                )}
+                {hasImageAttachment(p) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    圖片附件
                   </span>
                 )}
 

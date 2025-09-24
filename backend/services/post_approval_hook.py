@@ -81,6 +81,11 @@ class PostApprovalHook:
         if getattr(forum_post, 'is_deleted', False):
             return False
         
+        # **修復**: 排除廣告貼文
+        if getattr(forum_post, 'is_advertisement', False):
+            logger.info(f"貼文 {forum_post.id} 為廣告貼文，跳過自動發布")
+            return False
+
         # 檢查內容基本要求
         if not forum_post.content or not forum_post.content.strip():
             logger.info(f"貼文 {forum_post.id} 內容為空")

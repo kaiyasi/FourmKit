@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
 from utils.oauth_google import derive_school_slug_from_domain, check_school_domain  # noqa: F401  # 可能未用到
+from pathlib import Path
 
 bp = Blueprint("schools", __name__, url_prefix="/api/schools")
 
@@ -148,9 +149,20 @@ def update_school_settings(slug: str):
 
 @bp.get("")
 def list_schools():
+    from services.logo_handler import get_logo_handler
+    handler = get_logo_handler()
     with get_session() as s:  # type: Session
         rows = s.query(School).order_by(School.slug.asc()).all()
-        items = [{"id": x.id, "slug": x.slug, "name": x.name, "logo_path": x.logo_path} for x in rows]
+        items = []
+        for x in rows:
+            url = handler.get_logo_url(x.logo_path) if getattr(x, 'logo_path', None) else None
+            items.append({
+                "id": x.id,
+                "slug": x.slug,
+                "name": x.name,
+                "logo_path": x.logo_path,
+                "logo_url": url,
+            })
         return jsonify({"items": items})
 
 
@@ -338,6 +350,43 @@ def upload_school_logo(sid: int):
             return jsonify({'msg': f'上傳失敗: {str(e)}'}), 500
 
 
+@bp.get('/cross/logo')
+@jwt_required(optional=True)
+def get_cross_logo():
+    """取得跨校（cross）Logo 的公開 URL（若存在）。"""
+    from services.logo_handler import get_logo_handler
+    handler = get_logo_handler()
+    base_dir = handler.upload_root / 'public' / 'logos' / 'schools'
+    # 嘗試尋找 cross.* 任一副檔名
+    try:
+        if base_dir.exists():
+            for p in base_dir.glob('cross.*'):
+                if p.is_file():
+                    return jsonify({ 'url': handler._generate_public_url(p), 'path': str(p.relative_to(handler.upload_root)) })
+    except Exception:
+        pass
+    return jsonify({ 'url': None, 'path': None })
+
+
+@bp.post('/cross/logo')
+@jwt_required()
+@require_role('dev_admin', 'cross_admin')
+def upload_cross_logo():
+    """上傳跨校（cross）Logo，僅提供上傳功能。"""
+    from services.logo_handler import get_logo_handler, LogoError
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({ 'msg': '缺少檔案' }), 400
+    try:
+        handler = get_logo_handler()
+        result = handler.upload_general_logo('schools', 'cross', file.stream, file.filename)
+        return jsonify({ 'ok': True, 'path': result.get('relative_path'), 'url': result.get('url'), 'info': { 'width': result.get('width'), 'height': result.get('height'), 'size': result.get('file_size'), 'format': result.get('format') } })
+    except LogoError as e:
+        return jsonify({ 'msg': e.message, 'code': e.code, 'details': e.details }), 400
+    except Exception as e:
+        return jsonify({ 'msg': f'上傳失敗: {str(e)}' }), 500
+
+
 @bp.get('/admin')
 @jwt_required()
 @require_role('dev_admin', 'campus_admin')
@@ -355,10 +404,18 @@ def admin_list():
             sch = s.get(School, actor.school_id)
             items = []
             if sch:
-                items.append({'id': sch.id, 'slug': sch.slug, 'name': sch.name, 'logo_path': sch.logo_path})
+                from services.logo_handler import get_logo_handler
+                handler = get_logo_handler()
+                url = handler.get_logo_url(sch.logo_path) if getattr(sch, 'logo_path', None) else None
+                items.append({'id': sch.id, 'slug': sch.slug, 'name': sch.name, 'logo_path': sch.logo_path, 'logo_url': url})
             return jsonify({'items': items})
         rows = s.query(School).order_by(School.slug.asc()).all()
-        items = [{'id': x.id, 'slug': x.slug, 'name': x.name, 'logo_path': x.logo_path} for x in rows]
+        from services.logo_handler import get_logo_handler
+        handler = get_logo_handler()
+        items = []
+        for x in rows:
+            url = handler.get_logo_url(x.logo_path) if getattr(x, 'logo_path', None) else None
+            items.append({'id': x.id, 'slug': x.slug, 'name': x.name, 'logo_path': x.logo_path, 'logo_url': url})
         return jsonify({'items': items})
 
 

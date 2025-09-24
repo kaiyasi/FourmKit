@@ -1710,6 +1710,9 @@ def delete_user(uid: int):
             return jsonify({ 'msg': 'not found' }), 404
         if actor and actor.role != 'dev_admin':
             return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
+        # 特殊帳號保護：禁止刪除 Kaiyasi
+        if u and getattr(u, 'username', None) == 'Kaiyasi':
+            return jsonify({ 'msg': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT' }), 403
         
         # 檢查關聯
         has_post = s.query(Post).filter(Post.author_id==uid).first() is not None
@@ -2779,9 +2782,14 @@ def get_schools_for_admin():
 @jwt_required()
 @require_role("dev_admin")
 def unblock_user_ip():
-    """解除使用者的 IP 封鎖"""
+    """解除使用者的 IP 封鎖。
+    預設行為：解除該使用者所有曾出現過的 IP（對應「封鎖所有IP」的反操作）。
+    可選：傳入 ip 只解該 IP；或 all=false 僅解最近一次 IP。
+    """
     data = request.get_json(silent=True) or {}
     user_id = data.get('user_id')
+    ip_param = (data.get('ip') or '').strip()
+    all_param = data.get('all')
 
     if not user_id:
         return jsonify({'ok': False, 'error': 'user_id is required'}), 400
@@ -2798,31 +2806,47 @@ def unblock_user_ip():
         if tuser and (tuser.username == 'Kaiyasi'):
             return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
 
-        # 找到該使用者最近一次活動的 IP
-        latest_event = s.query(SystemEvent).filter(
-            SystemEvent.actor_id == user_id
-        ).order_by(SystemEvent.created_at.desc()).first()
-
-        if not latest_event or not latest_event.client_ip:
-            return jsonify({'ok': False, 'error': 'No recent IP address found for this user.'}), 404
-
-        ip_to_unblock = latest_event.client_ip
-
+        ips: list[str] = []
         try:
-            # 解除 IP 封鎖
-            unblock_ip(ip_to_unblock)
+            if ip_param:
+                ips = [ip_param]
+            else:
+                # 預設 all=True：解除所有曾記錄過的 IP
+                if all_param is None or bool(all_param):
+                    rows = (
+                        s.query(SystemEvent.client_ip)
+                        .filter(SystemEvent.actor_id == user_id, SystemEvent.client_ip.isnot(None))
+                        .distinct()
+                        .all()
+                    )
+                    ips = [row[0] for row in rows if row[0]]
+                else:
+                    latest_event = s.query(SystemEvent).filter(
+                        SystemEvent.actor_id == user_id
+                    ).order_by(SystemEvent.created_at.desc()).first()
+                    if latest_event and latest_event.client_ip:
+                        ips = [latest_event.client_ip]
+
+            if not ips:
+                return jsonify({'ok': False, 'error': 'No IP addresses found for this user.'}), 404
+
+            for ip in ips:
+                try:
+                    unblock_ip(ip)
+                except Exception:
+                    pass
 
             # 記錄安全事件
             log_security_event(
                 event_type="ip_unblocked",
-                description=f"管理員 {actor.username} 解除了使用者 ID {user_id} 的 IP({ip_to_unblock}) 封鎖。",
+                description=f"管理員 {actor.username} 解除了使用者 ID {user_id} 的 IP 封鎖 ({len(ips)} 項)。",
                 severity="medium",
                 actor_id=actor.id,
                 actor_name=actor.username,
-                metadata={"unblocked_ip": ip_to_unblock, "target_user_id": user_id}
+                metadata={"unblocked_ips": ips, "count": len(ips), "target_user_id": user_id}
             )
             s.commit()
-            return jsonify({'ok': True, 'message': f'IP {ip_to_unblock} has been unblocked for user {user_id}.'})
+            return jsonify({'ok': True, 'message': f'Unblocked {len(ips)} IP(s) for user {user_id}.', 'count': len(ips), 'ips': ips})
 
         except Exception as e:
             s.rollback()
@@ -2991,14 +3015,22 @@ def unsuspend_user():
                 bl.remove(u.email.lower())
                 cfg['email_blacklist'] = list(bl)
         save_config(cfg)
-        # 解除最近 IP 封鎖
-        latest_event = s.query(SystemEvent).filter(SystemEvent.actor_id == user_id).order_by(SystemEvent.created_at.desc()).first()
-        if latest_event and latest_event.client_ip:
-            try:
-                # 即使沒被封鎖也不報錯
-                unblock_ip(latest_event.client_ip)
-            except Exception:
-                pass
+        # 解除該使用者所有曾記錄過的 IP 封鎖（對應 suspend 時可能封鎖全部）
+        try:
+            rows = (
+                s.query(SystemEvent.client_ip)
+                .filter(SystemEvent.actor_id == user_id, SystemEvent.client_ip.isnot(None))
+                .distinct()
+                .all()
+            )
+            all_ips = [row[0] for row in rows if row[0]]
+            for ip in all_ips:
+                try:
+                    unblock_ip(ip)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # 記錄事件
         try:
             actor_id = get_jwt_identity()

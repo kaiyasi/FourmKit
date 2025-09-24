@@ -241,8 +241,8 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
               )}
             </div>
             <div className="flex justify-end gap-2 mt-3">
-              <button className="btn-ghost text-sm" onClick={()=>setConfirmOpen(false)}>取消</button>
-              <button className="btn-primary text-sm" onClick={()=>doSubmit(targetSlug)}>確認送出</button>
+              <button className="btn-ghost text-sm" onClick={()=>setConfirmOpen(false)}>關閉</button>
+              <button className="btn-primary text-sm" onClick={()=>setConfirmOpen(false)}>完成</button>
             </div>
           </div>
         </div>

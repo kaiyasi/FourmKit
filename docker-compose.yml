@@ -18,37 +18,18 @@ services:
     networks:
       - forumkit-net
 
-  # CDN 服務
+  # 統一 CDN 服務 (上傳+讀取)
   cdn:
     build:
       context: ./docker/cdn
     container_name: forumkit-cdn
     ports:
-      - "12002:80"  # CDN 端口
-    volumes:
-      - ./cdn-data:/usr/share/nginx/html:ro
-    restart: unless-stopped
-    networks:
-      - forumkit-net
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/admin/" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-
-  # CDN 上傳服務
-  cdn-uploader:
-    build:
-      context: ./docker/cdn-uploader
-    container_name: forumkit-cdn-uploader
-    ports:
-      - "${CDN_UPLOADER_PORT:-12001}:8080"  # CDN 上傳服務端口
+      - "12001:8080"  # CDN 端口
     environment:
       - CDN_LOCAL_ROOT=/data
-      - CDN_PUBLIC_BASE_URL=${PUBLIC_CDN_URL}
+      - CDN_PUBLIC_BASE_URL=https://cdn.serelix.xyz
       - CDN_DEFAULT_SUBDIR=social_media
-      - CDN_ADMIN_PASSWORD=${CDN_ADMIN_PASSWORD:-Serelix}
+      - PORT=8080
     volumes:
       - ./cdn-data:/data
     restart: unless-stopped
@@ -82,6 +63,8 @@ services:
       - ./logs:/app/logs
       # Share CDN content directory with backend so publish_to_cdn copies are visible to cdn container
       - ./cdn-data:/app/cdn-data
+      # Serve protected admin assets from frontend build
+      - ./frontend/dist:/app/frontend-dist:ro
     depends_on:
       - postgres
       - redis

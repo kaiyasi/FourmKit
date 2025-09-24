@@ -41,20 +41,11 @@ class PillowPostGenerator:
         self.fonts_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 初始化 Pillow 渲染器
+        # 初始化 Pillow 渲染器 (不再提供硬編碼預設值)
         self.renderer = PillowRenderer()
-        
-        # 預設配置
-        self.default_config = {
-            "width": 1080,
-            "height": 1080,
-            "background_color": "#ffffff",
-            "text_color": "#333333",
-            "font_name": None,  # 使用預設字體
-            "font_size": 36,
-            "padding": 60,
-            "line_spacing": 10,
-        }
+
+        # 移除硬編碼預設配置 - 所有配置必須來自資料庫模板
+        self.default_config = None  # 強制使用資料庫模板配置
         
         # 支援的尺寸
         self.sizes = {
@@ -83,12 +74,26 @@ class PillowPostGenerator:
             BytesIO: 生成的圖片
         """
         try:
-            # 合併配置
-            final_config = {**self.default_config}
+            # 檢查是否提供了必要的配置
+            if config is None:
+                raise PillowPostGeneratorError("必須提供完整的模板配置，不可使用硬編碼預設值")
+
+            # 合併配置 (移除硬編碼預設值依賴)
+            final_config = {}
+
+            # 添加尺寸配置（如果指定了尺寸類型）
             if size in self.sizes:
                 final_config.update(self.sizes[size])
+
+            # 應用模板配置（這是主要的配置來源）
             if config:
                 final_config.update(config)
+
+            # 驗證必要配置項
+            required_keys = ['width', 'height', 'background_color', 'text_color', 'font_size', 'padding']
+            missing_keys = [key for key in required_keys if key not in final_config]
+            if missing_keys:
+                raise PillowPostGeneratorError(f"模板配置缺少必要項目: {missing_keys}")
             
             # 根據模板生成內容
             if template == "minimal":
@@ -98,52 +103,11 @@ class PillowPostGenerator:
             elif template == "story":
                 return self._generate_story_template(content, final_config)
             else:
-                return self._generate_default_template(content, final_config)
+                raise PillowPostGeneratorError(f"不支援的模板類型: {template}，不可使用硬編碼預設模板")
         
         except Exception as e:
             logger.error(f"生成貼文圖片失敗: {e}")
             raise PillowPostGeneratorError(f"圖片生成失敗: {str(e)}")
-    
-    def _generate_default_template(self, content: Dict, config: Dict) -> BytesIO:
-        """生成預設模板"""
-        # 準備文字內容
-        text_parts = []
-        
-        if content.get('title'):
-            text_parts.append(f"【{content['title']}】")
-        
-        if content.get('content'):
-            text_parts.append(content['content'])
-        
-        # 添加元資訊
-        meta_parts = []
-        if content.get('author'):
-            meta_parts.append(f"作者：{content['author']}")
-        if content.get('school_name'):
-            meta_parts.append(f"學校：{content['school_name']}")
-        if content.get('created_at'):
-            if isinstance(content['created_at'], datetime):
-                time_str = content['created_at'].strftime('%Y-%m-%d %H:%M')
-            else:
-                time_str = str(content['created_at'])
-            meta_parts.append(f"時間：{time_str}")
-        
-        if meta_parts:
-            text_parts.append('\n' + ' | '.join(meta_parts))
-        
-        full_text = '\n\n'.join(text_parts)
-        
-        return self.renderer.render_text_card(
-            content=full_text,
-            width=config['width'],
-            height=config['height'],
-            background_color=config['background_color'],
-            text_color=config['text_color'],
-            font_name=config.get('font_name'),
-            font_size=config['font_size'],
-            padding=config['padding'],
-            line_spacing=config['line_spacing']
-        )
     
     def _generate_minimal_template(self, content: Dict, config: Dict) -> BytesIO:
         """生成極簡模板"""

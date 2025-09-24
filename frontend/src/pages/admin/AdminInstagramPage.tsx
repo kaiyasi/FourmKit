@@ -472,12 +472,15 @@ export default function AdminInstagramPage() {
   }
 
   const handleSaveTemplate = async (templateData: any) => {
+    console.log('[DEBUG] handleSaveTemplate called with:', templateData)
+    console.log('[DEBUG] templateData.caption:', templateData.caption)
     try {
-      const url = editingTemplate 
+      const url = editingTemplate
         ? `/api/admin/social/templates/${editingTemplate.id}`
         : '/api/admin/social/templates'
-      
+
       const method = editingTemplate ? 'PUT' : 'POST'
+      console.log('[DEBUG] Request URL:', url, 'Method:', method)
 
       // 後端目前以 config.image.* 為主；這裡把舊的 textToImage 轉成 image.cards 結構
       const cfg = templateData?.config || {}
@@ -555,8 +558,37 @@ export default function AdminInstagramPage() {
         template_type: 'combined', // 固定為 combined（支援圖文並茂）
         is_default: templateData.info?.is_default || false,
         config: {
+          // 保留舊的配置結構以向下相容
           ...cfg,
           image: imageConfig,
+          // 新增完整的新模板結構
+          canvas: templateData.canvas || {
+            width: 1080,
+            height: 1080,
+            background: '#ffffff'
+          },
+          post: templateData.post || {
+            enabled: true,
+            text: { font: 'Noto Sans TC', size: 32, color: '#333333' }
+          },
+          photo: templateData.photo || {
+            enabled: true,
+            maxPhotos: 1,
+            layout: 'single'
+          },
+          caption: templateData.caption || {
+            enabled: false,
+            repeating: {
+              idFormat: { enabled: false, format: '' },
+              content: { enabled: false, template: '' },
+              separator: { enabled: false, style: '' }
+            },
+            single: {
+              header: { enabled: false, content: '' },
+              footer: { enabled: false, content: '', customLink: 'https://forum.serelix.xyz' }
+            },
+            hashtags: { enabled: false, tags: [], maxTags: 5 }
+          }
         },
       }
 
@@ -564,6 +596,9 @@ export default function AdminInstagramPage() {
       if (!payload.account_id || !payload.name) {
         throw new Error('缺少必要參數：帳號ID 或模板名稱')
       }
+
+      console.log('[DEBUG] Sending payload:', payload)
+      console.log('[DEBUG] payload.config.caption:', payload.config.caption)
 
       const response = await fetch(url, {
         method,
@@ -573,15 +608,18 @@ export default function AdminInstagramPage() {
         },
         body: JSON.stringify(payload)
       })
+
+      console.log('[DEBUG] Response status:', response.status)
       
       const result = await response.json()
-      
+      console.log('[DEBUG] Response result:', result)
+
       if (result.success) {
         alert(`✅ 模板${editingTemplate ? '更新' : '創建'}成功！`)
-        
+
         // 重新載入數據
         await fetchData()
-        
+
         setShowTemplateEditor(false)
         setEditingTemplate(null)
       } else {

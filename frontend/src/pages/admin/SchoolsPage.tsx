@@ -9,6 +9,7 @@ interface School {
   slug: string
   name: string
   logo_path?: string
+  logo_url?: string
 }
 
 interface SchoolStats {
@@ -40,6 +41,7 @@ export default function AdminSchoolsPage() {
   const [statsLoading, setStatsLoading] = useState(false)
   const [showActionMenu, setShowActionMenu] = useState<number | null>(null)
   const [domains, setDomains] = useState<Record<string, string[]>>({})
+  const [crossLogoUrl, setCrossLogoUrl] = useState<string | null>(null)
 
   useEffect(() => {
     // Remove hardcoded theme - let theme system handle it
@@ -93,6 +95,14 @@ export default function AdminSchoolsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const loadCrossLogo = async () => {
+    try {
+      const r = await authed('/api/schools/cross/logo', { cache: 'no-store' })
+      const j = await r.json().catch(()=>({}))
+      setCrossLogoUrl(j?.url || null)
+    } catch {}
   }
 
   const loadSchoolStats = async (slug: string) => {
@@ -216,7 +226,19 @@ export default function AdminSchoolsPage() {
     }
   }
 
-  useEffect(() => { loadSchools() }, [])
+  const uploadCrossLogo = async (file: File) => {
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const r = await authed('/api/schools/cross/logo', { method: 'POST', body: fd })
+      if (!r.ok) { alert(await r.text()); return }
+      loadCrossLogo()
+    } catch (e:any) {
+      alert(e?.message || '上傳失敗')
+    }
+  }
+
+  useEffect(() => { loadSchools(); loadCrossLogo() }, [])
 
   const ActionMenu = ({ school, onClose }: { school: School; onClose: () => void }) => (
     <div className="absolute right-0 top-8 z-50 bg-surface border border-border rounded-lg shadow-soft py-1 min-w-40">
@@ -314,6 +336,32 @@ export default function AdminSchoolsPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
+          {/* 跨校 Logo 區塊（僅提供上傳校徽） */}
+          <div className="lg:col-span-3">
+            <div className="bg-surface border border-border rounded-2xl shadow-soft p-4 sm:p-6 mb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-surface-hover flex items-center justify-center">
+                    {crossLogoUrl ? (
+                      <img src={crossLogoUrl} alt="Cross Logo" className="w-12 h-12 object-contain" />
+                    ) : (
+                      <Globe className="w-6 h-6 text-muted" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-semibold dual-text">跨校</div>
+                    <div className="text-xs text-muted">只提供上傳校徽，代表跨校區域</div>
+                  </div>
+                </div>
+                {(role === 'dev_admin' || role === 'cross_admin') && (
+                  <label className="btn-secondary text-sm flex items-center gap-2 cursor-pointer">
+                    <Camera className="w-4 h-4" /> 上傳校徽
+                    <input type="file" accept="image/*" className="hidden" onChange={(e)=>{ const f=e.target.files?.[0]; if(f) uploadCrossLogo(f) }} />
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
           {/* 學校列表 */}
           <div className="lg:col-span-2">
             <div className="bg-surface border border-border rounded-2xl shadow-soft">
@@ -335,9 +383,9 @@ export default function AdminSchoolsPage() {
                   </div>
                 ) : (
                   schools.map((school) => {
-                    const logoUrl = school.logo_path && typeof school.logo_path === 'string'
-                      ? `https://cdn.serelix.xyz/${school.logo_path}`
-                      : null
+                    const logoUrl = (school.logo_url && typeof school.logo_url === 'string')
+                      ? school.logo_url
+                      : (school.logo_path ? `/uploads/${school.logo_path}` : null)
                       
                     return (
                       <div key={school.id} className="p-4 sm:p-6 hover:bg-surface-hover transition-colors">

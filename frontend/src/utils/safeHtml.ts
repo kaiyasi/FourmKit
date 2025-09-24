@@ -79,11 +79,14 @@ export function sanitizeHtmlContent(html: string): string {
         for (const attr of Array.from(element.attributes)) {
           if (allAllowedAttrs.includes(attr.name)) {
             if (attr.name === 'href') {
-              // 特殊處理href屬性
-              if (isSafeUrl(attr.value)) {
-                cleanElement.setAttribute(attr.name, attr.value)
+              // 特殊處理 href 屬性：修剪各式引號，確保外部連結不被錯誤包裝
+              let hrefVal = (attr.value || '').trim()
+              // 去除可能殘留的 ASCII 與全形引號
+              hrefVal = hrefVal.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+              if (isSafeUrl(hrefVal)) {
+                cleanElement.setAttribute('href', hrefVal)
                 // 為外部連結添加安全屬性
-                if (attr.value.startsWith('http')) {
+                if (hrefVal.startsWith('http')) {
                   cleanElement.setAttribute('target', '_blank')
                   cleanElement.setAttribute('rel', 'noopener noreferrer')
                 }

@@ -1,14 +1,13 @@
 """
-統一的貼文渲染器 - 確保預覽和生成完全一致
-核心原則：ONE SOURCE OF TRUTH - 同一套模板，同一套邏輯，同一個尺寸
+統一的貼文渲染器 - 純 Pillow 實現，確保預覽和生成完全一致
+核心原則：ONE SOURCE OF TRUTH - 同一套配置，同一套邏輯，同一個尺寸
 """
-from typing import Dict, Optional, Union, Tuple, List
+from typing import Dict, Optional, Union, Tuple, List, Any
 from datetime import datetime
 from io import BytesIO
 import json
 import os
 import logging
-import html
 import re
 from pathlib import Path
 
@@ -16,141 +15,605 @@ logger = logging.getLogger(__name__)
 
 
 class PostRenderer:
-    """統一的貼文渲染器"""
-    
+    """統一的貼文渲染器 - 純 Pillow 實現"""
+
     # 標準尺寸配置 - 這是唯一的真相來源
     SIZES = {
         "instagram_square": {"width": 1080, "height": 1080},
-        "instagram_portrait": {"width": 1080, "height": 1350}, 
+        "instagram_portrait": {"width": 1080, "height": 1350},
         "instagram_story": {"width": 1080, "height": 1920},
         "facebook_post": {"width": 1200, "height": 630},
         "twitter_card": {"width": 1200, "height": 675},
     }
-    
+
     def __init__(self):
         """初始化渲染器"""
         self.default_size = "instagram_square"
-        self.default_config = {
-            "background_color": "#ffffff",
-            "font_family": "Noto Sans TC",
-            "primary_color": "#333333",
-            "secondary_color": "#666666",
-            "accent_color": "#007acc",
-            "padding": 60,
-            "border_radius": 12,
-            "font_size_title": 36,
-            "font_size_content": 28,
-            "font_size_meta": 18,
-            "line_height": 1.5,
-        }
+        # 移除硬編碼預設配置，強制使用資料庫模板配置
+        self.default_config = None
     
-    def render_html(self, 
-                   content: Dict,
-                   size: str = "instagram_square",
-                   template: str = "modern",
-                   config: Optional[Dict] = None,
-                   logo_url: Optional[str] = None) -> str:
-        """
-        渲染 HTML - 這是預覽和生成的共同入口
-        
-        Args:
-            content: 內容字典 {"title": "標題", "text": "內容", "author": "作者"}
-            size: 尺寸類型
-            template: 模板名稱
-            config: 自訂配置
-            logo_url: Logo URL
-            
-        Returns:
-            完整的 HTML 字符串
-        """
-        # 獲取尺寸
-        if size not in self.SIZES:
-            size = self.default_size
-        dimensions = self.SIZES[size]
-        
-        # 合併配置
-        final_config = {**self.default_config, **(config or {})}
-        
-        # 清理和準備內容
-        processed_content = self._process_content(content)
-        
-        # 生成 HTML
-        html_content = self._build_html(
-            processed_content, 
-            dimensions, 
-            template, 
-            final_config, 
-            logo_url
-        )
-        
-        return html_content
+    def _merge_config(self, custom_config: Optional[Dict] = None, size: str = "instagram_square") -> Dict:
+        """合併配置 - 統一配置處理邏輯"""
+        # 檢查是否提供了配置
+        if custom_config is None:
+            raise ValueError("必須提供模板配置，不可使用硬編碼預設值")
+
+        # 基礎配置：只有尺寸
+        dimensions = self.SIZES.get(size, self.SIZES[self.default_size])
+        base_config = {
+            "width": dimensions["width"],
+            "height": dimensions["height"]
+        }
+
+        # 合併自訂配置
+        if custom_config:
+            # 處理嵌套配置結構（如 image.text.font）
+            merged = base_config.copy()
+
+            # 如果是舊的嵌套結構，需要展平
+            if "image" in custom_config:
+                image_config = custom_config["image"]
+
+                # 基本設定
+                if "width" in image_config:
+                    merged["width"] = image_config["width"]
+                if "height" in image_config:
+                    merged["height"] = image_config["height"]
+                if "background" in image_config and "value" in image_config["background"]:
+                    merged["background_color"] = image_config["background"]["value"]
+                # 提供預設 padding 值，因為模板配置中通常沒有這個字段
+                merged["padding"] = image_config.get("padding", 60)
+
+                # 文字設定
+                if "cards" in image_config and "text" in image_config["cards"]:
+                    text_config = image_config["cards"]["text"]
+                    # 強制移除字體設定，使用系統預設字體
+                    merged["font_family"] = ""
+                    if "size" in text_config:
+                        merged["font_size_content"] = text_config["size"]
+                    if "color" in text_config:
+                        merged["primary_color"] = text_config["color"]
+                    if "align" in text_config:
+                        merged["text_align"] = text_config["align"]
+                    if "lineSpacing" in text_config:
+                        merged["line_spacing"] = text_config["lineSpacing"]
+                    if "maxLines" in text_config:
+                        merged["max_lines"] = text_config["maxLines"]
+
+                # Logo 設定
+                if "cards" in image_config and "logo" in image_config["cards"]:
+                    logo_config = image_config["cards"]["logo"]
+                    merged["logo_enabled"] = logo_config.get("enabled", False)
+                    merged["logo_size"] = logo_config.get("size", 80)
+                    merged["logo_position"] = logo_config.get("position", "top-right")
+                    merged["logo_opacity"] = logo_config.get("opacity", 0.8)
+                    if "url" in logo_config:
+                        merged["logo_url"] = logo_config["url"]
+
+                # 時間戳設定
+                if "cards" in image_config and "timestamp" in image_config["cards"]:
+                    ts_config = image_config["cards"]["timestamp"]
+                    merged["timestamp_enabled"] = ts_config.get("enabled", False)
+                    merged["timestamp_position"] = ts_config.get("position", "bottom-right")
+                    merged["timestamp_size"] = ts_config.get("size", 18)
+                    merged["timestamp_color"] = ts_config.get("color", "#666666")
+                    merged["timestamp_format"] = ts_config.get("format", "%m月%d日 %H:%M") # 讀取時間格式
+
+                # 貼文ID設定
+                if "cards" in image_config and "postId" in image_config["cards"]:
+                    pid_config = image_config["cards"]["postId"]
+                    merged["post_id_enabled"] = pid_config.get("enabled", False)
+                    merged["post_id_position"] = pid_config.get("position", "top-left")
+                    merged["post_id_size"] = pid_config.get("size", 20)
+                    merged["post_id_color"] = pid_config.get("color", "#0066cc")
+                    merged["post_id_text"] = pid_config.get("text", "")
+            else:
+                # 直接合併平面配置
+                merged.update(custom_config)
+
+            # 處理文字排版設定 (textLayout) - 從前端模板配置中提取
+            if "textLayout" in custom_config:
+                text_layout = custom_config["textLayout"]
+
+                # 純文字貼文設定
+                if "textOnly" in text_layout:
+                    text_only = text_layout["textOnly"]
+                    if "maxCharsPerLine" in text_only:
+                        merged["max_chars_per_line_text_only"] = text_only["maxCharsPerLine"]
+                    if "maxLines" in text_only:
+                        merged["max_lines_text_only"] = text_only["maxLines"]
+
+                # 有照片貼文設定
+                if "withPhoto" in text_layout:
+                    with_photo = text_layout["withPhoto"]
+                    if "maxCharsPerLine" in with_photo:
+                        merged["max_chars_per_line_with_photo"] = with_photo["maxCharsPerLine"]
+                    if "maxLines" in with_photo:
+                        merged["max_lines_with_photo"] = with_photo["maxLines"]
+                    if "textPos" in with_photo:
+                        merged["text_position_with_photo"] = with_photo["textPos"]
+                    if "imagePos" in with_photo:
+                        merged["image_position_with_photo"] = with_photo["imagePos"]
+
+            # **新增**: 如果是平面配置，也直接使用 max_chars_per_line 和 max_lines
+            # (這是為了支援 /preview-image 端點的平面配置)
+            if "max_chars_per_line" in custom_config:
+                merged["max_chars_per_line"] = custom_config["max_chars_per_line"]
+            if "max_lines" in custom_config:
+                merged["max_lines"] = custom_config["max_lines"]
+
+            return merged
+
+        return base_config
     
     def render_to_image(self,
                        content: Dict,
-                       size: str = "instagram_square", 
+                       size: str = "instagram_square",
                        template: str = "modern",
                        config: Optional[Dict] = None,
                        logo_url: Optional[str] = None,
-                       quality: int = 95) -> BytesIO:
+                       quality: int = 95,
+                       purpose: str = "preview") -> BytesIO:
         """
-        渲染為圖片 - 直接使用 Pillow 根據模板設定畫圖（不走 HTML 預覽）。
-        若 Pillow 繪製發生異常，回退到 HTML→圖片確保不會整體失敗。
-        """
-        # 直接使用 Pillow 渲染，完全依照 config 作畫
-        safe_config = {**(config or {})}
-        if logo_url:
-            safe_config['logo_url'] = logo_url
-            # 若未顯式指定，預設視為啟用
-            if 'logo_enabled' not in safe_config:
-                safe_config['logo_enabled'] = True
+        純 Pillow 圖片渲染 - 統一的圖片生成接口
 
+        Args:
+            content: 內容字典 {"title": "", "text": "", "author": "", "school_name": "", "id": ""}
+            size: 尺寸類型
+            template: 模板名稱 (目前僅作參考)
+            config: 自訂配置
+            logo_url: Logo URL
+            quality: 圖片品質 (90-100)
+            purpose: 用途 ("preview" 或 "publish")
+
+        Returns:
+            BytesIO: 圖片數據流
+        """
         try:
-            from services.pillow_renderer import PillowRenderer
-            renderer = PillowRenderer(
-                default_width=self.SIZES.get(size, self.SIZES[self.default_size])["width"],
-                default_height=self.SIZES.get(size, self.SIZES[self.default_size])["height"]
-            )
-            return renderer.render_instagram_post(content=content, config=safe_config, quality=quality)
+            # 統一配置處理
+            merged_config = self._merge_config(config, size)
+
+            # 處理 Logo URL
+            if logo_url and "logo_url" not in merged_config:
+                merged_config["logo_url"] = logo_url
+                merged_config["logo_enabled"] = merged_config.get("logo_enabled", True)
+
+            # 處理內容數據
+            processed_content = self._process_content(content)
+
+            # 使用 Pillow 渲染器
+            from services.pillow_renderer import get_pillow_renderer
+            renderer = get_pillow_renderer()
+
+            # 驗證必要配置項 - 不提供預設值，強制前端提供完整配置
+            required_keys = ['background_color', 'primary_color', 'font_size_content', 'padding', 'line_spacing']
+            missing_keys = [key for key in required_keys if key not in merged_config]
+            if missing_keys:
+                logger.error(f"❌ 前端模板配置不完整，缺少必要項目: {missing_keys}")
+                logger.error("🔧 請更新前端模板配置，提供所有必要參數")
+                raise ValueError(f"模板配置缺少必要項目: {missing_keys}。請提供完整的資料庫模板配置。")
+
+            # 決定是否有照片（從content判斷）
+            has_images = bool(content.get("images") or content.get("image_urls") or content.get("attachments"))
+
+            # 根據是否有照片選擇對應的文字排版設定
+            if has_images and "max_chars_per_line_with_photo" in merged_config:
+                # 有照片時使用 withPhoto 設定
+                max_chars_per_line = merged_config.get("max_chars_per_line_with_photo")
+                max_lines = merged_config.get("max_lines_with_photo")
+                logger.info(f"🖼️ 檢測到有照片，使用有照片排版設定: 每行{max_chars_per_line}字，最多{max_lines}行")
+            else:
+                # 純文字時使用 textOnly 設定
+                max_chars_per_line = merged_config.get("max_chars_per_line_text_only")
+                max_lines = merged_config.get("max_lines_text_only")
+                logger.info(f"📝 純文字貼文，使用純文字排版設定: 每行{max_chars_per_line}字，最多{max_lines}行")
+
+            # 如果沒有設定，使用原有預設值
+            if max_chars_per_line is None:
+                max_chars_per_line = merged_config.get("max_chars_per_line")
+            if max_lines is None:
+                max_lines = merged_config.get("max_lines", 20)
+
+            # **修復**: 根據是否有圖片選擇合適的渲染函數
+            if has_images:
+                # 有圖片時嘗試使用 render_instagram_post，失敗時回退到 render_text_card
+                logger.info("🖼️ 嘗試使用 render_instagram_post 處理有圖片的貼文")
+
+                try:
+                    # 構建 render_instagram_post 需要的完整配置
+                    instagram_config = {
+                        # 基本配置
+                        'width': merged_config["width"],
+                        'height': merged_config["height"],
+                        'background_color': merged_config["background_color"],
+                        'primary_color': merged_config["primary_color"],
+                        'font_family': merged_config.get("font_family", ""),
+                        'font_size_content': merged_config["font_size_content"],
+                        'font_size_title': merged_config.get("font_size_title", merged_config["font_size_content"]),
+                        'padding': merged_config["padding"],
+                        'line_height': 1.5,  # 使用固定的行高比例
+                        'text_align': merged_config.get("text_align", "center"),
+                        'vertical_align': merged_config.get("vertical_align", "middle"),
+
+                        # 文字截斷設定
+                        'max_lines': max_lines,
+                        'max_chars_per_line': max_chars_per_line,
+
+                        # 圖片相關配置
+                        'image_urls': content.get("image_urls", []),
+                        'photo_square_size': config.get("photo_square_size", 300),
+                        'photo_border_radius': config.get("photo_border_radius", 12),
+                        'with_photo_stacked': config.get("with_photo_stacked", True),
+                        'image_pos_x': config.get("image_pos_x", 10),
+                        'image_pos_y': config.get("image_pos_y", 55),
+                        'text_pos_x': config.get("text_pos_x", 10),
+                        'text_pos_y': config.get("text_pos_y", 15),
+
+                        # 文字截斷配置（有圖片和純文字）
+                        'text_max_chars_per_line_with_photo': max_chars_per_line or 24,
+                        'text_max_lines_with_photo': max_lines or 6,
+                        'text_max_chars_per_line_text_only': max_chars_per_line or 30,
+                        'text_max_lines_text_only': max_lines or 8,
+
+                        # 時間戳配置
+                        'show_timestamp': config.get("timestamp_enabled", False),
+                        'timestamp_position': config.get("timestamp_position", "bottom-left"),
+                        'timestamp_format': config.get("timestamp_format", "%Y-%m-%d %H:%M"),
+                        'timestamp_font': config.get("timestamp_font", ""),
+                        'timestamp_size': config.get("timestamp_size", 18),
+                        'timestamp_color': config.get("timestamp_color", "#666666"),
+
+                        # 貼文ID配置
+                        'post_id_enabled': config.get("post_id_enabled", False),
+                        'show_post_id': config.get("post_id_enabled", False),  # 別名
+                        'post_id_position': config.get("post_id_position", "bottom-right"),
+                        'post_id_format': config.get("post_id_format", "#{id}"),
+                        'post_id_font': config.get("post_id_font", ""),
+                        'post_id_size': config.get("post_id_size", 18),
+                        'post_id_color': config.get("post_id_color", "#666666"),
+
+                        # Logo配置
+                        'logo_enabled': config.get("logo_enabled", False),
+                        'logo_url': config.get("logo_url", ""),
+                        'logo_size': config.get("logo_size", 80),
+                        'logo_opacity': config.get("logo_opacity", 0.8),
+                        'logo_position': config.get("logo_position", "bottom-right"),
+                    }
+
+                    image_buffer = renderer.render_instagram_post(
+                        content=processed_content,
+                        config=instagram_config,
+                        quality=quality
+                    )
+                    logger.info("✅ render_instagram_post 成功")
+
+                except Exception as e:
+                    # 如果 render_instagram_post 失敗，回退到 render_text_card
+                    logger.warning(f"⚠️  render_instagram_post 失敗，回退到 render_text_card: {e}")
+                    image_buffer = renderer.render_text_card(
+                        content=processed_content.get("text", ""),
+                        width=merged_config["width"],
+                        height=merged_config["height"],
+                        background_color=merged_config["background_color"],
+                        text_color=merged_config["primary_color"],
+                        font_name=merged_config.get("font_family", ""),
+                        font_size=merged_config["font_size_content"],
+                        padding=merged_config["padding"],
+                        line_spacing=merged_config["line_spacing"],
+                        text_align=merged_config.get("text_align", "center"),
+                        vertical_align=merged_config.get("vertical_align", "middle"),
+                        max_lines=max_lines,
+                        max_chars_per_line=max_chars_per_line,
+                        # 水印參數
+                        apply_watermark_on_truncation=False,
+                        watermark_text="",
+                        watermark_font_size=18,
+                        watermark_color="#666666",
+                        image_format="JPEG",
+                        quality=quality
+                    )
+            else:
+                # 純文字時使用 render_text_card
+                logger.info("📝 使用 render_text_card 處理純文字貼文")
+                image_buffer = renderer.render_text_card(
+                    content=processed_content.get("text", ""),
+                    width=merged_config["width"],
+                    height=merged_config["height"],
+                    background_color=merged_config["background_color"],
+                    text_color=merged_config["primary_color"],
+                    font_name=merged_config.get("font_family", ""),  # 空字體名稱，使用系統預設
+                    font_size=merged_config["font_size_content"],
+                    padding=merged_config["padding"],
+                    line_spacing=merged_config["line_spacing"],
+                    text_align=merged_config.get("text_align", "center"),
+                    vertical_align=merged_config.get("vertical_align", "middle"),
+                    max_lines=max_lines,
+                    max_chars_per_line=max_chars_per_line,
+                    # 水印參數 - 提供預設值以符合新的嚴格驗證
+                    apply_watermark_on_truncation=False,
+                    watermark_text="",
+                    watermark_font_size=18,
+                    watermark_color="#666666",
+                    image_format="JPEG",
+                    quality=quality
+                )
+
+            # 疊加圖層處理 (Logo, 時間戳, 貼文ID)
+            return self._add_overlays(image_buffer, processed_content, merged_config, quality)
+
         except Exception as e:
-            logger.error(f"Pillow 渲染失敗，改用 HTML 回退: {e}")
-            # 回退：使用 HTML → 圖片（保底）
-            html_content = self.render_html(content, size, template, config, logo_url)
-            dimensions = self.SIZES[size]
-            custom_w = None
-            custom_h = None
-            try:
-                if config and isinstance(config, dict):
-                    cw = config.get("width")
-                    ch = config.get("height")
-                    if isinstance(cw, (int, float)) and isinstance(ch, (int, float)) and cw > 0 and ch > 0:
-                        custom_w = int(cw)
-                        custom_h = int(ch)
-            except Exception:
-                pass
-            dims = {"width": custom_w or dimensions["width"], "height": custom_h or dimensions["height"]}
-            return self._html_to_image(html_content, dims, quality)
-    
+            logger.error(f"Pillow 渲染失敗: {e}", exc_info=True)
+            raise Exception(f"圖片渲染失敗: {str(e)}")
+
+    def _add_overlays(self, image_buffer: BytesIO, content: Dict, config: Dict, quality: int) -> BytesIO:
+        """添加疊加圖層 (Logo, 時間戳, 貼文ID)"""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            import requests
+
+            # 打開基礎圖片
+            image_buffer.seek(0)
+            base_image = Image.open(image_buffer).convert("RGBA")
+            width, height = base_image.size
+
+            # 驗證 padding 配置
+            if "padding" not in config:
+                raise ValueError("模板配置缺少 padding 項目")
+            padding = config["padding"]
+
+            # Logo 疊加
+            if config.get("logo_enabled", False) and config.get("logo_url"):
+                try:
+                    logo_resp = requests.get(config["logo_url"], timeout=10)
+                    logo_resp.raise_for_status()
+                    logo_img = Image.open(BytesIO(logo_resp.content)).convert("RGBA")
+
+                    # 驗證 logo 配置
+                    if "logo_size" not in config:
+                        raise ValueError("啟用 logo 時模板配置缺少 logo_size 項目")
+                    if "logo_opacity" not in config:
+                        raise ValueError("啟用 logo 時模板配置缺少 logo_opacity 項目")
+
+                    logo_size = config["logo_size"]
+                    logo_img = logo_img.resize((logo_size, logo_size), Image.LANCZOS)
+
+                    # 設置透明度
+                    opacity = config["logo_opacity"]
+                    if opacity < 1.0:
+                        alpha = logo_img.split()[3]
+                        alpha = alpha.point(lambda p: int(p * opacity))
+                        logo_img.putalpha(alpha)
+
+                    # 計算位置
+                    position = config.get("logo_position", "top-right")
+                    x, y = self._calculate_position(position, width, height, logo_size, logo_size, padding)
+
+                    base_image.alpha_composite(logo_img, dest=(x, y))
+                except Exception as e:
+                    logger.warning(f"Logo 疊加失敗: {e}")
+
+            # 時間戳疊加
+            if config.get("timestamp_enabled", False):
+                try:
+                    from services.pillow_renderer import get_pillow_renderer
+                    renderer = get_pillow_renderer()
+
+                    # 驗證 timestamp 配置
+                    if "timestamp_size" not in config:
+                        raise ValueError("啟用 timestamp 時模板配置缺少 timestamp_size 項目")
+                    if "timestamp_color" not in config:
+                        raise ValueError("啟用 timestamp 時模板配置缺少 timestamp_color 項目")
+
+                    draw = ImageDraw.Draw(base_image)
+                    timestamp_size = config["timestamp_size"]
+                    timestamp_color = config["timestamp_color"]
+
+                    # --- 動態格式化時間戳 (含格式翻譯) ---
+                    timestamp_text = ""
+                    created_at_val = content.get("created_at")
+
+                    if created_at_val:
+                        if isinstance(created_at_val, str):
+                            try:
+                                created_at = datetime.fromisoformat(created_at_val.replace('Z', '+00:00'))
+                                # 轉換為 UTC+8 時區
+                                import pytz
+                                utc_tz = pytz.UTC
+                                local_tz = pytz.timezone('Asia/Taipei')
+                                if created_at.tzinfo is None:
+                                    created_at = utc_tz.localize(created_at)
+                                created_at = created_at.astimezone(local_tz)
+                            except ValueError:
+                                # 使用 UTC+8 時區的現在時間
+                                import pytz
+                                local_tz = pytz.timezone('Asia/Taipei')
+                                created_at = datetime.now(local_tz)
+                        elif isinstance(created_at_val, datetime):
+                            created_at = created_at_val
+                            # 如果是 UTC 時間，轉換為本地時區
+                            import pytz
+                            if created_at.tzinfo is None:
+                                utc_tz = pytz.UTC
+                                local_tz = pytz.timezone('Asia/Taipei')
+                                created_at = utc_tz.localize(created_at).astimezone(local_tz)
+                            else:
+                                local_tz = pytz.timezone('Asia/Taipei')
+                                created_at = created_at.astimezone(local_tz)
+                        else:
+                            # 使用 UTC+8 時區的現在時間
+                            import pytz
+                            local_tz = pytz.timezone('Asia/Taipei')
+                            created_at = datetime.now(local_tz)
+                    else:
+                        # 使用 UTC+8 時區的現在時間
+                        import pytz
+                        local_tz = pytz.timezone('Asia/Taipei')
+                        created_at = datetime.now(local_tz)
+
+                    # 從配置讀取使用者設定的格式
+                    user_format = config.get("timestamp_format", "%m月%d日 %H:%M")
+
+                    if user_format == "relative":
+                        now = datetime.now(created_at.tzinfo)
+                        delta = now - created_at
+                        seconds = delta.total_seconds()
+                        if seconds < 2:
+                            timestamp_text = "剛剛"
+                        elif seconds < 60:
+                            timestamp_text = f"{int(seconds):02d} 秒前"
+                        elif seconds < 3600:
+                            timestamp_text = f"{int(seconds / 60)} 分鐘前"
+                        elif seconds < 86400:
+                            timestamp_text = f"{int(seconds / 3600)} 小時前"
+                        else:
+                            timestamp_text = f"{delta.days} 天前"
+                    else:
+                        # 格式翻譯層: 將使用者易讀的格式轉換為 strftime 代碼
+                        format_mapping = {
+                            "YYYY-MM-DD HH:mm:ss": "%Y-%m-%d %H:%M:%S",
+                            "YYYY-MM-DD HH:mm": "%Y-%m-%d %H:%M",
+                            "YYYY-MM-DD hh:mm am/pm": "%Y-%m-%d %I:%M %p",
+                            "MM/DD/YYYY HH:mm:ss": "%m/%d/%Y %H:%M:%S",
+                            "DD-MM-YYYY hh:mm am/pm": "%d-%m-%Y %I:%M %p",
+                        }
+                        # 如果使用者設定在翻譯表中，則使用翻譯後的值；否則直接使用設定值 (適用於本身已是 %Y-%m-%d 的情況)
+                        strftime_format = format_mapping.get(user_format, user_format)
+                        try:
+                            timestamp_text = created_at.strftime(strftime_format)
+                            # 如果使用 %p (am/pm)，則轉換為小寫
+                            if "%p" in strftime_format:
+                                timestamp_text = timestamp_text.lower()
+                        except ValueError:
+                            # 如果格式字串仍然無效，提供一個安全的後備格式
+                            timestamp_text = created_at.strftime("%Y-%m-%d %H:%M")
+                    # --- 邏輯結束 ---
+
+                    if timestamp_text:
+                        font = renderer.get_font(None, timestamp_size)
+
+                        # 計算文字尺寸
+                        text_bbox = draw.textbbox((0, 0), timestamp_text, font=font)
+                        text_width = text_bbox[2] - text_bbox[0]
+                        text_height = text_bbox[3] - text_bbox[1]
+
+                        # 計算位置
+                        position = config.get("timestamp_position", "bottom-right")
+                        logger.info(f"[時間戳定位] position={position}, canvas={width}x{height}, text={text_width}x{text_height}, padding={padding}")
+                        x, y = self._calculate_position(position, width, height, text_width, text_height, padding)
+                        logger.info(f"[時間戳定位] 計算結果: x={x}, y={y}")
+
+                        draw.text((x, y), timestamp_text, fill=timestamp_color, font=font)
+                except Exception as e:
+                    logger.warning(f"時間戳疊加失敗: {e}")
+
+            # 貼文ID疊加
+            if config.get("post_id_enabled", False):
+                try:
+                    from services.pillow_renderer import get_pillow_renderer
+                    renderer = get_pillow_renderer()
+
+                    # 生成貼文ID文字
+                    post_id_text = config.get("post_id_text", "")
+                    if not post_id_text and content.get("id"):
+                        post_id_format = config.get("post_id_format", "#{id}")
+                        # 支援多種格式變數
+                        post_id_text = (post_id_format
+                                      .replace("#{ID}", f"#{content['id']}")
+                                      .replace("#{id}", f"#{content['id']}")
+                                      .replace("{ID}", str(content["id"]))
+                                      .replace("{id}", str(content["id"])))
+
+                    logger.info(f"[統一渲染器] 貼文ID疊加: enabled={config.get('post_id_enabled')}, format={config.get('post_id_format')}, text='{post_id_text}', content_id={content.get('id')}")
+
+                    # 驗證 post_id 配置
+                    if "post_id_size" not in config:
+                        raise ValueError("啟用 post_id 時模板配置缺少 post_id_size 項目")
+                    if "post_id_color" not in config:
+                        raise ValueError("啟用 post_id 時模板配置缺少 post_id_color 項目")
+
+                    draw = ImageDraw.Draw(base_image)
+                    post_id_size = config["post_id_size"]
+                    post_id_color = config["post_id_color"]
+
+                    if post_id_text:
+                        font = renderer.get_font(None, post_id_size)
+
+                        # 計算文字尺寸
+                        text_bbox = draw.textbbox((0, 0), post_id_text, font=font)
+                        text_width = text_bbox[2] - text_bbox[0]
+                        text_height = text_bbox[3] - text_bbox[1]
+
+                        # 計算位置
+                        position = config.get("post_id_position", "top-left")
+                        x, y = self._calculate_position(position, width, height, text_width, text_height, padding)
+
+                        logger.info(f"[統一渲染器] 繪製貼文ID: 座標=({x},{y}), 尺寸={text_width}x{text_height}, 顏色={post_id_color}, 大小={post_id_size}, 圖片尺寸={width}x{height}")
+                        draw.text((x, y), post_id_text, fill=post_id_color, font=font)
+                        logger.info(f"[統一渲染器] 貼文ID繪製完成: '{post_id_text}'")
+                except Exception as e:
+                    logger.warning(f"貼文ID疊加失敗: {e}")
+
+            # 輸出最終圖片
+            output_buffer = BytesIO()
+            final_image = base_image.convert("RGB")
+            final_image.save(output_buffer, format="JPEG", quality=quality, optimize=True)
+            output_buffer.seek(0)
+
+            return output_buffer
+
+        except Exception as e:
+            logger.error(f"疊加圖層失敗: {e}")
+            # 返回原始圖片
+            image_buffer.seek(0)
+            return image_buffer
+
+    def _calculate_position(self, position: str, canvas_width: int, canvas_height: int,
+                          element_width: int, element_height: int, padding: int) -> Tuple[int, int]:
+        """計算元素位置"""
+        position = position.lower()
+
+        if position == "top-left":
+            return padding, padding
+        elif position == "top-center":
+            return (canvas_width - element_width) // 2, padding
+        elif position == "top-right":
+            return canvas_width - padding - element_width, padding
+        elif position in ("middle-left", "left-center"):
+            return padding, (canvas_height - element_height) // 2
+        elif position in ("center", "middle-center"):
+            return (canvas_width - element_width) // 2, (canvas_height - element_height) // 2
+        elif position in ("middle-right", "right-center"):
+            return canvas_width - padding - element_width, (canvas_height - element_height) // 2
+        elif position == "bottom-left":
+            return padding, canvas_height - padding - element_height
+        elif position == "bottom-center":
+            return (canvas_width - element_width) // 2, canvas_height - padding - element_height
+        elif position == "bottom-right":
+            return canvas_width - padding - element_width, canvas_height - padding - element_height
+        else:
+            # 預設置中
+            return (canvas_width - element_width) // 2, (canvas_height - element_height) // 2
+
     def get_preview_data(self,
                         content: Dict,
                         size: str = "instagram_square",
-                        template: str = "modern", 
+                        template: str = "modern",
                         config: Optional[Dict] = None,
                         logo_url: Optional[str] = None) -> Dict:
         """
-        獲取預覽數據 - 包含 HTML 和元信息
+        獲取預覽數據 - 包含尺寸和配置信息（已移除 HTML）
         """
-        html_content = self.render_html(content, size, template, config, logo_url)
         dimensions = self.SIZES[size]
-        
+        merged_config = self._merge_config(config, size)
+
         return {
-            "html": html_content,
             "width": dimensions["width"],
             "height": dimensions["height"],
             "aspect_ratio": dimensions["width"] / dimensions["height"],
             "size_name": size,
             "template": template,
             "processed_content": self._process_content(content),
-            "config": {**self.default_config, **(config or {})}
+            "config": merged_config
         }
     
     def _process_content(self, content: Dict) -> Dict:
@@ -167,12 +630,18 @@ class PostRenderer:
         processed["author"] = self._clean_text(content.get("author", ""))
         
         # 時間
-        created_at = content.get("created_at", datetime.now())
-        if isinstance(created_at, str):
+        created_at = content.get("created_at")
+        if created_at is None:
+            created_at = datetime.now()
+        elif isinstance(created_at, str):
             try:
                 created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             except:
                 created_at = datetime.now()
+        elif not isinstance(created_at, datetime):
+            created_at = datetime.now()
+
+        processed["created_at"] = content.get("created_at") # 將原始 created_at 傳遞下去
         processed["time"] = created_at.strftime("%m月%d日 %H:%M")
         processed["date"] = created_at.strftime("%Y年%m月%d日")
         
@@ -183,455 +652,191 @@ class PostRenderer:
         return processed
     
     def _clean_text(self, text: str) -> str:
-        """清理文字"""
+        """清理文字，移除 HTML 標籤和 Markdown 符號"""
         if not text:
             return ""
-        
+
+        text = str(text)
+
         # 移除 HTML 標籤
-        text = re.sub(r'<[^>]+>', '', str(text))
-        
+        text = re.sub(r'<[^>]+>', '', text)
+
+        # 移除 Markdown 符號
+        # 移除圖片 ![alt](url) -> alt (需要在連結之前處理)
+        text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+        # 移除連結 [text](url) -> text
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+        # 移除粗體 **text** 或 __text__ -> text
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'__([^_]+)__', r'\1', text)
+        # 移除斜體 *text* 或 _text_ -> text
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        text = re.sub(r'(?<!\w)_([^_]+)_(?!\w)', r'\1', text)
+        # 移除刪除線 ~~text~~ -> text
+        text = re.sub(r'~~([^~]+)~~', r'\1', text)
+        # 移除代碼塊 ```code``` -> code
+        text = re.sub(r'```[^`]*```', '', text)
+        # 移除行內代碼 `code` -> code
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        # 移除標題符號 ### Title -> Title
+        text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+        # 移除引用符號 > quote -> quote
+        text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+        # 移除列表符號 - item 或 * item 或 1. item -> item
+        text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
+        # 移除水平線 --- 或 ***
+        text = re.sub(r'^[\s]*[-*_]{3,}[\s]*$', '', text, flags=re.MULTILINE)
+
         # 移除多餘空白
         text = re.sub(r'\s+', ' ', text).strip()
-        
+
         # 限制長度
         if len(text) > 600:
             text = text[:597] + "..."
-        
-        # HTML 轉義
-        return html.escape(text)
-    
-    def _build_html(self, 
-                   processed_content: Dict,
-                   dimensions: Dict,
-                   template: str,
-                   config: Dict,
-                   logo_url: Optional[str]) -> str:
-        """建立 HTML"""
-        
-        width = dimensions["width"]
-        height = dimensions["height"]
-        
-        # Google Fonts
-        fonts_link = self._get_google_fonts_link(config["font_family"])
-        
-        # Logo HTML - 加入錯誤處理和載入狀態
-        logo_html = ""
-        if logo_url:
-            # 處理相對路徑 URL
-            processed_logo_url = self._process_logo_url(logo_url)
-            logo_html = f"""
-            <div class="logo">
-                <img src="{processed_logo_url}" alt="Logo" 
-                     onerror="this.parentElement.classList.add('loading'); this.style.display='none';"
-                     onload="this.parentElement.classList.remove('loading');" />
-            </div>"""
-        
-        # 根據模板選擇布局
-        if template == "minimal":
-            content_html = self._build_minimal_template(processed_content, config)
-        elif template == "card":
-            content_html = self._build_card_template(processed_content, config)
-        else:  # modern (default)
-            content_html = self._build_modern_template(processed_content, config)
-        
-        # 完整 HTML
-        html_template = f"""<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    {fonts_link}
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            width: {config.get("width", width)}px;
-            height: {config.get("height", height)}px;
-            font-family: '{config["font_family"]}', 'Noto Sans TC', sans-serif;
-            background: {config["background_color"]};
-            color: {config["primary_color"]};
-            overflow: hidden;
-            position: relative;
-            font-size: {config.get("font_size_content", 28)}px;
-            line-height: {config.get("line_height", 1.5)};
-        }}
-        
-        .container {{
-            width: 100%;
-            height: 100%;
-            position: relative;
-            overflow: hidden;
-        }}
-        
-        .logo {{
-            position: absolute;
-            {self._get_logo_position_styles(config)}
-            width: {config.get("logo_size", 60)}px;
-            height: {config.get("logo_size", 60)}px;
-            border-radius: 50%;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            background: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: {config.get("logo_opacity", 0.85)};
-        }}
-        
-        .logo img {{
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            border-radius: 50%;
-            display: block;
-        }}
-        
-        /* Logo 載入狀態 */
-        .logo img[src=""] {{
-            display: none;
-        }}
-        
-        .logo.loading::before {{
-            content: "📷";
-            font-size: 20px;
-            color: #ccc;
-        }}
-        
-        .content-wrapper {{
-            position: absolute;
-            max-width: calc(100% - {config.get("padding", 60) * 2}px);
-            word-wrap: break-word;
-            z-index: 1;
-        }}
 
-        .title {{
-            font-size: {config.get("font_size_title", config.get("font_size_content", 28))}px;
-            font-weight: 700;
-            line-height: 1.2;
-            margin-bottom: 10px;
-            color: {config["primary_color"]};
-        }}
-
-        .content {{
-            font-size: {config.get("font_size_content", 28)}px;
-            line-height: {config.get("line_height", 1.5)};
-            color: {config["primary_color"]};
-        }}
-
-        .meta {{
-            position: absolute;
-            font-size: {config.get("metadata_size", config.get("font_size_meta", 12))}px;
-            color: {config.get("metadata_color", config.get("secondary_color", "#666666"))};
-            z-index: 2;
-        }}
-        
-        .author {{
-            font-weight: 500;
-        }}
-        
-        .time {{
-            opacity: 0.8;
-        }}
-        
-        /* 模板特定樣式 */
-        .modern-gradient {{
-            background: linear-gradient(135deg, {config["background_color"]} 0%, #f8f9fa 100%);
-        }}
-        
-        .card-style {{
-            background: white;
-            border-radius: {config["border_radius"]}px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            margin: {config["padding"]//2}px;
-        }}
-        
-        .minimal-clean {{
-            background: {config["background_color"]};
-        }}
-    </style>
-</head>
-<body class="{self._get_body_class(template)}">
-    <div class="container">
-        {logo_html}
-        {content_html}
-    </div>
-</body>
-</html>"""
-        
-        return html_template
-    
-    def _get_body_class(self, template: str) -> str:
-        """獲取 body 的 CSS class"""
-        class_map = {
-            "modern": "modern-gradient", 
-            "card": "card-style",
-            "minimal": "minimal-clean"
-        }
-        return class_map.get(template, "modern-gradient")
-    
-    def _build_modern_template(self, content: Dict, config: Dict) -> str:
-        """現代風格模板 - 完全支援用戶配置的所有參數"""
-
-        # 獲取文字位置和對齊設定
-        text_position = config.get('text_position', 'center')
-        text_align = config.get('text_align', 'center')
-        text_valign = config.get('text_valign', 'middle')
-
-        # 計算實際位置
-        position_styles = self._calculate_position_styles(text_position, config)
-
-        # 構建元數據區塊 - 根據配置決定顯示內容
-        meta_parts = []
-
-        # 作者 - 檢查是否為匿名貼文
-        author = content.get('author', '')
-        if author and author.lower() not in ['匿名', 'anonymous', ''] and author.strip():
-            meta_parts.append(f'<span class="author">{author}</span>')
-
-        # 時間戳 - 檢查配置是否啟用
-        show_timestamp = config.get('show_timestamp', False)
-        if show_timestamp and content.get('time'):
-            meta_parts.append(f'<span class="time">{content["time"]}</span>')
-
-        # 貼文ID - 檢查配置是否啟用
-        show_post_id = config.get('show_post_id', False)
-        if show_post_id and content.get('id'):
-            post_id_format = config.get('post_id_format', '#{id}')
-            formatted_id = post_id_format.replace('{id}', str(content['id']))
-            meta_parts.append(f'<span class="post-id">{formatted_id}</span>')
-
-        # 學校名稱
-        school = content.get('school', '')
-        if school and school.strip():
-            meta_parts.append(f'<span class="school">{school}</span>')
-
-        # 構建元數據HTML，根據配置決定位置
-        meta_html = ''
-        if meta_parts:
-            meta_position = self._get_metadata_position_styles(config)
-            meta_html = f'<div class="meta" style="{meta_position}">' + ' · '.join(meta_parts) + '</div>'
-
-        # 應用文字位置和對齊設定
-        content_styles = f"text-align: {text_align}; {position_styles}"
-
-        return f"""
-        <div class="content-wrapper" style="{content_styles}">
-            <div class="title">{content.get('title', '') if content.get('title') and content.get('title').strip() else ''}</div>
-            <div class="content">{content.get('text', '')}</div>
-        </div>
-        {meta_html}"""
-    
-    def _build_card_template(self, content: Dict, config: Dict) -> str:
-        """卡片風格模板"""
-        return f"""
-        <div class="title" style="border-left: 4px solid {config['accent_color']}; padding-left: 16px;">
-            {content['title']}
-        </div>
-        <div class="content">
-            <div style="padding: 20px; background: rgba(0,0,0,0.02); border-radius: 8px;">
-                {content['text']}
-            </div>
-        </div>
-        <div class="meta">
-            <span class="author" style="color: {config['accent_color']};">{content['author']}</span>
-            <span class="time">{content['time']}</span>
-        </div>"""
-    
-    def _build_minimal_template(self, content: Dict, config: Dict) -> str:
-        """極簡風格模板"""
-        return f"""
-        <div class="content" style="text-align: center; justify-content: center;">
-            <div>
-                <div class="title" style="margin-bottom: 40px;">{content['title']}</div>
-                <div style="font-size: {config['font_size_content']}px; margin-bottom: 40px;">
-                    {content['text']}
-                </div>
-                <div class="meta" style="justify-content: center; gap: 20px;">
-                    <span class="author">{content['author']}</span>
-                    <span style="opacity: 0.5;">•</span>
-                    <span class="time">{content['time']}</span>
-                </div>
-            </div>
-        </div>"""
-    
-    def _get_google_fonts_link(self, font_family: str) -> str:
-        """獲取 Google Fonts 連結"""
-        font_urls = {
-            "Noto Sans TC": "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap",
-            "Noto Serif TC": "https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500;700&display=swap",
-            "Inter": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap",
-            "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap",
-        }
-        
-        url = font_urls.get(font_family, font_urls["Noto Sans TC"])
-        return f'<link href="{url}" rel="stylesheet">'
-    
-    def _process_logo_url(self, logo_url: str) -> str:
-        """處理 Logo URL - 將相對路徑轉換為完整 URL"""
-        if not logo_url:
-            return ""
-        
-        # 如果已經是完整 URL，直接返回
-        if logo_url.startswith(('http://', 'https://')):
-            return logo_url
-        
-        # 如果是相對路徑，嘗試轉換為完整 URL
-        if logo_url.startswith('/'):
-            base_url = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
-            if base_url:
-                return f"{base_url}{logo_url}"
-            else:
-                # 如果沒有配置基礎 URL，嘗試使用本地檔案
-                # 在實際部署中應該配置 PUBLIC_BASE_URL
-                local_file_path = logo_url.lstrip('/')
-                if os.path.exists(local_file_path):
-                    # 將本地檔案轉換為 data URL（適合小檔案）
-                    try:
-                        return self._file_to_data_url(local_file_path)
-                    except:
-                        pass
-                        
-                # 最後回退：直接返回相對路徑（可能無法載入）
-                logger.warning(f"無法處理相對路徑 Logo URL: {logo_url}")
-                return logo_url
-        
-        return logo_url
-    
-    def _calculate_position_styles(self, position: str, config: Dict) -> str:
-        """計算文字位置的 CSS 樣式"""
-        position_map = {
-            'top-left': 'position: absolute; top: 10%; left: 10%;',
-            'top-center': 'position: absolute; top: 10%; left: 50%; transform: translateX(-50%);',
-            'top-right': 'position: absolute; top: 10%; right: 10%;',
-            'middle-left': 'position: absolute; top: 50%; left: 10%; transform: translateY(-50%);',
-            'center': 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);',
-            'middle-right': 'position: absolute; top: 50%; right: 10%; transform: translateY(-50%);',
-            'bottom-left': 'position: absolute; bottom: 10%; left: 10%;',
-            'bottom-center': 'position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);',
-            'bottom-right': 'position: absolute; bottom: 10%; right: 10%;',
-        }
-
-        if position == 'custom':
-            x = config.get('text_custom_x', 50)
-            y = config.get('text_custom_y', 50)
-            return f'position: absolute; top: {y}%; left: {x}%; transform: translate(-50%, -50%);'
-
-        return position_map.get(position, position_map['center'])
-
-    def _get_metadata_position_styles(self, config: Dict) -> str:
-        """獲取元數據的位置樣式"""
-        # 簡化處理：元數據通常放在底部
-        metadata_size = config.get('metadata_size', 12)
-        metadata_color = config.get('metadata_color', '#666666')
-        return f'position: absolute; bottom: 20px; left: 20px; font-size: {metadata_size}px; color: {metadata_color};'
-
-    def _get_logo_position_styles(self, config: Dict) -> str:
-        """獲取 LOGO 位置的 CSS 樣式"""
-        logo_position = config.get('logo_position', 'bottom-right')
-        padding = config.get('padding', 60)
-
-        position_map = {
-            'top-left': f'top: {padding}px; left: {padding}px;',
-            'top-center': f'top: {padding}px; left: 50%; transform: translateX(-50%);',
-            'top-right': f'top: {padding}px; right: {padding}px;',
-            'middle-left': f'top: 50%; left: {padding}px; transform: translateY(-50%);',
-            'center': f'top: 50%; left: 50%; transform: translate(-50%, -50%);',
-            'middle-right': f'top: 50%; right: {padding}px; transform: translateY(-50%);',
-            'bottom-left': f'bottom: {padding}px; left: {padding}px;',
-            'bottom-center': f'bottom: {padding}px; left: 50%; transform: translateX(-50%);',
-            'bottom-right': f'bottom: {padding}px; right: {padding}px;',
-        }
-
-        if logo_position == 'custom':
-            x = config.get('logo_custom_x', 90)
-            y = config.get('logo_custom_y', 90)
-            return f'top: {y}%; left: {x}%; transform: translate(-50%, -50%);'
-
-        return position_map.get(logo_position, position_map['bottom-right'])
-
-    def _file_to_data_url(self, file_path: str) -> str:
-        """將本地檔案轉換為 data URL"""
-        import mimetypes
-        import base64
-        
-        # 獲取 MIME 類型
-        mime_type, _ = mimetypes.guess_type(file_path)
-        if not mime_type:
-            mime_type = 'application/octet-stream'
-        
-        # 讀取檔案內容
-        with open(file_path, 'rb') as f:
-            file_data = f.read()
-        
-        # 轉換為 base64
-        base64_data = base64.b64encode(file_data).decode('utf-8')
-        
-        # 建立 data URL
-        return f"data:{mime_type};base64,{base64_data}"
-    
-    def _html_to_image(self, html: str, dimensions: Dict, quality: int = 95) -> BytesIO:
-        """使用 Pillow 將內容轉換為圖片（替代 Playwright）"""
-        try:
-            from services.pillow_renderer import PillowRenderer
-            
-            # 從 HTML 中提取文字內容（簡化版本）
-            import re
-            from html import unescape
-            
-            # 提取標題
-            title_match = re.search(r'<div class="title"[^>]*>(.*?)</div>', html, re.DOTALL)
-            title = unescape(re.sub(r'<[^>]+>', '', title_match.group(1))) if title_match else ""
-            
-            # 提取內容
-            content_match = re.search(r'<div class="content"[^>]*>.*?<div[^>]*>(.*?)</div>', html, re.DOTALL)
-            content_text = unescape(re.sub(r'<[^>]+>', '', content_match.group(1))) if content_match else ""
-            
-            # 提取作者
-            author_match = re.search(r'<span class="author"[^>]*>(.*?)</span>', html)
-            author = unescape(re.sub(r'<[^>]+>', '', author_match.group(1))) if author_match else ""
-            
-            # 提取時間
-            time_match = re.search(r'<span class="time"[^>]*>(.*?)</span>', html)
-            time_text = unescape(re.sub(r'<[^>]+>', '', time_match.group(1))) if time_match else ""
-            
-            # 合併文字內容
-            full_text = f"{title}\n\n{content_text}"
-            if author or time_text:
-                full_text += f"\n\n{author} {time_text}".strip()
-            
-            # 使用 Pillow 渲染器
-            renderer = PillowRenderer(
-                default_width=dimensions["width"],
-                default_height=dimensions["height"]
-            )
-            
-            return renderer.render_text_card(
-                content=full_text,
-                width=dimensions["width"],
-                height=dimensions["height"],
-                background_color="#ffffff",
-                text_color="#333333",
-                font_size=32,
-                padding=60,
-                image_format="JPEG",
-                quality=quality
-            )
-                
-        except Exception as e:
-            logger.error(f"Pillow 渲染失敗: {e}")
-            raise Exception(f"渲染失敗: {e}")
+        return text
     
     def list_available_sizes(self) -> Dict[str, Dict]:
         """列出所有可用的尺寸"""
         return self.SIZES.copy()
-    
+
     def list_available_templates(self) -> List[str]:
         """列出所有可用的模板"""
         return ["modern", "card", "minimal"]
+
+    def save_image(self,
+                   content: Dict,
+                   size: str = "instagram_square",
+                   template: str = "modern",
+                   config: Optional[Dict] = None,
+                   logo_url: Optional[str] = None,
+                   quality: int = 95,
+                   purpose: str = "preview",
+                   custom_filename: Optional[str] = None) -> Dict:
+        """
+        渲染並保存圖片到指定路徑
+
+        Args:
+            content: 內容字典
+            size: 尺寸類型
+            template: 模板名稱
+            config: 自訂配置
+            logo_url: Logo URL
+            quality: 圖片品質
+            purpose: 用途 ("preview" 或 "publish")
+            custom_filename: 自訂檔名（不含副檔名）
+
+        Returns:
+            Dict: 包含檔案路徑和 URL 的結果
+        """
+        import os
+        import time
+
+        # 生成圖片
+        image_data = self.render_to_image(
+            content=content,
+            size=size,
+            template=template,
+            config=config,
+            logo_url=logo_url,
+            quality=quality,
+            purpose=purpose
+        )
+
+        # 決定檔案名稱和路徑
+        timestamp = int(time.time() * 1000)
+        if custom_filename:
+            filename = f"{custom_filename}.jpg"
+        elif purpose == "preview":
+            filename = f"preview_{timestamp}.jpg"
+        else:  # publish
+            filename = f"instagram_{timestamp}.jpg"
+
+        # 先保存到本地臨時文件，然後使用現有的 CDN 上傳工具
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+            temp_file.write(image_data.getvalue())
+            temp_path = temp_file.name
+
+        try:
+            # 使用CDN API上傳（修復權限問題）
+            import requests
+
+            with open(temp_path, 'rb') as f:
+                image_data_for_upload = f.read()
+
+            # CDN上傳API端點 - 動態檢測容器環境
+            import socket
+            try:
+                # 嘗試解析容器內部地址
+                socket.gethostbyname('forumkit-cdn')
+                upload_url = "http://forumkit-cdn:8080/upload"
+                logger.info("使用容器內部CDN地址")
+            except socket.gaierror:
+                # 回退到localhost（主機環境）
+                upload_url = "http://localhost:12001/upload"
+                logger.info("使用主機CDN地址")
+
+            # 上傳到CDN
+            files = {'file': (filename, image_data_for_upload, 'image/jpeg')}
+            data = {'subdir': 'social_media'}
+
+            response = requests.post(upload_url, files=files, data=data, timeout=10)
+
+            cdn_url = None
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    cdn_url = result.get('url')
+
+            if cdn_url:
+                # CDN 上傳成功
+                full_url = cdn_url
+                url_path = cdn_url
+                file_path = temp_path
+            else:
+                # CDN 上傳失敗，但對於發布用途強制使用CDN URL
+                cdn_base = (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/")
+
+                if cdn_base and purpose == "publish":
+                    # 強制使用CDN URL
+                    full_url = f"{cdn_base}/social_media/{filename}"
+                    url_path = full_url
+                    file_path = temp_path
+                    print(f"[WARNING] CDN上傳失敗，但強制使用CDN URL: {full_url}")
+                else:
+                    # 對於非發布用途或無CDN配置，報告錯誤
+                    error_msg = "CDN上傳失敗且無有效CDN配置"
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "filename": filename,
+                        "purpose": purpose,
+                        "cdn_configured": bool(cdn_base)
+                    }
+
+        finally:
+            # 清理臨時文件（如果還存在）
+            try:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            except:
+                pass
+
+        return {
+            "success": True,
+            "filename": filename,
+            "file_path": file_path,
+            "url_path": url_path,
+            "full_url": full_url,
+            "purpose": purpose,
+            "size": size,
+            "template": template,
+            "dimensions": self.SIZES.get(size, {}),
+            "file_size": len(image_data.getvalue())
+        }
+
 
 
 # 全局實例

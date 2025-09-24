@@ -15,9 +15,11 @@ from io import BytesIO
 import base64
 
 from utils.db import get_session
-from models.instagram import IGAccount, IGTemplate, IGPost, SchoolLogo, PostStatus
+from models.social_publishing import SocialAccount, ContentTemplate, SocialPost, PostStatus
+from models.instagram import SchoolLogo  # 保留 SchoolLogo，如果需要的話
 from models.base import Post as ForumPost
 from services.instagram_api_service import InstagramAPIService, InstagramAPIError
+from services.unified_post_renderer import get_renderer
 
 
 class IGSystemError(Exception):
@@ -31,20 +33,26 @@ class IGSystemError(Exception):
 
 @dataclass
 class TemplateConfig:
-    """統一的模板配置結構"""
-    # 基本設定
-    width: int = 1080
-    height: int = 1080
-    background_color: str = "#ffffff"
-    
-    # 內容設定
-    font_family: str = "Noto Sans TC"
-    font_size: int = 28
-    text_color: str = "#333333"
-    text_align: str = "left"
+    """統一的模板配置結構 - 不提供預設值，強制使用資料庫模板"""
+    # 基本設定 - 必須從資料庫模板提供
+    width: int
+    height: int
+    background_color: str
+
+    # 內容設定 - 必須從資料庫模板提供
+    font_family: str
+    font_size: int
+    text_color: str
+    padding: int
+    text_align: str = "left"  # 只保留非關鍵的預設值
     line_height: float = 1.5
     max_lines: int = 12
-    padding: int = 60
+
+    # 文字截斷設定
+    max_chars_per_line: int = 24  # 每行最大字元數
+    max_lines_with_photo: int = 6  # 有圖片時的最大行數
+    max_chars_per_line_with_photo: int = 24  # 有圖片時每行最大字元數
+    stacked_layout: bool = True  # 是否使用堆疊佈局
     
     # Logo 設定
     logo_enabled: bool = True
@@ -56,7 +64,23 @@ class TemplateConfig:
     show_author: bool = True
     show_timestamp: bool = True
     show_school: bool = True
-    
+
+    # 貼文ID設定
+    post_id_enabled: bool = True
+    post_id_format: str = "#{ID}"
+    post_id_position: str = "bottom-right"
+    post_id_size: int = 12
+    post_id_color: str = "#666666"
+    post_id_font: str = "Noto Sans TC"
+
+    # 時間戳設定
+    timestamp_enabled: bool = True
+    timestamp_format: str = "relative"
+    timestamp_position: str = "bottom-left"
+    timestamp_size: int = 12
+    timestamp_color: str = "#666666"
+    timestamp_font: str = "Noto Sans TC"
+
     # 樣式主題
     theme: str = "modern"  # modern, minimal, card
     
@@ -169,68 +193,197 @@ class IGTemplateEngine:
         except Exception as e:
             raise IGSystemError(f"HTML 渲染失敗: {str(e)}", "RENDER_HTML_ERROR")
     
-    def render_to_image(self, config: TemplateConfig, content: ContentData, 
-                       logo_url: str = None) -> RenderResult:
-        """渲染內容為圖片"""
+    def render_to_image(self, config: TemplateConfig, content: ContentData,
+                       logo_url: str = None, instagram_template_data: dict = None) -> RenderResult:
+        """渲染內容為圖片 - 使用統一渲染器"""
         try:
-            # 先生成 HTML
-            html = self.render_to_html(config, content, logo_url)
-            
-            # 使用 Playwright 渲染圖片
-            from services.html_renderer import HtmlRenderer
-            
-            renderer = HtmlRenderer(
-                viewport_width=config.width,
-                viewport_height=config.height
+            # 準備內容數據 - 統一格式
+            unified_content = {
+                "title": content.title or "",
+                "text": content.content or "",
+                "author": content.author or "",
+                "school_name": content.school_name or "",
+                "created_at": content.created_at.isoformat() if content.created_at else None,
+                "id": str(getattr(content, 'post_id', ''))
+            }
+
+            # 將 TemplateConfig 和 instagram_template_data 合併為統一配置
+            unified_config = self._convert_to_unified_config(config, instagram_template_data)
+
+            # 使用統一渲染器
+            from services.unified_post_renderer import get_renderer
+            renderer = get_renderer()
+
+            # 調用統一渲染器生成並保存圖片
+            save_result = renderer.save_image(
+                content=unified_content,
+                size="instagram_square",
+                template="modern",
+                config=unified_config,
+                logo_url=logo_url,
+                quality=95,
+                purpose="publish"  # 發布用高品質
             )
-            
-            # 渲染為 JPEG
-            image_buffer = renderer.render_html_to_image(
-                html, 
-                width=config.width, 
-                height=config.height,
-                image_type='jpeg', 
-                quality=92
-            )
-            
-            # 保存圖片
-            timestamp = int(time.time() * 1000)
-            filename = f"ig_post_{timestamp}.jpg"
-            
-            # 創建輸出目錄
-            output_dir = Path(self.upload_root) / 'public' / 'instagram'
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            image_path = output_dir / filename
-            with open(image_path, 'wb') as f:
-                f.write(image_buffer.getvalue())
-            
-            # 生成公開 URL
-            if self.cdn_base_url:
-                image_url = f"{self.cdn_base_url}/instagram/{filename}"
-            elif self.public_base_url:
-                image_url = f"{self.public_base_url}/uploads/public/instagram/{filename}"
+
+            if save_result["success"]:
+                return RenderResult(
+                    success=True,
+                    html_content="",  # 不再需要 HTML
+                    image_url=save_result["full_url"],
+                    image_path=save_result["file_path"],
+                    width=save_result["dimensions"].get("width", config.width),
+                    height=save_result["dimensions"].get("height", config.height),
+                    file_size=save_result["file_size"]
+                )
             else:
-                image_url = f"/uploads/public/instagram/{filename}"
-            
-            file_size = image_path.stat().st_size
-            
-            return RenderResult(
-                success=True,
-                html_content=html,
-                image_url=image_url,
-                image_path=str(image_path),
-                width=config.width,
-                height=config.height,
-                file_size=file_size
-            )
-            
+                raise IGSystemError("統一渲染器保存失敗", "UNIFIED_RENDER_ERROR")
+
         except Exception as e:
             return RenderResult(
                 success=False,
                 error_message=str(e),
                 error_code="RENDER_IMAGE_ERROR"
             )
+
+    def _convert_to_unified_config(self, config: TemplateConfig, instagram_template_data: dict = None) -> dict:
+        """將 TemplateConfig 和 Instagram 模板數據轉換為統一配置格式"""
+        # 基礎配置從 TemplateConfig 轉換 - 不提供預設值，必須有完整配置
+        unified_config = {
+            # 畫布設定 - 必須提供
+            "background_color": config.background_color,
+            "width": config.width,
+            "height": config.height,
+
+            # 文字樣式設定 - 必須提供
+            "font_family": config.font_family,
+            "primary_color": config.text_color,
+            "font_size_title": int(config.font_size * 1.2),
+            "font_size_content": config.font_size,
+            "line_height": config.line_height,
+            "padding": config.padding,
+
+            # 文字位置和對齊
+            "text_align": getattr(config, 'text_align', 'center'),
+            "text_position": "center",  # 預設置中
+
+            # 文字截斷設定 - 從 TemplateConfig 讀取
+            "max_lines": getattr(config, 'max_lines', 12),
+            "max_chars_per_line": getattr(config, 'max_chars_per_line', 24),
+            "max_lines_with_photo": getattr(config, 'max_lines_with_photo', 6),
+            "max_chars_per_line_with_photo": getattr(config, 'max_chars_per_line_with_photo', 24),
+
+            # Logo 設定
+            "logo_enabled": getattr(config, 'logo_enabled', True),
+            "logo_size": getattr(config, 'logo_size', 80),
+            "logo_position": getattr(config, 'logo_position', 'bottom-right'),
+            "logo_opacity": getattr(config, 'logo_opacity', 0.85),
+
+            # 其他預設值
+            "secondary_color": "#666666",
+            "accent_color": "#007acc",
+            "border_radius": 12,
+            "font_size_meta": 18,
+        }
+
+        # 如果有 Instagram 模板數據，進行詳細配置轉換
+        if instagram_template_data:
+            # 處理嵌套的圖片配置
+            if "image" in instagram_template_data:
+                image_config = instagram_template_data["image"]
+
+                # 基本設定
+                if "width" in image_config:
+                    unified_config["width"] = image_config["width"]
+                if "height" in image_config:
+                    unified_config["height"] = image_config["height"]
+                if "background" in image_config and "value" in image_config["background"]:
+                    unified_config["background_color"] = image_config["background"]["value"]
+                if "padding" in image_config:
+                    unified_config["padding"] = image_config["padding"]
+
+                # 卡片配置
+                if "cards" in image_config:
+                    cards = image_config["cards"]
+
+                    # 文字配置
+                    if "text" in cards:
+                        text_config = cards["text"]
+                        if "font" in text_config:
+                            unified_config["font_family"] = text_config["font"]
+                        if "size" in text_config:
+                            unified_config["font_size_content"] = text_config["size"]
+                        if "color" in text_config:
+                            unified_config["primary_color"] = text_config["color"]
+                        if "align" in text_config:
+                            unified_config["text_align"] = text_config["align"]
+                        if "lineSpacing" in text_config:
+                            unified_config["line_spacing"] = text_config["lineSpacing"]
+                        if "maxLines" in text_config:
+                            unified_config["max_lines"] = text_config["maxLines"]
+
+                    # Logo 配置
+                    if "logo" in cards:
+                        logo_config = cards["logo"]
+                        unified_config["logo_enabled"] = logo_config.get("enabled", False)
+                        unified_config["logo_size"] = logo_config.get("size", 80)
+                        unified_config["logo_position"] = logo_config.get("position", "top-right")
+                        unified_config["logo_opacity"] = logo_config.get("opacity", 0.8)
+
+                    # 時間戳配置
+                    if "timestamp" in cards:
+                        ts_config = cards["timestamp"]
+                        unified_config["timestamp_enabled"] = ts_config.get("enabled", False)
+                        unified_config["timestamp_position"] = ts_config.get("position", "bottom-right")
+                        unified_config["timestamp_size"] = ts_config.get("size", 18)
+                        unified_config["timestamp_color"] = ts_config.get("color", "#666666")
+
+                    # 貼文ID配置
+                    if "postId" in cards:
+                        pid_config = cards["postId"]
+                        unified_config["post_id_enabled"] = pid_config.get("enabled", False)
+                        unified_config["post_id_position"] = pid_config.get("position", "top-left")
+                        unified_config["post_id_size"] = pid_config.get("size", 20)
+                        unified_config["post_id_color"] = pid_config.get("color", "#0066cc")
+                        unified_config["post_id_text"] = pid_config.get("text", "")
+
+        # **重要修復**: 處理新的 TemplateConfig 平面字段
+        # 這些字段會覆蓋上面的嵌套配置，確保新模板系統優先
+
+        # 貼文ID設定 (新的平面字段)
+        if hasattr(config, 'post_id_enabled'):
+            unified_config["post_id_enabled"] = getattr(config, 'post_id_enabled', False)
+        if hasattr(config, 'post_id_format'):
+            unified_config["post_id_format"] = getattr(config, 'post_id_format', '#{ID}')
+        if hasattr(config, 'post_id_position'):
+            unified_config["post_id_position"] = getattr(config, 'post_id_position', 'bottom-right')
+        if hasattr(config, 'post_id_size'):
+            unified_config["post_id_size"] = getattr(config, 'post_id_size', 12)
+        if hasattr(config, 'post_id_color'):
+            unified_config["post_id_color"] = getattr(config, 'post_id_color', '#666666')
+        if hasattr(config, 'post_id_font'):
+            unified_config["post_id_font"] = getattr(config, 'post_id_font', 'Noto Sans TC')
+
+        # 時間戳設定 (新的平面字段)
+        if hasattr(config, 'timestamp_enabled'):
+            unified_config["timestamp_enabled"] = getattr(config, 'timestamp_enabled', False)
+        if hasattr(config, 'timestamp_format'):
+            unified_config["timestamp_format"] = getattr(config, 'timestamp_format', 'relative')
+        if hasattr(config, 'timestamp_position'):
+            unified_config["timestamp_position"] = getattr(config, 'timestamp_position', 'bottom-left')
+        if hasattr(config, 'timestamp_size'):
+            unified_config["timestamp_size"] = getattr(config, 'timestamp_size', 12)
+        if hasattr(config, 'timestamp_color'):
+            unified_config["timestamp_color"] = getattr(config, 'timestamp_color', '#666666')
+        if hasattr(config, 'timestamp_font'):
+            unified_config["timestamp_font"] = getattr(config, 'timestamp_font', 'Noto Sans TC')
+
+        print(f"[DEBUG] _convert_to_unified_config 最終結果:")
+        print(f"[DEBUG] post_id_enabled: {unified_config.get('post_id_enabled')}")
+        print(f"[DEBUG] post_id_format: {unified_config.get('post_id_format')}")
+        print(f"[DEBUG] post_id_position: {unified_config.get('post_id_position')}")
+        print(f"[DEBUG] post_id_size: {unified_config.get('post_id_size')}")
+
+        return unified_config
     
     def _get_modern_theme(self, config: TemplateConfig) -> str:
         """現代風格主題 CSS"""
@@ -517,17 +670,17 @@ class IGUnifiedSystem:
         """獲取模板配置"""
         try:
             with get_session() as db:
-                template = db.query(IGTemplate).filter(IGTemplate.id == template_id).first()
-                
+                template = db.query(ContentTemplate).filter(ContentTemplate.id == template_id).first()
+
                 if not template:
                     raise IGSystemError(f"模板 {template_id} 不存在", "TEMPLATE_NOT_FOUND")
-                
-                # 從舊格式轉換為新格式
-                template_data = template.template_data or {}
-                
+
+                # 從模板配置轉換為新格式
+                template_data = template.config or {}
+
                 # 轉換邏輯：支持舊有的 JSON 結構
                 config_dict = self._convert_legacy_template_data(template_data)
-                
+
                 return TemplateConfig.from_dict(config_dict)
                 
         except Exception as e:
@@ -572,10 +725,10 @@ class IGUnifiedSystem:
         """獲取 Logo URL - 使用新的 Logo 處理系統"""
         try:
             from services.logo_handler import get_logo_handler
-            
+
             with get_session() as db:
-                account = db.query(IGAccount).filter(IGAccount.id == account_id).first()
-                
+                account = db.query(SocialAccount).filter(SocialAccount.id == account_id).first()
+
                 if not account:
                     return ""
                 
@@ -645,8 +798,12 @@ class IGUnifiedSystem:
             # 獲取 Logo URL
             logo_url = self.get_logo_url(account_id, template_config)
             
-            # 渲染圖片
-            result = self.template_engine.render_to_image(template_config, content_data, logo_url)
+            # 渲染圖片，傳遞原始模板數據以獲取獨立的時間戳和貼文ID設定
+            with get_session() as db:
+                template = db.query(ContentTemplate).filter(ContentTemplate.id == template_id).first()
+                instagram_template_data = template.config if template else {}
+
+            result = self.template_engine.render_to_image(template_config, content_data, logo_url, instagram_template_data)
             
             return result
             
@@ -655,80 +812,94 @@ class IGUnifiedSystem:
                 raise
             raise IGSystemError(f"預覽貼文失敗: {str(e)}", "PREVIEW_ERROR")
     
-    def publish_post(self, ig_post_id: int) -> Dict[str, Any]:
+    def publish_post(self, social_post_id: int) -> Dict[str, Any]:
         """發布貼文到 Instagram"""
         try:
             with get_session() as db:
-                ig_post = db.query(IGPost).filter(IGPost.id == ig_post_id).first()
-                
-                if not ig_post:
-                    raise IGSystemError(f"IG 貼文 {ig_post_id} 不存在", "IG_POST_NOT_FOUND")
+                social_post = db.query(SocialPost).filter(SocialPost.id == social_post_id).first()
+
+                if not social_post:
+                    raise IGSystemError(f"社交貼文 {social_post_id} 不存在", "SOCIAL_POST_NOT_FOUND")
                 
                 # 獲取相關資源
-                account = ig_post.account
-                template = ig_post.template
-                
+                account = social_post.account
+                template = social_post.template
+
                 if not account or account.status != 'active':
                     raise IGSystemError("Instagram 帳號不可用", "ACCOUNT_UNAVAILABLE")
-                
+
+                # 獲取內容數據（無論是否已生成圖片都需要）
+                content_data = self.get_content_data(
+                    social_post.forum_post_id,
+                    getattr(social_post, 'custom_caption', ''),
+                    getattr(social_post, 'hashtags', [])
+                )
+
                 # 生成圖片（如果還沒生成）
-                if not ig_post.generated_image:
+                if not social_post.generated_image_url:
                     template_config = self.get_template_config(template.id)
-                    content_data = self.get_content_data(
-                        ig_post.forum_post_id,
-                        ig_post.custom_caption,
-                        ig_post.hashtags
-                    )
                     logo_url = self.get_logo_url(account.id, template_config)
-                    
+
+                    # 獲取原始模板數據以支持獨立的時間戳和貼文ID設定
+                    instagram_template_data = template.config if template.config else {}
+
                     render_result = self.template_engine.render_to_image(
-                        template_config, content_data, logo_url
+                        template_config, content_data, logo_url, instagram_template_data
                     )
-                    
+
                     if not render_result.success:
-                        raise IGSystemError(f"圖片生成失敗: {render_result.error_message}", 
+                        raise IGSystemError(f"圖片生成失敗: {render_result.error_message}",
                                           "IMAGE_GENERATION_ERROR")
-                    
+
                     # 更新圖片 URL
-                    ig_post.generated_image = render_result.image_url
+                    social_post.generated_image_url = render_result.image_url
                     db.commit()
-                
+
                 # 準備發布內容
-                caption = self._prepare_caption(ig_post, content_data)
+                caption = self._prepare_caption(social_post, content_data)
                 
-                # 發布到 Instagram
+                # 發布到 Instagram - 使用 Page ID 和 Token 動態解析 IG User ID
+                page_id = account.page_id or account.platform_user_id  # 優先使用 page_id，回退到 platform_user_id
+                page_token = account.long_lived_access_token or account.access_token
+
+                if not page_id or not page_token:
+                    raise IGSystemError("帳號缺少 Instagram 配置 (page_id 或 token)", "MISSING_IG_CONFIG")
+
+                # 動態解析 Instagram Business Account ID
+                try:
+                    ig_user_id = self.api_service.resolve_ig_user_id(page_id, page_token)
+                except Exception as e:
+                    raise IGSystemError(f"無法解析 Instagram Business Account ID: {str(e)}", "IG_USER_ID_RESOLVE_ERROR")
+
                 result = self.api_service.publish_post(
-                    account.ig_user_id,
-                    account.page_token,
-                    ig_post.generated_image,
+                    ig_user_id,
+                    page_token,
+                    social_post.generated_image_url,
                     caption
                 )
-                
+
                 # 更新發布狀態
                 if result.get('success'):
-                    ig_post.status = PostStatus.published
-                    ig_post.ig_media_id = result.get('media_id')
-                    ig_post.ig_post_url = result.get('post_url')
-                    ig_post.published_at = datetime.now(timezone.utc)
-                    ig_post.error_message = None
-                    
-                    # 更新帳號統計
-                    account.total_posts += 1
-                    account.last_post_at = ig_post.published_at
-                    
-                    # 更新模板使用次數
-                    template.usage_count += 1
-                    
+                    social_post.status = PostStatus.published
+                    if hasattr(social_post, 'published_at'):
+                        social_post.published_at = datetime.now(timezone.utc)
+                    if hasattr(social_post, 'error_message'):
+                        social_post.error_message = None
+
+                    # 更新模板使用次數（如果模板有該欄位）
+                    if hasattr(template, 'usage_count'):
+                        template.usage_count += 1
+
                 else:
-                    ig_post.status = PostStatus.failed
-                    ig_post.error_message = result.get('error', '發布失敗')
-                    ig_post.retry_count += 1
-                
+                    social_post.status = PostStatus.failed
+                    if hasattr(social_post, 'error_message'):
+                        social_post.error_message = result.get('error', '發布失敗')
+
                 db.commit()
-                
+
                 return {
                     "success": result.get('success', False),
-                    "ig_post_id": ig_post.id,
+                    "social_post_id": social_post.id,
                     "media_id": result.get('media_id'),
                     "post_url": result.get('post_url'),
                     "error_message": result.get('error')
@@ -740,16 +911,74 @@ class IGUnifiedSystem:
             raise IGSystemError(f"發布貼文失敗: {str(e)}", "PUBLISH_ERROR")
     
     def _convert_legacy_template_data(self, template_data: Dict) -> Dict:
-        """轉換舊版模板數據格式為新格式"""
+        """轉換舊版和新版模板數據格式為標準格式"""
+        if not template_data:
+            return {}
+
+        # 如果已經是新格式（直接包含 TemplateConfig 欄位），則直接返回
+        if any(key in template_data for key in ['background_color', 'font_family', 'text_color']):
+            return template_data
+
+        # 轉換舊版嵌套格式
         config = {}
-        
+
         # 背景設定
         if 'background' in template_data:
             bg = template_data['background']
-            if isinstance(bg, dict):
-                config['background_color'] = bg.get('color', '#ffffff')
-        
-        # 內容設定
+            if isinstance(bg, dict) and 'color' in bg:
+                config['background_color'] = bg['color']
+
+        # Canvas 設定（新版前端格式）
+        if 'canvas' in template_data:
+            canvas = template_data['canvas']
+            if isinstance(canvas, dict):
+                if 'background' in canvas:
+                    config['background_color'] = canvas['background']
+                if 'width' in canvas:
+                    config['width'] = canvas['width']
+                if 'height' in canvas:
+                    config['height'] = canvas['height']
+
+        # Post 設定（新版前端格式）
+        if 'post' in template_data:
+            post = template_data['post']
+            if isinstance(post, dict):
+                # 文字設定
+                if 'text' in post:
+                    text = post['text']
+                    if isinstance(text, dict):
+                        config['font_family'] = text.get('font', 'Noto Sans TC')
+                        config['font_size'] = text.get('size', 28)
+                        config['text_color'] = text.get('color', '#333333')
+                        config['text_align'] = text.get('align', 'center')
+
+                # Logo 設定
+                if 'logo' in post:
+                    logo = post['logo']
+                    if isinstance(logo, dict):
+                        config['logo_enabled'] = logo.get('enabled', True)
+                        config['logo_size'] = logo.get('size', 80)
+
+                # 文字排版設定
+                if 'textLayout' in post:
+                    text_layout = post['textLayout']
+                    if isinstance(text_layout, dict):
+                        # 預設使用 textOnly 的設定，如果是有圖片的貼文會動態調整
+                        if 'textOnly' in text_layout:
+                            text_only = text_layout['textOnly']
+                            if isinstance(text_only, dict):
+                                config['max_lines'] = text_only.get('maxLines', 8)
+                                config['max_chars_per_line'] = text_only.get('maxCharsPerLine', 24)
+
+                        # 同時保存 withPhoto 的設定以備後用
+                        if 'withPhoto' in text_layout:
+                            with_photo = text_layout['withPhoto']
+                            if isinstance(with_photo, dict):
+                                config['max_lines_with_photo'] = with_photo.get('maxLines', 6)
+                                config['max_chars_per_line_with_photo'] = with_photo.get('maxCharsPerLine', 24)
+                                config['stacked_layout'] = with_photo.get('stacked', True)
+
+        # 內容設定（舊版格式）
         if 'content_block' in template_data:
             content = template_data['content_block']
             if isinstance(content, dict):
@@ -758,46 +987,185 @@ class IGUnifiedSystem:
                 config['text_align'] = content.get('align', 'left')
                 config['max_lines'] = content.get('max_lines', 12)
                 config['font_family'] = content.get('font_family', 'Noto Sans TC')
-        
-        # Logo 設定
+
+        # Logo 設定（舊版格式）
         if 'logo' in template_data:
             logo = template_data['logo']
             if isinstance(logo, dict):
                 config['logo_enabled'] = logo.get('enabled', True)
                 config['logo_size'] = logo.get('size', 80)
                 config['logo_shape'] = logo.get('shape', 'circle')
-        
+
         # 時間戳設定
         if 'timestamp' in template_data:
             ts = template_data['timestamp']
             if isinstance(ts, dict):
                 config['show_timestamp'] = ts.get('enabled', True)
-        
+                config['timestamp_font_size'] = ts.get('font_size', 16)
+                config['timestamp_color'] = ts.get('color', '#666666')
+                config['timestamp_font_family'] = ts.get('font_family', 'Noto Sans TC')
+
+        # 貼文ID設定
+        if 'post_id' in template_data:
+            pid = template_data['post_id']
+            if isinstance(pid, dict):
+                config['show_post_id'] = pid.get('enabled', True)
+                config['post_id_font_size'] = pid.get('font_size', 14)
+                config['post_id_color'] = pid.get('color', '#999999')
+                config['post_id_font_family'] = pid.get('font_family', 'Noto Sans TC')
+
+        # 添加預設值以確保配置完整
+        defaults = {
+            'width': 1080,
+            'height': 1080,
+            'background_color': '#FFFFFF',
+            'font_family': 'Noto Sans TC',
+            'font_size': 28,
+            'text_color': '#333333',
+            'padding': 20,
+            'text_align': 'center',
+            'line_height': 1.5,
+            'max_lines': 12,
+            'max_chars_per_line': 24,
+            'max_lines_with_photo': 6,
+            'max_chars_per_line_with_photo': 24,
+            'stacked_layout': True
+        }
+
+        for key, default_value in defaults.items():
+            if key not in config:
+                config[key] = default_value
+
+        # 檢查必要配置項，現在所有項目都應該有值
+        required_keys = ['width', 'height', 'background_color', 'font_family', 'font_size', 'text_color', 'padding']
+        missing_keys = [key for key in required_keys if key not in config]
+        if missing_keys:
+            raise ValueError(f"模板配置仍然缺少必要項目: {missing_keys}。")
+
         return config
     
-    def _prepare_caption(self, ig_post: IGPost, content_data: ContentData) -> str:
-        """準備 Instagram 文案"""
+    def _prepare_caption(self, social_post: SocialPost, content_data: ContentData) -> str:
+        """準備 Instagram 文案 - 使用新的 caption 模板結構"""
+        try:
+            # 獲取模板配置
+            template = social_post.template
+            if not template or not template.config:
+                raise IGSystemError("貼文缺少必要的模板配置", "MISSING_TEMPLATE")
+
+            caption_config = template.config.get('caption', {})
+            if not caption_config or not caption_config.get('enabled', False):
+                raise IGSystemError("模板未啟用文案生成功能", "CAPTION_DISABLED")
+
+            # 使用新的模板結構生成文案
+            return self._generate_caption_from_template(
+                caption_config,
+                social_post,
+                content_data,
+                [social_post]  # 單一貼文作為輪播列表
+            )
+
+        except IGSystemError:
+            # 重新拋出 IGSystemError
+            raise
+        except Exception as e:
+            logger.error(f"文案生成失敗: {e}")
+            raise IGSystemError(f"文案生成失敗: {str(e)}", "CAPTION_GENERATION_FAILED")
+
+
+    def _generate_caption_from_template(self, caption_config: dict, social_post: SocialPost, content_data: ContentData, posts_list: list) -> str:
+        """使用新的 caption 模板生成文案"""
         caption_parts = []
-        
-        # 使用自訂文案或內容
-        if ig_post.custom_caption:
-            caption_parts.append(ig_post.custom_caption)
-        elif content_data.title:
-            caption_parts.append(content_data.title)
-        elif content_data.content:
-            # 截取前 100 字符作為文案
-            short_content = content_data.content[:100]
-            if len(content_data.content) > 100:
-                short_content += "..."
-            caption_parts.append(short_content)
-        
-        # 添加標籤
-        if ig_post.hashtags:
-            hashtags = [f"#{tag}" for tag in ig_post.hashtags if tag]
-            if hashtags:
-                caption_parts.append(" ".join(hashtags))
-        
-        return "\n\n".join(caption_parts)
+
+        # 處理開頭區段
+        single_config = caption_config.get('single', {})
+        header_config = single_config.get('header', {})
+        if header_config.get('enabled', False) and header_config.get('content'):
+            header_text = self._replace_template_variables(
+                header_config['content'],
+                content_data,
+                social_post,
+                is_footer=False
+            )
+            caption_parts.append(header_text)
+
+        # 處理重複區段（每個貼文）
+        repeating_config = caption_config.get('repeating', {})
+        for post in posts_list:
+            post_content_data = content_data  # 目前只有一個貼文
+
+            post_parts = []
+
+            # ID 格式
+            id_format_config = repeating_config.get('idFormat', {})
+            if id_format_config.get('enabled', False) and id_format_config.get('format'):
+                id_text = self._replace_template_variables(
+                    id_format_config['format'],
+                    post_content_data,
+                    post,
+                    is_footer=False
+                )
+                post_parts.append(id_text)
+
+            # 貼文內容
+            content_config = repeating_config.get('content', {})
+            if content_config.get('enabled', False) and content_config.get('template'):
+                content_text = self._replace_template_variables(
+                    content_config['template'],
+                    post_content_data,
+                    post,
+                    is_footer=False
+                )
+                post_parts.append(content_text)
+
+            # 分隔線
+            separator_config = repeating_config.get('separator', {})
+            if separator_config.get('enabled', False) and separator_config.get('style'):
+                post_parts.append(separator_config['style'])
+
+            if post_parts:
+                caption_parts.append('\n'.join(post_parts))
+
+        # 處理結尾區段
+        footer_config = single_config.get('footer', {})
+        if footer_config.get('enabled', False) and footer_config.get('content'):
+            footer_text = self._replace_template_variables(
+                footer_config['content'],
+                content_data,
+                social_post,
+                is_footer=True
+            )
+            caption_parts.append(footer_text)
+
+        # 處理 hashtags
+        hashtags_config = caption_config.get('hashtags', {})
+        if hashtags_config.get('enabled', False) and hashtags_config.get('tags'):
+            tags = hashtags_config['tags'][:hashtags_config.get('maxTags', 5)]
+            hashtag_text = ' '.join([f'#{tag}' for tag in tags if tag.strip()])
+            if hashtag_text:
+                caption_parts.append(hashtag_text)
+
+        return '\n\n'.join(caption_parts)
+
+    def _replace_template_variables(self, template: str, content_data: ContentData, social_post: SocialPost, is_footer: bool = False) -> str:
+        """替換模板變數
+        注意: 已移除 {link} 參數支援，因為 Instagram 不支援在說明文字放連結
+        """
+        result = template
+
+        # 基本變數替換
+        variables = {
+            'id': str(getattr(social_post, 'forum_post_id', '') or getattr(social_post, 'id', '')),
+            'content': content_data.content or '',
+            'author': content_data.author or '',
+            'reply_to_author': getattr(content_data, 'reply_to_author', '') or '',
+            'reply_to_content': getattr(content_data, 'reply_to_content', '') or '',
+        }
+
+        # 執行變數替換
+        for key, value in variables.items():
+            result = result.replace(f'{{{key}}}', str(value))
+
+        return result
 
 
 # 導出主要類

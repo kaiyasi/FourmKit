@@ -427,8 +427,17 @@ def update_template_config(template_id: int):
             # 更新配置
             if 'config' in data:
                 config_data = data['config']
+                print(f"[DEBUG] 收到的 config_data: {config_data}")
+                print(f"[DEBUG] post_id_format 在 config_data 中: {'post_id_format' in config_data}")
+                if 'post_id_format' in config_data:
+                    print(f"[DEBUG] post_id_format 值: {config_data['post_id_format']}")
+
                 template_config = TemplateConfig.from_dict(config_data)
-                template.template_data = template_config.to_dict()
+                converted_data = template_config.to_dict()
+                print(f"[DEBUG] 轉換後的 converted_data: {converted_data}")
+                print(f"[DEBUG] post_id_format 在轉換後: {'post_id_format' in converted_data}")
+
+                template.template_data = converted_data
             
             # 更新其他字段
             if 'name' in data:

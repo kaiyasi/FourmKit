@@ -728,8 +728,9 @@ export default function AdminUsersPage() {
                     </button>
                     <button
                       onClick={() => toggleSuspendUser(user)}
-                      className={`px-2 py-1.5 text-xs rounded-lg border transition-colors flex items-center justify-center gap-1 ${ (suspendStatus[user.id]===true) ? 'text-green-700 border-green-300 hover:bg-green-50' : 'text-amber-700 border-amber-300 hover:bg-amber-50'}`}
-                      title={(suspendStatus[user.id]===true) ? '取消註銷（恢復帳號）' : '註銷帳號（封鎖 Email + 最近 IP）'}
+                      disabled={user.username === 'Kaiyasi'}
+                      className={`px-2 py-1.5 text-xs rounded-lg border transition-colors flex items-center justify-center gap-1 ${ (suspendStatus[user.id]===true) ? 'text-green-700 border-green-300 hover:bg-green-50' : 'text-amber-700 border-amber-300 hover:bg-amber-50'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={user.username === 'Kaiyasi' ? '特殊帳號不可註銷' : ((suspendStatus[user.id]===true) ? '取消註銷（恢復帳號）' : '註銷帳號（封鎖 Email + 最近 IP）')}
                     >
                       <AlertTriangle className="w-3 h-3" />
                       {(suspendStatus[user.id]===true) ? '取消註銷' : '註銷帳號'}
@@ -998,7 +999,7 @@ export default function AdminUsersPage() {
               </div>
             </div>
             
-            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[50vh] space-y-3">
+            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[30vh] space-y-3">
               <h3 className="font-semibold text-fg mb-2 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 活動紀錄
