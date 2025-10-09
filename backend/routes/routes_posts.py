@@ -7,10 +7,11 @@ from utils.db import get_session
 from utils.auth import get_effective_user_id
 from utils.ratelimit import get_client_ip
 from models import Post, Media, User, School, SchoolSetting, Comment
+from models.comments import PostReaction
 from utils.upload_validation import is_allowed, sniff_kind
 from utils.sanitize import sanitize_content
 from utils.config_handler import load_config
-from utils.ratelimit import rate_limit
+from utils.ratelimit import rate_limit, track_and_check_user_ip
 from utils.school_permissions import can_post_to_school, filter_posts_by_permissions
 from utils.admin_events import log_user_action
 import uuid, os
@@ -55,11 +56,19 @@ def _get_author_display_name(user: User, client_id: str = None) -> str:
     except Exception:
         return '匿名'
 
+def _post_reaction_stats(s: Session, pid: int) -> dict:
+    """計算貼文的反應統計"""
+    types = ["like","dislike","love","laugh","angry"]
+    out = {}
+    for t in types:
+        out[t] = int(s.query(func.count(PostReaction.id)).filter(PostReaction.post_id==pid, PostReaction.reaction_type==t).scalar() or 0)
+    return out
+
 def _markdown_to_html(md: str) -> str:
     """將Markdown轉換為HTML"""
     if not md:
         return ""
-    
+
     # 檢測是否已經是HTML格式（包含HTML標籤）
     if re.search(r'<[^>]+>', md):
         # 如果已經是HTML，直接返回，但進行安全清理
@@ -69,7 +78,7 @@ def _markdown_to_html(md: str) -> str:
     # 先轉義HTML特殊字符
     def escape_html(s: str) -> str:
         return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-    
+
     # 處理程式碼區塊（先保存）
     code_blocks = []
     def save_code_block(match):
@@ -80,6 +89,10 @@ def _markdown_to_html(md: str) -> str:
     
     # 轉義HTML
     md = escape_html(md)
+
+    # 保護被反斜線轉義的 Markdown 符號（目前支援 *）
+    ESCAPED_ASTERISK_TOKEN = '__ESCAPED_ASTERISK__'
+    md = re.sub(r'\\\*', ESCAPED_ASTERISK_TOKEN, md)
     
     # 處理標題（在段落處理之前）
     md = re.sub(r'^#{6}\s*(.+)$', r'<h6>\1</h6>', md, flags=re.MULTILINE)
@@ -167,7 +180,10 @@ def _markdown_to_html(md: str) -> str:
         return f'<pre><code>{escape_html(code)}</code></pre>'
     
     html = re.sub(r'__CODE_BLOCK_(\d+)__', restore_code_block, html)
-    
+
+    # 還原被保護的符號
+    html = html.replace(ESCAPED_ASTERISK_TOKEN, '*')
+
     return html
 
 def _now_tz() -> datetime:
@@ -520,18 +536,21 @@ def list_posts():
                         if '/' in relative_part:
                             cover_path = f"public/{relative_part}"
 
+            media_count = int(count_map.get(p.id, 0))
             items.append({
                 "id": p.id,
                 "content": _markdown_to_html(p.content),
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
-                "media_count": int(count_map.get(p.id, 0)),
+                "media_count": media_count,
+                "has_media": media_count > 0,  # 新增：是否包含圖片附件
                 "cover_path": cover_path, # 前端可能需要相對路徑
                 "cover_url": cover_url,   # 完整的、可直接使用的 URL
                 "school_id": p.school_id,
                 "school": school_info,
                 "school_name": school_name,
                 "comment_count": int((comment_map.get(p.id) if 'comment_map' in locals() else 0) or 0),
+                "reaction_counts": _post_reaction_stats(s, p.id),
                 "is_pinned": bool(getattr(p, "is_pinned", False)),
                 "is_advertisement": bool(getattr(p, "is_advertisement", False)),
                 "is_announcement": bool(getattr(p, "is_announcement", False)),
@@ -761,21 +780,45 @@ def list_posts_compat():
                         if '/' in relative_part:
                             cover_path = f"public/{relative_part}"
 
+            media_count = int(count_map.get(p.id, 0))
+
+            # 獲取完整的媒體列表（用於 IG 模板預覽）
+            media_list = []
+            try:
+                post_medias = s.query(Media).filter(
+                    and_(
+                        Media.post_id == p.id,
+                        Media.status == "approved",
+                        Media.is_deleted == False
+                    )
+                ).order_by(Media.id.asc()).all()
+
+                # 直接使用資料庫中的相對路徑，不轉換為 CDN URL
+                for m in post_medias:
+                    if m.path:
+                        media_list.append(m.path)
+            except Exception:
+                pass
+
             items.append({
                 "id": p.id,
                 "content": _markdown_to_html(p.content),
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
-                "media_count": int(count_map.get(p.id, 0)),
+                "media_count": media_count,
+                "has_media": media_count > 0,  # 新增：是否包含圖片附件
+                "media": media_list,  # 完整的媒體列表（URL 陣列）
                 "cover_path": cover_path, # 前端可能需要相對路徑
                 "cover_url": cover_url,   # 完整的、可直接使用的 URL
                 "school_id": (p.school_id or None),
                 "school": school_info,
                 "school_name": school_name,
                 "comment_count": int(comment_map.get(p.id, 0)),
+                "reaction_counts": _post_reaction_stats(s, p.id),
                 "is_pinned": bool(getattr(p, "is_pinned", False)),
                 "is_advertisement": bool(getattr(p, "is_advertisement", False)),
                 "is_announcement": bool(getattr(p, "is_announcement", False)),
+                "announcement_type": getattr(p, "announcement_type", None),  # 添加 announcement_type 欄位
                 "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
                 "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
             })
@@ -873,6 +916,7 @@ def get_post(pid: int):
             "school_id": (p.school_id or None),
             "school": school_info,
             "media": media_items,
+            "has_media": len(media_items) > 0,  # 新增：是否包含圖片附件
             "is_announcement": bool(getattr(p, "is_announcement", False)),
             "announcement_type": getattr(p, "announcement_type", None),
             "is_advertisement": bool(getattr(p, "is_advertisement", False)),
@@ -885,6 +929,7 @@ def get_post(pid: int):
 
 @bp.post("/create")
 @rate_limit(calls=5, per_seconds=60, by='client')
+@rate_limit(calls=5, per_seconds=60, by='user')
 def create_post():
     """建立發文（舊路由）。
     與 /api/posts 相同規則：內容走 clean_html，套用 min_post_chars；有附件請改用 /api/posts/with-media。
@@ -892,6 +937,8 @@ def create_post():
     uid = get_effective_user_id()
     if uid is None:
         abort(401)
+    # CAPTCHA Gate（若此 IP 被標記需要驗證；管理員豁免在取得 user 後處理）
+    ip_for_gate = get_client_ip()
     
     data = request.get_json() or {}
     content = sanitize_content((data.get("content") or "").strip(), "markdown")
@@ -932,6 +979,17 @@ def create_post():
         user = s.query(User).get(uid)
         if not user:
             return _wrap_err("USER_NOT_FOUND", "用戶不存在", 404)
+        # 若需要 CAPTCHA 且非管理員，要求驗證
+        try:
+            from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
+            if user.role not in ['dev_admin','admin'] and is_captcha_required(ip_for_gate):
+                captcha_token = (request.headers.get('X-Captcha-Token') or (request.json or {}).get('captcha_token') or '').strip() if request.is_json else (request.headers.get('X-Captcha-Token') or '')
+                if not verify_captcha(captcha_token):
+                    return _wrap_err('CAPTCHA_REQUIRED', '需要通過驗證碼以繼續', 403)
+                else:
+                    clear_captcha_requirement(ip_for_gate)
+        except Exception:
+            pass
         
         # 確定目標學校ID
         target_school_id = None
@@ -994,6 +1052,14 @@ def create_post():
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
+        except Exception:
+            pass
+        # 風控：同一使用者 24 小時不同 IP 數量限制（管理員豁免）
+        try:
+            if user.role not in ['dev_admin', 'admin']:
+                allowed, cnt, th = track_and_check_user_ip(int(uid), p.ip)
+                if not allowed:
+                    return _wrap_err('TOO_MANY_IPS', f'此帳號 24 小時內使用過過多來源 IP（{cnt}/{th}）', 429)
         except Exception:
             pass
         
@@ -1092,6 +1158,7 @@ def upload_media():
 
 @bp.post("")
 @rate_limit(calls=5, per_seconds=60, by='client')
+@rate_limit(calls=5, per_seconds=60, by='user')
 def create_post_compat():
     """Compatibility: POST /api/posts
     Accepts JSON { content, client_tx_id? } and returns wrapper with post object.
@@ -1128,9 +1195,21 @@ def create_post_compat():
     except Exception:
         reply_to_id = None
 
+    ip_for_gate = get_client_ip()
     with get_session() as s:
         # 獲取用戶信息檢查是否為廣告帳號
         user = s.query(User).get(uid)
+        # CAPTCHA Gate for non-admin
+        try:
+            from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
+            if user and user.role not in ['dev_admin','admin'] and is_captcha_required(ip_for_gate):
+                captcha_token = (request.headers.get('X-Captcha-Token') or (request.json or {}).get('captcha_token') or '').strip() if request.is_json else (request.headers.get('X-Captcha-Token') or '')
+                if not verify_captcha(captcha_token):
+                    return _wrap_err('CAPTCHA_REQUIRED', '需要通過驗證碼以繼續', 403)
+                else:
+                    clear_captcha_requirement(ip_for_gate)
+        except Exception:
+            pass
         want_ad = bool(data.get("is_advertisement", False))
         is_advertisement = bool(user and user.role in ['dev_admin','commercial'] and want_ad)
         
@@ -1183,6 +1262,14 @@ def create_post_compat():
             p.ip = get_client_ip()
         except Exception:
             pass
+        # 風控：同一使用者 24 小時不同 IP 數量限制
+        try:
+            if user and user.role not in ['dev_admin', 'admin']:
+                allowed, cnt, th = track_and_check_user_ip(int(uid), p.ip)
+                if not allowed:
+                    return _wrap_err('TOO_MANY_IPS', f'此帳號 24 小時內使用過過多來源 IP（{cnt}/{th}）', 429)
+        except Exception:
+            pass
         s.add(p); s.flush(); s.refresh(p)
         s.commit()
         # 記錄事件
@@ -1217,6 +1304,71 @@ def create_post_compat():
                     is_important=is_announcement,
                     send_webhook=True
                 )
+        except Exception:
+            pass
+        # 偵測 @提及 並寫入通知中心（最佳努力，不影響主流程）
+        try:
+            from services.notification_service import NotificationService
+            # 從內容中抓取被提及的使用者
+            mentioned_user_ids = NotificationService._extract_mentions(p.content or '', s)  # type: ignore[attr-defined]
+            if mentioned_user_ids:
+                # 準備作者顯示名（與前端一致的匿名/代號邏輯）
+                client_id = request.headers.get("X-Client-Id", "").strip()
+                author_user = s.query(User).get(uid)
+                author_label = _get_author_display_name(author_user, client_id)
+                snippet = (p.content or '')
+                if len(snippet) > 120:
+                    snippet = snippet[:120] + '…'
+                for target_uid in mentioned_user_ids:
+                    try:
+                        NotificationService.create_notification(
+                            user_id=int(target_uid),
+                            notification_type='mention',
+                            title=f'{author_label} 在貼文中提及了您',
+                            content=snippet,
+                            room_id=None,
+                            message_id=None,
+                            from_user_id=int(uid),
+                            session=s,
+                        )
+                        # 若該用戶在線，嘗試即時推播
+                        try:
+                            from services.socket_chat_service import SocketChatService
+                            SocketChatService.notify_user(int(target_uid), 'mention', {
+                                'source': 'post',
+                                'post_id': int(p.id),
+                                'by': author_label,
+                                'snippet': snippet,
+                            })
+                        except Exception:
+                            pass
+                    except Exception:
+                        continue
+                # 同步寫一筆事件，方便管理端與 Discord Hook 觀察
+                try:
+                    from services.event_service import EventService
+                    fields = [
+                        { 'name': 'Post', 'value': f'#{int(p.id)}', 'inline': True },
+                        { 'name': 'Mentions', 'value': ', '.join(str(x) for x in mentioned_user_ids) },
+                    ]
+                    EventService.log_event(
+                        session=s,
+                        event_type='notification.user.mentioned',
+                        title='用戶被提及（貼文）',
+                        description=f'{author_label} 在貼文 #{int(p.id)} 提及了 {len(mentioned_user_ids)} 位用戶',
+                        severity='low',
+                        actor_id=int(uid),
+                        actor_name=getattr(author_user, 'username', None),
+                        actor_role=getattr(author_user, 'role', None),
+                        target_type='post',
+                        target_id=str(int(p.id)),
+                        school_id=getattr(p, 'school_id', None),
+                        metadata={ 'post_id': int(p.id), 'mentioned_user_ids': [int(x) for x in mentioned_user_ids] },
+                        is_important=False,
+                        send_webhook=True,
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
         # 使用新的匿名帳號顯示邏輯
@@ -1304,6 +1456,7 @@ def request_delete(pid: int):
 
 @bp.post("/with-media")
 @rate_limit(calls=3, per_seconds=60, by='client')
+@rate_limit(calls=3, per_seconds=60, by='user')
 def create_post_with_media_compat():
     """Compatibility: POST /api/posts/with-media (multipart)
     Creates a pending post and attach multiple files as pending media under uploads/pending/.
@@ -1390,6 +1543,18 @@ def create_post_with_media_compat():
                 if sch:
                     post_school_id = sch.id
                     
+            # CAPTCHA Gate for non-admin
+            try:
+                from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
+                if user and user.role not in ['dev_admin','admin'] and is_captcha_required(post_ip):
+                    captcha_token = (request.headers.get('X-Captcha-Token') or request.form.get('captcha_token') or '').strip()
+                    if not verify_captcha(captcha_token):
+                        return _wrap_err('CAPTCHA_REQUIRED', '需要通過驗證碼以繼續', 403)
+                    else:
+                        clear_captcha_requirement(post_ip)
+            except Exception:
+                pass
+
             # 檢查公告權限
             if is_announcement and user:
                 if user.role == 'dev_admin':
@@ -1410,6 +1575,14 @@ def create_post_with_media_compat():
                         return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
                 else:
                     return _wrap_err("PERMISSION_DENIED", "您沒有權限發布公告", 403)
+            # 風控：同一使用者 24 小時不同 IP 數量限制（管理員豁免）
+            try:
+                if user and user.role not in ['dev_admin', 'admin']:
+                    allowed, cnt, th = track_and_check_user_ip(int(uid), post_ip)
+                    if not allowed:
+                        return _wrap_err('TOO_MANY_IPS', f'此帳號 24 小時內使用過過多來源 IP（{cnt}/{th}）', 429)
+            except Exception:
+                pass
     except Exception:
         pass
     

@@ -843,8 +843,8 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-surface-hover rounded-xl border border-border">
                   <div>
-                    <div className="font-medium text-fg">推播通知</div>
-                    <div className="text-sm text-muted">接收新回覆和系統消息</div>
+                    <div className="font-medium text-fg">瀏覽器通知</div>
+                    <div className="text-sm text-muted">允許系統發送桌面通知提醒</div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
@@ -857,19 +857,53 @@ export default function SettingsPage() {
                   </label>
                 </div>
                 
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between p-3 bg-surface-hover rounded-lg">
-                    <span className="text-muted">認證方式</span>
-                    <span className="font-medium">{profile?.auth_provider || '本地帳號'}</span>
+                <div className="space-y-3">
+                  <h3 className="text-lg font-medium text-fg mb-3">帳號資訊</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center p-3 bg-surface-hover rounded-lg">
+                      <span className="text-muted">登入方式</span>
+                      <span className="font-medium">
+                        {profile?.auth_provider === 'google' ? 'Google 帳號' : 
+                         profile?.auth_provider === 'local' ? '帳號密碼' : 
+                         profile?.auth_provider || '帳號密碼'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-surface-hover rounded-lg">
+                      <span className="text-muted">密碼狀態</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">
+                          {profile?.has_password ? '已設定密碼' : '未設定密碼'}
+                        </span>
+                        {profile?.has_password ? (
+                          <BadgeCheck className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-surface-hover rounded-lg">
+                      <span className="text-muted">帳號安全</span>
+                      <span className="font-medium">
+                        {profile?.auth_provider === 'google' && profile?.has_password ? '雙重保護' :
+                         profile?.auth_provider === 'google' ? 'Google 驗證' :
+                         profile?.has_password ? '密碼保護' : '基礎保護'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between p-3 bg-surface-hover rounded-lg">
-                    <span className="text-muted">密碼設定</span>
-                    <span className="font-medium">{profile?.has_password ? '已設定' : '未設定'}</span>
-                  </div>
-                  <div className="flex justify-between p-3 bg-surface-hover rounded-lg">
-                    <span className="text-muted">註冊時間</span>
-                    <span className="font-medium">未知</span>
-                  </div>
+                  
+                  {!profile?.has_password && profile?.auth_provider !== 'google' && (
+                    <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm">
+                          <p className="text-amber-800 dark:text-amber-200 font-medium mb-1">建議設定密碼</p>
+                          <p className="text-amber-700 dark:text-amber-300 text-xs">
+                            設定密碼可提升帳號安全性，避免意外登出時無法重新登入
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

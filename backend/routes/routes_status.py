@@ -310,16 +310,38 @@ def project_stats():
         discord_configured = bool(os.getenv('DISCORD_BOT_TOKEN'))
         discord_servers = 0  # 可以從 Discord API 或資料庫獲取
         
-        # CDN 狀態檢查
+        # CDN 狀態檢查（與 /api/healthz 一致的解析邏輯）
         cdn_connected = False
         cdn_usage = 0
         try:
             import requests
+            from urllib.parse import urlparse
+
+            raw_url = (os.getenv('PUBLIC_CDN_URL') or '').strip()
+            scheme = 'http'
             cdn_host = os.getenv('CDN_HOST', '127.0.0.1')
-            cdn_port = int(os.getenv('CDN_PORT', '12002'))
-            resp = requests.get(f"http://{cdn_host}:{cdn_port}", timeout=2)
-            cdn_connected = resp.status_code < 500
-            cdn_usage = 45  # 模擬使用率
+            try:
+                cdn_port = int(os.getenv('CDN_PORT', '12002'))
+            except Exception:
+                cdn_port = 12002
+            if raw_url:
+                u = urlparse(raw_url)
+                if u.hostname:
+                    cdn_host = u.hostname
+                if u.scheme:
+                    scheme = u.scheme
+                if u.port:
+                    cdn_port = int(u.port)
+                else:
+                    cdn_port = 443 if scheme == 'https' else 80
+
+            resp = requests.get(f"{scheme}://{cdn_host}:{cdn_port}", timeout=3)
+            cdn_connected = (resp.status_code < 500)
+            # 使用量：若有環境提供就採用，否則先傳 0（之後可改為實際磁碟/流量統計）
+            try:
+                cdn_usage = int(os.getenv('CDN_USAGE_PERCENT', '0'))
+            except Exception:
+                cdn_usage = 0
         except Exception:
             cdn_connected = False
         

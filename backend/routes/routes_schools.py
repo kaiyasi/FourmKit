@@ -4,14 +4,125 @@ from models import School, User, Post, Media, SchoolSetting, Comment
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.authz import require_role
 from PIL import Image
+from werkzeug.utils import secure_filename
+import io
 import os
 from services.event_service import EventService
 import json
+import secrets
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
 from utils.oauth_google import derive_school_slug_from_domain, check_school_domain  # noqa: F401  # 可能未用到
+from pathlib import Path
+
+
+ALLOWED_LOGO_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.svg'}
+MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024  # 5MB 安全上限
 
 bp = Blueprint("schools", __name__, url_prefix="/api/schools")
+
+
+def _get_upload_root_path() -> Path:
+    root = os.getenv("UPLOAD_ROOT", "uploads")
+    base = Path(root)
+    if not base.is_absolute():
+        base = Path.cwd() / base
+    return base.resolve()
+
+
+def _normalize_public_url(relative_path: str | None) -> str | None:
+    if not relative_path:
+        return None
+    rel = relative_path.replace('\\', '/').lstrip('/')
+    return f"/uploads/{rel}"
+
+
+def _relative_to_root(target: Path, root: Path) -> str:
+    try:
+        return target.resolve().relative_to(root).as_posix()
+    except Exception:
+        # 若發生任何奇怪的路徑錯誤，退回一般化處理
+        rel = os.path.relpath(target.resolve(), root)
+        return Path(rel).as_posix()
+
+
+def _purge_existing_files(directory: Path, prefix: str) -> None:
+    if not directory.exists():
+        return
+    for entry in directory.iterdir():
+        if entry.is_file() and entry.name.startswith(prefix):
+            try:
+                entry.unlink()
+            except Exception:
+                pass
+
+
+def _save_logo_variants(data: bytes, directory: Path, base_name: str) -> str:
+    """儲存原始檔案並嘗試輸出 WEBP，回傳主要使用的檔名。"""
+    directory.mkdir(parents=True, exist_ok=True)
+    original_path = directory / base_name
+    try:
+        with original_path.open('wb') as f:
+            f.write(data)
+    except Exception:
+        raise
+
+    name, ext = os.path.splitext(base_name)
+    primary = base_name
+    if ext.lower() != '.svg':
+        try:
+            with Image.open(io.BytesIO(data)) as img:
+                if img.mode not in ('RGB', 'RGBA'):
+                    img = img.convert('RGBA' if 'A' in img.mode else 'RGB')
+                webp_path = directory / f"{name}.webp"
+                img.save(webp_path, format='WEBP', quality=90)
+                primary = f"{name}.webp"
+        except Exception:
+            # 轉檔失敗時保留原檔
+            pass
+    return primary
+
+
+def _find_cross_logo_file(directory: Path) -> Path | None:
+    if not directory.exists():
+        return None
+    preferred = ['cross.webp', 'cross.png', 'cross.jpg', 'cross.jpeg', 'cross.svg']
+    for name in preferred:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    for entry in directory.iterdir():
+        if entry.is_file() and entry.name.startswith('cross.'):
+            return entry
+    return None
+
+
+def _settings_dict(row: SchoolSetting | None) -> dict:
+    if not row or not row.data:
+        return {}
+    data = row.data
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return data if isinstance(data, dict) else {}
+
+
+def _ensure_setting_row(session, school_id: int) -> SchoolSetting:
+    row = session.query(SchoolSetting).filter(SchoolSetting.school_id == school_id).first()
+    if not row:
+        row = SchoolSetting(school_id=school_id, data='{}')
+        session.add(row)
+        session.flush()
+    return row
+
+
+def _generate_unlock_code(slug: str) -> str:
+    token = secrets.token_hex(4).upper()
+    safe_slug = slug.upper().replace(' ', '').replace('/', '-').strip()
+    return f"{safe_slug}-{token}"
 
 
 def _log_unauthorized(actor: User | None, action: str, slug_or_id: str | int | None = None):
@@ -148,9 +259,22 @@ def update_school_settings(slug: str):
 
 @bp.get("")
 def list_schools():
+    # Logo 處理器功能已停用，使用基本邏輯
     with get_session() as s:  # type: Session
         rows = s.query(School).order_by(School.slug.asc()).all()
-        items = [{"id": x.id, "slug": x.slug, "name": x.name, "logo_path": x.logo_path} for x in rows]
+        items = []
+        for x in rows:
+            # 直接使用路徑，不經過 logo_handler
+            url = None
+            if getattr(x, 'logo_path', None):
+                url = f"/uploads/{x.logo_path}" if not x.logo_path.startswith('/') else x.logo_path
+            items.append({
+                "id": x.id,
+                "slug": x.slug,
+                "name": x.name,
+                "logo_path": x.logo_path,
+                "logo_url": url,
+            })
         return jsonify({"items": items})
 
 
@@ -278,64 +402,129 @@ def delete_school(sid: int):
 @jwt_required()
 @require_role("dev_admin", "campus_admin")
 def upload_school_logo(sid: int):
-    """上傳校徽，使用新的 Logo 處理系統"""
-    from services.logo_handler import get_logo_handler, LogoError
-    
-    # 檢查文件
+    """上傳或更新單一學校校徽。"""
+
     uploaded_file = request.files.get('file')
     if not uploaded_file or not uploaded_file.filename:
         return jsonify({'msg': '缺少檔案'}), 400
 
+    filename = secure_filename(uploaded_file.filename)
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_LOGO_EXTENSIONS:
+        return jsonify({'msg': '僅支援 PNG/JPG/WEBP/SVG'}), 400
+
+    data = uploaded_file.read()
+    if not data:
+        return jsonify({'msg': '檔案為空'}), 400
+    if len(data) > MAX_LOGO_SIZE_BYTES:
+        return jsonify({'msg': '檔案過大，請壓縮至 5MB 以內'}), 413
+
+    upload_root = _get_upload_root_path()
+    school_dir = upload_root / 'public' / 'schools' / str(sid)
+
     with get_session() as s:
-        # 檢查學校是否存在
         school = s.get(School, sid)
         if not school:
             return jsonify({'msg': '學校不存在'}), 404
 
-        # 權限檢查
-        try:
-            uid = get_jwt_identity()
-            actor = s.get(User, int(uid)) if uid is not None else None
-            if actor and actor.role == 'campus_admin':
-                if not actor.school_id or int(actor.school_id) != int(sid):
-                    _log_unauthorized(actor, 'upload_school_logo', sid)
-                    return jsonify({'msg': '僅能修改所屬學校的校徽'}), 403
-        except Exception:
-            return jsonify({'msg': '權限驗證失敗'}), 403
+        uid = get_jwt_identity()
+        actor = s.get(User, int(uid)) if uid is not None else None
+        if actor and actor.role == 'campus_admin':
+            if not actor.school_id or int(actor.school_id) != int(sid):
+                _log_unauthorized(actor, 'upload_school_logo', sid)
+                return jsonify({'msg': '僅能修改所屬學校的校徽'}), 403
 
-        # 使用新的 Logo 處理器
+        # 清理舊檔，儲存新版
+        _purge_existing_files(school_dir, 'logo.')
+        primary_name = _save_logo_variants(data, school_dir, f"logo{ext}")
+        relative_path = _relative_to_root(school_dir / primary_name, upload_root)
+        school.logo_path = relative_path
+
         try:
-            logo_handler = get_logo_handler()
-            result = logo_handler.upload_school_logo(
-                school_id=sid,
-                file_stream=uploaded_file.stream,
-                filename=uploaded_file.filename
+            EventService.log_event(
+                session=s,
+                event_type='school.updated',
+                title='學校校徽更新',
+                description=f'學校 {school.slug} 更新校徽',
+                severity='medium',
+                actor_id=int(uid) if uid else None,
+                actor_name=getattr(actor, 'username', None) if actor else None,
+                actor_role=getattr(actor, 'role', None) if actor else None,
+                target_type='school',
+                target_id=school.id,
+                target_name=school.name,
+                school_id=school.id,
+                metadata={'logo_path': relative_path}
             )
-            
-            # 更新資料庫
-            school.logo_path = result['relative_path']
-            s.commit()
-            
-            return jsonify({
-                'ok': True, 
-                'path': result['relative_path'],
-                'url': result['url'],
-                'info': {
-                    'width': result['width'],
-                    'height': result['height'],
-                    'size': result['file_size'],
-                    'format': result['format']
-                }
-            })
-            
-        except LogoError as e:
-            return jsonify({
-                'msg': e.message,
-                'code': e.code,
-                'details': e.details
-            }), 400
-        except Exception as e:
-            return jsonify({'msg': f'上傳失敗: {str(e)}'}), 500
+        except Exception:
+            pass
+
+        s.commit()
+        public_url = _normalize_public_url(school.logo_path)
+        return jsonify({'ok': True, 'path': school.logo_path, 'url': public_url})
+
+
+@bp.get('/cross/logo')
+@jwt_required(optional=True)
+def get_cross_logo():
+    """取得跨校（cross）Logo 設定。"""
+    upload_root = _get_upload_root_path()
+    directory = upload_root / 'public' / 'logos' / 'schools'
+    logo_path = _find_cross_logo_file(directory)
+    if not logo_path:
+        return jsonify({'url': None, 'path': None})
+    relative_path = _relative_to_root(logo_path, upload_root)
+    return jsonify({'url': _normalize_public_url(relative_path), 'path': relative_path})
+
+
+@bp.post('/cross/logo')
+@jwt_required()
+@require_role('dev_admin', 'cross_admin')
+def upload_cross_logo():
+    """上傳跨校（cross）Logo。"""
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({'msg': '缺少檔案'}), 400
+
+    filename = secure_filename(uploaded_file.filename)
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_LOGO_EXTENSIONS:
+        return jsonify({'msg': '僅支援 PNG/JPG/WEBP/SVG'}), 400
+
+    data = uploaded_file.read()
+    if not data:
+        return jsonify({'msg': '檔案為空'}), 400
+    if len(data) > MAX_LOGO_SIZE_BYTES:
+        return jsonify({'msg': '檔案過大，請壓縮至 5MB 以內'}), 413
+
+    upload_root = _get_upload_root_path()
+    directory = upload_root / 'public' / 'logos' / 'schools'
+    _purge_existing_files(directory, 'cross.')
+    primary_name = _save_logo_variants(data, directory, f"cross{ext}")
+    relative_path = _relative_to_root(directory / primary_name, upload_root)
+
+    uid = get_jwt_identity()
+    with get_session() as s:
+        actor = s.get(User, int(uid)) if uid is not None else None
+        try:
+            EventService.log_event(
+                session=s,
+                event_type='school.updated',
+                title='跨校校徽更新',
+                description='跨校區域 Logo 已更新',
+                severity='medium',
+                actor_id=int(uid) if uid else None,
+                actor_name=getattr(actor, 'username', None) if actor else None,
+                actor_role=getattr(actor, 'role', None) if actor else None,
+                target_type='platform',
+                target_name='cross',
+                metadata={'logo_path': relative_path}
+            )
+        except Exception:
+            pass
+        s.commit()
+
+    return jsonify({'ok': True, 'path': relative_path, 'url': _normalize_public_url(relative_path)})
 
 
 @bp.get('/admin')
@@ -355,10 +544,44 @@ def admin_list():
             sch = s.get(School, actor.school_id)
             items = []
             if sch:
-                items.append({'id': sch.id, 'slug': sch.slug, 'name': sch.name, 'logo_path': sch.logo_path})
+                setting_row = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
+                setting_data = _settings_dict(setting_row)
+                # Logo 處理器功能已停用，使用基本 URL
+                url = None
+                if getattr(sch, 'logo_path', None):
+                    url = f"/uploads/{sch.logo_path}" if not sch.logo_path.startswith('/') else sch.logo_path
+                items.append({
+                    'id': sch.id,
+                    'slug': sch.slug,
+                    'name': sch.name,
+                    'logo_path': sch.logo_path,
+                    'logo_url': url,
+                    'unlock_code': setting_data.get('unlock_code'),
+                    'unlock_code_updated_at': setting_data.get('unlock_code_updated_at'),
+                })
             return jsonify({'items': items})
         rows = s.query(School).order_by(School.slug.asc()).all()
-        items = [{'id': x.id, 'slug': x.slug, 'name': x.name, 'logo_path': x.logo_path} for x in rows]
+        # Logo 處理器功能已停用，使用基本 URL
+        school_ids = [x.id for x in rows]
+        settings_rows = []
+        if school_ids:
+            settings_rows = s.query(SchoolSetting).filter(SchoolSetting.school_id.in_(school_ids)).all()
+        settings_map = {row.school_id: _settings_dict(row) for row in settings_rows}
+        items = []
+        for x in rows:
+            url = None
+            if getattr(x, 'logo_path', None):
+                url = f"/uploads/{x.logo_path}" if not x.logo_path.startswith('/') else x.logo_path
+            setting_data = settings_map.get(x.id, {})
+            items.append({
+                'id': x.id,
+                'slug': x.slug,
+                'name': x.name,
+                'logo_path': x.logo_path,
+                'logo_url': url,
+                'unlock_code': setting_data.get('unlock_code'),
+                'unlock_code_updated_at': setting_data.get('unlock_code_updated_at'),
+            })
         return jsonify({'items': items})
 
 
@@ -527,6 +750,81 @@ def admin_overview(slug: str):
                 'note': 'gmail.com 不允許作為校園登入網域; 允許 .edu 類網域',
             }
         })
+
+
+@bp.get('/<string:slug>/unlock_code')
+@jwt_required()
+@require_role('dev_admin', 'campus_admin')
+def get_unlock_code(slug: str):
+    slug = slug.strip().lower()
+    with get_session() as s:
+        school = s.query(School).filter(School.slug == slug).first()
+        if not school:
+            return jsonify({'msg': 'not found'}), 404
+
+        uid = get_jwt_identity()
+        actor = s.get(User, int(uid)) if uid is not None else None
+        if actor and actor.role == 'campus_admin':
+            if not actor.school_id or actor.school_id != school.id:
+                _log_unauthorized(actor, 'get_unlock_code', slug)
+                return jsonify({'msg': '僅能操作自己學校'}), 403
+
+        row = s.query(SchoolSetting).filter(SchoolSetting.school_id == school.id).first()
+        data = _settings_dict(row)
+        return jsonify({
+            'code': data.get('unlock_code'),
+            'updated_at': data.get('unlock_code_updated_at')
+        })
+
+
+@bp.post('/<string:slug>/unlock_code')
+@jwt_required()
+@require_role('dev_admin', 'campus_admin')
+def generate_unlock_code(slug: str):
+    slug = slug.strip().lower()
+    with get_session() as s:
+        school = s.query(School).filter(School.slug == slug).first()
+        if not school:
+            return jsonify({'msg': 'not found'}), 404
+
+        uid = get_jwt_identity()
+        actor = s.get(User, int(uid)) if uid is not None else None
+        if actor and actor.role == 'campus_admin':
+            if not actor.school_id or actor.school_id != school.id:
+                _log_unauthorized(actor, 'generate_unlock_code', slug)
+                return jsonify({'msg': '僅能操作自己學校'}), 403
+        if slug == 'cross' and (not actor or actor.role != 'dev_admin'):
+            return jsonify({'msg': '僅限開發管理員更新跨校解鎖碼'}), 403
+
+        row = _ensure_setting_row(s, school.id)
+        data = _settings_dict(row)
+        code = _generate_unlock_code(slug or 'cross')
+        updated_at = datetime.now(timezone.utc).isoformat()
+        data['unlock_code'] = code
+        data['unlock_code_updated_at'] = updated_at
+        row.data = json.dumps(data, ensure_ascii=False)
+        s.add(row)
+
+        try:
+            EventService.log_event(
+                session=s,
+                event_type='school.unlock_code_refreshed',
+                title='解鎖碼已更新',
+                description=f'學校 {school.slug} 的解鎖碼已重新生成',
+                severity='medium',
+                actor_id=int(uid) if uid else None,
+                actor_name=getattr(actor, 'username', None) if actor else None,
+                actor_role=getattr(actor, 'role', None) if actor else None,
+                target_type='school',
+                target_id=school.id,
+                school_id=school.id,
+                metadata={'unlock_code': code}
+            )
+        except Exception:
+            pass
+
+        s.commit()
+        return jsonify({'code': code, 'updated_at': updated_at})
 
 
 @bp.get('/<string:slug>/domains')

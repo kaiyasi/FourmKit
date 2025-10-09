@@ -48,9 +48,9 @@ class SupportService:
         # 創建工單
         # 依身分產生公開編號
         if user_id:
-            public_id = SupportService._gen_user_ticket_id(session, int(user_id))
+            public_id = SupportService._gen_user_ticket_id(session, int(user_id), category)
         else:
-            public_id = SupportService._gen_guest_ticket_id(session)
+            public_id = SupportService._gen_guest_ticket_id(session, category)
 
         ticket = SupportTicket(
             subject=subject.strip()[:500],  # 限制長度
@@ -186,6 +186,8 @@ class SupportService:
                 "message_id": message.id,
                 "author_type": author_type,
                 "author_name": message.get_author_display_name(),
+                "author_user_id": author_user_id,
+                "body": body,
                 "body_preview": body[:100] + ('...' if len(body) > 100 else ''),
                 "is_internal": is_internal,
                 "new_status": ticket.status
@@ -538,27 +540,100 @@ class SupportService:
         }
 
     @staticmethod
-    def _gen_user_ticket_id(session: Session, user_id: int) -> str:
-        """為登入用戶生成工單公開ID：格式 U<user_id>-<三位數字>
+    def _gen_user_ticket_id(session: Session, user_id: int, category: str = "general") -> str:
+        """為登入用戶生成工單公開ID：格式 XXX-U<user_id>-00X0 或 XXX-U<user_id>-00X0-00X0（如果用完）
+        XXX = 類型前綴（根據 category）
+        00X0 = 4位隨機混合字元（數字+大寫英文）
         確保在 support_tickets.public_id 上唯一。
         """
-        for _ in range(10):
-            rand3 = f"{secrets.randbelow(1000):03d}"
-            pid = f"U{user_id}-{rand3}"
+        # 類型前綴映射
+        category_prefix = {
+            "technical": "TEC",
+            "billing": "BIL",
+            "account": "ACC",
+            "feature": "FEA",
+            "bug": "BUG",
+            "general": "GEN",
+            "other": "OTH"
+        }
+
+        prefix = category_prefix.get(category, "SUP")
+        charset = string.digits + string.ascii_uppercase
+
+        # 第一輪：基本格式 XXX-U<uid>-00X0
+        for _ in range(50):
+            rand_code = ''.join(secrets.choice(charset) for _ in range(4))
+            pid = f"{prefix}-U{user_id}-{rand_code}"
             exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
             if not exists:
                 return pid
-        # 退而求其次：加一位隨機字母確保不撞
-        suffix = secrets.choice(string.ascii_uppercase)
-        return f"U{user_id}-{rand3}{suffix}"
+
+        # 第二輪：追加後綴 XXX-U<uid>-00X0-00X0
+        for _ in range(50):
+            rand_code1 = ''.join(secrets.choice(charset) for _ in range(4))
+            rand_code2 = ''.join(secrets.choice(charset) for _ in range(4))
+            pid = f"{prefix}-U{user_id}-{rand_code1}-{rand_code2}"
+            exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
+            if not exists:
+                return pid
+
+        # 最後退守：使用時間戳
+        timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) % 100000
+        rand_suffix = ''.join(secrets.choice(charset) for _ in range(4))
+        return f"{prefix}-U{user_id}-{timestamp:05d}-{rand_suffix}"
 
     @staticmethod
-    def _gen_guest_ticket_id(session: Session) -> str:
-        """為訪客生成純數字流水碼（8位數），確保唯一。"""
-        for _ in range(10):
-            pid = ''.join(secrets.choice(string.digits) for _ in range(8))
+    def _gen_guest_ticket_id(session: Session, category: str = "general") -> str:
+        """為訪客生成工單公開ID：格式 XXX-00X0 或 XXX-00X0-00X0（如果用完）
+        XXX = 類型前綴（根據 category）
+        00X0 = 4位隨機混合字元（數字+大寫英文）
+        如果嘗試多次仍重複，則追加後綴 -00X0
+        確保在 support_tickets.public_id 上唯一。
+        """
+        # 類型前綴映射
+        category_prefix = {
+            "technical": "TEC",      # 技術問題
+            "billing": "BIL",        # 帳務問題
+            "account": "ACC",        # 帳戶問題
+            "feature": "FEA",        # 功能建議
+            "bug": "BUG",           # 錯誤回報
+            "general": "GEN",        # 一般查詢
+            "other": "OTH"          # 其他
+        }
+
+        prefix = category_prefix.get(category, "SUP")
+
+        # 混合字元池：數字 + 大寫英文
+        charset = string.digits + string.ascii_uppercase  # 0-9 + A-Z = 36個字元
+
+        # 第一輪：嘗試生成基本格式 XXX-00X0
+        for _ in range(50):
+            rand_code = ''.join(secrets.choice(charset) for _ in range(4))
+            pid = f"{prefix}-{rand_code}"
             exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
             if not exists:
                 return pid
-        # 退而求其次：9位
-        return ''.join(secrets.choice(string.digits) for _ in range(9))
+
+        # 第二輪：追加一組後綴 XXX-00X0-00X0
+        for _ in range(50):
+            rand_code1 = ''.join(secrets.choice(charset) for _ in range(4))
+            rand_code2 = ''.join(secrets.choice(charset) for _ in range(4))
+            pid = f"{prefix}-{rand_code1}-{rand_code2}"
+            exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
+            if not exists:
+                return pid
+
+        # 第三輪：追加兩組後綴 XXX-00X0-00X0-00X0
+        for _ in range(50):
+            rand_code1 = ''.join(secrets.choice(charset) for _ in range(4))
+            rand_code2 = ''.join(secrets.choice(charset) for _ in range(4))
+            rand_code3 = ''.join(secrets.choice(charset) for _ in range(4))
+            pid = f"{prefix}-{rand_code1}-{rand_code2}-{rand_code3}"
+            exists = session.query(SupportTicket.id).filter(SupportTicket.public_id == pid).first()
+            if not exists:
+                return pid
+
+        # 最後退守：使用時間戳確保唯一性
+        timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) % 100000
+        rand_suffix = ''.join(secrets.choice(charset) for _ in range(4))
+        return f"{prefix}-{timestamp:05d}-{rand_suffix}"

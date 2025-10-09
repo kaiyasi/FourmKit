@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { ArrowLeft, MoreHorizontal, Plus, School, Users, MessageSquare, Camera, Edit, Trash2, Eye, Info, Globe, X } from 'lucide-react'
+import { ArrowLeft, MoreHorizontal, Plus, School, Users, MessageSquare, Camera, Edit, Trash2, Eye, Info, Globe, X, Copy } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface School {
@@ -9,6 +9,9 @@ interface School {
   slug: string
   name: string
   logo_path?: string
+  logo_url?: string
+  unlock_code?: string | null
+  unlock_code_updated_at?: string | null
 }
 
 interface SchoolStats {
@@ -40,6 +43,8 @@ export default function AdminSchoolsPage() {
   const [statsLoading, setStatsLoading] = useState(false)
   const [showActionMenu, setShowActionMenu] = useState<number | null>(null)
   const [domains, setDomains] = useState<Record<string, string[]>>({})
+  const [crossLogoUrl, setCrossLogoUrl] = useState<string | null>(null)
+  const [crossUnlock, setCrossUnlock] = useState<{ code: string | null; updated_at: string | null }>({ code: null, updated_at: null })
 
   useEffect(() => {
     // Remove hardcoded theme - let theme system handle it
@@ -92,6 +97,21 @@ export default function AdminSchoolsPage() {
       setError(e?.message || '載入失敗')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCrossLogo = async () => {
+    try {
+      const r = await authed('/api/schools/cross/logo', { cache: 'no-store' })
+      const j = await r.json().catch(()=>({}))
+      setCrossLogoUrl(j?.url || null)
+    } catch {}
+    if (role === 'dev_admin') {
+      try {
+        const r = await authed('/api/schools/cross/unlock_code', { cache: 'no-store' })
+        const j = await r.json().catch(()=>({}))
+        setCrossUnlock({ code: j?.code || null, updated_at: j?.updated_at || null })
+      } catch {}
     }
   }
 
@@ -161,6 +181,49 @@ export default function AdminSchoolsPage() {
     }
   }
 
+  const generateUnlockCode = async (slug: string) => {
+    try {
+      const r = await authed(`/api/schools/${slug}/unlock_code`, { method: 'POST' })
+      const j = await r.json().catch(()=>({}))
+      if (!r.ok) {
+        alert(j?.msg || '生成失敗');
+        return
+      }
+      if (slug === 'cross') {
+        setCrossUnlock({ code: j.code || null, updated_at: j.updated_at || null })
+      } else {
+        setSchools(prev => prev.map(s => s.slug === slug ? { ...s, unlock_code: j.code || null, unlock_code_updated_at: j.updated_at || null } : s))
+      }
+      alert(`新的解鎖碼：${j.code || '已更新'}`)
+    } catch (e:any) {
+      alert(e?.message || '生成失敗')
+    }
+  }
+
+  const copyUnlockCode = async (code?: string | null) => {
+    if (!code) {
+      alert('目前尚未設定解鎖碼')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(code)
+      alert('解鎖碼已複製到剪貼簿')
+    } catch {
+      alert('複製失敗，請手動選取')
+    }
+  }
+
+  const formatUpdatedAt = (value?: string | null) => {
+    if (!value) return '尚未設定'
+    try {
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) return value
+      return `${date.toLocaleString()}`
+    } catch {
+      return value
+    }
+  }
+
   const updateSchoolName = async (school: School) => {
     const name = prompt('更新學校名稱', school.name || school.slug)
     if (!name) return
@@ -216,7 +279,19 @@ export default function AdminSchoolsPage() {
     }
   }
 
-  useEffect(() => { loadSchools() }, [])
+  const uploadCrossLogo = async (file: File) => {
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const r = await authed('/api/schools/cross/logo', { method: 'POST', body: fd })
+      if (!r.ok) { alert(await r.text()); return }
+      loadCrossLogo()
+    } catch (e:any) {
+      alert(e?.message || '上傳失敗')
+    }
+  }
+
+  useEffect(() => { loadSchools(); loadCrossLogo() }, [role])
 
   const ActionMenu = ({ school, onClose }: { school: School; onClose: () => void }) => (
     <div className="absolute right-0 top-8 z-50 bg-surface border border-border rounded-lg shadow-soft py-1 min-w-40">
@@ -229,7 +304,7 @@ export default function AdminSchoolsPage() {
       </button>
       <button
         onClick={() => { addDomain(school.slug); onClose() }}
-        className="w-full text左 px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 dual-text"
+        className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 dual-text"
       >
         <Globe className="w-4 h-4" />
         管理網域
@@ -259,6 +334,22 @@ export default function AdminSchoolsPage() {
               }}
             />
           </label>
+
+          <button
+            onClick={() => { generateUnlockCode(school.slug); onClose() }}
+            className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 dual-text"
+          >
+            <Globe className="w-4 h-4" />
+            重新生成解鎖碼
+          </button>
+
+          <button
+            onClick={() => { copyUnlockCode(school.unlock_code); onClose() }}
+            className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 dual-text"
+          >
+            <Copy className="w-4 h-4" />
+            複製目前解鎖碼
+          </button>
         </>
       )}
       
@@ -314,6 +405,52 @@ export default function AdminSchoolsPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
+          {/* 跨校 Logo 區塊（僅提供上傳校徽） */}
+          <div className="lg:col-span-3">
+            <div className="bg-surface border border-border rounded-2xl shadow-soft p-4 sm:p-6 mb-2 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-surface-hover flex items-center justify-center">
+                    {crossLogoUrl ? (
+                      <img src={crossLogoUrl} alt="Cross Logo" className="w-12 h-12 object-contain" />
+                    ) : (
+                      <Globe className="w-6 h-6 text-muted" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-semibold dual-text">跨校</div>
+                    <div className="text-xs text-muted">跨校區域的徽章與解鎖碼管理</div>
+                    <div className="text-xs text-muted mt-1">
+                      {role === 'dev_admin'
+                        ? (
+                          <>
+                            解鎖碼：{crossUnlock.code ? (
+                              <code className="px-2 py-1 rounded bg-surface-hover border border-border inline-block mr-2 select-all">{crossUnlock.code}</code>
+                            ) : '尚未生成'}
+                          </>
+                        ) : '僅限開發管理員生成 / 檢視解鎖碼'}
+                    </div>
+                    {role === 'dev_admin' && crossUnlock.updated_at && (
+                      <div className="text-[11px] text-muted mt-1">更新時間：{formatUpdatedAt(crossUnlock.updated_at)}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-end">
+                  {(role === 'dev_admin' || role === 'cross_admin') && (
+                    <label className="btn-secondary text-sm flex items-center gap-2 cursor-pointer">
+                      <Camera className="w-4 h-4" /> 上傳校徽
+                      <input type="file" accept="image/*" className="hidden" onChange={(e)=>{ const f=e.target.files?.[0]; if(f) uploadCrossLogo(f) }} />
+                    </label>
+                  )}
+                  {role === 'dev_admin' && (
+                    <button onClick={() => copyUnlockCode(crossUnlock.code)} className="btn-secondary text-sm flex items-center gap-2">
+                      <Copy className="w-4 h-4" /> 複製解鎖碼
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           {/* 學校列表 */}
           <div className="lg:col-span-2">
             <div className="bg-surface border border-border rounded-2xl shadow-soft">
@@ -335,9 +472,9 @@ export default function AdminSchoolsPage() {
                   </div>
                 ) : (
                   schools.map((school) => {
-                    const logoUrl = school.logo_path && typeof school.logo_path === 'string'
-                      ? `https://cdn.serelix.xyz/${school.logo_path}`
-                      : null
+                    const logoUrl = (school.logo_url && typeof school.logo_url === 'string')
+                      ? school.logo_url
+                      : (school.logo_path ? `/uploads/${school.logo_path}` : null)
                       
                     return (
                       <div key={school.id} className="p-4 sm:p-6 hover:bg-surface-hover transition-colors">
@@ -365,6 +502,16 @@ export default function AdminSchoolsPage() {
                               <p className="text-sm text-muted">
                                 {school.slug} • ID: {school.id}
                               </p>
+                              <div className="text-xs text-muted mt-1 space-y-1">
+                                <div>
+                                  解鎖碼：{school.unlock_code ? (
+                                    <code className="px-2 py-1 rounded bg-surface-hover border border-border inline-block mr-2 select-all">{school.unlock_code}</code>
+                                  ) : '尚未生成'}
+                                </div>
+                                {school.unlock_code_updated_at && (
+                                  <div className="text-[11px] text-muted">更新時間：{formatUpdatedAt(school.unlock_code_updated_at)}</div>
+                                )}
+                              </div>
                             </div>
                           </div>
                           

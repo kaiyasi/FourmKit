@@ -45,6 +45,32 @@ def require_role(*roles: str):
     return decorator
 
 
+# ---- 向後相容：提供 token_required 與 get_user_role ----
+def token_required(fn):
+    """簡單的 JWT 驗證裝飾器（向後相容）。
+    - 驗證通過後在 g 物件上設置 user 與 user_id，供舊路由使用。
+    - 未登入時回 401。
+    """
+    from flask import g
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({"ok": False, "error": "未登入或 Token 無效"}), 401
+        try:
+            g.user = user
+            g.user_id = int(user.id)
+        except Exception:
+            pass
+        return fn(*args, **kwargs)
+    return wrapper
+
+def get_user_role() -> str | None:
+    """向後相容別名：回傳當前用戶角色。"""
+    return get_role()
+
+
 def _is_dev_bypass_enabled() -> bool:
     try:
         v = os.getenv("DEV_BYPASS_AUTH", "").strip().lower()

@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict
 from datetime import datetime, timezone
 
-from flask import g
+from flask import g, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
+# Chat功能已移除
+# from services.socket_chat_service import SocketChatService
 
 MAX_TITLE = 120
 MAX_CONTENT = 5000
@@ -21,17 +23,18 @@ def init_socket_events(socketio: SocketIO) -> None:
 
     @socketio.on("connect")
     def on_connect():
-        # 預設加入 global room，方便發全域公告
-        join_room("global")
-        emit("hello", {
-            "message": "connected",
-            "request_id": g.get("request_id"),
-            "ts": _now_iso(),
-        })
+        client_id = request.sid
+        # Chat功能已移除
+        # # 嘗試從查詢參數獲取token
+        # token = request.args.get('token')
+        # SocketChatService.handle_connect(client_id, token)
+        pass
 
     @socketio.on("disconnect")
     def on_disconnect():
-        # 這裡若要做清理 / 記錄可擴充
+        client_id = request.sid
+        # Chat功能已移除
+        # SocketChatService.handle_disconnect(client_id)
         pass
 
     @socketio.on("join_room")
@@ -104,6 +107,29 @@ def init_socket_events(socketio: SocketIO) -> None:
             emit("error", {"code": "WS-ANN-401", "message": "未授權或內容無效"})
             return
         socketio.emit("announce", {"message": msg, "ts": _now_iso()}, to="global")
+
+    # ============ 聊天系統 Socket 事件（已禁用）============
+    # Chat功能已移除，以下事件已禁用
+
+    # @socketio.on("chat:join_room")
+    # def on_chat_join_room(data: Dict[str, Any] | None):
+    #     pass
+
+    # @socketio.on("chat:leave_room")
+    # def on_chat_leave_room(data: Dict[str, Any] | None):
+    #     pass
+
+    # @socketio.on("chat:send_message")
+    # def on_chat_send_message(data: Dict[str, Any] | None):
+    #     pass
+
+    # @socketio.on("status:change")
+    # def on_status_change(data: Dict[str, Any] | None):
+    #     pass
+
+    # @socketio.on("notifications:mark_read")
+    # def on_mark_notification_read(data: Dict[str, Any] | None):
+    #     pass
 
     # ============ 支援工單系統 Socket 事件 ============
 
@@ -193,10 +219,19 @@ def init_socket_events(socketio: SocketIO) -> None:
                 title = f"🎫 新客服單：{payload.get('subject', '無主題')}"
                 description = f"用戶 **{payload.get('submitter', '匿名')}** 建立了新的客服單"
 
+                # 優先級中英文對應
+                priority_map = {
+                    'low': '低',
+                    'medium': '中',
+                    'high': '高',
+                    'urgent': '緊急'
+                }
+                priority_text = priority_map.get(payload.get('priority', 'medium'), '中')
+
                 fields = [
                     {"name": "工單編號", "value": f"#{ticket_public_id}", "inline": True},
                     {"name": "分類", "value": payload.get('category', '其他'), "inline": True},
-                    {"name": "優先級", "value": payload.get('priority', '中等'), "inline": True}
+                    {"name": "優先級", "value": priority_text, "inline": True}
                 ]
 
                 if payload.get('is_guest'):

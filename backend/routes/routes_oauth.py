@@ -104,6 +104,9 @@ def instagram_callback():
             if existing_account:
                 # 更新現有帳號的 token
                 existing_account.access_token = token_data['access_token']
+                # 同步長期欄位（若有）
+                if hasattr(existing_account, 'long_lived_access_token'):
+                    existing_account.long_lived_access_token = token_data['access_token']
                 existing_account.token_expires_at = token_data['expires_at']
                 existing_account.status = AccountStatus.ACTIVE
                 existing_account.updated_at = datetime.now(timezone.utc)
@@ -197,6 +200,8 @@ def refresh_instagram_token():
             if refresh_result.get('success'):
                 # 更新資料庫
                 account.access_token = refresh_result['access_token']
+                if hasattr(account, 'long_lived_access_token'):
+                    account.long_lived_access_token = refresh_result['access_token']
                 account.token_expires_at = refresh_result['expires_at']
                 account.status = AccountStatus.ACTIVE
                 account.updated_at = datetime.now(timezone.utc)

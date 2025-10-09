@@ -3,9 +3,10 @@
  * 顯示鈴鐺圖示，未讀時顯示紅點，點擊開啟通知中心
  */
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Bell } from 'lucide-react'
 import { useNotifications } from '@/hooks/useNotifications'
+// 聊天通知功能已移除
 import NotificationCenter from './NotificationCenter'
 
 interface NotificationButtonProps {
@@ -20,8 +21,27 @@ export default function NotificationButton({
   size = 'md'
 }: NotificationButtonProps) {
   const { unreadCount, showBadge, showCount } = useNotifications()
+  // 聊天通知功能已移除
+  const chatUnreadCount = 0
+  const combinedUnread = (unreadCount || 0) + (chatUnreadCount || 0)
+  const combinedShowBadge = (showBadge || false) || (chatUnreadCount > 0)
   const [isOpen, setIsOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    try {
+      mq.addEventListener('change', update)
+      return () => mq.removeEventListener('change', update)
+    } catch {
+      // Safari fallback
+      window.addEventListener('resize', update)
+      return () => window.removeEventListener('resize', update)
+    }
+  }, [])
 
   const sizeClasses = {
     sm: 'w-8 h-8',
@@ -38,6 +58,8 @@ export default function NotificationButton({
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    // 手機版不開啟詳細面板，僅顯示徽章與使用瀏覽器通知（若使用者已允許）
+    if (isMobile) return
     setIsOpen(!isOpen)
   }
 
@@ -57,22 +79,22 @@ export default function NotificationButton({
           ${className}
         `}
         style={{ zIndex: 20 }}
-        title={`通知${unreadCount > 0 ? ` (${unreadCount} 未讀)` : ''}`}
+        title={`通知${combinedUnread > 0 ? ` (${combinedUnread} 未讀)` : ''}`}
       >
         <Bell className={`${iconSizes[size]} text-muted hover:text-fg transition-colors`} />
         
         {/* 通知徽章 */}
-        {showBadge && (
+        {combinedShowBadge && (
           <div className="absolute -top-1 -right-1">
-            {showCount && unreadCount > 0 ? (
+            {showCount && combinedUnread > 0 ? (
               // 顯示數字徽章（10秒內）
-              unreadCount < 10 ? (
+              combinedUnread < 10 ? (
                 <div className="
                   w-5 h-5 bg-red-500 text-white text-xs font-bold 
                   rounded-full flex items-center justify-center
                   shadow-sm animate-pulse
                 ">
-                  {unreadCount}
+                  {combinedUnread}
                 </div>
               ) : (
                 <div className="
@@ -80,7 +102,7 @@ export default function NotificationButton({
                   rounded-full flex items-center justify-center
                   shadow-sm animate-pulse min-w-[1.25rem]
                 ">
-                  {unreadCount > 99 ? '99+' : unreadCount}
+                  {combinedUnread > 99 ? '99+' : combinedUnread}
                 </div>
               )
             ) : (
@@ -94,7 +116,7 @@ export default function NotificationButton({
         )}
 
         {/* 有新通知時的呼吸光暈效果 */}
-        {showBadge && showCount && (
+        {combinedShowBadge && showCount && (
           <div className="absolute inset-0 rounded-full bg-primary/10 animate-ping" />
         )}
       </button>
@@ -103,9 +125,9 @@ export default function NotificationButton({
       {showLabel && (
         <span className="ml-2 text-sm text-muted">
           通知
-          {showCount && unreadCount > 0 && (
+          {showCount && combinedUnread > 0 && (
             <span className="ml-1 text-primary font-medium">
-              ({unreadCount})
+              ({combinedUnread})
             </span>
           )}
         </span>
@@ -113,7 +135,7 @@ export default function NotificationButton({
 
       {/* 通知中心面板 */}
       <NotificationCenter
-        isOpen={isOpen}
+        isOpen={isOpen && !isMobile}
         onClose={() => setIsOpen(false)}
         anchorRef={buttonRef}
       />

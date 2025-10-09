@@ -36,6 +36,9 @@ class InstagramConfig:
     timeout: int = 60
     max_wait_time: int = 600  # 延長預設等待時間，避免輪播/大圖處理逾時
     retry_interval: int = 2
+    # 重試機制設定
+    max_retries: int = 3  # 最大重試次數
+    backoff_factor: float = 0.5  # 退避因子 (秒)
 
     @staticmethod
     def from_env() -> "InstagramConfig":
@@ -44,11 +47,15 @@ class InstagramConfig:
         timeout = int(os.getenv("IG_TIMEOUT", "60"))
         max_wait_time = int(os.getenv("IG_MAX_WAIT", "600"))
         retry_interval = int(os.getenv("IG_RETRY", "2"))
+        max_retries = int(os.getenv("IG_MAX_RETRIES", "3"))
+        backoff_factor = float(os.getenv("IG_BACKOFF_FACTOR", "0.5"))
         return InstagramConfig(
             api_version=api_version,
             timeout=timeout,
             max_wait_time=max_wait_time,
             retry_interval=retry_interval,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
         )
 
 class InstagramClient:
@@ -61,7 +68,32 @@ class InstagramClient:
         self.config = config or InstagramConfig.from_env()
         self.api_base = f"https://graph.facebook.com/{self.config.api_version}"
         self.session = requests.Session()
+
+    def _request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
+        """
+        帶有指數退避重試機制的請求方法
+        """
+        last_exception = None
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                response = self.session.request(method, url, timeout=self.config.timeout, **kwargs)
+                
+                # 針對特定的可重試 HTTP 狀態碼
+                if response.status_code in [429, 500, 502, 503, 504]:
+                    response.raise_for_status() # 拋出 HTTPError 以觸發重試
+                
+                return response # 成功或不可重試的錯誤，直接返回
+                
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"請求失敗 (嘗試 {attempt + 1}/{self.config.max_retries + 1}): {e}")
+                last_exception = e
+                if attempt < self.config.max_retries:
+                    sleep_time = self.config.backoff_factor * (2 ** attempt)
+                    logger.info(f"將在 {sleep_time:.2f} 秒後重試...")
+                    time.sleep(sleep_time)
         
+        raise last_exception # 所有重試失敗後，拋出最後一個例外
+
     def post_single_image(
         self,
         user_token: str,
@@ -71,12 +103,10 @@ class InstagramClient:
         ) -> PostResult:
         """
         發布單一圖片到 Instagram
-        完全參考提供的腳本流程：User Token -> Page Token -> IG_USER_ID -> 建 container -> 發佈
         """
         try:
             logger.info(f"開始發布圖片到 Instagram，Page ID: {page_id}")
             
-            # Step 1: 從 User Token 取得 Page Token 和 IG Account ID
             page_info = self._get_page_info(user_token, page_id)
             if not page_info['success']:
                 return PostResult(success=False, error=page_info['error'])
@@ -86,20 +116,16 @@ class InstagramClient:
             
             logger.info(f"取得 IG Account ID: {ig_account_id}")
             
-            # Step 2: 建立 Media Container
             media_id = self._create_media_container(
                 ig_account_id, page_token, image_url, caption
             )
             
-            # Step 3: 等待媒體處理完成
             self._wait_media_ready(media_id, page_token)
             
-            # Step 4: 發布媒體
             post_id = self._publish_media(ig_account_id, page_token, media_id)
 
             logger.info(f"Instagram 發布成功，Post ID: {post_id}")
 
-            # 嘗試取得 permalink，若失敗則回退為推測 URL（兼容既有測試）
             post_url = self._get_permalink_safe(media_id, page_token)
             if not post_url:
                 post_url = f"https://www.instagram.com/p/{post_id}/"
@@ -112,7 +138,7 @@ class InstagramClient:
             )
             
         except Exception as e:
-            logger.error(f"Instagram 發布失敗: {e}")
+            logger.error(f"Instagram 發布失敗: {e}", exc_info=True)
             return PostResult(success=False, error=str(e))
 
     def post_carousel(
@@ -124,7 +150,6 @@ class InstagramClient:
     ) -> PostResult:
         """
         發布輪播（多圖）到 Instagram。
-        流程：User Token -> Page Token/IG_ACCOUNT -> 建立子媒體 -> 建立輪播容器 -> 等待完成 -> 發布
         """
         try:
             if not image_urls or not isinstance(image_urls, list) or len(image_urls) < 2:
@@ -132,7 +157,6 @@ class InstagramClient:
 
             logger.info(f"開始發布輪播到 Instagram，Page ID: {page_id}，圖片數: {len(image_urls)}")
 
-            # Step 1: 從 User Token 取得 Page Token 和 IG Account ID
             page_info = self._get_page_info(user_token, page_id)
             if not page_info['success']:
                 return PostResult(success=False, error=page_info['error'])
@@ -140,22 +164,18 @@ class InstagramClient:
             page_token = page_info['page_token']
             ig_account_id = page_info['ig_account_id']
 
-            # Step 2: 逐一建立子媒體（is_carousel_item=True）
             child_media_ids: List[str] = []
             for idx, url in enumerate(image_urls):
                 child_id = self._create_carousel_child(ig_account_id, page_token, url)
                 child_media_ids.append(child_id)
                 logger.info(f"子媒體建立成功 ({idx+1}/{len(image_urls)}): {child_id}")
 
-            # Step 3: 建立輪播容器（children=...）
             carousel_container_id = self._create_carousel_container(
                 ig_account_id, page_token, child_media_ids, caption
             )
 
-            # Step 4: 等待輪播容器處理完成
             self._wait_media_ready(carousel_container_id, page_token)
 
-            # Step 5: 發布輪播
             post_id = self._publish_media(ig_account_id, page_token, carousel_container_id)
 
             logger.info(f"Instagram 輪播發布成功，Post ID: {post_id}")
@@ -170,7 +190,7 @@ class InstagramClient:
             )
 
         except Exception as e:
-            logger.error(f"Instagram 輪播發布失敗: {e}")
+            logger.error(f"Instagram 輪播發布失敗: {e}", exc_info=True)
             return PostResult(success=False, error=str(e))
     
     def _get_page_info(self, user_token: str, page_id: str) -> Dict[str, Any]:
@@ -182,54 +202,32 @@ class InstagramClient:
                 'access_token': user_token
             }
             
-            response = self.session.get(url, params=params, timeout=self.config.timeout)
-            
-            if response.status_code != 200:
-                error_data = response.json()
-                return {
-                    'success': False,
-                    'error': f"無法取得 Page 資訊: {error_data.get('error', {}).get('message', '未知錯誤')}"
-                }
+            response = self._request_with_retry('GET', url, params=params)
+            response.raise_for_status() # 確保處理非 2xx 的最終回應
             
             data = response.json()
             page_token = data.get('access_token')
             ig_account = data.get('instagram_business_account')
             
             if not page_token:
-                return {
-                    'success': False,
-                    'error': f"無法取得 Page Token"
-                }
+                return {'success': False, 'error': "無法取得 Page Token"}
             
-            if not ig_account:
-                return {
-                    'success': False,
-                    'error': f"Page 未連結 Instagram Business Account"
-                }
-            
-            ig_account_id = ig_account.get('id')
-            if not ig_account_id:
-                return {
-                    'success': False,
-                    'error': "Instagram Business Account ID 為空"
-                }
+            if not ig_account or not ig_account.get('id'):
+                return {'success': False, 'error': "Page 未連結或無效的 Instagram Business Account ID"}
             
             return {
                 'success': True,
                 'page_token': page_token,
-                'ig_account_id': ig_account_id
+                'ig_account_id': ig_account['id']
             }
             
-        except requests.RequestException as e:
-            return {
-                'success': False,
-                'error': f"網路請求失敗: {str(e)}"
-            }
+        except requests.exceptions.RequestException as e:
+            error_msg = f"網路請求失敗: {e}"
+            if e.response is not None:
+                error_msg = f"無法取得 Page 資訊: {e.response.text}"
+            return {'success': False, 'error': error_msg}
         except Exception as e:
-            return {
-                'success': False,
-                'error': f"取得 Page 資訊失敗: {str(e)}"
-            }
+            return {'success': False, 'error': f"取得 Page 資訊時發生未知錯誤: {e}"}
     
     def _create_media_container(
         self, 
@@ -246,11 +244,8 @@ class InstagramClient:
             'access_token': page_token
         }
         
-        response = self.session.post(url, data=data, timeout=self.config.timeout)
-        
-        if response.status_code != 200:
-            error_data = response.json()
-            raise Exception(f"建立 Media Container 失敗: {error_data.get('error', {}).get('message', '未知錯誤')}")
+        response = self._request_with_retry('POST', url, data=data)
+        response.raise_for_status()
         
         result = response.json()
         media_id = result.get('id')
@@ -267,7 +262,7 @@ class InstagramClient:
         page_token: str,
         image_url: str,
     ) -> str:
-        """建立輪播子媒體（is_carousel_item=True）"""
+        """建立輪播子媒體"""
         url = f"{self.api_base}/{ig_account_id}/media"
         data = {
             'image_url': image_url,
@@ -275,10 +270,8 @@ class InstagramClient:
             'access_token': page_token,
         }
 
-        response = self.session.post(url, data=data, timeout=self.config.timeout)
-        if response.status_code != 200:
-            error_data = response.json()
-            raise Exception(f"建立輪播子媒體失敗: {error_data.get('error', {}).get('message', '未知錯誤')}")
+        response = self._request_with_retry('POST', url, data=data)
+        response.raise_for_status()
 
         result = response.json()
         media_id = result.get('id')
@@ -293,7 +286,7 @@ class InstagramClient:
         children_ids: List[str],
         caption: str,
     ) -> str:
-        """建立輪播容器（children=以逗號串接）"""
+        """建立輪播容器"""
         url = f"{self.api_base}/{ig_account_id}/media"
         data = {
             'children': ','.join(children_ids),
@@ -301,11 +294,8 @@ class InstagramClient:
             'media_type': 'CAROUSEL',
             'access_token': page_token,
         }
-        response = self.session.post(url, data=data, timeout=self.config.timeout)
-
-        if response.status_code != 200:
-            error_data = response.json()
-            raise Exception(f"建立輪播容器失敗: {error_data.get('error', {}).get('message', '未知錯誤')}")
+        response = self._request_with_retry('POST', url, data=data)
+        response.raise_for_status()
 
         result = response.json()
         container_id = result.get('id')
@@ -321,40 +311,30 @@ class InstagramClient:
         
         while time.time() - start_time < self.config.max_wait_time:
             try:
-                response = self.session.get(
+                response = self._request_with_retry(
+                    'GET',
                     f"{self.api_base}/{media_id}",
-                    params={
-                        'fields': 'status_code',
-                        'access_token': page_token
-                    },
-                    timeout=10
+                    params={'fields': 'status_code', 'access_token': page_token}
                 )
+                response.raise_for_status()
                 
-                if response.status_code == 200:
-                    status_data = response.json()
-                    status = status_data.get('status_code')
+                status_data = response.json()
+                status = status_data.get('status_code')
+                
+                if status != last_status:
+                    logger.info(f"媒體 {media_id} 處理狀態: {status}")
+                    last_status = status
+                
+                if status == MediaStatus.FINISHED.value:
+                    logger.info(f"媒體 {media_id} 處理完成")
+                    return
+                elif status == MediaStatus.ERROR.value:
+                    raise Exception(f"媒體 {media_id} 處理失敗，狀態: ERROR")
+                
+                time.sleep(self.config.retry_interval)
                     
-                    if status != last_status:
-                        logger.info(f"媒體 {media_id} 處理狀態: {status}")
-                        last_status = status
-                    
-                    if status == MediaStatus.FINISHED.value:
-                        logger.info(f"媒體 {media_id} 處理完成")
-                        return
-                    elif status == MediaStatus.ERROR.value:
-                        raise Exception(f"媒體 {media_id} 處理失敗")
-                    elif status in [MediaStatus.IN_PROGRESS.value, MediaStatus.PUBLISHED.value]:
-                        time.sleep(self.config.retry_interval)
-                        continue
-                    else:
-                        logger.warning(f"未知的媒體狀態: {status}")
-                        time.sleep(self.config.retry_interval)
-                else:
-                    logger.warning(f"檢查媒體狀態失敗: HTTP {response.status_code}")
-                    time.sleep(self.config.retry_interval)
-                    
-            except requests.RequestException as e:
-                logger.warning(f"檢查媒體狀態網路錯誤: {e}")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"檢查媒體狀態失敗: {e}，將在 {self.config.retry_interval} 秒後重試...")
                 time.sleep(self.config.retry_interval)
         
         raise Exception(f"媒體 {media_id} 處理逾時")
@@ -367,11 +347,8 @@ class InstagramClient:
             'access_token': page_token
         }
         
-        response = self.session.post(url, data=data, timeout=self.config.timeout)
-        
-        if response.status_code != 200:
-            error_data = response.json()
-            raise Exception(f"發布媒體失敗: {error_data.get('error', {}).get('message', '未知錯誤')}")
+        response = self._request_with_retry('POST', url, data=data)
+        response.raise_for_status()
         
         result = response.json()
         post_id = result.get('id')
@@ -383,22 +360,16 @@ class InstagramClient:
         return post_id
 
     def _get_permalink_safe(self, media_id: str, page_token: str) -> Optional[str]:
-        """嘗試取得 permalink，失敗則回傳 None，不丟例外"""
+        """嘗試取得 permalink，失敗則回傳 None"""
         try:
-            response = self.session.get(
+            response = self._request_with_retry(
+                'GET',
                 f"{self.api_base}/{media_id}",
-                params={
-                    'fields': 'permalink',
-                    'access_token': page_token
-                },
-                timeout=10
+                params={'fields': 'permalink', 'access_token': page_token}
             )
             if response.status_code == 200:
-                data = response.json()
-                return data.get('permalink')
-            else:
-                logger.warning(f"取得 permalink 失敗: HTTP {response.status_code}")
-                return None
+                return response.json().get('permalink')
+            return None
         except Exception as e:
             logger.warning(f"取得 permalink 發生例外: {e}")
             return None
@@ -406,74 +377,41 @@ class InstagramClient:
     def validate_credentials(self, user_token: str, page_id: str) -> Dict[str, Any]:
         """驗證憑證是否有效"""
         try:
-            # 檢查 User Token
-            me_response = self.session.get(
+            me_response = self._request_with_retry(
+                'GET',
                 f"{self.api_base}/me",
-                params={
-                    'fields': 'id,name',
-                    'access_token': user_token
-                },
-                timeout=10
+                params={'fields': 'id,name', 'access_token': user_token}
             )
-            
-            if me_response.status_code != 200:
-                return {
-                    'valid': False,
-                    'error': f"User Token 無效: {me_response.text}"
-                }
-            
+            me_response.raise_for_status()
             user_info = me_response.json()
             
-            # 檢查 Page 資訊
             page_info = self._get_page_info(user_token, page_id)
-            
             if not page_info['success']:
-                return {
-                    'valid': False,
-                    'error': page_info['error']
-                }
+                return {'valid': False, 'error': page_info['error']}
             
             return {
                 'valid': True,
                 'user_info': user_info,
-                'page_token': page_info['page_token'][:20] + '...',  # 部分顯示
+                'page_token': page_info['page_token'][:20] + '...',
                 'ig_account_id': page_info['ig_account_id']
             }
             
         except Exception as e:
-            return {
-                'valid': False,
-                'error': f"驗證失敗: {str(e)}"
-            }
+            return {'valid': False, 'error': f"驗證失敗: {e}"}
     
     def get_account_info(self, page_token: str, ig_account_id: str) -> Dict[str, Any]:
         """取得 Instagram 帳號資訊"""
         try:
-            response = self.session.get(
+            response = self._request_with_retry(
+                'GET',
                 f"{self.api_base}/{ig_account_id}",
-                params={
-                    'fields': 'id,username,name,account_type,media_count',
-                    'access_token': page_token
-                },
-                timeout=10
+                params={'fields': 'id,username,name,account_type,media_count', 'access_token': page_token}
             )
-            
-            if response.status_code == 200:
-                return {
-                    'success': True,
-                    'account_info': response.json()
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f"無法取得帳號資訊: {response.text}"
-                }
+            response.raise_for_status()
+            return {'success': True, 'account_info': response.json()}
                 
         except Exception as e:
-            return {
-                'success': False,
-                'error': f"取得帳號資訊失敗: {str(e)}"
-            }
+            return {'success': False, 'error': f"取得帳號資訊失敗: {e}"}
 
 
 # 工廠函數

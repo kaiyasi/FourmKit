@@ -133,8 +133,8 @@ class SupportTicket(Base):
     labels: Mapped[List["SupportTicketLabel"]] = relationship("SupportTicketLabel", back_populates="ticket", cascade="all, delete-orphan")
     
     def __init__(self, **kwargs):
-        # 自動生成 public_id
-        if 'public_id' not in kwargs:
+        # 自動生成 public_id（僅當沒有提供時）
+        if 'public_id' not in kwargs or not kwargs['public_id']:
             kwargs['public_id'] = generate_public_id()
         
         # 如果是訪客工單，生成匿名代碼

@@ -1,198 +1,299 @@
-# backend/models/instagram.py
-from __future__ import annotations
-from datetime import datetime, timezone
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, DateTime, ForeignKey, Text, Boolean, JSON, func
-import enum
-from typing import TYPE_CHECKING
-from utils.db import Base
+"""
+Instagram 整合系統資料模型
+支援多帳號管理、模板系統、發布追蹤
+"""
 
-if TYPE_CHECKING:
-    from .base import User, Post
-    from .school import School
+from sqlalchemy import (
+    Column, Integer, String, Text, Boolean, DateTime, ForeignKey,
+    JSON, Enum as SQLEnum, Index, CheckConstraint
+)
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from .base import Base
+from enum import Enum
 
-class IGAccountStatus(str, enum.Enum):
-    """Instagram 帳號狀態"""
-    active = "active"           # 正常運作
-    disabled = "disabled"       # 已停用
-    error = "error"            # Token 失效或其他錯誤
-    pending = "pending"        # 待驗證
 
-class PublishMode(str, enum.Enum):
+# ========== Enums ==========
+
+class PublishMode(str, Enum):
     """發布模式"""
-    immediate = "immediate"     # 立即發布
-    batch = "batch"            # 批量發布
-    scheduled = "scheduled"    # 定時發布
+    INSTANT = "instant"      # 即時發布（公告專用）
+    BATCH = "batch"          # 批次發布（累積 N 篇後發布輪播）
+    SCHEDULED = "scheduled"  # 排程發布（固定時間發布輪播）
 
-class PostStatus(str, enum.Enum):
-    """貼文處理狀態"""
-    pending = "pending"        # 待處理
-    processing = "processing"  # 處理中
-    queued = "queued"         # 已排隊
-    published = "published"   # 已發布
-    failed = "failed"         # 發布失敗
 
-class IGAccount(Base):
+class TemplateType(str, Enum):
+    """模板類型"""
+    ANNOUNCEMENT = "announcement"  # 公告模板（即時發布）
+    GENERAL = "general"            # 一般模板（批次/排程發布）
+
+
+class PostStatus(str, Enum):
+    """Instagram 貼文狀態"""
+    PENDING = "pending"          # 等待渲染
+    RENDERING = "rendering"      # 渲染中
+    READY = "ready"              # 渲染完成，等待發布
+    PUBLISHING = "publishing"    # 發布中
+    PUBLISHED = "published"      # 已發布
+    FAILED = "failed"            # 發布失敗
+    CANCELLED = "cancelled"      # 已取消
+
+
+# ========== Models ==========
+
+class InstagramAccount(Base):
     """Instagram 帳號管理"""
-    __tablename__ = "ig_accounts"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
+    __tablename__ = "instagram_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
     # 基本資訊
-    ig_user_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Instagram Business Account ID
-    ig_username: Mapped[str] = mapped_column(String(64), nullable=False)  # Instagram 用戶名
-    page_id: Mapped[str] = mapped_column(String(64), nullable=False)  # Facebook Page ID
-    page_name: Mapped[str] = mapped_column(String(255), nullable=False)  # Facebook Page 名稱
-    
-    # Token 相關
-    page_token: Mapped[str] = mapped_column(Text, nullable=False)  # Page Access Token
-    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # 帳號設定
-    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
-    display_name: Mapped[str] = mapped_column(String(255), nullable=False)  # 顯示名稱
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 帳號描述
-    profile_picture: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 頭像 URL
-    
-    # 發布設定
-    publish_mode: Mapped[str] = mapped_column(String(16), default="immediate", nullable=False)
-    batch_threshold: Mapped[int] = mapped_column(Integer, default=5, nullable=False)  # 批量發布閾值
-    auto_hashtags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)  # 預設標籤
-    
-    # 學校關聯 (可選)
-    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
-    
-    # 管理員設定
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # 統計資訊
-    total_posts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    last_post_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # 反向關係
-    templates: Mapped[list["IGTemplate"]] = relationship("IGTemplate", back_populates="account")
-    posts: Mapped[list["IGPost"]] = relationship("IGPost", back_populates="account")
-    
-    # 外鍵關係
-    school: Mapped["School | None"] = relationship("School")
-    creator: Mapped["User"] = relationship("User")
+    school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=True, index=True)
+    ig_user_id = Column(String(100), nullable=False, unique=True, comment="Instagram User ID")
+    username = Column(String(100), nullable=False, comment="Instagram 用戶名")
+
+    # Token 管理（加密存儲）
+    access_token_encrypted = Column(Text, nullable=False, comment="加密的 Access Token")
+    token_expires_at = Column(DateTime, nullable=False, comment="Token 過期時間")
+    last_token_refresh = Column(DateTime, comment="最後刷新時間")
+
+    # Facebook App 認證資訊（用於 Token 轉換和刷新）
+    app_id = Column(String(100), comment="Facebook App ID")
+    app_secret_encrypted = Column(Text, comment="加密的 App Secret")
+
+    # 發布模式配置
+    publish_mode = Column(SQLEnum(PublishMode), nullable=False, default=PublishMode.BATCH, comment="發布模式")
+    batch_count = Column(Integer, default=10, comment="批次發布數量（batch 模式）")
+    scheduled_times = Column(JSON, comment="排程時間列表（scheduled 模式），格式：['09:00', '15:00', '21:00']")
+
+    # 模板綁定
+    announcement_template_id = Column(Integer, ForeignKey("ig_templates.id", ondelete="SET NULL"), comment="公告模板 ID")
+    general_template_id = Column(Integer, ForeignKey("ig_templates.id", ondelete="SET NULL"), comment="一般模板 ID")
+
+    # 狀態欄位
+    is_active = Column(Boolean, default=True, nullable=False, comment="是否啟用")
+    last_publish_at = Column(DateTime, comment="最後發布時間")
+    last_error = Column(Text, comment="最後錯誤訊息")
+    last_error_at = Column(DateTime, comment="最後錯誤時間")
+
+    # 時間戳記
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # 關聯
+    school = relationship("School", foreign_keys=[school_id], backref="instagram_accounts")
+    announcement_template = relationship("IGTemplate", foreign_keys=[announcement_template_id], backref="announcement_accounts")
+    general_template = relationship("IGTemplate", foreign_keys=[general_template_id], backref="general_accounts")
+    posts = relationship("InstagramPost", back_populates="account", cascade="all, delete-orphan")
+
+    # 約束
+    __table_args__ = (
+        CheckConstraint('batch_count >= 1 AND batch_count <= 10', name='valid_batch_count'),
+        Index('idx_ig_account_school_active', 'school_id', 'is_active'),
+        Index('idx_ig_account_token_expires', 'token_expires_at'),
+    )
+
+    def __repr__(self):
+        return f"<InstagramAccount(id={self.id}, username={self.username}, school_id={self.school_id})>"
+
 
 class IGTemplate(Base):
     """Instagram 貼文模板"""
     __tablename__ = "ig_templates"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
     # 基本資訊
-    account_id: Mapped[int] = mapped_column(ForeignKey("ig_accounts.id"), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)  # 模板名稱
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 模板描述
-    
-    # 模板設定 (JSON 格式儲存)
-    template_data: Mapped[dict] = mapped_column(JSON, nullable=False)  # 完整模板配置
-    
-    # 狀態
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    
-    # 管理資訊
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # 統計
-    usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
-    # 反向關係
-    account: Mapped["IGAccount"] = relationship("IGAccount", back_populates="templates")
-    posts: Mapped[list["IGPost"]] = relationship("IGPost", back_populates="template")
-    creator: Mapped["User"] = relationship("User")
+    name = Column(String(100), nullable=False, comment="模板名稱")
+    description = Column(Text, comment="模板描述")
+    school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=True, index=True, comment="學校 ID（NULL 表示全域模板）")
+    template_type = Column(SQLEnum(TemplateType, values_callable=lambda x: [e.value for e in x]), nullable=False, comment="模板類型")
 
-class IGPost(Base):
+    # Canvas 配置
+    canvas_config = Column(JSON, nullable=False, comment="""
+    Canvas 配置，格式：
+    {
+        "width": 1080,
+        "height": 1080,
+        "background_type": "color" | "image",
+        "background_color": "#FFFFFF",
+        "background_image": "cdn_path"
+    }
+    """)
+
+    # 文字配置（分為帶圖/不帶圖兩種）
+    text_with_attachment = Column(JSON, comment="""
+    有附件時的文字配置，格式：
+    {
+        "font_family": "font_id",
+        "font_size": 32,
+        "color": "#000000",
+        "max_chars_per_line": 20,
+        "max_lines": 8,
+        "truncate_text": "...",
+        "align": "left" | "center" | "right",
+        "start_y": 700,
+        "line_spacing": 10
+    }
+    """)
+
+    text_without_attachment = Column(JSON, comment="""
+    無附件時的文字配置，格式同上
+    """)
+
+    # 附件圖片配置
+    attachment_config = Column(JSON, comment="""
+    附件圖片配置，格式：
+    {
+        "enabled": true,
+        "base_width": 450,
+        "base_height": 450,
+        "border_radius": 20,
+        "spacing": 15,
+        "position_x": 70,
+        "position_y": 70
+    }
+    """)
+
+    # Logo 配置
+    logo_config = Column(JSON, comment="""
+    Logo 配置，格式：
+    {
+        "enabled": true,
+        "source": "school_logo" | "platform_logo" | "custom",
+        "custom_image": "cdn_path",
+        "position_x": 50,
+        "position_y": 950,
+        "width": 150,
+        "height": 80,
+        "opacity": 1.0,
+        "layer_order": 100
+    }
+    """)
+
+    # 浮水印配置
+    watermark_config = Column(JSON, comment="""
+    浮水印配置，格式：
+    {
+        "enabled": true,
+        "text": "ForumKit",
+        "font_family": "font_id",
+        "font_size": 14,
+        "color": "#000000",
+        "opacity": 0.3,
+        "position_x": 950,
+        "position_y": 1050,
+        "layer_order": 200
+    }
+    """)
+
+    # Caption 配置
+    caption_template = Column(JSON, nullable=False, comment="""
+    Caption 模板配置，格式：
+    {
+        "structure": ["header", "divider", "content", "divider", "post_id", "footer", "hashtags"],
+        "header": {
+            "enabled": true,
+            "text": "📢 校園公告"
+        },
+        "footer": {
+            "enabled": true,
+            "text": "ForumKit 校園討論平台"
+        },
+        "post_id_format": {
+            "enabled": true,
+            "template": "#{school_short_name}_{post_type}_{post_id}",
+            "style": "hashtag"
+        },
+        "hashtags": {
+            "enabled": true,
+            "tags": ["校園", "公告", "學生"]
+        },
+        "divider": {
+            "enabled": true,
+            "text": "━━━━━━━━━━"
+        }
+    }
+    """)
+
+    # 狀態欄位
+    is_active = Column(Boolean, default=True, nullable=False, comment="是否啟用")
+    usage_count = Column(Integer, default=0, nullable=False, comment="使用次數")
+    last_used_at = Column(DateTime, comment="最後使用時間")
+
+    # 時間戳記
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # 關聯
+    school = relationship("School", foreign_keys=[school_id], backref="ig_templates")
+    posts = relationship("InstagramPost", back_populates="template")
+
+    # 索引
+    __table_args__ = (
+        Index('idx_ig_template_school_type', 'school_id', 'template_type', 'is_active'),
+    )
+
+    def __repr__(self):
+        return f"<IGTemplate(id={self.id}, name={self.name}, type={self.template_type})>"
+
+
+class InstagramPost(Base):
     """Instagram 發布記錄"""
-    __tablename__ = "ig_posts"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
-    # 關聯資訊
-    account_id: Mapped[int] = mapped_column(ForeignKey("ig_accounts.id"), nullable=False)
-    forum_post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False)  # 原始論壇貼文
-    template_id: Mapped[int] = mapped_column(ForeignKey("ig_templates.id"), nullable=False)
-    
-    # 發布內容
-    custom_caption: Mapped[str | None] = mapped_column(Text, nullable=True)  # 自訂文案
-    hashtags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)  # 標籤
-    generated_image: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 生成的圖片 URL
-    
-    # 發布設定
-    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
-    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 預約時間
-    
+    __tablename__ = "instagram_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # 基本資訊
+    public_id = Column(String(50), unique=True, nullable=False, index=True, comment="公開 ID（用於外部查詢）")
+    forum_post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True, comment="論壇貼文 ID")
+    ig_account_id = Column(Integer, ForeignKey("instagram_accounts.id", ondelete="CASCADE"), nullable=False, index=True, comment="IG 帳號 ID")
+    template_id = Column(Integer, ForeignKey("ig_templates.id", ondelete="SET NULL"), comment="使用的模板 ID")
+
+    # 渲染結果
+    rendered_image_cdn_path = Column(String(500), comment="渲染後圖片的 CDN 路徑")
+    rendered_caption = Column(Text, comment="渲染後的 Caption（最終發布內容）")
+
+    # 輪播資訊
+    carousel_group_id = Column(String(50), index=True, comment="輪播組 ID（10 篇一組）")
+    carousel_position = Column(Integer, comment="在輪播中的位置（1-10）")
+    carousel_total = Column(Integer, comment="輪播總數")
+
     # Instagram 資訊
-    ig_media_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # IG 媒體 ID
-    ig_post_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # IG 貼文連結
-    
-    # 處理記錄
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
-    # 時間戳
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # 反向關係
-    account: Mapped["IGAccount"] = relationship("IGAccount", back_populates="posts")
-    forum_post: Mapped["Post"] = relationship("Post")
-    template: Mapped["IGTemplate"] = relationship("IGTemplate", back_populates="posts")
+    ig_media_id = Column(String(100), unique=True, comment="Instagram Media ID")
+    ig_container_id = Column(String(100), comment="Instagram Container ID")
+    ig_permalink = Column(String(500), comment="Instagram 連結")
 
-class SchoolLogo(Base):
-    """學校 Logo 資源管理"""
-    __tablename__ = "school_logos"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
-    # 學校關聯
-    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
-    
-    # Logo 資訊
-    logo_url: Mapped[str] = mapped_column(String(500), nullable=False)  # Logo 檔案路徑
-    logo_type: Mapped[str] = mapped_column(String(32), default="primary", nullable=False)  # primary, secondary, icon
-    alt_text: Mapped[str | None] = mapped_column(String(255), nullable=True)  # 替代文字
-    
-    # 設定
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
-    # 管理資訊
-    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
-    # 外鍵關係
-    school: Mapped["School"] = relationship("School")
-    uploader: Mapped["User"] = relationship("User")
+    # 狀態管理
+    status = Column(SQLEnum(PostStatus), nullable=False, default=PostStatus.PENDING, index=True, comment="發布狀態")
+    publish_mode = Column(SQLEnum(PublishMode), nullable=False, comment="發布模式")
+    scheduled_at = Column(DateTime, index=True, comment="排程發布時間")
+    published_at = Column(DateTime, comment="實際發布時間")
 
-class IGSettings(Base):
-    """Instagram 全域設定"""
-    __tablename__ = "ig_settings"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
-    # 設定鍵值
-    key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    value: Mapped[str | None] = mapped_column(Text, nullable=True)
-    data: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 複雜設定
-    
-    # 設定類型
-    category: Mapped[str] = mapped_column(String(64), default="general", nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
-    # 管理資訊
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # 外鍵關係
-    creator: Mapped["User"] = relationship("User")
+    # 錯誤處理
+    error_message = Column(Text, comment="錯誤訊息")
+    error_code = Column(String(50), comment="錯誤代碼")
+    retry_count = Column(Integer, default=0, nullable=False, comment="重試次數")
+    last_retry_at = Column(DateTime, comment="最後重試時間")
+    max_retries = Column(Integer, default=3, nullable=False, comment="最大重試次數")
+
+    # 時間戳記
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # 關聯
+    forum_post = relationship("Post", backref="instagram_posts")
+    account = relationship("InstagramAccount", back_populates="posts")
+    template = relationship("IGTemplate", back_populates="posts")
+
+    # 索引
+    __table_args__ = (
+        Index('idx_ig_post_status_mode', 'status', 'publish_mode'),
+        Index('idx_ig_post_carousel', 'carousel_group_id', 'carousel_position'),
+        Index('idx_ig_post_scheduled', 'scheduled_at', 'status'),
+        CheckConstraint('retry_count <= max_retries', name='valid_retry_count'),
+        CheckConstraint('carousel_position >= 1 AND carousel_position <= 10', name='valid_carousel_position'),
+    )
+
+    def __repr__(self):
+        return f"<InstagramPost(id={self.id}, public_id={self.public_id}, status={self.status})>"

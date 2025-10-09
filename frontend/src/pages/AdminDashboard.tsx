@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { canSetMode, getRole, getRoleDisplayName, canAccessAnnouncements } from '@/utils/auth'
-import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3, Instagram, Type, Key } from 'lucide-react'
+import { LayoutDashboard, ShieldCheck, MessagesSquare, Users, Building2, Network, Wrench, LifeBuoy, MessageSquareDot, Activity, Server, Crown, BarChart3, Instagram } from 'lucide-react'
 import { MobileAdminDashboard } from '@/components/mobile/admin'
 
 export default function AdminDashboard() {
@@ -104,25 +104,11 @@ export default function AdminDashboard() {
           ) : null}
           <Card to="/admin/pages" title="頁面內容（Markdown）" desc="關於/版規 的維護與即時預覽" icon={LayoutDashboard} />
           {/* 公告發佈入口移除：公告改由一般發文流程勾選「公告貼文」並依角色控制範圍 */}
-          
-          {/* Instagram 整合管理 */}
-          {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') && (
-            <Card to="/admin/instagram" title="Instagram 整合" desc="帳號管理、模板設定、發布狀態與統計" icon={Instagram} />
-          )}
 
-          {/* Token 管理工具 */}
-          {role === 'dev_admin' && (
-            <Card to="/admin/tokens" title="Token 管理工具" desc="短期 Token 轉長期、Instagram API 密鑰管理" icon={Key} />
+          {/* Instagram 整合管理 */}
+          {['dev_admin', 'campus_admin'].includes(role || '') && (
+            <Card to="/admin/ig/dashboard" title="Instagram 整合" desc="發布監控、帳號管理、模板配置" icon={Instagram} />
           )}
-          
-          {/* 字體管理 - dev_admin 完整權限，campus_admin 可申請，cross_admin 唯讀 */}
-          {role === 'dev_admin' ? (
-            <Card to="/admin/fonts" title="字體管理" desc="上傳中文字體、預覽效果、支援圖片生成" icon={Type} />
-          ) : role === 'campus_admin' ? (
-            <Card to="/admin/fonts" title="字體管理" desc="申請新字體、檢視可用字體、查看申請狀態" icon={Type} />
-          ) : role === 'cross_admin' ? (
-            <Card to="/admin/fonts" title="字體管理" desc="檢視可用字體列表、預覽效果" icon={Type} disabled={true} />
-          ) : null}
         </div>
       </main>
     </div>

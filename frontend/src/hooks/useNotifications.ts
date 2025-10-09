@@ -1,23 +1,14 @@
 /**
  * 通知系統 Hook
- * 管理認證、審核、評論等各種通知
+ * 整合插件式通知管理器
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { Notification } from '@/types/notifications'
+import { notificationManager } from '@/lib/notificationManager'
 
-export interface Notification {
-  id: string
-  type: 'auth' | 'moderation' | 'comment' | 'reaction' | 'announcement' | 'system'
-  title: string
-  message: string
-  timestamp: number
-  read: boolean
-  urgent?: boolean
-  actionUrl?: string
-  actionText?: string
-  icon?: 'success' | 'warning' | 'error' | 'info'
-  data?: Record<string, any>
-}
+// 向後兼容：重新導出 Notification 類型
+export type { Notification } from '@/types/notifications'
 
 interface NotificationState {
   notifications: Notification[]
@@ -91,9 +82,9 @@ export function useNotifications() {
     setState(prev => {
       const notifications = [newNotification, ...prev.notifications].slice(0, MAX_NOTIFICATIONS)
       const unreadCount = notifications.filter(n => !n.read).length
-      
+
       saveNotifications(notifications)
-      
+
       return {
         notifications,
         unreadCount,
@@ -113,6 +104,11 @@ export function useNotifications() {
 
     return newNotification.id
   }, [saveNotifications])
+
+  // 初始化時設置 NotificationManager 的 addNotification 函數
+  useEffect(() => {
+    notificationManager.setAddNotificationFn(addNotification)
+  }, [addNotification])
 
   // 標記通知為已讀
   const markAsRead = useCallback((id: string) => {
@@ -180,80 +176,22 @@ export function useNotifications() {
     saveNotifications([])
   }, [saveNotifications])
 
-  // 根據類型快速添加認證相關通知
+  // 向後兼容：認證通知快捷方法（現在使用插件系統）
   const addAuthNotification = useCallback((
-    type: 'register_success' | 'login_success' | 'password_changed' | 'google_linked',
+    event: 'register_success' | 'login_success' | 'password_changed' | 'google_linked',
     message?: string
   ) => {
-    const templates = {
-      register_success: {
-        title: '註冊成功',
-        message: message || '歡迎加入 ForumKit 校園討論平台！',
-        icon: 'success' as const
-      },
-      login_success: {
-        title: '登入成功',
-        message: message || '歡迎回來！',
-        icon: 'success' as const
-      },
-      password_changed: {
-        title: '密碼已更新',
-        message: message || '您的密碼已成功變更',
-        icon: 'info' as const
-      },
-      google_linked: {
-        title: 'Google 帳號已綁定',
-        message: message || '現在可以使用 Google 快速登入',
-        icon: 'success' as const
-      }
-    }
+    return notificationManager.emit('auth', { event, message })
+  }, [])
 
-    const template = templates[type]
-    return addNotification({
-      type: 'auth',
-      ...template,
-      message: message || template.message
-    })
-  }, [addNotification])
-
-  // 根據類型快速添加審核相關通知
+  // 向後兼容：審核通知快捷方法（現在使用插件系統）
   const addModerationNotification = useCallback((
-    type: 'post_approved' | 'post_rejected' | 'comment_approved' | 'comment_rejected',
+    event: 'post_approved' | 'post_rejected' | 'comment_approved' | 'comment_rejected',
     postId?: number,
     reason?: string
   ) => {
-    const templates = {
-      post_approved: {
-        title: '貼文已通過審核',
-        message: `您的貼文 #${postId} 已通過審核並公開顯示`,
-        icon: 'success' as const,
-        actionUrl: postId ? `/posts/${postId}` : undefined,
-        actionText: '查看貼文'
-      },
-      post_rejected: {
-        title: '貼文未通過審核',
-        message: `您的貼文 #${postId} 未通過審核${reason ? `：${reason}` : ''}`,
-        icon: 'warning' as const,
-        urgent: true
-      },
-      comment_approved: {
-        title: '留言已通過審核',
-        message: `您的留言已通過審核並顯示`,
-        icon: 'success' as const
-      },
-      comment_rejected: {
-        title: '留言未通過審核',
-        message: `您的留言未通過審核${reason ? `：${reason}` : ''}`,
-        icon: 'warning' as const
-      }
-    }
-
-    const template = templates[type]
-    return addNotification({
-      type: 'moderation',
-      ...template
-    })
-  }, [addNotification])
+    return notificationManager.emit('moderation', { event, postId, reason })
+  }, [])
 
   // 初始化載入
   useEffect(() => {

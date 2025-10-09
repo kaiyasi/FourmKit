@@ -3,6 +3,7 @@ import { getJSON, HttpError } from '@/lib/http'
 import { validatePostList, type PostList as PostListType } from '@/schemas/post'
 import { MobilePostCard } from './MobilePostCard'
 import { RefreshCw, AlertCircle, ChevronUp } from 'lucide-react'
+import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
 
 interface MobilePostListProps {
   injectedItems?: any[]
@@ -291,13 +292,21 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
   const handleReaction = async (postId: number, reaction: string) => {
     haptic(8)
     try {
-      await fetch(`/api/posts/${postId}/react`, {
+      const response = await fetch(`/api/posts/${postId}/reactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reaction })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify({ reaction_type: reaction })
       })
-      // 重新載入該貼文數據
-      fetchPage(1, true)
+
+      if (response.ok) {
+        // 重新載入該貼文數據
+        fetchPage(1, true)
+      } else {
+        console.warn('反應失敗:', response.status, response.statusText)
+      }
     } catch (err) {
       console.warn('反應失敗:', err)
     }
@@ -462,29 +471,13 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
 
         {/* 服務器貼文 */}
         {data?.items.map((post) => (
-          <div key={post.id} className="border border-border rounded-2xl p-4 bg-surface/70 mb-3">
-            {/* 首行：#ID • 時間 • 學校 */}
-            <div className="text-xs text-muted mb-2">
-              #{post.id} <span className="mx-1">•</span> {new Date(post.created_at).toLocaleString()}
-              {post?.school?.name ? (<><span className="mx-1">•</span> <span className="text-fg">{post.school.name}</span></>) : null}
-            </div>
-
-            {/* 回覆提示（灰色小字） */}
-            {typeof post.reply_to_id === 'number' && post.reply_to_id > 0 && (
-              <div className="text-xs text-muted mb-2">
-                <a href={`/posts/${post.reply_to_id}`} className="hover:underline">回覆貼文 #{post.reply_to_id}</a>
-              </div>
-            )}
-
-            {/* 貼文內容 */}
-            <div className="text-sm text-fg whitespace-pre-line">{post.content}</div>
-
-            {/* 動作列（簡化） */}
-            <div className="mt-3 flex items-center justify-end gap-2">
-              <button onClick={() => handleShare(post.id)} className="text-xs text-muted">分享</button>
-              <button onClick={() => handleReaction(post.id, 'like')} className="text-xs text-muted">讚</button>
-            </div>
-          </div>
+          <MobilePostCard
+            key={post.id}
+            post={post}
+            onReaction={handleReaction}
+            onShare={handleShare}
+            schools={schools}
+          />
         ))}
 
         {/* 載入更多 */}

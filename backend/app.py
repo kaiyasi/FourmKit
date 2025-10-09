@@ -43,16 +43,20 @@ from routes.routes_media import bp as media_bp
 from routes.routes_account import bp as account_bp
 from routes.routes_moderation import bp as moderation_bp
 from routes.routes_abuse import bp as abuse_bp
-from routes.routes_chat import bp as chat_bp
+# Chat functionality removed
 from routes.routes_announcements import bp as announcements_bp
 from routes.routes_support import bp as support_bp
 from routes.routes_support_admin import bp as support_admin_bp
 from routes.routes_admin_members import bp as admin_members_bp
-from routes.routes_instagram import instagram_bp
-from routes.routes_fonts import bp as fonts_bp
-from routes.routes_cdn import bp as cdn_bp
+# Instagram functionality removed
+# Font management removed
+from routes.routes_cdn import bp as cdn_bp, public_bp as uploads_public_bp
+from routes.routes_cdn import cdn_home as _cdn_home_page
+
+# Token management routes removed
 from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
+from routes.routes_admin_chat import bp as admin_chat_bp
 
 APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.1.0")
 
@@ -73,56 +77,7 @@ def __brand_footer_text() -> str:
     from datetime import datetime, timezone
     return f"DEV. Serelix Studio • {datetime.now(timezone.utc).isoformat()}"
 
-# --------- Realtime rooms state (in-memory, single-process) ---------
-from collections import deque
-from typing import Deque, DefaultDict, Set
-
-# 最近訊息：每個房間保留最多 N 則，以供新加入者獲得離線期間訊息
-_ROOM_MAX_BACKLOG = int(os.getenv("WS_ROOM_BACKLOG", "50"))
-_room_msgs: DefaultDict[str, Deque[dict]] = DefaultDict(lambda: deque(maxlen=_ROOM_MAX_BACKLOG))  # type: ignore[var-annotated]
-
-# 連線與房間對應，用於離線清理與在房間內廣播線上名單
-_sid_rooms: DefaultDict[str, Set[str]] = DefaultDict(set)  # type: ignore[var-annotated]
-_room_clients: DefaultDict[str, Set[str]] = DefaultDict(set)  # client_id 集合，非 sid  # type: ignore[var-annotated]
-_sid_client: DefaultDict[str, str] = DefaultDict(str)  # sid -> client_id  # type: ignore[var-annotated]
-_client_user: DefaultDict[str, dict] = DefaultDict(dict)  # client_id -> {"user_id": int, "username": str, "role": str}  # type: ignore[var-annotated]
-
-# 自訂聊天室（記憶體）
-# 結構：{ room_id: { "owner_id": int, "name": str, "description": str, "members": set[int] } }
-_custom_rooms: DefaultDict[str, dict] = DefaultDict(dict)  # type: ignore[var-annotated]
-
-# 房間總量限制（避免被大量建房間耗盡記憶體）
-_WS_ROOMS_MAX = int(os.getenv("WS_ROOMS_MAX", "1000"))
-
-# WebSocket 速率限制（單進程）
-_ws_hits: DefaultDict[str, Deque[float]] = DefaultDict(deque)  # type: ignore[var-annotated]
-
-def _ws_allow(key: str, calls: int, per_seconds: int) -> bool:
-    now = time.time()
-    dq = _ws_hits.get(key)
-    if dq is None:
-        dq = deque()
-        _ws_hits[key] = dq
-    # 清除視窗外的項目
-    while dq and now - dq[0] > per_seconds:
-        dq.popleft()
-    if len(dq) >= calls:
-        return False
-    dq.append(now)
-    return True
-
-_ROOM_NAME_RE = re.compile(r"^[a-z0-9:_-]{1,64}$")
-def _valid_room_name(name: str) -> bool:
-    return bool(_ROOM_NAME_RE.match(name))
-
-# ---- WebSocket rate-limit parameters (configurable via env) ----
-try:
-    _WS_JOIN_CALLS = int(os.getenv("WS_JOIN_CALLS", "10"))           # default 10 joins / 10s per sid
-    _WS_JOIN_WINDOW = int(os.getenv("WS_JOIN_WINDOW", "10"))         # seconds
-    _WS_MSG_CALLS_PER_CLIENT = int(os.getenv("WS_MSG_CALLS_PER_CLIENT", "20"))  # default 20 msgs / 10s per client_id
-    _WS_MSG_CALLS_PER_SID = int(os.getenv("WS_MSG_CALLS_PER_SID", "25"))        # default 25 msgs / 10s per sid
-    _WS_MSG_WINDOW = int(os.getenv("WS_MSG_WINDOW", "10"))           # seconds
-except Exception:
+# Chat functionality removed - keeping only basic WebSocket support
     _WS_JOIN_CALLS, _WS_JOIN_WINDOW = 10, 10
     _WS_MSG_CALLS_PER_CLIENT, _WS_MSG_CALLS_PER_SID, _WS_MSG_WINDOW = 20, 25, 10
 
@@ -584,6 +539,38 @@ def create_app() -> Flask:
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=refresh_expires_days)
     jwt = JWTManager(app)
 
+    # 掃描/爆破防護：在已知探測路徑上回傳設計過的警告，並記 strike（升級為 CAPTCHA/封鎖）
+    @app.before_request
+    def _probe_guard():
+        try:
+            if request.method != 'GET':
+                return
+            if os.getenv('SECURITY_PROBE_GUARD', '1').strip().lower() not in {'1','true','yes'}:
+                return
+            p = (request.path or '').lower().strip()
+            bad_prefix = (
+                p.startswith('/wp-') or p.startswith('/phpmyadmin') or p.startswith('/cgi-bin') or
+                p.startswith('/vendor') or p.startswith('/server-status') or p.startswith('/.git')
+            )
+            bad_exact = p in {'/.env','/config.php','/composer.json','/composer.lock','/id_rsa','/shell.php'}
+            bad_suffix = p.endswith('.php') or p.endswith('.bak') or p.endswith('.sql') or p.endswith('.env')
+            if bad_prefix or bad_exact or bad_suffix:
+                try:
+                    from utils.ratelimit import add_ip_strike, get_client_ip
+                    ip = get_client_ip()
+                    add_ip_strike(ip)
+                except Exception:
+                    pass
+                return jsonify({
+                    'ok': False,
+                    'error': {
+                        'code': 'SECURITY_WARNING',
+                        'message': '本服務已啟用安全防護。若你是研究人員，請聯繫管理員並遵循負責任揭露流程。'
+                    }
+                }), 451
+        except Exception:
+            pass
+
     # 優先初始化資料庫，並（若啟用）以環境變數確保單一開發者帳號存在
     try:
         init_engine_session()
@@ -626,7 +613,20 @@ def create_app() -> Flask:
         from utils.support_db import init_support_database
         init_support_database()
         print("[ForumKit] Support DB init ok")
-        
+
+        # 確保基礎學校資料存在（避免前端載入學校資訊失敗）
+        try:
+            from utils.db import get_session as __gs
+            from models import School as __School
+            with __gs() as __s:
+                base = __s.query(__School).filter(__School.slug == 'cross').first()
+                if not base:
+                    __s.add(__School(slug='cross', name='跨校'))
+                    __s.commit()
+                    print('[ForumKit] created base school: cross')
+        except Exception as _e:
+            print('[ForumKit] ensure base school failed:', _e)
+
         # 初始化自定義聊天室到內存中
         try:
             from models import ChatRoom
@@ -869,8 +869,16 @@ def create_app() -> Flask:
     ]
     allowed_origins = (
         [o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-        if os.getenv("ALLOWED_ORIGINS") else default_http_origins
+        if os.getenv("ALLOWED_ORIGINS") else list(default_http_origins)
     )
+    # 自動加上 PUBLIC_BASE_URL / PUBLIC_CDN_URL（若存在），避免忘記設定造成 CORS 被擋
+    try:
+        for env_key in ("PUBLIC_BASE_URL", "PUBLIC_CDN_URL"):
+            v = (os.getenv(env_key) or "").strip()
+            if v and v not in allowed_origins:
+                allowed_origins.append(v)
+    except Exception:
+        pass
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
     # 初始化 SocketIO（只在這裡做一次）
@@ -894,24 +902,38 @@ def create_app() -> Flask:
 
         if request.path.startswith("/api"):
             # IP 封鎖檢查（允許提交稽核報告來解封，以及管理員功能）
-            admin_paths = [
+            exempt_paths = [
                 '/api/audit_report',
-                '/api/admin/users/unblock-ip',
-                '/api/admin/users/block-ip',
-                '/api/admin/users/ip-status',
-                '/api/admin/users/suspend',
-                '/api/admin/users/unsuspend',
-                '/api/admin/users/suspend-status',
-                '/api/admin/users/revoke-email',
-                '/api/admin/auth'
+                '/api/audit_report/unlock',
             ]
-            if not any(request.path.startswith(path) for path in admin_paths) and is_ip_blocked():
+            if not any(request.path.startswith(path) for path in exempt_paths) and is_ip_blocked():
                 return jsonify({
                     'ok': False,
                     'error': {
                         'code': 'IP_BLOCKED',
-                        'message': '此 IP 已受限制，請提交稽核報告以解除',
-                        'hint': 'POST /api/audit_report { contact?, reason?, message }'
+                        'title': '此 IP 位址的存取已被限制',
+                        'message': '偵測到此網路位址有異常活動，為保護社群安全，系統已暫時限制存取。',
+                        'actions': [
+                            {
+                                'type': 'unlock_code',
+                                'label': '我擁有解鎖碼',
+                                'endpoint': '/api/audit_report/unlock',
+                                'method': 'POST',
+                                'fields': [
+                                    {'name': 'code', 'type': 'text', 'label': '解鎖碼'}
+                                ]
+                            },
+                            {
+                                'type': 'appeal',
+                                'label': '提交申訴',
+                                'endpoint': '/api/audit_report',
+                                'method': 'POST',
+                                'fields': [
+                                    {'name': 'contact', 'type': 'email', 'label': '聯繫信箱 (選填)'},
+                                    {'name': 'message', 'type': 'textarea', 'label': '申訴說明 (請詳述您遇到的問題)'}
+                                ]
+                            }
+                        ]
                     }
                 }), 451
             # 若使用者被註銷（停權），禁止使用 API（保留管理解除端點）
@@ -969,6 +991,22 @@ def create_app() -> Flask:
 
     app.before_request(_ctx)
 
+    # CDN 根路徑保底：若 Host 為 CDN 網域，直接提供 CDN 首頁，避免 404
+    @app.get("/")
+    @app.get("/admin")
+    @app.get("/admin/")
+    def _maybe_cdn_home():  # type: ignore[override]
+        try:
+            host = (request.host or '').split(':')[0].lower()
+            # 可透過環境變數指定 CDN 網域；否則以 'cdn.' 開頭為判斷
+            cdn_host = (os.getenv('PUBLIC_CDN_HOST') or os.getenv('CDN_PUBLIC_HOST') or '').strip().lower()
+            if (cdn_host and host == cdn_host) or (host.startswith('cdn.')):
+                return _cdn_home_page()  # 交給 CDN 首頁渲染
+        except Exception:
+            pass
+        # 非 CDN 網域：回傳最小健康訊號，避免覆蓋前端靜態頁（通常由 Nginx 提供）
+        return jsonify({"ok": True, "service": "ForumKit backend"})
+
     @app.after_request
     def add_resp_id(resp: Response) -> Response:
         resp.headers["X-Request-ID"] = getattr(g, "req_id", "-")
@@ -981,8 +1019,9 @@ def create_app() -> Flask:
             resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
             resp.headers.setdefault('X-Frame-Options', 'DENY')
             resp.headers.setdefault('Referrer-Policy', 'no-referrer')
-            if os.getenv('DISABLE_PERMISSIONS_POLICY', '0') not in {'1','true','yes','on'}:
-                resp.headers.setdefault('Permissions-Policy', "geolocation=(), microphone=(), camera=()")
+            # if os.getenv('DISABLE_PERMISSIONS_POLICY', '0') not in {'1','true','yes','on'}:
+            #     # resp.headers.setdefault('Permissions-Policy', "geolocation=(), microphone=(), camera=()")
+            #     pass
             # CSP（簡化版，允許 self 資源與 data/blob 圖片、ws 連線）。
             # 可選開放 Google Fonts：ALLOW_GOOGLE_FONTS=1 時，放行 fonts.googleapis.com / fonts.gstatic.com。
             allow_gfonts = os.getenv('ALLOW_GOOGLE_FONTS', '0') in {'1','true','yes','on'}
@@ -1029,8 +1068,31 @@ def create_app() -> Flask:
             try:
                 import socket  # type: ignore
                 import requests  # type: ignore
+                from urllib.parse import urlparse  # type: ignore
+
+                # 1) 解析目標位址：優先 PUBLIC_CDN_URL，其次 CDN_HOST/CDN_PORT（預設 127.0.0.1:12002）
+                raw_url = (os.getenv('PUBLIC_CDN_URL') or '').strip()
+                scheme = 'http'
                 host = os.getenv('CDN_HOST', '127.0.0.1')
                 port = int(os.getenv('CDN_PORT', '12002'))
+                if raw_url:
+                    try:
+                        u = urlparse(raw_url)
+                        if u.hostname:
+                            host = u.hostname
+                        if u.scheme:
+                            scheme = u.scheme
+                        if u.port:
+                            port = int(u.port)
+                        else:
+                            # 預設埠
+                            if scheme == 'https':
+                                port = 443
+                            elif scheme == 'http':
+                                port = 80
+                    except Exception:
+                        # 解析失敗仍使用環境變數後備
+                        pass
 
                 # 1. TCP 連線測試
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1049,7 +1111,7 @@ def create_app() -> Flask:
                 http_ok = False
                 http_status = None
                 try:
-                    cdn_url = f"http://{host}:{port}"
+                    cdn_url = f"{scheme}://{host}:{port}"
                     response = requests.get(cdn_url, timeout=3)
                     http_ok = response.status_code < 500
                     http_status = response.status_code
@@ -1059,7 +1121,7 @@ def create_app() -> Flask:
                 # 3. 檔案服務測試
                 file_test_ok = False
                 try:
-                    test_url = f"http://{host}:{port}/test.txt"
+                    test_url = f"{scheme}://{host}:{port}/test.txt"
                     response = requests.head(test_url, timeout=2)
                     file_test_ok = response.status_code in [200, 404]
                 except Exception:
@@ -1069,6 +1131,7 @@ def create_app() -> Flask:
                     "ok": bool(tcp_ok and http_ok),
                     "host": host,
                     "port": port,
+                    "scheme": scheme,
                     "tcp_ok": tcp_ok,
                     "http_ok": http_ok,
                     "http_status": http_status,
@@ -1076,7 +1139,34 @@ def create_app() -> Flask:
                     "status": "OK" if (tcp_ok and http_ok) else "FAIL",
                 }
             except Exception as e:
-                cdn = {"ok": False, "error": str(e)}
+                # 失敗也回報 host/port 方便除錯
+                try:
+                    from urllib.parse import urlparse  # type: ignore
+                    raw_url = (os.getenv('PUBLIC_CDN_URL') or '').strip()
+                    scheme = 'http'
+                    host = os.getenv('CDN_HOST', '127.0.0.1')
+                    port = int(os.getenv('CDN_PORT', '12002'))
+                    if raw_url:
+                        u = urlparse(raw_url)
+                        if u.hostname:
+                            host = u.hostname
+                        if u.scheme:
+                            scheme = u.scheme
+                        if u.port:
+                            port = int(u.port)
+                        else:
+                            if scheme == 'https':
+                                port = 443
+                            elif scheme == 'http':
+                                port = 80
+                except Exception:
+                    scheme = 'http'
+                    host = os.getenv('CDN_HOST', '127.0.0.1')
+                    try:
+                        port = int(os.getenv('CDN_PORT', '12002'))
+                    except Exception:
+                        port = None
+                cdn = {"ok": False, "status": "FAIL", "host": host, "port": port, "scheme": scheme, "error": str(e)}
 
             payload = {
                 "ok": True,
@@ -1458,7 +1548,7 @@ def create_app() -> Flask:
         print('[ForumKit] routes_events not mounted:', _e)
     
     # 聊天記錄系統
-    app.register_blueprint(chat_bp)
+    # Chat blueprints removed
     
     # 公告通知系統
     app.register_blueprint(announcements_bp)
@@ -1470,19 +1560,33 @@ def create_app() -> Flask:
     # 會員管理系統
     app.register_blueprint(admin_members_bp)
     
-    # Instagram 整合管理（舊 Instagram routes）
-    app.register_blueprint(instagram_bp)
+    # Token management system removed
+    
+    # Instagram 新系統路由
+    try:
+        from routes.routes_ig_accounts import bp as ig_accounts_bp
+        from routes.routes_ig_templates import bp as ig_templates_bp
+        from routes.routes_ig_posts import bp as ig_posts_bp
+        from routes.routes_ig_fonts import bp as ig_fonts_bp
+        from routes.routes_ig_queue import bp as ig_queue_bp
+        from routes.routes_ig_analytics import bp as ig_analytics_bp
+        app.register_blueprint(ig_accounts_bp)
+        app.register_blueprint(ig_templates_bp)
+        app.register_blueprint(ig_posts_bp)
+        app.register_blueprint(ig_fonts_bp)
+        app.register_blueprint(ig_queue_bp)
+        app.register_blueprint(ig_analytics_bp)
+        print('[ForumKit] Instagram system routes mounted successfully')
+    except Exception as _e:
+        print('[ForumKit] Instagram system routes not mounted:', _e)
 
-    # Instagram 基於 Page ID 的新路由（強制掛載，失敗時直接顯錯，避免前端打到 404）
-    from routes.routes_instagram_page_based import register_instagram_page_routes  # type: ignore
-    register_instagram_page_routes(app)
-    
-    # 字體管理系統
-    app.register_blueprint(fonts_bp)
-    
-    
-    # CDN 靜態檔案服務
+
+    # CDN 靜態檔案服務 + /uploads 相容路徑
     app.register_blueprint(cdn_bp)
+    app.register_blueprint(uploads_public_bp)
+    app.register_blueprint(admin_chat_bp)
+    # Protected assets routes temporarily disabled
+    # app.register_blueprint(protected_assets_bp)
 
     # 新的統一貼文圖片生成系統
     try:
@@ -1640,6 +1744,10 @@ def register_socketio_events():
     if _events_registered:
         return
     _events_registered = True
+
+    # 註冊新的聊天系統 Socket 事件
+    from socket_events import init_socket_events
+    init_socket_events(socketio)
 
     @socketio.on("connect")
     def on_connect():  # noqa: F841
@@ -1824,82 +1932,6 @@ def register_socketio_events():
             pass
         emit("room.presence", {"room": room, "count": len(_room_clients[room])}, to=room)
 
-    @socketio.on("chat.send")
-    def on_chat_send(payload: dict):  # noqa: F841
-        """接收聊天訊息並廣播到房間，同時保存到 backlog。
-        payload: { room: str, message: str, client_id?: str, ts?: str }
-        """
-        room = str(payload.get("room") or "").strip()
-        msg = str(payload.get("message") or "").strip()
-        client_id = str(payload.get("client_id") or "").strip() or f"sid:{request.sid}"
-        if not room:
-            return emit("room.error", {"room": room, "error": "ROOM_REQUIRED"})
-        if not _valid_room_name(room):
-            return emit("room.error", {"room": room, "error": "INVALID_ROOM_NAME"})
-        if not msg:
-            return emit("room.error", {"room": room, "error": "EMPTY_MESSAGE"})
-        if len(msg) > 2000:
-            return emit("room.error", {"room": room, "error": "MESSAGE_TOO_LONG"})
-        # 資安/濫用保護
-        try:
-            from utils.ratelimit import is_ip_blocked, add_ip_strike
-            if is_ip_blocked():
-                return emit("room.error", {"room": room, "error": "IP_BLOCKED"})
-            # 速率限制（可由環境變數覆寫）：每 client_id / sid 在視窗內最大全局訊息數
-            if (not _ws_allow(f"chat:{client_id}", calls=_WS_MSG_CALLS_PER_CLIENT, per_seconds=_WS_MSG_WINDOW)
-                or not _ws_allow(f"sid:{request.sid}", calls=_WS_MSG_CALLS_PER_SID, per_seconds=_WS_MSG_WINDOW)):
-                try: add_ip_strike()
-                except Exception: pass
-                return emit("room.error", {"room": room, "error": "RATE_LIMIT"})
-        except Exception:
-            pass
-
-        # 解析顯示名稱：若能識別 user，優先用 username，其次匿名 client_id 縮寫
-        display_name = None
-        try:
-            user_info = _client_user.get(client_id) if client_id else None
-            if user_info and user_info.get("username"):
-                display_name = str(user_info.get("username") or "").strip()
-            if not display_name:
-                # 匿名以 client_id 前 8 碼（或 sid: 後綴）當暱稱
-                base = (client_id or "").replace("sid:", "")
-                display_name = base[:8] if base else "匿名"
-        except Exception:
-            display_name = None
-
-        payload_out = {
-            "room": room,
-            "message": msg,
-            "client_id": client_id,
-            "ts": payload.get("ts") or datetime.now(timezone.utc).isoformat(),
-            "username": display_name,
-        }
-        
-        # 保存聊天記錄到資料庫
-        try:
-            from services.chat_service import ChatService
-            from utils.db import get_session
-            
-            with get_session() as s:
-                user_info = _client_user.get(client_id) if client_id else None
-                ChatService.save_message(
-                    session=s,
-                    room_id=room,
-                    message=msg,
-                    user_id=user_info.get("user_id") if user_info else None,
-                    username=display_name,
-                    client_id=client_id,
-                    message_type="text"
-                )
-                s.commit()
-        except Exception as e:
-            print(f"[Chat] Failed to save message to database: {e}")
-        
-        # 存入 backlog
-        _room_msgs[room].append(payload_out)
-        # 廣播到該房間
-        emit("chat.message", payload_out, to=room)
-    
     
     # ==================== Support System Socket Events ====================
     

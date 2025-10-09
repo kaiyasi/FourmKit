@@ -129,11 +129,35 @@ def check_login_mode():
 # -----------------------------
 # 帳密登入
 # -----------------------------
+from utils.ratelimit import rate_limit, get_client_ip, track_and_check_user_ip
+
 @bp.post("/login")
+@rate_limit(calls=8, per_seconds=60, by='ip')
 def login():
     data = request.get_json(silent=True) or {}
     account = (data.get("username") or "").strip()
     password = data.get("password") or ""
+
+    # 若此 IP 需要 CAPTCHA，先驗證
+    try:
+        from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
+        ip = get_client_ip()
+        if is_captcha_required(ip):
+            captcha_token = (data.get('captcha_token') or request.headers.get('X-Captcha-Token') or '').strip()
+            if not verify_captcha(captcha_token):
+                return jsonify({
+                    'ok': False,
+                    'error': {
+                        'code': 'CAPTCHA_REQUIRED',
+                        'message': '需要通過驗證碼以繼續',
+                        'provider': (os.getenv('CAPTCHA_PROVIDER') or 'turnstile'),
+                        'sitekey': (os.getenv('CAPTCHA_SITE_KEY') or '')
+                    }
+                }), 403
+            else:
+                clear_captcha_requirement(ip)
+    except Exception:
+        pass
 
     # 檢查登入模式
     allowed, mode = check_login_mode()
@@ -178,6 +202,22 @@ def login():
         except Exception:
             pass
 
+        # 風控：同一使用者 24h 內不同 IP 數量限制（管理員豁免）
+        try:
+            if u.role not in ["dev_admin", "admin"]:
+                ip = get_client_ip()
+                allowed, cnt, th = track_and_check_user_ip(int(u.id), ip)
+                if not allowed:
+                    return jsonify({
+                        "ok": False,
+                        "error": {
+                            "code": "TOO_MANY_IPS",
+                            "message": f"此帳號 24 小時內使用過過多來源 IP（{cnt}/{th}），請稍後再試或聯繫管理員"
+                        }
+                    }), 429
+        except Exception:
+            pass
+
         token = create_access_token(identity=str(u.id), additional_claims={"role": u.role})
         refresh = create_refresh_token(identity=str(u.id))
 
@@ -193,12 +233,31 @@ def login():
         except Exception:
             pass
 
-        return jsonify({
+        resp = jsonify({
             "access_token": token,
             "refresh_token": refresh,
             "role": u.role,
             "school_id": getattr(u, 'school_id', None),
         })
+        # 若為 dev_admin，設置識別 cookie（Nginx 用於 admin.html 分流）與簽名 cookie（後端保護 admin 資產）
+        try:
+            if u.role == 'dev_admin':
+                max_age = int(os.getenv('ADMIN_ASSET_COOKIE_MAXAGE', '1800'))
+                secure = os.getenv('ENABLE_HSTS', '0') in {'1','true','yes'}
+                resp.set_cookie('fk_admin', '1', max_age=max_age, secure=secure, httponly=False, samesite='Lax', path='/')
+                # 產生簽名 token：uid.ts.hmac(uid.ts.ip)
+                import hmac, hashlib, time as _t
+                uid_s = str(u.id)
+                ts_s = str(int(_t.time()))
+                ip = get_client_ip()
+                base = f"{uid_s}.{ts_s}.{ip}".encode('utf-8')
+                secret = (os.getenv('SECRET_KEY') or 'dev-secret').encode('utf-8')
+                sig = hmac.new(secret, base, hashlib.sha256).hexdigest()
+                value = f"{uid_s}.{ts_s}.{sig}"
+                resp.set_cookie('fk_admin_token', value, max_age=max_age, secure=secure, httponly=True, samesite='Lax', path='/')
+        except Exception:
+            pass
+        return resp
 
 # -----------------------------
 # 令牌刷新
@@ -809,10 +868,19 @@ def profile_alias():
         sch = s.get(School, getattr(u, 'school_id', None)) if getattr(u, 'school_id', None) else None
         auth_provider = 'local'
         try:
-            if not (u.password_hash or '').strip():
+            # 檢查用戶是否有 Google OAuth 記錄（更準確的判斷）
+            # 如果用戶通過 Google 註冊但後來設定了密碼，仍應顯示為 Google 登入
+            if hasattr(u, 'oauth_provider') and u.oauth_provider == 'google':
                 auth_provider = 'google'
+            elif not (u.password_hash or '').strip():
+                # 沒有密碼的用戶通常是 Google 用戶
+                auth_provider = 'google'
+            else:
+                # 有密碼的用戶為本地登入
+                auth_provider = 'local'
         except Exception:
-            pass
+            # 默認根據密碼存在與否判斷
+            auth_provider = 'google' if not (u.password_hash or '').strip() else 'local'
         return jsonify({
             'id': u.id,
             'username': u.username,

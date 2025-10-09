@@ -17,7 +17,16 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     base: '/',
     resolve: {
-      alias: { '@': path.resolve(__dirname, './src') },
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
+      dedupe: ['react', 'react-dom']
+    },
+    optimizeDeps: {
+      include: ['react', 'react-dom']
+    },
+    build: {
+      chunkSizeWarningLimit: 1000
     },
     server: {
       port: 5173,

@@ -137,16 +137,36 @@ const AdminSupportPageNew: React.FC = () => {
     }
   }, [selectedTicketId]);
 
-  // 即時事件：刷新列表或當前詳情
+  // 即時事件：刷新列表或當前詳情，並處理提及通知
   useAdminSupportSocket((ev) => {
     try {
-      if (selectedTicket && ev.ticket_id === selectedTicket.ticket_id) {
-        loadTicketDetail(selectedTicket.id)
-      } else {
-        loadTickets()
+      // 提及通知邏輯
+      if (ev.event_type === 'message_sent' && ev.payload && user) {
+        const messageBody = ev.payload.body || '';
+        const authorUserId = ev.payload.author_user_id;
+        
+        // 檢查是否提及當前用戶，且不是自己提及自己
+        if (authorUserId !== user.id) {
+          const mentionPattern = new RegExp(`@${user.username}\b`, 'i');
+          if (mentionPattern.test(messageBody)) {
+            const authorName = ev.payload.author_name || '某人';
+            showNotification(`${authorName} 在工單 #${ev.ticket_id} 中提及了你`);
+          }
+        }
       }
-    } catch {}
-  })
+
+      // 更新工單列表或詳情
+      if (selectedTicket && ev.ticket_id === selectedTicket.ticket_id) {
+        loadTicketDetail(selectedTicket.id);
+      } else {
+        // 優化：僅在列表可見時刷新，或根據事件類型決定是否刷新
+        // 為簡化，暫時保留原邏輯
+        loadTickets();
+      }
+    } catch (e) {
+      console.warn('[support] event handler failed', e);
+    }
+  });
 
   const loadData = useCallback(async () => {
     await Promise.all([loadTickets(), loadStats()]);

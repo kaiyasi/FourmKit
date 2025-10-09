@@ -1,0 +1,12 @@
+{
+  "mode": "normal",
+  "maintenance_message": "",
+  "maintenance_until": "",
+  "login_mode": "open",
+  "enforce_min_post_chars": false,
+  "min_post_chars": 15,
+  "email_blacklist": [],
+  "suspended_users": [
+    9
+  ]
+}

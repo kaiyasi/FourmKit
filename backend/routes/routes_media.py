@@ -26,12 +26,15 @@ SIZE_LIMITS = {
 }
 
 @bp.post("/upload")
-@jwt_required()
+@jwt_required(optional=True)
 def upload_media():
     """分塊上傳媒體檔案"""
     try:
         user_id = get_jwt_identity()
         post_id = request.form.get('post_id', type=int)
+        # 完全公開：未登入時，一律視為公共資產上傳（忽略 post_id）
+        if not user_id:
+            post_id = None
         chunk_index = request.form.get('chunk', type=int, default=0)
         total_chunks = request.form.get('chunks', type=int, default=1)
         file_hash = request.form.get('hash', '').strip()
@@ -67,63 +70,14 @@ def upload_media():
         if file_size > SIZE_LIMITS[file_type] * 1024 * 1024:
             return jsonify({"ok": False, "error": f"檔案太大，最大 {SIZE_LIMITS[file_type]}MB"}), 400
             
-        # 若沒有提供 post_id，視為「獨立資產上傳」（例如模板 Logo），使用 Logo 處理器
+        # 若指定要綁定貼文，仍需登入
+        if post_id and not user_id:
+            return jsonify({"ok": False, "error": "需要登入以綁定貼文附件"}), 401
+
+        # Logo 處理器功能已停用
         if not post_id:
-            from services.logo_handler import get_logo_handler, LogoError
-            
-            try:
-                logo_handler = get_logo_handler()
-                
-                # 根據文件類型決定上傳類別
-                upload_category = request.form.get('category', 'general')
-                identifier = request.form.get('identifier', f"asset_{int(time.time())}")
-                
-                if file_type == 'image':
-                    # 使用 Logo 處理器上傳
-                    result = logo_handler.upload_general_logo(
-                        category=upload_category,
-                        identifier=identifier,
-                        file_stream=file.stream,
-                        filename=file_name
-                    )
-                    
-                    return jsonify({
-                        "ok": True,
-                        "url": result['url'],
-                        "path": result['relative_path'],
-                        "info": {
-                            "width": result['width'],
-                            "height": result['height'],
-                            "size": result['file_size'],
-                            "format": result['format']
-                        },
-                        "message": "圖片資產已優化並保存"
-                    }), 200
-                else:
-                    # 非圖片文件，使用原始邏輯
-                    from pathlib import Path as _Path
-                    upload_root = _Path(UPLOAD_ROOT)
-                    target_dir = upload_root / 'public' / upload_category
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    unique_name = generate_unique_filename(file_name, file_hash)
-                    target_path = target_dir / unique_name
-                    file.save(str(target_path))
-                    return jsonify({
-                        "ok": True,
-                        "url": f"/uploads/public/{upload_category}/{unique_name}",
-                        "path": f"public/{upload_category}/{unique_name}",
-                        "message": "已儲存為公共資產"
-                    }), 200
-                    
-            except LogoError as e:
-                return jsonify({
-                    "ok": False, 
-                    "error": e.message,
-                    "code": e.code,
-                    "details": e.details
-                }), 400
-            except Exception as e:
-                return jsonify({"ok": False, "error": f"上傳處理失敗: {str(e)}"}), 500
+            # from services.logo_handler import get_logo_handler, LogoError  # 已停用
+            return jsonify({"ok": False, "error": "Logo 處理器功能已停用"}), 501
 
         with get_session() as s:
             # 檢查用戶權限

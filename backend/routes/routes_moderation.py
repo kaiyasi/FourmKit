@@ -15,10 +15,7 @@ import os
 import re
 import hmac, hashlib, time, base64
 from datetime import datetime
-from sqlalchemy import and_, or_, text
 import logging
-
-logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +64,10 @@ def _markdown_to_html(md: str) -> str:
 
     # 轉義HTML
     md = escape_html(md)
+
+    # 保護被反斜線轉義的 Markdown 符號（目前支援 *）
+    ESCAPED_ASTERISK_TOKEN = "__ESCAPED_ASTERISK__"
+    md = re.sub(r"\\\*", ESCAPED_ASTERISK_TOKEN, md)
 
     # 處理標題（在段落處理之前）
     md = re.sub(r"^#{6}\s*(.+)$", r"<h6>\1</h6>", md, flags=re.MULTILINE)
@@ -159,6 +160,9 @@ def _markdown_to_html(md: str) -> str:
 
     html = re.sub(r"__CODE_BLOCK_(\d+)__", restore_code_block, html)
 
+    # 還原被保護的符號
+    html = html.replace(ESCAPED_ASTERISK_TOKEN, "*")
+
     return html
 
 
@@ -221,7 +225,7 @@ def upsert_log_by_replacing_last(
                 s.add(last)
                 return
             except Exception as e:
-                logger.error(f"Failed to publish media during approval process: {e}")
+                logger.error(f"Failed to upsert moderation log: {e}")
         # 找不到舊紀錄時，退回新增一筆
         write_log(s, ttype, tid, act, old, new, reason, mid)
     except Exception:
@@ -756,6 +760,21 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
         new_rel = publish_media_by_id(media_item.path or '', int(media_item.id), getattr(media_item, 'mime_type', None))
         if new_rel.startswith('public/'):
             media_item.path = new_rel
+
+            # **新增**: 審核通過後觸發CDN上傳
+            try:
+                from utils.upload_utils import resolve_or_publish_public_media
+                cdn_url = resolve_or_publish_public_media(new_rel, int(media_item.id), getattr(media_item, 'mime_type', None))
+                if cdn_url and not cdn_url.startswith('/uploads/'):
+                    # 成功上傳到CDN，記錄日誌
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"媒體 {media_item.id} 已上傳到CDN: {cdn_url}")
+            except Exception as e:
+                # CDN上傳失敗不影響審核流程
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"媒體 {media_item.id} CDN上傳失敗: {e}")
     except Exception:
         pass
 
@@ -770,9 +789,8 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
     # 發送SocketIO事件
     try:
         from app import socketio
-
         socketio.emit("media.approved", {"id": media_id})
-    except ImportError:
+    except Exception:
         pass
 
     return jsonify({"ok": True, "message": "媒體核准成功"})
@@ -814,10 +832,11 @@ def reject_content():
 
 
 def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
-    # 理由必填，避免無上下文的拒絕
+    """拒絕貼文。
+    理由必填，避免無上下文的拒絕。
+    """
     if not (reason or '').strip():
         return jsonify({"ok": False, "error": "需要提供拒絕原因"}), 400
-    """拒絕貼文"""
     post = s.query(Post).get(post_id)
     if not post:
         return jsonify({"ok": False, "error": "貼文不存在"}), 404
@@ -937,9 +956,8 @@ def _reject_media(s: Session, media_id: int, user_id: int, reason: str):
     # 發送SocketIO事件
     try:
         from app import socketio
-
         socketio.emit("media.rejected", {"id": media_id})
-    except ImportError:
+    except Exception:
         pass
 
     return jsonify({"ok": True, "message": "媒體拒絕成功"})

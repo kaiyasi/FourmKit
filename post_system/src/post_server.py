@@ -51,6 +51,7 @@ class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
 class PostRequest:
     """發文請求"""
     request_id: str
+    account_id: str  # 用於實現單一帳號序列化
     user_token: str
     page_id: str
     caption: str
@@ -69,24 +70,26 @@ class PostResponse:
 
 class PostServer:
     """
-    Instagram 發布伺服器
-    使用 Socket 進行即時通訊，ThreadPoolExecutor 處理併發請求
-    支援 HTTP 健康檢查端點
+    Instagram 發布伺服器 (優化版)
+    - 新增單一帳號序列化處理，避免帳號級別的衝突
+    - 為每個請求創建獨立的 IG Client，確保執行緒安全
     """
     
     def __init__(self, host: str = "localhost", port: int = 8888, max_workers: int = 5, health_port: int = None):
         self.host = host
         self.port = port
-        self.health_port = health_port or port  # 健康檢查使用同一個 port
+        self.health_port = health_port or port
         self.max_workers = max_workers
         self.socket = None
         self.health_server = None
         self.running = False
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.instagram_client = create_instagram_client()
         self.active_connections = {}  # client_id -> socket
         
-        # 設定 logging
+        # 用於單一帳號序列化處理的鎖和集合
+        self.account_lock = threading.Lock()
+        self.processing_accounts = set()
+        
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -95,28 +98,24 @@ class PostServer:
     def start_server(self):
         """啟動 Socket 伺服器和健康檢查伺服器"""
         try:
-            # 啟動 Socket 伺服器
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socket.bind((self.host, self.port))
             self.socket.listen(10)
             self.running = True
             
-            # 啟動健康檢查 HTTP 伺服器 (在不同執行緒)
             self._start_health_server()
             
-            logger.info(f"📡 Instagram Post Server 啟動成功")
+            logger.info(f"📡 Instagram Post Server 啟動成功 (優化版)")
             logger.info(f"   - Socket 監聽: {self.host}:{self.port}")
             logger.info(f"   - 健康檢查: http://{self.host}:{self.health_port}/health")
             logger.info(f"   - 最大工作執行緒: {self.max_workers}")
-            logger.info(f"   - Socket 通訊已就緒 ✅")
             
             while self.running:
                 try:
                     client_socket, client_address = self.socket.accept()
                     logger.info(f"🔗 新連線來自: {client_address}")
                     
-                    # 為每個客戶端建立處理執行緒
                     client_thread = threading.Thread(
                         target=self._handle_client,
                         args=(client_socket, client_address),
@@ -133,53 +132,40 @@ class PostServer:
             raise
             
     def _handle_client(self, client_socket: socket.socket, client_address: tuple):
-        """處理客戶端連線"""
         client_id = f"{client_address[0]}:{client_address[1]}"
         self.active_connections[client_id] = client_socket
         
         try:
             logger.info(f"👤 開始處理客戶端: {client_id}")
-            
             buffer = ""
             while self.running:
-                # 接收客戶端訊息（容錯：支援 NDJSON 與單包 JSON）
                 chunk = client_socket.recv(4096).decode('utf-8')
                 if not chunk:
                     break
                 buffer += chunk
-                # 先走換行 framing
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
                     if not line.strip():
                         continue
                     self._process_request_line(line, client_socket, client_address, client_id)
-                # 若沒有換行，嘗試把整個 buffer 當成 JSON（兼容舊客戶端）
-                if buffer.strip():
-                    try:
-                        self._process_request_line(buffer, client_socket, client_address, client_id)
-                        buffer = ""
-                    except json.JSONDecodeError:
-                        # 不完整，繼續讀取
-                        pass
         
         except Exception as e:
             logger.error(f"❌ 客戶端處理異常 {client_id}: {e}")
             
         finally:
-            # 清理連線
             try:
                 client_socket.close()
                 if client_id in self.active_connections:
                     del self.active_connections[client_id]
                 logger.info(f"🔚 客戶端 {client_id} 連線已關閉")
-            except:
-                pass
+            except: pass
     
     def _parse_request(self, request_data: Dict[str, Any], client_address: tuple) -> Optional[PostRequest]:
-        """解析客戶端請求"""
         try:
             return PostRequest(
                 request_id=request_data.get('request_id', f"req_{int(time.time())}"),
+                # account_id 可選；若未提供，使用單一共享序列化鍵避免併發衝突
+                account_id=request_data.get('account_id', 'default'),
                 user_token=request_data['user_token'],
                 page_id=request_data['page_id'],
                 image_url=request_data.get('image_url', ''),
@@ -192,27 +178,17 @@ class PostServer:
             return None
 
     def _process_request_line(self, line: str, client_socket: socket.socket, client_address: tuple, client_id: str):
-        """處理單行 JSON 請求"""
         logger.info(f"📨 收到來自 {client_id} 的請求")
         try:
             request_data = json.loads(line)
             request = self._parse_request(request_data, client_address)
 
             if request:
-                # 立即回應收到請求
                 self._send_response(
                     client_socket,
-                    PostResponse(
-                        request_id=request.request_id,
-                        success=True,
-                        message="請求已接收，開始處理..."
-                    )
+                    PostResponse(request_id=request.request_id, success=True, message="請求已接收，排隊等待處理...")
                 )
-
-                # 提交到執行緒池非同步處理
                 future = self.executor.submit(self._process_post_request, request)
-
-                # 非阻塞方式等待結果
                 threading.Thread(
                     target=self._handle_post_result,
                     args=(future, client_socket, request.request_id),
@@ -221,57 +197,43 @@ class PostServer:
             else:
                 self._send_response(
                     client_socket,
-                    PostResponse(
-                        request_id="unknown",
-                        success=False,
-                        message="無效的請求格式"
-                    )
+                    PostResponse(request_id="unknown", success=False, message="無效的請求格式")
                 )
         except json.JSONDecodeError:
             logger.error(f"❌ JSON 解析失敗，來自 {client_id}")
-            self._send_response(
-                client_socket,
-                PostResponse(
-                    request_id="unknown",
-                    success=False,
-                    message="JSON 格式錯誤"
-                )
-            )
+            self._send_response(client_socket, PostResponse(request_id="unknown", success=False, message="JSON 格式錯誤"))
         except Exception as e:
             logger.error(f"❌ 處理請求失敗: {e}")
-            self._send_response(
-                client_socket,
-                PostResponse(
-                    request_id="unknown",
-                    success=False,
-                    message=f"處理錯誤: {str(e)}"
-                )
-            )
-        except Exception as e:
-            logger.error(f"❌ 解析請求失敗: {e}")
-            return None
+            self._send_response(client_socket, PostResponse(request_id="unknown", success=False, message=f"處理錯誤: {str(e)}"))
     
     def _process_post_request(self, request: PostRequest) -> PostResponse:
-        """處理 Instagram 發文請求"""
+        """處理 Instagram 發文請求 (加入單一帳號鎖和獨立 Client)"""
+        with self.account_lock:
+            if request.account_id in self.processing_accounts:
+                logger.warning(f"🚦 帳號 {request.account_id} 已有任務在執行，請求 {request.request_id} 將延後。")
+                return PostResponse(
+                    request_id=request.request_id,
+                    success=False,
+                    message="Account is busy, try again later.",
+                    error="account_busy"
+                )
+            self.processing_accounts.add(request.account_id)
+
         try:
-            logger.info(f"🔄 開始處理發文請求 {request.request_id}")
-            logger.info(f"   - Page ID: {request.page_id}")
-            if request.image_urls:
-                logger.info(f"   - 輪播圖片數: {len(request.image_urls)}")
-            else:
-                logger.info(f"   - 圖片 URL: {request.image_url}")
-            logger.info(f"   - 文案長度: {len(request.caption)}")
+            logger.info(f"🔄 開始處理發文請求 {request.request_id} (帳號: {request.account_id})")
             
-            # 使用 Instagram 客戶端發布
+            # 為每個請求創建獨立的 Client，確保執行緒安全
+            instagram_client = create_instagram_client()
+            
             if request.image_urls and isinstance(request.image_urls, list) and len(request.image_urls) >= 2:
-                result: PostResult = self.instagram_client.post_carousel(
+                result: PostResult = instagram_client.post_carousel(
                     user_token=request.user_token,
                     page_id=request.page_id,
                     image_urls=request.image_urls,
                     caption=request.caption,
                 )
             else:
-                result: PostResult = self.instagram_client.post_single_image(
+                result: PostResult = instagram_client.post_single_image(
                     user_token=request.user_token,
                     page_id=request.page_id,
                     image_url=request.image_url,
@@ -284,11 +246,7 @@ class PostServer:
                     request_id=request.request_id,
                     success=True,
                     message="Instagram 發文成功！",
-                    data={
-                        'post_id': result.post_id,
-                        'post_url': result.post_url,
-                        'media_id': result.media_id
-                    }
+                    data={'post_id': result.post_id, 'post_url': result.post_url, 'media_id': result.media_id}
                 )
             else:
                 logger.error(f"❌ 發文失敗 {request.request_id}: {result.error}")
@@ -308,101 +266,71 @@ class PostServer:
                 message="處理發文請求時發生異常",
                 error=str(e)
             )
-    
+        finally:
+            # 無論成功或失敗，都要釋放帳號鎖
+            with self.account_lock:
+                self.processing_accounts.remove(request.account_id)
+                logger.info(f"🟢 帳號 {request.account_id} 鎖已釋放。")
+
     def _handle_post_result(self, future, client_socket: socket.socket, request_id: str):
-        """處理發文結果並回傳給客戶端"""
         try:
-            # 等待執行緒完成
-            response = future.result(timeout=300)  # 5分鐘逾時
-            
-            # 發送最終結果給客戶端
+            response = future.result(timeout=600)  # 延長至 10 分鐘
             self._send_response(client_socket, response)
-            
         except Exception as e:
             logger.error(f"❌ 處理發文結果異常 {request_id}: {e}")
             self._send_response(
                 client_socket,
-                PostResponse(
-                    request_id=request_id,
-                    success=False,
-                    message="處理發文結果時發生異常",
-                    error=str(e)
-                )
+                PostResponse(request_id=request_id, success=False, message="處理發文結果時發生異常", error=str(e))
             )
     
     def _send_response(self, client_socket: socket.socket, response: PostResponse):
-        """發送回應給客戶端（NDJSON，每則 JSON 結尾加上換行）"""
         try:
             response_json = json.dumps(asdict(response), ensure_ascii=False)
-            # 使用換行作為 framing，避免多則訊息黏包造成 JSON 解析失敗
             client_socket.send((response_json + "\n").encode('utf-8'))
             logger.info(f"📤 回應已發送: {response.request_id} - {response.success}")
         except Exception as e:
             logger.error(f"❌ 發送回應失敗: {e}")
     
     def _start_health_server(self):
-        """啟動健康檢查 HTTP 伺服器"""
         try:
-            # 如果健康檢查 port 與主 port 相同，則不啟動額外的 HTTP 伺服器
             if self.health_port == self.port:
                 return
-                
-            self.health_server = socketserver.TCPServer(
-                (self.host, self.health_port), 
-                HealthCheckHandler
-            )
-            
-            # 在背景執行緒中運行健康檢查伺服器
-            health_thread = threading.Thread(
-                target=self.health_server.serve_forever,
-                daemon=True
-            )
+            self.health_server = socketserver.TCPServer((self.host, self.health_port), HealthCheckHandler)
+            health_thread = threading.Thread(target=self.health_server.serve_forever, daemon=True)
             health_thread.start()
-            
             logger.info(f"🏥 健康檢查伺服器已啟動在 {self.host}:{self.health_port}")
-            
         except Exception as e:
             logger.warning(f"⚠️ 健康檢查伺服器啟動失敗: {e}")
     
     def stop_server(self):
-        """停止伺服器"""
         logger.info("🛑 正在停止伺服器...")
         self.running = False
         
-        # 關閉所有活躍連線
         for client_id, client_socket in list(self.active_connections.items()):
-            try:
-                client_socket.close()
-            except:
-                pass
+            try: client_socket.close()
+            except: pass
         
-        # 關閉主 socket
         if self.socket:
-            try:
-                self.socket.close()
-            except:
-                pass
+            try: self.socket.close()
+            except: pass
                 
-        # 關閉健康檢查伺服器
         if self.health_server:
             try:
                 self.health_server.shutdown()
                 self.health_server.server_close()
-            except:
-                pass
+            except: pass
         
-        # 關閉執行緒池
         self.executor.shutdown(wait=True)
         logger.info("✅ 伺服器已停止")
     
     def get_server_status(self) -> Dict[str, Any]:
-        """取得伺服器狀態"""
         return {
             'running': self.running,
             'host': self.host,
             'port': self.port,
             'active_connections': len(self.active_connections),
-            'max_workers': self.max_workers
+            'max_workers': self.max_workers,
+            'processing_accounts': len(self.processing_accounts)
         }
 
 

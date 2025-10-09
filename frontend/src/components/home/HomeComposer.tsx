@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import UploadArea from '@/components/UploadArea'
-import { postFormData, HttpError } from '@/lib/http'
+import { postFormData, postJSON, HttpError } from '@/lib/http'
 import { validatePost } from '@/schemas/post'
 import { canPublishAnnouncement, getRole } from '@/utils/auth'
 
@@ -113,7 +113,6 @@ export default function HomeComposer({ token }: { token: string }) {
         let textBody = content.trim()
         const m = textBody.match(/^#(\d+)\s*(.*)$/s)
         if (m) { replyToId = parseInt(m[1], 10); textBody = (m[2] || '').trim() }
-        const { postJSON } = await import('@/lib/http')
         const payload: any = { content: textBody }
         if (targetSlug) payload.school_slug = targetSlug
         if (isAnnouncement) { payload.is_announcement = true; payload.announcement_type = announcementType }

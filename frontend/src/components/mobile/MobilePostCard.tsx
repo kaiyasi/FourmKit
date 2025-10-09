@@ -163,6 +163,21 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                 <time>{formatTime(post.created_at)}</time>
                 <span>•</span>
                 <span>#{post.id}</span>
+                {(() => {
+                  const hasMedia = (post as any).has_media === true || (typeof post.media_count === 'number' && post.media_count > 0)
+                  const isVideo = /\.(mp4|webm|mov)$/i.test(post.cover_path || '') || (post as any).media_kind === 'video'
+                  return hasMedia && !isVideo
+                })() && (
+                  <>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      圖片附件
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>

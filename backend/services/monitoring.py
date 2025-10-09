@@ -44,14 +44,20 @@ def record_event(kind: str, **fields: Any) -> None:
     if not cli:
         return
     try:
+        MAX_EVENTS = int(os.getenv("FK_MON_MAX_EVENTS", "200"))
         import time
         ts = int(time.time())
         payload = {"kind": kind, "ts": ts}
         payload.update(fields)
-        cli.zadd("fk:mon:events", {json.dumps(payload): ts})
-        # 保留最近 200 筆
+        key = "fk:mon:events"
+        cli.zadd(key, {json.dumps(payload): ts})
+        # 以容量上限裁剪（保留最新 MAX_EVENTS 筆）
         try:
-            cli.zremrangebyrank("fk:mon:events", 0, -201)
+            count = cli.zcard(key)
+            if count and count > MAX_EVENTS:
+                to_trim = count - MAX_EVENTS
+                if to_trim > 0:
+                    cli.zremrangebyrank(key, 0, to_trim - 1)
         except Exception:
             pass
     except Exception:
@@ -105,4 +111,3 @@ def get_queue_health() -> Dict[str, Any]:
 
 def mark_beat_seen() -> None:
     mark_worker_seen("beat")
-

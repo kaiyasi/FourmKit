@@ -12,13 +12,103 @@
 
 ---
 
-## 最新版本（現行：V2.1.2）
+## 最新版本（現行：V2.2.1）
+
+*🗓️ 發布日期：2025-09-25*
+
+本版聚焦「安全與對抗」與「管理/一般分流」：導入 Admin / Public 兩套前端入口與受保護的 Admin 資產路徑，搭配後端簽名驗證與 Nginx 分流；新增兩段式濫用處罰（CAPTCHA → IP 暫封）與 24 小時多 IP 移動偵測；修正 /uploads → CDN 對接（含 cross.png 404），並補上「圖片附件」一眼辨識的 UI 標籤。
+
+### 🔒 安全強化 / 反逆向
+
+- Admin / Public 兩套入口：新增 `admin.html`（dev_admin 專用）與 `index.html`（一般使用者）；Nginx 依 `fk_admin=1` cookie 分流。
+- 受保護 Admin 資產：`/assets/admin/*` 由 Nginx 反代至後端 `/protected-assets/admin/*`，需 `fk_admin_token` 簽名通過才回檔，未授權 403。
+- 反檢視（前端阻嚇）：非管理員阻擋右鍵、F12/Ctrl+Shift+I/J/C、開啟 DevTools 顯示「安全提醒」。dev_admin 自動豁免（localStorage 角色 / JWT 角色 / 管理員 cookie 任一命中），登入後動態解除；保留緊急豁免開關 `FK_ANTI_INSPECT_EXEMPT=1`。
+- 掃描/爆破防護：在 `app.before_request` 攔截常見探測路徑（/.env, /wp-*, *.php…）→ 回 451/SECURITY_WARNING 並記一次 strike 以進入處罰流程。
+
+### 🛡️ 濫用對抗 / 速限
+
+- 兩段式處罰：第一次觸發速限 → 回 `CAPTCHA_REQUIRED`；再次觸發 → 暫封 IP（TTL），事件紀錄；dev_admin/admin 豁免。
+- 24 小時多 IP 移動偵測：`USER_IP_24H_LIMIT`（預設 5），超過回 429/`TOO_MANY_IPS`。
+- 多鍵限流：在登入與發文路由疊加 `user + client + ip` rate limit，VPN 切換 IP 也無法繞過；支援 `CF-Connecting-IP` 取得真實來源 IP。
+- Admin 解除封鎖：`/api/admin/users/unblock-ip` 預設「解除該使用者所有曾出現過的 IP」，亦可指定 `ip` 或 `all:false` 僅解最近。
+
+### 🧩 Nginx / CDN 修正
+
+- `/uploads` → CDN 反代修復：移除前綴 `/uploads` 再轉發至 CDN；解決 `cross.png` 404。
+- Logo 發佈路徑對齊：`logo_handler` 的一般 Logo 發佈子目錄調整到 `public/logos/{category}`，與 `/uploads/public/...` 路徑一致。
+
+### 🖥️ 前端體驗
+
+- `/boards` 列表新增「圖片附件」綠色標籤（桌機＋手機），影片則顯示紅色「影片」標記。
+- 手機發文頁重整：沿用桌機首頁風格，頁首主副標為「ForumKit / Post IDEA」，編輯卡片化、保留行動底部送出列。
+
+### ⚙️ 新／調整環境變數
+
+- CAPTCHA：`CAPTCHA_PROVIDER`(turnstile|hcaptcha|dummy), `CAPTCHA_SITE_KEY`, `CAPTCHA_SECRET`, `CAPTCHA_VERIFY_TIMEOUT`
+- 濫用控制：`IP_CAPTCHA_STRIKES_THRESHOLD`(預設1), `IP_BLOCK_STRIKES_THRESHOLD`(預設2), `IP_CAPTCHA_TTL_SECONDS`(預設900), `IP_STRIKE_TTL_SECONDS`(預設1800), `USER_IP_24H_LIMIT`(預設5)
+- 安全防護：`SECURITY_PROBE_GUARD`(預設1)
+- Admin 分流/資產：`ADMIN_ASSET_COOKIE_MAXAGE`(預設1800), `FRONTEND_DIST_ROOT`(後端讀取 dist 用)
+
+### 🔄 升級指引
+
+1) 前端：`npm run build`（已調整 Vite 多入口與 admin chunk 輸出）
+2) Docker：`docker compose build backend nginx && docker compose up -d backend nginx`
+3) 設定 CAPTCHA 與安全相關環境變數（至少 provider/secret/sitekey）
+4) 檢查 Nginx 設定生效：`/assets/admin/*` 透過後端保護、`/` 分流至 admin/index
+
+---
+
+## 版本歷史
+
+### V2.2.0
+
+*🗓️ 發布日期：2025-09-24*
+
+重大模板系統重構版本。完全移除硬編碼模板參數，實現純資料庫驅動的 Instagram 發布系統，修復時間戳顯示問題，並建立統一的圖片渲染架構。此版本解決了模板系統的根本性問題，確保所有配置都來自資料庫而非程式碼預設值。
+
+### 🔥 重大變更
+
+* **📦 模板系統完全重構**
+  * **移除所有硬編碼預設值** - `TemplateConfig` 類別不再提供任何預設參數
+  * **純資料庫驅動** - 所有模板配置必須來自資料庫 IGTemplate 記錄
+  * **統一渲染架構** - IG 發布和手機預覽使用相同的 `unified_post_renderer`
+  * **嚴格參數驗證** - 缺少必要參數時直接報錯，不再提供回退值
+
+* **🕒 時間戳系統修復**
+  * **UTC+8 時區正確顯示** - 修復 am/pm 格式仍顯示 UTC+0 的問題
+  * **時區轉換完善** - 所有 `datetime.now()` 調用都使用 Asia/Taipei 時區
+  * **格式化邏輯統一** - 確保所有時間戳都經過正確的時區轉換
+
+### 🛠️ 技術改進
+
+* **🎨 渲染系統統一**
+  * **configuration path 修正** - 從 `image.cards` 改為讀取 `post.metadata` 配置
+  * **重複渲染消除** - 移除舊的 overlay 邏輯，避免時間戳/貼文ID重複顯示
+  * **語法錯誤修復** - 修復 `content_generator.py` 中的孤立 except 語句
+
+* **🔧 系統穩定性**
+  * **容器重啟優化** - 修復語法錯誤後正確重建 backend 容器
+  * **錯誤處理改進** - 移除錯誤的 try-except 結構，確保程式正常運行
+
+### 📋 自動偵測機制說明
+
+* **貼文自動偵測邏輯**
+  * 需要貼文狀態為 `approved`
+  * 需要對應學校的活躍 Instagram 帳號
+  * 基於 `school_id` 進行自動匹配
+  * 符合條件的貼文會自動加入發布佇列
+
+---
+
+## 版本歷史
+
+### V2.1.2
 
 *🗓️ 發布日期：2025-09-20*
 
 專注於「Instagram 模板系統修復」與「前端體驗優化」的緊急修復版本。解決了 Instagram 自動發布的模板配置問題，修復了前端 JavaScript 錯誤，並針對管理功能進行了體驗優化。
 
-### 主要修復
+#### 主要修復
 
 * **📸 Instagram 模板系統完全修復**
   * **模板優先級問題修復** - 解決 multipost 配置覆蓋 caption 模板的核心問題
@@ -31,7 +121,7 @@
   * **Home Hero 區塊還原** - 從動態載入改回固定格式，提升穩定性
   * **管理頁面增強** - 新增 home-hero 編輯選項到管理後台
 
-### 技術改進
+#### 技術改進
 
 * **🔧 ContentGenerator 重寫**
   * 完全重寫 `_generate_caption` 方法，僅使用 caption 配置
@@ -42,7 +132,7 @@
   * 所有 Python 腳本統一載入 `.env` 檔案
   * 確保 `PUBLIC_CDN_URL` 等關鍵配置正確載入
 
-### 修正的具體問題
+#### 修正的具體問題
 
 * Instagram 貼文模板從 `##044\n{content}\n---` 修正為 `📝 {content}\n\n#校園生活 #{school_name}`
 * 圖片生成正確顯示 LOGO、時間戳、貼文 ID 元素
@@ -51,8 +141,6 @@
 * CDN 上傳失敗問題完全修復
 
 ---
-
-## 版本歷史
 
 ### V2.1.1
 
@@ -353,7 +441,7 @@
 
 ---
 
-*📅 最後更新：2025-09-18*
+*📅 最後更新：2025-09-24*
 *🏢 開發團隊：Serelix Studio*
 *📧 技術支援：透過平台內建支援系統*
 

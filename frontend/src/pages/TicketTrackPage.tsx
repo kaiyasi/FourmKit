@@ -17,23 +17,23 @@ import {
 import { api } from '@/services/api'
 
 interface TicketDetail {
-  id: string
+  id: number
+  ticket_id: string
   subject: string
   status: string
   category: string
   priority: string
   submitter: string
   created_at: string
-  updated_at: string
   last_activity_at: string
   message_count: number
   messages: Array<{
     id: number
     body: string
     author_type: string
-    author_name: string
+    author_display_name: string
     created_at: string
-    attachments?: any
+    is_internal: boolean
   }>
 }
 
@@ -72,7 +72,7 @@ export default function TicketTrackPage() {
 
   // 從 URL 參數獲取 token 和 ticket ID
   const token = searchParams.get('token') || searchParams.get('sig')
-  const ticketId = ticketIdParam || searchParams.get('ticket_id')
+  const ticketId = ticketIdParam || searchParams.get('ticket') || searchParams.get('ticket_id')
 
   // 僅有 token（沒有 ticketId）時，先向後端驗證以取得正確的 redirect_url
   useEffect(() => {
@@ -205,14 +205,24 @@ export default function TicketTrackPage() {
         body: JSON.stringify(trackForm)
       })
 
+      const data = await response.json()
+
       if (response.ok) {
-        const data = await response.json()
-        if (data.tracking_url) {
+        // 檢查是否返回多個工單
+        if (data.multiple && data.tickets) {
+          // 顯示工單列表讓用戶選擇
+          const ticketList = data.tickets.map((t: any) =>
+            `${t.ticket_id} - ${t.subject} (${t.status})`
+          ).join('\n')
+
+          alert(`找到 ${data.tickets.length} 個工單，請選擇一個：\n\n${ticketList}\n\n請在工單編號欄位輸入完整的工單編號後重試。`)
+          setError(null)
+        } else if (data.tracking_url) {
+          // 單一工單，直接跳轉
           window.location.href = data.tracking_url
         }
       } else {
-        const errorData = await response.json()
-        throw new Error(errorData.msg || '追蹤工單失敗')
+        throw new Error(data.msg || '追蹤工單失敗')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '未知錯誤')
@@ -341,7 +351,7 @@ export default function TicketTrackPage() {
                 <label className="block text-sm font-medium mb-2">工單編號</label>
                 <input
                   type="text"
-                  placeholder="例如：U42-037 或 58201943"
+                  placeholder="例如：TEC-A1B2 或 BUG-U42-C3D4"
                   value={trackForm.ticket_id}
                   onChange={(e) => setTrackForm(prev => ({ ...prev, ticket_id: e.target.value }))}
                   className="w-full p-3 bg-surface border border-border rounded-lg"
@@ -519,7 +529,7 @@ export default function TicketTrackPage() {
         <div className="flex items-start justify-between mb-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <span className="font-mono text-lg font-bold text-primary">#{ticket.id.slice(-6)}</span>
+              <span className="font-mono text-lg font-bold text-primary">#{ticket.ticket_id}</span>
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(ticket.status)}`}>
                 {ticket.status === 'open' ? '開啟' :
                  ticket.status === 'awaiting_user' ? '等待您的回覆' :
@@ -583,12 +593,12 @@ export default function TicketTrackPage() {
                     ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                     : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
                 }`}>
-                  {message.author_name.charAt(0).toUpperCase()}
+                  {message.author_display_name.charAt(0).toUpperCase()}
                 </div>
                 
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="font-medium">{message.author_name}</span>
+                    <span className="font-medium">{message.author_display_name}</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                       message.author_type === 'admin' 
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'

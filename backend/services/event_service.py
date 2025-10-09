@@ -34,6 +34,7 @@ class EventService:
         "chat.room.member.added": {"category": "chat", "title": "聊天室成員加入"},
         "chat.room.member.removed": {"category": "chat", "title": "聊天室成員移除"},
         "chat.room.invitation.sent": {"category": "chat", "title": "聊天室邀請發送"},
+        "notification.user.mentioned": {"category": "notification", "title": "用戶被提及"},
         
         # 會員相關
         "member.premium_status_changed": {"category": "member", "title": "會員狀態變更"},

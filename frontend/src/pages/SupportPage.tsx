@@ -27,7 +27,8 @@ import {
   Star,
   ArrowLeft,
   Eye,
-  Clock
+  Clock,
+  Search
 } from 'lucide-react';
 import { api } from '@/services/api';
 
@@ -55,6 +56,27 @@ interface TicketDetail extends Ticket {
   messages: TicketMessage[];
 }
 
+const VALID_CATEGORIES = ['technical', 'account', 'feature', 'bug', 'abuse', 'other'] as const;
+const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+type SupportCategory = typeof VALID_CATEGORIES[number];
+type SupportPriority = typeof VALID_PRIORITIES[number];
+
+interface TicketFormState {
+  subject: string;
+  category: SupportCategory;
+  priority: SupportPriority;
+  body: string;
+  email: string;
+}
+
+type PrefillTicket = Partial<TicketFormState>;
+
+const isValidCategory = (value: unknown): value is SupportCategory =>
+  typeof value === 'string' && VALID_CATEGORIES.includes(value as SupportCategory);
+
+const isValidPriority = (value: unknown): value is SupportPriority =>
+  typeof value === 'string' && VALID_PRIORITIES.includes(value as SupportPriority);
+
 const SupportPage: React.FC = () => {
   const { user, isLoggedIn } = useAuth();
   const navigate = useNavigate();
@@ -71,6 +93,7 @@ const SupportPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [prefillTicketData, setPrefillTicketData] = useState<PrefillTicket | null>(null);
 
   // 響應式檢測
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -97,6 +120,43 @@ const SupportPage: React.FC = () => {
       setSelectedTicket(null);
     }
   }, [selectedTicketId]);
+
+  useEffect(() => {
+    const rawPrefill = searchParams.get('prefill');
+    if (!rawPrefill) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(rawPrefill);
+      const sanitized: PrefillTicket = {};
+
+      if (typeof parsed?.subject === 'string') {
+        sanitized.subject = parsed.subject.slice(0, 200);
+      }
+      if (typeof parsed?.body === 'string') {
+        sanitized.body = parsed.body.slice(0, 4000);
+      }
+      if (isValidCategory(parsed?.category)) {
+        sanitized.category = parsed.category;
+      }
+      if (isValidPriority(parsed?.priority)) {
+        sanitized.priority = parsed.priority;
+      }
+      if (typeof parsed?.email === 'string') {
+        sanitized.email = parsed.email;
+      }
+
+      setPrefillTicketData(sanitized);
+      setShowCreateModal(true);
+    } catch (error) {
+      console.error('解析支援預填資料失敗:', error);
+    } finally {
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete('prefill');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const loadTickets = async () => {
     try {
@@ -177,14 +237,26 @@ const SupportPage: React.FC = () => {
 
   // 創建工單模態框
   const CreateTicketModal = () => {
-    const [formData, setFormData] = useState({
-      subject: '',
-      category: 'technical',
-      priority: 'medium',
-      body: '',
-      email: ''
-    });
+    const initialFormData: TicketFormState = {
+      subject: typeof prefillTicketData?.subject === 'string' ? prefillTicketData.subject : '',
+      category: isValidCategory(prefillTicketData?.category) ? prefillTicketData?.category as SupportCategory : 'technical',
+      priority: isValidPriority(prefillTicketData?.priority) ? prefillTicketData?.priority as SupportPriority : 'medium',
+      body: typeof prefillTicketData?.body === 'string' ? prefillTicketData.body : '',
+      email: typeof prefillTicketData?.email === 'string' ? prefillTicketData.email : '',
+    };
+    const [formData, setFormData] = useState<TicketFormState>(initialFormData);
     const [creating, setCreating] = useState(false);
+
+    useEffect(() => {
+      if (!prefillTicketData) return;
+      setFormData(prev => ({
+        subject: typeof prefillTicketData.subject === 'string' ? prefillTicketData.subject : prev.subject,
+        category: isValidCategory(prefillTicketData.category) ? prefillTicketData.category : prev.category,
+        priority: isValidPriority(prefillTicketData.priority) ? prefillTicketData.priority : prev.priority,
+        body: typeof prefillTicketData.body === 'string' ? prefillTicketData.body : prev.body,
+        email: !isLoggedIn && typeof prefillTicketData.email === 'string' ? prefillTicketData.email : prev.email,
+      }));
+    }, [prefillTicketData, isLoggedIn]);
 
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -228,6 +300,10 @@ const SupportPage: React.FC = () => {
         if (resp?.ok) {
           // 顯示成功訊息給用戶，包含客服單資訊
           const ticketInfo = resp.ticket;
+          const priorityText = ticketInfo.priority === 'low' ? '低' : 
+                               ticketInfo.priority === 'medium' ? '中' : 
+                               ticketInfo.priority === 'high' ? '高' : '緊急';
+          
           const successMessage = `✅ 客服單建立成功！
 
 📋 客服單資訊：
@@ -235,12 +311,14 @@ const SupportPage: React.FC = () => {
 • 主題：${ticketInfo.subject}
 • 狀態：${ticketInfo.status === 'open' ? '已開啟' : ticketInfo.status}
 • 分類：${ticketInfo.category}
+• 優先級：${priorityText}
 • 建立時間：${new Date(ticketInfo.created_at).toLocaleString('zh-TW')}
 
 ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住您的工單編號以便日後追蹤。'}`;
 
           alert(successMessage);
           setShowCreateModal(false);
+          setPrefillTicketData(null);
 
           // 登入者：刷新列表並選取新單
           if (isLoggedIn && resp.ticket?.id) {
@@ -254,9 +332,10 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
               }
             }
             await loadTickets();
-            selectTicket(resp.ticket.id);
+            // 使用數字 ID 來選取工單
+            selectTicket(resp.ticket.id.toString());
           } else if (resp.tracking_url) {
-            // 訪客：使用 React Router 導航而非直接跳轉
+            // 訪客：導航到追蹤頁面
             navigate(resp.tracking_url);
           }
         }
@@ -281,17 +360,20 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-surface rounded-2xl border border-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          <div className="p-6 border-b border-border">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-fg">建立新工單</h2>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="w-8 h-8 rounded-lg bg-surface-hover flex items-center justify-center text-muted hover:text-fg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <div className="bg-surface rounded-2xl border border-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-border">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-fg">建立新工單</h2>
+            <button
+              onClick={() => {
+                setShowCreateModal(false);
+                setPrefillTicketData(null);
+              }}
+              className="w-8 h-8 rounded-lg bg-surface-hover flex items-center justify-center text-muted hover:text-fg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
           </div>
           
           <form onSubmit={handleSubmit} className="p-6">
@@ -313,7 +395,13 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   <label className="block text-sm font-medium text-fg mb-2">分類</label>
                   <select
                     value={formData.category}
-                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        category: isValidCategory(value) ? value : prev.category,
+                      }));
+                    }}
                     className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
                     <option value="technical">技術問題</option>
@@ -340,7 +428,13 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   <label className="block text-sm font-medium text-fg mb-2">優先級</label>
                   <select
                     value={formData.priority}
-                    onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        priority: isValidPriority(value) ? value : prev.priority,
+                      }));
+                    }}
                     className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
                     <option value="low">低</option>
@@ -413,7 +507,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
               <div className="text-center">
                 <Button
                   onClick={() => setShowCreateModal(true)}
-                  className="mb-3"
+                  className="w-1/3 mb-3"
                 >
                   尋求支援
                 </Button>
@@ -438,6 +532,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                         variant="secondary"
                         size="sm"
                         onClick={() => navigate('/support/track')}
+                        className="w-1/3"
                       >
                         追蹤工單
                       </Button>
@@ -459,6 +554,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                         variant="secondary"
                         size="sm"
                         onClick={() => navigate('/faq')}
+                        className="w-1/3"
                       >
                         瀏覽 FAQ
                       </Button>
@@ -500,6 +596,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                 variant="outline"
                 size="sm"
                 onClick={() => navigate('/auth')}
+                className="w-1/3"
               >
                 登入帳號
               </Button>
@@ -657,23 +754,23 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
           <div className="max-w-7xl mx-auto px-6 py-6">
             {/* Compact Search & Filters */}
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <div className="flex-1">
+              <div className="sm:w-2/3">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="搜尋工單..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
-                  <MessageSquare className="absolute left-2.5 top-2.5 w-4 h-4 text-muted" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted" />
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="sm:w-1/3 flex gap-2">
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="all">所有狀態</option>
                   <option value="open">開啟</option>
@@ -685,7 +782,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="all">所有分類</option>
                   <option value="technical">技術問題</option>

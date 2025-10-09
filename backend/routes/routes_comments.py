@@ -9,6 +9,7 @@ from utils.auth import get_effective_user_id
 from models import Post, Comment, PostReaction, CommentReaction, User
 from utils.school_permissions import can_comment_on_post
 from utils.notify import send_admin_event as admin_notify
+from services.notification_service import NotificationService
 
 bp = Blueprint("comments", __name__, url_prefix="/api")
 
@@ -191,6 +192,70 @@ def create_comment(pid: int):
             )
         except Exception:
             pass  # 事件記錄失敗不影響留言發布
+
+        # 偵測 @提及 並寫入通知中心（最佳努力，不影響主流程）
+        try:
+            mentioned_user_ids = NotificationService._extract_mentions(c.content or '', s)  # type: ignore[attr-defined]
+            if mentioned_user_ids:
+                # 準備作者顯示名（與前端一致的匿名/代號邏輯）
+                author_label = _author_label(user, request.headers.get("X-Client-Id", "").strip())
+                snippet = (c.content or '')
+                if len(snippet) > 120:
+                    snippet = snippet[:120] + '…'
+                for target_uid in mentioned_user_ids:
+                    try:
+                        NotificationService.create_notification(
+                            user_id=int(target_uid),
+                            notification_type='mention',
+                            title=f'{author_label} 在留言中提及了您',
+                            content=snippet,
+                            room_id=None,
+                            message_id=None,
+                            from_user_id=int(uid),
+                            session=s,
+                        )
+                        # 若該用戶在線，嘗試即時推播
+                        try:
+                            from services.socket_chat_service import SocketChatService
+                            SocketChatService.notify_user(int(target_uid), 'mention', {
+                                'source': 'comment',
+                                'post_id': int(pid),
+                                'comment_id': int(c.id),
+                                'by': author_label,
+                                'snippet': snippet,
+                            })
+                        except Exception:
+                            pass
+                    except Exception:
+                        continue
+                # 同步寫一筆事件，方便管理端與 Discord Hook 觀察
+                try:
+                    from services.event_service import EventService
+                    fields = [
+                        { 'name': 'Post', 'value': f'#{int(pid)}', 'inline': True },
+                        { 'name': 'Comment', 'value': f'#{int(c.id)}', 'inline': True },
+                        { 'name': 'Mentions', 'value': ', '.join(str(x) for x in mentioned_user_ids) },
+                    ]
+                    EventService.log_event(
+                        session=s,
+                        event_type='notification.user.mentioned',
+                        title='用戶被提及（留言）',
+                        description=f'{author_label} 在貼文 #{int(pid)} 的留言中提及了 {len(mentioned_user_ids)} 位用戶',
+                        severity='low',
+                        actor_id=int(uid),
+                        actor_name=getattr(user, 'username', None),
+                        actor_role=getattr(user, 'role', None),
+                        target_type='comment',
+                        target_id=str(int(c.id)),
+                        school_id=getattr(p, 'school_id', None) if p else None,
+                        metadata={ 'post_id': int(pid), 'comment_id': int(c.id), 'mentioned_user_ids': [int(x) for x in mentioned_user_ids] },
+                        is_important=False,
+                        send_webhook=True,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # 推送即時事件給前端（若有 SocketIO）
         try:

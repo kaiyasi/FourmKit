@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
-import { UserPlus, Search, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User, Unlock, Lock } from 'lucide-react'
+import { UserPlus, Shield, Key, Save, X, CheckCircle, Mail, Trash2, Edit, Users, Filter, ArrowLeft, MoreVertical, Calendar, Building2, Crown, UserCheck, AlertTriangle, Globe, Activity, MessageSquare, FileText, Star, Clock, User, Unlock, Lock } from 'lucide-react'
 import { formatLocalMinute } from '@/utils/time'
 import { getRoleDisplayName, Role } from '@/utils/auth'
 
@@ -331,18 +331,47 @@ export default function AdminUsersPage() {
 
   const blockUserIP = async (userId: number, username: string) => {
     if (!confirm(`確定要封鎖 ${username} 的最近活動 IP 嗎？`)) return
+
+    const durationInput = prompt('輸入封鎖時長（小時，可留空使用預設 24 小時）', '24')
+    let durationHours: number | undefined
+    if (durationInput !== null && durationInput.trim() !== '') {
+      const parsed = Number(durationInput.trim())
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        alert('封鎖時長必須是正數')
+        return
+      }
+      durationHours = parsed
+    }
+
     try {
+      const payload: Record<string, unknown> = { user_id: userId, all: true }
+      if (durationHours !== undefined) {
+        payload.duration_hours = durationHours
+      }
       const response = await fetch('/api/admin/users/block-ip', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')||''}`
         },
-        body: JSON.stringify({ user_id: userId, all: true })
+        body: JSON.stringify(payload)
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || '封鎖失敗')
-      setMessage(`${username} 的最近 IP 已封鎖`)
+      const ttlSeconds = Number(result.ttl_seconds || 0)
+      let humanDuration = ''
+      if (ttlSeconds > 0) {
+        const hours = ttlSeconds / 3600
+        if (hours >= 24 && hours % 24 === 0) {
+          humanDuration = `（約 ${hours / 24} 天）`
+        } else if (hours >= 1) {
+          humanDuration = `（約 ${Math.round(hours * 10) / 10} 小時）`
+        } else {
+          const minutes = Math.max(1, Math.round(ttlSeconds / 60))
+          humanDuration = `（約 ${minutes} 分鐘）`
+        }
+      }
+      setMessage(`${username} 的最近 IP 已封鎖${humanDuration}`)
       setIpStatus(prev => ({ ...prev, [userId]: true }))
     } catch (e:any) {
       setMessage(e?.message || '封鎖失敗')
@@ -491,12 +520,11 @@ export default function AdminUsersPage() {
           <div className="flex flex-col lg:flex-row gap-4">
             {/* 搜尋框 */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted" />
               <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="搜尋用戶名或電子郵件"
-                className="form-control flex-1 pl-10"
+                className="form-control flex-1"
               />
             </div>
             
@@ -728,8 +756,9 @@ export default function AdminUsersPage() {
                     </button>
                     <button
                       onClick={() => toggleSuspendUser(user)}
-                      className={`px-2 py-1.5 text-xs rounded-lg border transition-colors flex items-center justify-center gap-1 ${ (suspendStatus[user.id]===true) ? 'text-green-700 border-green-300 hover:bg-green-50' : 'text-amber-700 border-amber-300 hover:bg-amber-50'}`}
-                      title={(suspendStatus[user.id]===true) ? '取消註銷（恢復帳號）' : '註銷帳號（封鎖 Email + 最近 IP）'}
+                      disabled={user.username === 'Kaiyasi'}
+                      className={`px-2 py-1.5 text-xs rounded-lg border transition-colors flex items-center justify-center gap-1 ${ (suspendStatus[user.id]===true) ? 'text-green-700 border-green-300 hover:bg-green-50' : 'text-amber-700 border-amber-300 hover:bg-amber-50'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={user.username === 'Kaiyasi' ? '特殊帳號不可註銷' : ((suspendStatus[user.id]===true) ? '取消註銷（恢復帳號）' : '註銷帳號（封鎖 Email + 最近 IP）')}
                     >
                       <AlertTriangle className="w-3 h-3" />
                       {(suspendStatus[user.id]===true) ? '取消註銷' : '註銷帳號'}
@@ -998,7 +1027,7 @@ export default function AdminUsersPage() {
               </div>
             </div>
             
-            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[50vh] space-y-3">
+            <div className="bg-surface-hover rounded-xl p-4 border border-border overflow-y-auto max-h-[30vh] space-y-3">
               <h3 className="font-semibold text-fg mb-2 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 活動紀錄

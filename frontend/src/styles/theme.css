@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Huninn&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Birthstone&display=swap');
+/* Font imports moved to index.css to comply with PostCSS rules */
 
 /* 字體基礎 */
 :root {  --font-cjk:'Huninn','PingFang TC','Noto Sans TC','Microsoft JhengHei',system-ui,sans-serif;  --font-latin-decor:'Birthstone',cursive;  --font-mono:ui-monospace,'Fira Code',Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace; }

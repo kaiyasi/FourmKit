@@ -1,14 +1,14 @@
-import { clearSession } from "@/utils/auth";
+import { clearSession, saveSession } from "@/utils/auth";
 import { messageFrom } from "@/utils/errors";
+
 const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
-const j = (u: string) => API_BASE ? API_BASE.replace(/\/?$/, '') + (u.startsWith('/')?u:`/${u}`) : u;
+const j = (u: string) => API_BASE ? API_BASE.replace(/\/?$/, '') + (u.startsWith('/') ? u : `/${u}`) : u;
 
 function getClientId(): string {
   let id: string;
   try {
     id = localStorage.getItem('client_id') || '';
   } catch {
-    // 手機瀏覽器可能限制 localStorage 訪問
     id = '';
   }
 
@@ -17,12 +17,9 @@ function getClientId(): string {
     try {
       localStorage.setItem('client_id', id);
     } catch {
-      // 手機瀏覽器失敗時使用 sessionStorage 或記憶體
       try {
         sessionStorage.setItem('client_id', id);
-      } catch {
-        // 完全失敗時直接使用臨時 ID
-      }
+      } catch {}
     }
   }
   return id;
@@ -44,7 +41,7 @@ function getSelectedSchoolSlug(): string | null {
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const doFetch = async (accessToken?: string) =>
-  fetch(j(path), {
+    fetch(j(path), {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -69,7 +66,6 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let res = await doFetch(token);
 
   if (res.status === 401) {
-    // 試圖用 refresh_token 續期一次
     try {
       const bodyText = await res.clone().text();
       let body: any = {};
@@ -87,77 +83,58 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         }
       }
       if (refreshToken && (code === "JWT_EXPIRED" || code === "JWT_INVALID" || code === "JWT_MISSING")) {
-  const r = await fetch(j("/api/auth/refresh"), {
+        const r = await fetch(j("/api/auth/refresh"), {
           method: "POST",
           headers: { Authorization: `Bearer ${refreshToken}` },
         });
         if (r.ok) {
           const j = (await r.json()) as { access_token: string };
           if (j?.access_token) {
-            try {
-              localStorage.setItem("token", j.access_token);
-            } catch {
-              try {
-                sessionStorage.setItem("token", j.access_token);
-              } catch {
-                // 完全失敗時跳過存儲，但仍使用 token
-              }
-            }
+            saveSession(j.access_token, getRole(), getSchoolId(), undefined);
             token = j.access_token;
-            res = await doFetch(token); // 重試一次
+            res = await doFetch(token);
           }
         } else {
-          // refresh 也失敗 → 清 session 並導回登入
-          try { clearSession(); } catch {}
-          const pathname = location?.pathname;
-          if (pathname && !pathname.startsWith("/auth")) location.href = "/auth";
+          clearSession();
+          if (!location.pathname.startsWith("/auth")) location.href = "/auth";
         }
       }
     } catch {
-      // 忽略刷新錯誤，落入統一錯誤處理
+      // Ignore refresh errors, fall through to the generic error handler
     }
   }
 
   if (!res.ok) {
-    const txt = await res.text().catch(() => "");
+    const bodyText = await res.text().catch(() => "");
+    let errorJson: any = {};
     try {
-      const j = txt ? JSON.parse(txt) : {};
-      // 若是未授權/無效憑證 → 清 session 並導向登入
-      if (res.status === 401) {
-        const code = j?.error?.code || j?.code;
-        if (code === "JWT_INVALID" || code === "JWT_MISSING") {
-          try { clearSession(); } catch {}
-          const pathname = location?.pathname;
-          if (pathname && !pathname.startsWith("/auth")) location.href = "/auth";
-        }
-      }
-      const msg = messageFrom(res.status, j, txt || `HTTP ${res.status}`);
-      throw new Error(msg);
+      errorJson = bodyText ? JSON.parse(bodyText) : {};
     } catch {
-      // 備援：即使 JSON.parse 失敗，嘗試從字串抽取常見格式的錯誤訊息
-      let fallback = txt || `HTTP ${res.status}`;
-      try {
-        // 1) 嘗試抽取 {"msg":"..."}
-        const m = fallback.match(/"msg"\s*:\s*"([\s\S]*?)"/);
-        if (m && m[1]) {
-          // 透過 JSON.parse 解碼內部的跳脫字元（如 \uXXXX）
-          const decoded = JSON.parse(`"${m[1]}"`);
-          throw new Error(decoded);
-        }
-      } catch {}
-      try {
-        // 2) 嘗試抽取 {"error":{"message":"..."}}
-        const m2 = fallback.match(/"message"\s*:\s*"([\s\S]*?)"/);
-        if (m2 && m2[1]) {
-          const decoded2 = JSON.parse(`"${m2[1]}"`);
-          throw new Error(decoded2);
-        }
-      } catch {}
-      throw new Error(fallback);
+      // Not a JSON response
     }
+
+    if (res.status === 451 && errorJson?.error?.code === 'IP_BLOCKED') {
+      const event = new CustomEvent('ip-blocked', { detail: errorJson.error });
+      window.dispatchEvent(event);
+      // Throw a specific error to reject the promise, but the UI is handled by the overlay
+      throw new Error('IP address is blocked.');
+    }
+
+    // Generic error handling
+    const msg = messageFrom(res.status, errorJson, bodyText || `HTTP ${res.status}`);
+    if (res.status === 401) {
+      const code = errorJson?.error?.code || errorJson?.code;
+      if (code === "JWT_INVALID" || code === "JWT_MISSING") {
+        clearSession();
+        if (!location.pathname.startsWith("/auth")) location.href = "/auth";
+      }
+    }
+    throw new Error(msg);
   }
+
   return res.json();
 }
+
 
 export const AuthAPI = {
   login: (payload: { username: string; password: string }) =>

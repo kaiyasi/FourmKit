@@ -233,14 +233,27 @@ export default function MobileSupportPage() {
         setCreateStep(1)
         
         // 顯示成功訊息
-        alert(isLoggedIn ? '支援單已成功建立！' : '支援單已建立！請查看 Email 中的追蹤連結。')
+        const priorityText = data.ticket?.priority === 'low' ? '低' : 
+                            data.ticket?.priority === 'medium' ? '中' : 
+                            data.ticket?.priority === 'high' ? '高' : '緊急';
+        
+        const successMsg = isLoggedIn 
+          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${data.ticket?.public_id}\n• 優先級：${priorityText}\n\n您可以在工單列表中查看進度。`
+          : `✅ 支援單已建立！\n\n📋 工單編號：#${data.ticket?.public_id}\n• 優先級：${priorityText}\n\n請記住您的工單編號以便日後追蹤。`;
+        
+        alert(successMsg)
         
         // 如果已登入，重新載入支援單列表
         if (isLoggedIn) {
           setCurrentView('list')
           fetchMyTickets()
         } else {
-          setCurrentView('track')
+          // 訪客：導向追蹤頁面
+          if (data.tracking_url) {
+            window.location.href = data.tracking_url
+          } else {
+            setCurrentView('track')
+          }
         }
       } else {
         const errorData = await response.json()

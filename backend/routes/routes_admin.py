@@ -9,7 +9,7 @@ from models import User, UserRole, School, Post, Comment
 from models.events import SystemEvent
 from werkzeug.security import generate_password_hash
 from sqlalchemy import func, and_, or_, desc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hmac, hashlib, base64, os, uuid
 
 # For the new unblock IP feature
@@ -17,6 +17,38 @@ from utils.ratelimit import unblock_ip, block_ip, is_ip_blocked
 from utils.admin_events import log_security_event
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
+
+# --- Compatibility wrappers for Admin Instagram UI endpoints ---
+# The frontend calls /api/admin/social/*, but core handlers live under
+# /api/instagram/*. Provide thin proxies to avoid duplicating logic.
+try:
+    from .routes_instagram import (
+        get_social_accounts as _ig_get_social_accounts,
+        get_templates as _ig_get_templates,
+        get_publishing_monitoring as _ig_get_monitoring,
+    )
+
+    @bp.get('/social/accounts')
+    @jwt_required()
+    @require_role('dev_admin', 'campus_admin', 'cross_admin')
+    def admin_social_accounts_proxy():
+        return _ig_get_social_accounts()
+
+    @bp.get('/social/templates')
+    @jwt_required()
+    @require_role('dev_admin', 'campus_admin', 'cross_admin')
+    def admin_social_templates_proxy():
+        return _ig_get_templates()
+
+    @bp.get('/social/monitoring')
+    @jwt_required()
+    @require_role('dev_admin', 'campus_admin', 'cross_admin')
+    def admin_social_monitoring_proxy():
+        return _ig_get_monitoring()
+except Exception as _proxy_err:
+    # In minimal environments (tests), routes_instagram may not be loaded.
+    # Silently skip proxies; other routes remain functional.
+    pass
 
 # 自訂聊天室管理 API（僅 dev_admin）
 @bp.post('/chat-rooms/custom')
@@ -1710,6 +1742,9 @@ def delete_user(uid: int):
             return jsonify({ 'msg': 'not found' }), 404
         if actor and actor.role != 'dev_admin':
             return jsonify({ 'msg': '僅開發人員可以管理用戶' }), 403
+        # 特殊帳號保護：禁止刪除 Kaiyasi
+        if u and getattr(u, 'username', None) == 'Kaiyasi':
+            return jsonify({ 'msg': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT' }), 403
         
         # 檢查關聯
         has_post = s.query(Post).filter(Post.author_id==uid).first() is not None
@@ -1969,11 +2004,27 @@ def get_chat_rooms():
 
                 available_rooms.append(room)
             
-            # 為每個聊天室添加線上用戶數量
+            # 為每個聊天室添加線上用戶數量與成員總數
             from app import _room_clients
             for room in available_rooms:
                 client_ids = list(_room_clients.get(room["id"], set()))
                 room["online_count"] = len(client_ids)
+
+                # 計算可參與成員總數
+                try:
+                    q = s.query(User).filter(User.role.in_(room.get("access_roles", [])))
+                    if room.get("school_specific") and room.get("school_id"):
+                        # 校內聊天室：限定該校，另允許 dev_admin
+                        q = q.filter(
+                            or_(
+                                User.school_id == room["school_id"],
+                                User.role == 'dev_admin'
+                            )
+                        )
+                    room["member_count"] = q.count()
+                except Exception as _mc_err:
+                    print(f"[WARN] member_count calc failed for room {room.get('id')}: {_mc_err}")
+                    room["member_count"] = None
 
             # 添加自定義聊天室（從數據庫）
             try:
@@ -1999,6 +2050,18 @@ def get_chat_rooms():
                     
                     if can_access:
                         client_ids = list(_room_clients.get(room.id, set()))
+                        # 計算自訂房 member_count（與固定房一致的規則）
+                        try:
+                            from models import User as _UserModel
+                            roles = ["dev_admin", "campus_admin"]
+                            q_mc = s.query(_UserModel).filter(_UserModel.role.in_(roles))
+                            if room.school_id is not None:
+                                q_mc = q_mc.filter(or_(_UserModel.school_id == room.school_id, _UserModel.role == 'dev_admin'))
+                            member_count_val = q_mc.count()
+                        except Exception as _e:
+                            print(f"[WARN] member_count for custom room failed: {_e}")
+                            member_count_val = None
+
                         available_rooms.append({
                             "id": room.id,
                             "name": room.name,
@@ -2007,6 +2070,7 @@ def get_chat_rooms():
                             "school_specific": room.school_id is not None,
                             "school_id": room.school_id,
                             "online_count": len(client_ids),
+                            "member_count": member_count_val,
                             "custom": True,
                             "owner_id": room.owner_id
                         })
@@ -2561,9 +2625,8 @@ def get_platform_status():
     try:
         import os
         import psutil
-        from datetime import datetime, timezone
         import pytz
-        
+
         process = psutil.Process()
         
         # 設定台北時區
@@ -2779,9 +2842,14 @@ def get_schools_for_admin():
 @jwt_required()
 @require_role("dev_admin")
 def unblock_user_ip():
-    """解除使用者的 IP 封鎖"""
+    """解除使用者的 IP 封鎖。
+    預設行為：解除該使用者所有曾出現過的 IP（對應「封鎖所有IP」的反操作）。
+    可選：傳入 ip 只解該 IP；或 all=false 僅解最近一次 IP。
+    """
     data = request.get_json(silent=True) or {}
     user_id = data.get('user_id')
+    ip_param = (data.get('ip') or '').strip()
+    all_param = data.get('all')
 
     if not user_id:
         return jsonify({'ok': False, 'error': 'user_id is required'}), 400
@@ -2798,31 +2866,47 @@ def unblock_user_ip():
         if tuser and (tuser.username == 'Kaiyasi'):
             return jsonify({'ok': False, 'error': 'FORBIDDEN_FOR_SPECIAL_ACCOUNT'}), 403
 
-        # 找到該使用者最近一次活動的 IP
-        latest_event = s.query(SystemEvent).filter(
-            SystemEvent.actor_id == user_id
-        ).order_by(SystemEvent.created_at.desc()).first()
-
-        if not latest_event or not latest_event.client_ip:
-            return jsonify({'ok': False, 'error': 'No recent IP address found for this user.'}), 404
-
-        ip_to_unblock = latest_event.client_ip
-
+        ips: list[str] = []
         try:
-            # 解除 IP 封鎖
-            unblock_ip(ip_to_unblock)
+            if ip_param:
+                ips = [ip_param]
+            else:
+                # 預設 all=True：解除所有曾記錄過的 IP
+                if all_param is None or bool(all_param):
+                    rows = (
+                        s.query(SystemEvent.client_ip)
+                        .filter(SystemEvent.actor_id == user_id, SystemEvent.client_ip.isnot(None))
+                        .distinct()
+                        .all()
+                    )
+                    ips = [row[0] for row in rows if row[0]]
+                else:
+                    latest_event = s.query(SystemEvent).filter(
+                        SystemEvent.actor_id == user_id
+                    ).order_by(SystemEvent.created_at.desc()).first()
+                    if latest_event and latest_event.client_ip:
+                        ips = [latest_event.client_ip]
+
+            if not ips:
+                return jsonify({'ok': False, 'error': 'No IP addresses found for this user.'}), 404
+
+            for ip in ips:
+                try:
+                    unblock_ip(ip)
+                except Exception:
+                    pass
 
             # 記錄安全事件
             log_security_event(
                 event_type="ip_unblocked",
-                description=f"管理員 {actor.username} 解除了使用者 ID {user_id} 的 IP({ip_to_unblock}) 封鎖。",
+                description=f"管理員 {actor.username} 解除了使用者 ID {user_id} 的 IP 封鎖 ({len(ips)} 項)。",
                 severity="medium",
                 actor_id=actor.id,
                 actor_name=actor.username,
-                metadata={"unblocked_ip": ip_to_unblock, "target_user_id": user_id}
+                metadata={"unblocked_ips": ips, "count": len(ips), "target_user_id": user_id}
             )
             s.commit()
-            return jsonify({'ok': True, 'message': f'IP {ip_to_unblock} has been unblocked for user {user_id}.'})
+            return jsonify({'ok': True, 'message': f'Unblocked {len(ips)} IP(s) for user {user_id}.', 'count': len(ips), 'ips': ips})
 
         except Exception as e:
             s.rollback()
@@ -2836,6 +2920,29 @@ def block_user_ip():
     data = request.get_json(silent=True) or {}
     user_id = data.get('user_id')
     block_all = bool(data.get('all', False))
+
+    def _parse_duration(payload: dict) -> int | None:
+        candidates = [
+            ('duration_seconds', 1),
+            ('duration_minutes', 60),
+            ('duration_hours', 3600),
+        ]
+        for field, multiplier in candidates:
+            raw = payload.get(field)
+            if raw is None:
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value <= 0:
+                continue
+            seconds = int(value * multiplier)
+            if seconds > 0:
+                return seconds
+        return None
+
+    ttl_override = _parse_duration(data)
     if not user_id:
         return jsonify({'ok': False, 'error': 'user_id is required'}), 400
 
@@ -2868,22 +2975,59 @@ def block_user_ip():
             if not latest_event or not latest_event.client_ip:
                 return jsonify({'ok': False, 'error': 'No recent IP address found for this user.'}), 404
             ips = [latest_event.client_ip]
+        school_slug = None
+        if tuser and tuser.school_id:
+            sch_obj = s.get(School, tuser.school_id)
+            if sch_obj:
+                school_slug = sch_obj.slug
+        if not school_slug:
+            school_slug = 'cross'
+
         try:
+            blocked_details: list[dict] = []
             for ip in ips:
                 try:
-                    block_ip(ip)
+                    ttl_used = block_ip(ip, ttl_seconds=ttl_override, metadata={'school_slug': school_slug})
+                    blocked_details.append({'ip': ip, 'ttl_seconds': ttl_used})
                 except Exception:
                     pass
+
+            # 同步將使用者加入停權名單
+            from utils.config_handler import load_config, save_config
+            cfg = load_config() or {}
+            suspended_users = set(cfg.get('suspended_users', []))
+            suspended_users.add(int(user_id))
+            cfg['suspended_users'] = list(suspended_users)
+            save_config(cfg)
+
+            ttl_seconds = blocked_details[0]['ttl_seconds'] if blocked_details else None
+            expires_at = None
+            if ttl_seconds:
+                expires_at = (datetime.utcnow() + timedelta(seconds=ttl_seconds)).isoformat() + 'Z'
             log_security_event(
-                event_type="ip_blocked",
-                description=f"管理員 {actor.username} 封鎖了使用者 ID {user_id} 的 IPs({', '.join(ips)})。",
+                event_type="ip_blocked_and_user_suspended",
+                description=f"管理員 {actor.username} 封鎖了使用者 ID {user_id} 的 IPs({', '.join(ips)}) 並將其帳號停權" + (f"，時長 {ttl_seconds} 秒" if ttl_seconds else "") + "。",
                 severity="high",
                 actor_id=actor.id,
                 actor_name=actor.username,
-                metadata={"blocked_ips": ips, "target_user_id": user_id}
+                metadata={
+                    "blocked_ips": ips,
+                    "target_user_id": user_id,
+                    "ttl_seconds": ttl_seconds,
+                    "expires_at": expires_at,
+                    "school_slug": school_slug,
+                }
             )
             s.commit()
-            return jsonify({'ok': True, 'message': f'Blocked {len(ips)} IP(s) for user {user_id}.', 'count': len(ips), 'ips': ips})
+            return jsonify({
+                'ok': True,
+                'message': f'Blocked {len(ips)} IP(s) for user {user_id} and suspended account.',
+                'count': len(ips),
+                'ips': ips,
+                'ttl_seconds': ttl_seconds,
+                'expires_at': expires_at,
+                'details': blocked_details,
+            })
         except Exception as e:
             s.rollback()
             return jsonify({'ok': False, 'error': str(e)}), 500
@@ -2940,7 +3084,14 @@ def suspend_user():
         latest_event = s.query(SystemEvent).filter(SystemEvent.actor_id == user_id).order_by(SystemEvent.created_at.desc()).first()
         if latest_event and latest_event.client_ip:
             try:
-                block_ip(latest_event.client_ip)
+                school_slug = None
+                if u.school_id:
+                    sch_obj = s.get(School, u.school_id)
+                    if sch_obj:
+                        school_slug = sch_obj.slug
+                if not school_slug:
+                    school_slug = 'cross'
+                block_ip(latest_event.client_ip, metadata={'school_slug': school_slug})
             except Exception:
                 pass
         # 記錄事件
@@ -2991,14 +3142,22 @@ def unsuspend_user():
                 bl.remove(u.email.lower())
                 cfg['email_blacklist'] = list(bl)
         save_config(cfg)
-        # 解除最近 IP 封鎖
-        latest_event = s.query(SystemEvent).filter(SystemEvent.actor_id == user_id).order_by(SystemEvent.created_at.desc()).first()
-        if latest_event and latest_event.client_ip:
-            try:
-                # 即使沒被封鎖也不報錯
-                unblock_ip(latest_event.client_ip)
-            except Exception:
-                pass
+        # 解除該使用者所有曾記錄過的 IP 封鎖（對應 suspend 時可能封鎖全部）
+        try:
+            rows = (
+                s.query(SystemEvent.client_ip)
+                .filter(SystemEvent.actor_id == user_id, SystemEvent.client_ip.isnot(None))
+                .distinct()
+                .all()
+            )
+            all_ips = [row[0] for row in rows if row[0]]
+            for ip in all_ips:
+                try:
+                    unblock_ip(ip)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # 記錄事件
         try:
             actor_id = get_jwt_identity()
@@ -3089,12 +3248,13 @@ def convert_instagram_token():
         }), 400
 
     try:
-        # 調用 Instagram Basic Display API 轉換 Token
-        url = 'https://graph.instagram.com/access_token'
+        # 使用 Facebook Graph API 交換長期 User Token（fb_exchange_token）
+        url = 'https://graph.facebook.com/v23.0/oauth/access_token'
         params = {
-            'grant_type': 'ig_exchange_token',
+            'grant_type': 'fb_exchange_token',
+            'client_id': app_id,
             'client_secret': app_secret,
-            'access_token': short_lived_token
+            'fb_exchange_token': short_lived_token
         }
 
         response = requests.get(url, params=params, timeout=30)

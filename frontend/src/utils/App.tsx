@@ -14,22 +14,22 @@ import RegisterConfirmPage from '@/pages/RegisterConfirmPage'
 import PostList from '@/components/PostList'
 import HomeComposer from '@/components/home/HomeComposer'
 import FilterBar from '@/components/FilterBar'
-import ChatPanel from '@/components/ChatPanel'
-import ChatPage from '@/pages/ChatPage'
-import AdminChatPage from '@/pages/admin/ChatPage'
+// 聊天功能已移除
 import PostDetailPage from '@/pages/PostDetailPage'
 import AdminCommentsMonitorPage from '@/pages/admin/AdminCommentsMonitorPage'
 import DiscordPage from '@/pages/admin/DiscordPage'
+import AdminChatPage from '@/pages/admin/AdminChatPage'
 import ProjectStatusPage from '@/pages/admin/ProjectStatusPage'
 import ServerStatusPage from '@/pages/admin/ServerStatusPage'
-import TokenManagementPage from '@/pages/admin/TokenManagementPage'
+// TokenManagementPage 已移除
 import EventStatusCard from '@/components/admin/EventStatusCard'
 import ResizableSection from '@/components/ResizableSection'
 import { canSetMode, getUserId } from '@/utils/auth'
 import { useAuth } from '@/contexts/AuthContext'
 import ExternalAccountErrorPage from '@/pages/ExternalAccountErrorPage'
 import LoginRestrictedPage from '@/pages/LoginRestrictedPage'
-import { useAnnouncementNotifications } from '@/hooks/useAnnouncementNotifications'
+import { useAnnouncementNotifications } from '@/hooks/useAnnouncementNotifications';
+import { api } from '@/services/api';
 
 type PlatformMode = {
   mode: 'normal' | 'maintenance' | 'development' | 'test'
@@ -45,7 +45,7 @@ interface ProgressItem { name: string; status: 'completed'|'in_progress'|'planne
 interface ProgressData { progress_items: ProgressItem[]; recent_updates: string[]; last_updated: string; error?: string }
 
 export default function App() {
-  const { isLoggedIn } = useAuth()
+  const { isLoggedIn } = useAuth();
   
   // 啟用公告通知整合
   useAnnouncementNotifications()
@@ -84,10 +84,12 @@ export default function App() {
   const [siteTitle, setSiteTitle] = useState<string>('ForumKit')
   useEffect(() => {
     let alive = true
-    fetch('/api/settings/site')
-      .then(r => r.json().catch(()=>({})))
+    api<{ home_title?: string }>('/api/settings/site')
       .then(j => { if (!alive) return; const t = (j?.home_title || '').trim(); if (t) setSiteTitle(t) })
-      .catch(()=>{})
+      .catch((e)=>{
+        // Fail silently, as this is not a critical piece of information.
+        console.warn('Failed to fetch site title:', e.message);
+      })
     return () => { alive = false }
   }, [])
 
@@ -363,26 +365,19 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    fetch('/api/mode')
-      .then(r => {
-        if (!r.ok) {
-          setErrorStatus(r.status)
-          throw new Error(`HTTP ${r.status}: ${r.statusText}`)
-        }
-        return r.json()
-      })
+    api<PlatformMode>('/api/mode')
       .then(setPlatform)
       .catch(e => {
-        // Network error 或 5xx 皆走自訂錯誤頁
-        const msg = (e && e.message) ? String(e.message) : String(e)
-        setError(msg)
-        if (!errorStatus) {
-          // 嘗試從字串擷取狀態碼
-          const m = msg.match(/HTTP\s+(\d{3})/)
-          if (m) setErrorStatus(Number(m[1]))
+        const msg = (e && e.message) ? String(e.message) : String(e);
+        if (msg.includes('IP Blocked')) {
+          // This error is expected when blocked, let the global overlay handle it.
+        } else {
+          setError(msg);
+          const m = msg.match(/HTTP\s+(\d{3})/);
+          if (m) setErrorStatus(Number(m[1]));
         }
       })
-      .finally(() => setLoading(false))
+      .finally(() => setLoading(false));
   }, [])
 
   // 監聽來自 /mode 的更新事件，及時刷新平台模式（含手機維護設定）
@@ -423,16 +418,18 @@ export default function App() {
       (async () => {
         try {
           setProgressLoading(true)
-          const r = await fetch('/api/progress', { cache: 'no-store' })
-          if (!r.ok) throw new Error(`HTTP ${r.status}`)
-          const data = await r.json()
+          const data = await api<ProgressData>('/api/progress', { cache: 'no-store' });
           if (data && typeof data === 'object' && Array.isArray(data.progress_items) && Array.isArray(data.recent_updates)) {
             setProgressData(data)
           } else {
             setProgressData({ progress_items: [], recent_updates: [], last_updated: new Date().toISOString(), error: '資料格式不正確' })
           }
         } catch (e:any) {
-          setProgressData({ progress_items: [], recent_updates: [], last_updated: new Date().toISOString(), error: e?.message || String(e) })
+          if (e.message.includes('IP Blocked')) {
+            // Silently fail, the overlay will handle the UI
+          } else {
+            setProgressData({ progress_items: [], recent_updates: [], last_updated: new Date().toISOString(), error: e?.message || String(e) })
+          }
         } finally {
           setProgressLoading(false)
         }
@@ -455,15 +452,7 @@ export default function App() {
     return <AdminModePanel platform={platform} onUpdated={setPlatform} full />
   }
 
-  // /chat 示範頁
-  if (pathname === '/chat') {
-    return <ChatPage />
-  }
-
-  // /admin/chat 管理員聊天室
-  if (pathname === '/admin/chat') {
-    return <AdminChatPage />
-  }
+  // 聊天功能已移除
 
   // 錯誤/限制頁（Google 校外或登入模式限制）
   if (pathname === '/error/external-account') {
@@ -500,6 +489,11 @@ export default function App() {
     return <DiscordPage />
   }
 
+  // /admin/chat 管理員聊天室（需權限，後端保護）
+  if (pathname === '/admin/chat') {
+    return <AdminChatPage />
+  }
+
   // /admin/project 專案空間狀態頁（需權限，後端保護）
   if (pathname === '/admin/project') {
     return <ProjectStatusPage />
@@ -512,10 +506,7 @@ export default function App() {
 
   // /admin/tokens Token 管理工具（需權限，後端保護）
   console.log('[RoutingDebug] 當前 pathname:', pathname)
-  if (pathname === '/admin/tokens') {
-    console.log('[TokenRoute] 路由匹配成功，載入 TokenManagementPage')
-    return <TokenManagementPage />
-  }
+  // Token 管理頁面已移除
     
     // 支援功能已移除
 
@@ -609,7 +600,7 @@ export default function App() {
                 </div>
 
                 {/* Realtime 聊天室示範 */}
-                <ChatPanel room="lobby" title="聊天室" subtitle="開發模式示範聊天室" />
+                {/* 聊天室已移除 */}
 
                 {/* 右：開發紀錄 */}
                 <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft right-col-spacing">
@@ -758,7 +749,7 @@ export default function App() {
             {/* 桌機：聊天室獨立區塊（不佔顏色搭配器區） */}
             {!isSmallScreen && (
               <div className="mt-4 bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
-                <ChatPanel room="lobby" title="聊天室" subtitle="開發模式示範聊天室" />
+                {/* 聊天室已移除 */}
               </div>
             )}
 
@@ -830,19 +821,43 @@ function DesktopHome({ siteTitle = 'ForumKit' }: {
   siteTitle?: string;
 }) {
   const heroRef = useRef<HTMLDivElement | null>(null)
+  const composerRef = useRef<HTMLDivElement | null>(null)
   const [padTop, setPadTop] = useState<number>(100)
+
   useEffect(() => {
     const calc = () => {
-      const vh = Math.max(480, window.innerHeight || 0)
-      const h = heroRef.current?.offsetHeight || 0
-      const raw = Math.round(vh * 0.5 - h)
-      const clamped = Math.min(160, Math.max(60, raw))
-      setPadTop(clamped)
+      const vh = window.innerHeight
+      const heroH = heroRef.current?.offsetHeight || 0
+      const composerH = composerRef.current?.offsetHeight || 0
+      
+      // 確保內容不過度置頂，並在上方保留足夠空間
+      const minPadding = 80
+
+      // 總內容高度 = Hero 高度 + Hero 下方 margin (mb-16 = 4rem = 64px) + Composer 高度
+      const totalContentH = heroH + 64 + composerH
+      
+      let newPadTop: number;
+      if (totalContentH >= vh) {
+        // 如果內容高度超過或等於視窗高度，使用最小 padding，讓使用者可以滾動
+        newPadTop = minPadding
+      } else {
+        // 如果內容可完整顯示，計算置中所需 padding
+        const centeredPadTop = (vh - totalContentH) / 2
+        newPadTop = Math.max(minPadding, centeredPadTop)
+      }
+      setPadTop(newPadTop)
     }
-    calc()
+    
+    // 延遲極短時間再計算，確保元件尺寸正確
+    const timer = setTimeout(calc, 50)
     window.addEventListener('resize', calc)
-    return () => window.removeEventListener('resize', calc)
+    
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', calc)
+    }
   }, [])
+
   return (
     <main className="mx-auto max-w-5xl px-3 sm:px-4" style={{ paddingTop: padTop }}>
         {/* Hero（固定格式：標題 + 注意事項） */}
@@ -851,7 +866,7 @@ function DesktopHome({ siteTitle = 'ForumKit' }: {
           <p className="mt-3 text-sm text-muted">平台注意事項：友善發文，避免人身攻擊與個資外洩。</p>
         </section>
         {/* Composer */}
-        <section id="composer" className="rounded-2xl border border-border bg-surface/90 shadow-soft p-5 max-w-[720px] mx-auto">
+        <section ref={composerRef} id="composer" className="rounded-2xl border border-border bg-surface/90 shadow-soft p-5 max-w-[720px] mx-auto">
           <HomeComposer token={(()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()} />
         </section>
     </main>
@@ -877,15 +892,14 @@ function ReportForm({ compact }: { compact?: boolean }) {
     }
     setBusy(true); setTicket('')
     try {
-      const r = await fetch('/api/report', {
+      const data = await api<{ok?: boolean; ticket_id?: string; delivery?: string; id?: string}>('/api/report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contact: email, category, message }),
-      })
-      const data = await r.json().catch(() => ({}))
-      const id = r.headers.get("X-ForumKit-Ticket") || data?.ticket_id || r.headers.get("X-Request-ID") || ""
-      const ok = Boolean(data?.ok) && r.ok
-      const delivery = data?.delivery
+      });
+
+      const id = data?.ticket_id || data?.id || '';
+      const ok = Boolean(data?.ok);
+      const delivery = data?.delivery;
       
       if (ok && delivery === "discord") {
         setTone("success"); setTitle("已送出"); setDesc("已傳送至開發團隊")
@@ -904,11 +918,11 @@ function ReportForm({ compact }: { compact?: boolean }) {
         localStorage.setItem(key, JSON.stringify(list.slice(0, 10)))
       }
       if (ok) setMessage('')
-    } catch {
+    } catch(e: any) {
       setTicket('')
       setTone("error")
       setTitle("送出失敗")
-      setDesc("請檢查網路後再試")
+      setDesc(e.message || "請檢查網路後再試")
     } finally {
       setBusy(false)
     }
