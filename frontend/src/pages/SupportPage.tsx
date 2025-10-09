@@ -519,24 +519,22 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
             {/* Secondary Actions */}
             <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-surface border border-border rounded-xl p-6 shadow-soft hover:shadow-medium transition-shadow">
-                <div className="flex items-start space-x-3">
-                  <Eye className="w-5 h-5 text-primary mt-0.5" />
-                  <div className="flex-1">
-                    <h4 className="font-medium dual-text mb-2">追蹤現有工單</h4>
-                    <p className="text-sm text-muted mb-0">
-                      查看您提交工單的處理進度
-                    </p>
-                  </div>
-                    <div className="flex justify-center mt-3">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => navigate('/support/track')}
-                        className="w-2/3"
-                      >
-                        追蹤工單
-                      </Button>
-                    </div>
+                <h3 className="font-semibold dual-text mb-4 flex items-center">
+                  <Eye className="w-5 h-5 mr-2 text-primary" />
+                  追蹤現有工單
+                </h3>
+                <p className="text-muted text-sm mb-4 leading-relaxed">
+                  查看您提交工單的處理進度
+                </p>
+                <div className="text-center">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate('/support/track')}
+                    className="w-2/3 mx-auto block"
+                  >
+                    追蹤工單
+                  </Button>
                 </div>
               </div>
 
