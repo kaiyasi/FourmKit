@@ -325,6 +325,31 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
         </div>
       )}
 
+
+      {/* Mobile inline action card: scope + submit (no border) */}
+      <div className="md:hidden rounded-2xl bg-surface shadow-soft p-3 mt-3">
+        <div className="flex items-center gap-2">
+          <select
+            className="form-control form-control--compact !w-auto"
+            value={targetSlug}
+            onChange={(e)=> setTargetSlug(e.target.value as any)}
+          >
+            <option value="">跨校（全部）</option>
+            {schools.map(s => (
+              <option key={s.id} value={s.slug}>{s.name}</option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="ml-auto btn-primary disabled:opacity-60"
+            style={{ touchAction: 'manipulation' }}
+          >
+            {submitting ? '送出中…' : '發佈'}
+          </button>
+        </div>
+      </div>
+
       {/* Mobile-only inline scope selector */}
       <div className="md:hidden">
         {/* This is intentionally left empty because the school selector is now in the sticky footer */}
@@ -379,32 +404,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
         </button>
       </div>
       {msg && <div className="text-sm text-warning">{msg}</div>}
-      {/* Sticky bottom action bar (mobile) */}
-      <div
-        className="md:hidden fixed left-0 right-0 border-t border-border bg-surface/95 backdrop-blur p-2 z-60"
-        style={{ bottom: 'var(--fk-bottomnav-offset, calc(64px + env(safe-area-inset-bottom) + 8px))' }}
-      >
-        <div className="max-w-2xl mx-auto flex items-center gap-2">
-          <select
-            className="form-control !w-auto"
-            value={targetSlug}
-            onChange={(e)=> setTargetSlug(e.target.value as any)}
-          >
-            <option value="">跨校（全部）</option>
-            {schools.map(s => (
-              <option key={s.id} value={s.slug}>{s.name}</option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="ml-auto btn-primary disabled:opacity-60"
-            style={{ touchAction: 'manipulation' }}
-          >
-            {submitting ? '送出中…' : '發佈'}
-          </button>
-        </div>
-      </div>
+      {/* Sticky bottom action bar (mobile) - removed per new design */}
     </form>
   );
 }
