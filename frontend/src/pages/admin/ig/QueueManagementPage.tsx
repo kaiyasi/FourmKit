@@ -42,8 +42,12 @@ const QueueManagementPage: React.FC = () => {
 
   const fetchQueue = async () => {
     try {
-      const statusParam = filter !== 'all' ? `?status=${filter}` : '';
-      const response = await fetch(`/api/admin/ig/queue${statusParam}`);
+      const statusParam = filter !== 'all' ? `?status=${filter.toUpperCase()}` : '';
+      const response = await fetch(`/api/admin/ig/queue${statusParam}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const data = await response.json();
       setQueue(data.queue || []);
     } catch (error) {
@@ -53,7 +57,11 @@ const QueueManagementPage: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('/api/admin/ig/queue/stats');
+      const response = await fetch('/api/admin/ig/queue/stats', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const data = await response.json();
       setStats(data);
     } catch (error) {
@@ -196,6 +204,12 @@ const QueueManagementPage: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
+            {queue.length === 0 && (
+              <div className="px-6 py-6 text-sm text-muted">
+                無資料，請確認是否有符合篩選條件的佇列項目。
+              </div>
+            )}
+
             </table>
             {queue.length === 0 && (
               <div className="text-center py-12 text-muted">
