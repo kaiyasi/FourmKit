@@ -460,8 +460,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
           </form>
         </div>
       </div>
-      </>)
-    );
+      </>);
   };
 
   // 未登入狀態 - 支援匿名訪問
@@ -609,6 +608,92 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
             />
 
             <div className="px-4 sm:px-6 py-6">
+  // 手機版獨立詳情頁介面
+  if (selectedTicket && isMobile) {
+    return (
+      <PageLayout pathname="/support">
+        <div className="md:hidden">
+          {/* Mobile Top Bar */}
+          <div className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border px-3 py-2 flex items-center gap-2">
+            <button
+              onClick={goBack}
+              className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-muted"
+              aria-label="返回"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold truncate">工單 #{selectedTicket.ticket_id}</div>
+              <div className="text-xs text-muted truncate">{selectedTicket.subject}</div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />}
+              onClick={() => loadTicketDetail(selectedTicket.id)}
+              disabled={refreshing}
+            />
+          </div>
+
+          {/* Messages */}
+          <div className="px-3 py-3 pb-28">
+            <div className="rounded-2xl bg-surface/70 border border-border p-3 mb-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <StatusBadge status={selectedTicket.status} />
+                <CategoryBadge category={selectedTicket.category} />
+                <div className="flex items-center gap-1"><Calendar className="w-4 h-4" />{new Date(selectedTicket.created_at).toLocaleDateString('zh-TW')}</div>
+                <div className="flex items-center gap-1"><MessageSquare className="w-4 h-4" />{selectedTicket.messages.length} 則訊息</div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {selectedTicket.messages.map((message) => (
+                <div key={message.id} className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className="max-w-[85%]">
+                    <div className={`px-3 py-2 rounded-2xl ${message.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border'}`}>
+                      {message.body.split('\n').map((line, idx) => (
+                        <p key={idx} className={`text-sm ${message.author_type === 'user' ? 'text-primary-foreground' : 'text-fg'}`}>{line}</p>
+                      ))}
+                      <div className={`text-[10px] mt-1 ${message.author_type === 'user' ? 'text-primary-foreground/70' : 'text-muted'}`}>
+                        {message.author_display_name} • {new Date(message.created_at).toLocaleString('zh-TW')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bottom composer */}
+          {selectedTicket.status !== 'closed' && (
+            <div
+              className="fixed left-0 right-0 border-t border-border bg-surface/95 backdrop-blur p-2 z-40"
+              style={{ bottom: 'var(--fk-bottomnav-offset, 64px)' }}
+            >
+              <div className="max-w-4xl mx-auto flex items-center gap-2 px-2">
+                <textarea
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="輸入您的回應..."
+                  rows={1}
+                  className="flex-1 form-control form-control--compact resize-none"
+                />
+                <Button
+                  onClick={sendMessage}
+                  loading={sendingMessage}
+                  disabled={!newMessage.trim()}
+                  icon={<Send className="w-4 h-4" />}
+                >
+                  發送
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </PageLayout>
+    )
+  }
+
               {/* 工單資訊 */}
               <div className="bg-surface/70 backdrop-blur-md border border-border rounded-2xl p-6 mb-6">
                 <div className="flex flex-wrap items-center gap-4 mb-4">
@@ -741,9 +826,8 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                     placeholder="搜尋工單..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted" />
                 </div>
               </div>
               <div className="sm:w-1/3 flex gap-2">
