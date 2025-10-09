@@ -12,7 +12,6 @@ import {
   Button,
   StatusBadge,
   CategoryBadge,
-  PriorityBadge
 } from '@/components/support/SupportComponents';
 import { 
   Plus, 
@@ -57,14 +56,14 @@ interface TicketDetail extends Ticket {
 }
 
 const VALID_CATEGORIES = ['technical', 'account', 'feature', 'bug', 'abuse', 'other'] as const;
-const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+
 type SupportCategory = typeof VALID_CATEGORIES[number];
-type SupportPriority = typeof VALID_PRIORITIES[number];
+
 
 interface TicketFormState {
   subject: string;
   category: SupportCategory;
-  priority: SupportPriority;
+
   body: string;
   email: string;
 }
@@ -74,8 +73,7 @@ type PrefillTicket = Partial<TicketFormState>;
 const isValidCategory = (value: unknown): value is SupportCategory =>
   typeof value === 'string' && VALID_CATEGORIES.includes(value as SupportCategory);
 
-const isValidPriority = (value: unknown): value is SupportPriority =>
-  typeof value === 'string' && VALID_PRIORITIES.includes(value as SupportPriority);
+
 
 const SupportPage: React.FC = () => {
   const { user, isLoggedIn } = useAuth();
@@ -240,7 +238,7 @@ const SupportPage: React.FC = () => {
     const initialFormData: TicketFormState = {
       subject: typeof prefillTicketData?.subject === 'string' ? prefillTicketData.subject : '',
       category: isValidCategory(prefillTicketData?.category) ? prefillTicketData?.category as SupportCategory : 'technical',
-      priority: isValidPriority(prefillTicketData?.priority) ? prefillTicketData?.priority as SupportPriority : 'medium',
+
       body: typeof prefillTicketData?.body === 'string' ? prefillTicketData.body : '',
       email: typeof prefillTicketData?.email === 'string' ? prefillTicketData.email : '',
     };
@@ -252,7 +250,6 @@ const SupportPage: React.FC = () => {
       setFormData(prev => ({
         subject: typeof prefillTicketData.subject === 'string' ? prefillTicketData.subject : prev.subject,
         category: isValidCategory(prefillTicketData.category) ? prefillTicketData.category : prev.category,
-        priority: isValidPriority(prefillTicketData.priority) ? prefillTicketData.priority : prev.priority,
         body: typeof prefillTicketData.body === 'string' ? prefillTicketData.body : prev.body,
         email: !isLoggedIn && typeof prefillTicketData.email === 'string' ? prefillTicketData.email : prev.email,
       }));
@@ -267,7 +264,7 @@ const SupportPage: React.FC = () => {
       try {
         setCreating(true);
         // 未登入用戶處理 email
-        const payload: any = { ...formData };
+        const payload: any = { subject: formData.subject, category: formData.category, body: formData.body }
         if (!isLoggedIn) {
           let email = (formData.email || '').trim();
           
@@ -300,10 +297,6 @@ const SupportPage: React.FC = () => {
         if (resp?.ok) {
           // 顯示成功訊息給用戶，包含客服單資訊
           const ticketInfo = resp.ticket;
-          const priorityText = ticketInfo.priority === 'low' ? '低' : 
-                               ticketInfo.priority === 'medium' ? '中' : 
-                               ticketInfo.priority === 'high' ? '高' : '緊急';
-          
           const successMessage = `✅ 客服單建立成功！
 
 📋 客服單資訊：
@@ -311,7 +304,6 @@ const SupportPage: React.FC = () => {
 • 主題：${ticketInfo.subject}
 • 狀態：${ticketInfo.status === 'open' ? '已開啟' : ticketInfo.status}
 • 分類：${ticketInfo.category}
-• 優先級：${priorityText}
 • 建立時間：${new Date(ticketInfo.created_at).toLocaleString('zh-TW')}
 
 ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住您的工單編號以便日後追蹤。'}`;
@@ -424,25 +416,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   />
                 </div>
               )}
-                <div>
-                  <label className="block text-sm font-medium text-fg mb-2">優先級</label>
-                  <select
-                    value={formData.priority}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setFormData(prev => ({
-                        ...prev,
-                        priority: isValidPriority(value) ? value : prev.priority,
-                      }));
-                    }}
-                    className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-fg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  >
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
-                    <option value="urgent">緊急</option>
-                  </select>
-                </div>
+
               </div>
 
               <div>
