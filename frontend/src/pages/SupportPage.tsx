@@ -523,20 +523,20 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   <Eye className="w-5 h-5 text-primary mt-0.5" />
                   <div className="flex-1">
                     <h4 className="font-medium dual-text mb-2">追蹤現有工單</h4>
-                    <p className="text-sm text-muted mb-3">
+                    <p className="text-sm text-muted mb-0">
                       查看您提交工單的處理進度
                     </p>
-                    <div className="text-center">
+                  </div>
+                    <div className="flex justify-center mt-3">
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => navigate('/support/track')}
-                        className="w-2/3 mx-auto block"
+                        className="w-2/3"
                       >
                         追蹤工單
                       </Button>
                     </div>
-                  </div>
                 </div>
               </div>
 
@@ -545,15 +545,15 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   <MessageSquare className="w-5 h-5 text-primary mt-0.5" />
                   <div className="flex-1">
                     <h4 className="font-medium dual-text mb-2">常見問題</h4>
-                    <p className="text-sm text-muted mb-3">
+                    <p className="text-sm text-muted mb-0">
                       快速找到常見問題的解答
                     </p>
-                    <div className="text-center">
+                    <div className="flex justify-center mt-3">
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => navigate('/faq')}
-                        className="w-2/3 mx-auto block"
+                        className="w-2/3"
                       >
                         瀏覽 FAQ
                       </Button>
