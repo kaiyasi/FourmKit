@@ -487,7 +487,11 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
     return (
       <PageLayout pathname="/support">
         <div className="max-w-4xl mx-auto px-6 py-12">
-          {/* Header 移除最上方主副標，保留下方主要區塊標題 */}
+          {/* Header：保留下方主要大標題，已移除最上層主副標 */}
+          <div className="text-center mb-12">
+            <h1 className="text-4xl font-bold dual-text mb-3">ForumKit</h1>
+            <p className="text-xl text-muted">Support Center</p>
+          </div>
 
           <div className="space-y-6">
             {/* Primary Action */}
@@ -710,11 +714,34 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
     <PageLayout pathname="/support">
         <div className="min-h-screen">
           {/* Compact Header - 移除左側主副標，保留操作按鈕 */}
+          {/* Compact Header：保留一組主要標題 */}
           <div className="border-b border-border bg-surface/80 backdrop-blur-sm">
             <div className="max-w-7xl mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
-                <div />
+                <div>
+                  <h1 className="text-xl font-semibold dual-text">Support Center</h1>
+                </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />}
+                    onClick={refreshTickets}
+                    disabled={refreshing}
+                  />
+                  <Button
+                    size="sm"
+                    icon={<Plus className="w-4 h-4" />}
+                    onClick={() => setShowCreateModal(true)}
+                  >
+                    新工單
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
                   <Button
                     variant="ghost"
                     size="sm"
