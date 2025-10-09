@@ -486,13 +486,8 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
   if (!isLoggedIn) {
     return (
       <PageLayout pathname="/support">
-        <MobileHeader subtitle="Support" />
         <div className="max-w-4xl mx-auto px-6 py-12">
-          {/* Header */}
-          <div className="text-center mb-12">
-            <h1 className="text-4xl font-bold dual-text mb-3">ForumKit</h1>
-            <p className="text-xl text-muted">Support Center</p>
-          </div>
+          {/* Header 移除最上方主副標，保留下方主要區塊標題 */}
 
           <div className="space-y-6">
             {/* Primary Action */}
@@ -714,14 +709,11 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
   return (
     <PageLayout pathname="/support">
         <div className="min-h-screen">
-          {/* Compact Header */}
+          {/* Compact Header - 移除左側主副標，保留操作按鈕 */}
           <div className="border-b border-border bg-surface/80 backdrop-blur-sm">
             <div className="max-w-7xl mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-xl font-semibold dual-text">ForumKit</h1>
-                  <p className="text-sm text-muted">Support Center - 我的工單</p>
-                </div>
+                <div />
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
