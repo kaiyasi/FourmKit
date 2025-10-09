@@ -23,7 +23,11 @@ export default function BoardsPage() {
   if (isMobile) {
     return (
       <PageLayout pathname="/boards">
-        <MobileHeader subtitle="Posts" />
+        <div className="sm:hidden text-center py-2 mb-1">
+        <div className="h-2" />
+          <h1 className="text-3xl font-extrabold dual-text tracking-wide leading-tight">ForumKit</h1>
+          <p className="text-base text-muted -mt-1">新世紀校園匿名平台</p>
+        </div>
         <MobilePostList injectedItems={injected} showAll={true} />
       </PageLayout>
     )
