@@ -27,11 +27,18 @@ export default function CreatePostPage() {
 
   return (
     <PageLayout pathname="/create" maxWidth="max-w-2xl">
-      {/* Header（沿用桌面首頁風格，縮減間距以適應手機） */}
-      <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
-        <h1 className="text-xl sm:text-2xl font-semibold dual-text">發布新貼文</h1>
-        <p className="text-sm text-muted mt-1">創建新的討論話題，支援文字、圖片和影片。</p>
-      </div>
+      {/* 手機版：純文字標頭；桌面版：卡片式標頭 */}
+      {isMobile ? (
+        <div className="sm:hidden text-center mb-4">
+          <h1 className="text-2xl font-extrabold dual-text tracking-wide">ForumKit</h1>
+          <p className="text-sm text-muted">Post your idea</p>
+        </div>
+      ) : (
+        <div className="hidden sm:block bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
+          <h1 className="text-xl sm:text-2xl font-semibold dual-text">發布新貼文</h1>
+          <p className="text-sm text-muted mt-1">創建新的討論話題，支援文字、圖片和影片。</p>
+        </div>
+      )}
       
       {/* Composer Card（沿用桌面卡片樣式，行動版保留貼底操作欄） */}
       <div className="bg-surface border border-border rounded-2xl shadow-soft mb-20 md:mb-4 p-4 sm:p-6 overflow-hidden">

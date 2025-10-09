@@ -380,7 +380,10 @@ export default function PostComposer({ token }: { token: string }) {
       </div>
       {msg && <div className="text-sm text-warning">{msg}</div>}
       {/* Sticky bottom action bar (mobile) */}
-      <div className="md:hidden fixed left-0 right-0 bottom-0 border-t border-border bg-surface/95 backdrop-blur p-2 z-60">
+      <div
+        className="md:hidden fixed left-0 right-0 border-t border-border bg-surface/95 backdrop-blur p-2 z-60"
+        style={{ bottom: 'var(--fk-bottomnav-offset, calc(64px + env(safe-area-inset-bottom) + 8px))' }}
+      >
         <div className="max-w-2xl mx-auto flex items-center gap-2">
           <select
             className="form-control !w-auto"
