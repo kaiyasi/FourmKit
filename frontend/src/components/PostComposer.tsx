@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom'
 import { textToHtml } from '@/utils/safeHtml'
 import { Bold, Italic, Link as LinkIcon, List, Quote, Code, Eye, Paperclip } from 'lucide-react'
 
-export default function PostComposer({ token }: { token: string }) {
+export default function PostComposer({ token, hideFormattingToolbar = false }: { token: string, hideFormattingToolbar?: boolean }) {
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -39,7 +39,7 @@ export default function PostComposer({ token }: { token: string }) {
   const [targetSlug, setTargetSlug] = useState<string | ''>(defaultSlug)
   const [mobilePreview, setMobilePreview] = useState(false)
   const [showUploads, setShowUploads] = useState(true)
-  const [toolbarOpen, setToolbarOpen] = useState(false)
+  const [toolbarOpen, setToolbarOpen] = useState(!hideFormattingToolbar)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   // 載入學校清單，預設使用 Navbar 的選擇（localStorage）
@@ -259,7 +259,7 @@ export default function PostComposer({ token }: { token: string }) {
 
 
       {/* 改進的手機版工具欄 */}
-      {toolbarOpen && (
+      {!hideFormattingToolbar && toolbarOpen && (
         <div className="md:hidden bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-900/50 dark:to-gray-900/50 border border-border rounded-xl p-3 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">格式工具</span>
@@ -307,7 +307,7 @@ export default function PostComposer({ token }: { token: string }) {
           }}
           onFocus={() => {
             // 手機版自動展開工具欄提示
-            if (window.innerWidth < 768 && !toolbarOpen) {
+            if (window.innerWidth < 768 && !hideFormattingToolbar && !toolbarOpen) {
               setTimeout(() => setToolbarOpen(true), 200)
             }
           }}

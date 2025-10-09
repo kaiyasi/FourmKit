@@ -42,7 +42,7 @@ export default function CreatePostPage() {
       
       {/* Composer Card（沿用桌面卡片樣式，行動版保留貼底操作欄） */}
       <div className="bg-surface border border-border rounded-2xl shadow-soft mb-20 md:mb-4 p-4 sm:p-6 overflow-hidden">
-        <PostComposer token={token} />
+        <PostComposer token={token} hideFormattingToolbar={true} />
         {!token && (
           <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700">
             <div className="text-sm text-amber-800 dark:text-amber-200">
