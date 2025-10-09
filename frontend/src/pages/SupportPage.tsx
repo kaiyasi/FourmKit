@@ -737,6 +737,16 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                     新工單
                   </Button>
                 </div>
+
+                {/* Inline Stats */}
+                {tickets.length > 0 && (
+                  <div className="flex items-center gap-6 mt-3 text-sm text-muted">
+                    <span>總共 <strong className="text-fg">{tickets.length}</strong> 個工單</span>
+                    <span>進行中 <strong className="text-yellow-600 dark:text-yellow-400">{tickets.filter(t => ['open', 'awaiting_user', 'awaiting_admin'].includes(t.status)).length}</strong></span>
+                    <span>已解決 <strong className="text-green-600 dark:text-green-400">{tickets.filter(t => t.status === 'resolved').length}</strong></span>
+                  </div>
+                )}
+
               </div>
             </div>
           </div>
