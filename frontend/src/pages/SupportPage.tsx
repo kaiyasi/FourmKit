@@ -350,7 +350,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
       }
     };
 
-    return (
+    return (<>
       {/* 背景遮罩，阻擋互動 */}
       {/* 禁用觸控滾動（iOS） */}
       <div className="fixed inset-0 z-[96]" style={{ touchAction: 'none' }} />
@@ -460,6 +460,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
           </form>
         </div>
       </div>
+      </>)
     );
   };
 
