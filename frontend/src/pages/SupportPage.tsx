@@ -539,24 +539,22 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
               </div>
 
               <div className="bg-surface border border-border rounded-xl p-6 shadow-soft hover:shadow-medium transition-shadow">
-                <div className="flex items-start space-x-3">
-                  <MessageSquare className="w-5 h-5 text-primary mt-0.5" />
-                  <div className="flex-1">
-                    <h4 className="font-medium dual-text mb-2">常見問題</h4>
-                    <p className="text-sm text-muted mb-0">
-                      快速找到常見問題的解答
-                    </p>
-                    <div className="flex justify-center mt-3">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => navigate('/faq')}
-                        className="w-2/3"
-                      >
-                        瀏覽 FAQ
-                      </Button>
-                    </div>
-                  </div>
+                <h3 className="font-semibold dual-text mb-4 flex items-center">
+                  <MessageSquare className="w-5 h-5 mr-2 text-primary" />
+                  常見問題
+                </h3>
+                <p className="text-muted text-sm mb-4 leading-relaxed">
+                  快速找到常見問題的解答
+                </p>
+                <div className="text-center">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate('/faq')}
+                    className="w-2/3 mx-auto block"
+                  >
+                    瀏覽 FAQ
+                  </Button>
                 </div>
               </div>
             </div>
