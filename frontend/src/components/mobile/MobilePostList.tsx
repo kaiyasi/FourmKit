@@ -384,11 +384,7 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
 
       {/* 貼文列表 */}
       <div className="mobile-horizontal-padding mobile-vertical-padding pb-24">
-        {/* ForumKit 標題 */}
-        <div className="text-center mb-4">
-          <h1 className="text-2xl font-bold text-fg">ForumKit</h1>
-          <p className="text-sm text-muted">新世紀校園匿名平台</p>
-        </div>
+
         
         {/* 手機版搜尋/篩選 */}
         <div className="mb-3">
