@@ -327,10 +327,10 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
 
 
       {/* Mobile inline action card: scope + submit (no border) */}
-      <div className="md:hidden rounded-2xl bg-surface shadow-soft p-3 mt-3">
-        <div className="flex items-center gap-2">
+      <div className="md:hidden rounded-2xl bg-surface shadow-soft p-4 mt-3">
+        <div className="flex flex-col items-center gap-3 text-center">
           <select
-            className="form-control form-control--compact !w-auto"
+            className="form-control form-control--compact w-full"
             value={targetSlug}
             onChange={(e)=> setTargetSlug(e.target.value as any)}
           >
@@ -342,7 +342,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
           <button
             type="submit"
             disabled={submitting}
-            className="ml-auto btn-primary disabled:opacity-60"
+            className="btn-primary disabled:opacity-60 w-2/3"
             style={{ touchAction: 'manipulation' }}
           >
             {submitting ? '送出中…' : '發佈'}

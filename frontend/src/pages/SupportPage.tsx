@@ -506,7 +506,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
               <div className="text-center">
                 <Button
                   onClick={() => setShowCreateModal(true)}
-                  className="w-1/3 mb-3"
+                  className="w-2/3 mb-3 mx-auto block text-center"
                 >
                   尋求支援
                 </Button>
@@ -531,7 +531,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                         variant="secondary"
                         size="sm"
                         onClick={() => navigate('/support/track')}
-                        className="w-1/3"
+                        className="w-2/3 mx-auto block"
                       >
                         追蹤工單
                       </Button>
@@ -553,7 +553,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                         variant="secondary"
                         size="sm"
                         onClick={() => navigate('/faq')}
-                        className="w-1/3"
+                        className="w-2/3 mx-auto block"
                       >
                         瀏覽 FAQ
                       </Button>
@@ -595,7 +595,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                 variant="outline"
                 size="sm"
                 onClick={() => navigate('/auth')}
-                className="w-1/3"
+                className="w-2/3 mx-auto block"
               >
                 登入帳號
               </Button>
