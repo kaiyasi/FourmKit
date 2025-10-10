@@ -45,6 +45,7 @@ import CreatePostPage from './pages/CreatePostPage'
 import ThemeDesignerPage from './pages/ThemeDesignerPage'
 import { RequireAuth, RequireRoles } from './router/guards'
 import PostDetailPage from './pages/PostDetailPage'
+import MobilePostDetailPage from './pages/MobilePostDetailPage'
 import RouteError from './components/ui/RouteError'
 import ExternalAccountErrorPage from './pages/ExternalAccountErrorPage'
 import RegisterConfirmPage from './pages/RegisterConfirmPage'
@@ -69,7 +70,7 @@ const router = createBrowserRouter([
             { path: "/about", element: <AboutPage /> },
             { path: "/rules", element: <RulesPage /> },
             { path: "/faq", element: <FAQPage /> },
-            { path: "/posts/:id", element: <PostDetailPage /> },
+            { path: "/posts/:id", element: (window.innerWidth <= 768 ? <MobilePostDetailPage /> : <PostDetailPage />) },
             { path: "/theme-designer", element: <ThemeDesignerPage /> },
             { path: "/403", element: <Forbidden403 /> },
             { path: "/create", element: <CreatePostPage /> },
