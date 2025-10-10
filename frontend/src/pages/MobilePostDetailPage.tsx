@@ -195,17 +195,6 @@ export default function MobilePostDetailPage() {
         <CommentSection postId={post.id} />
       </div>
 
-      {/* Quick Reply button → scroll to comments */}
-      <button
-        className="fixed bottom-[calc(var(--fk-bottomnav-offset,64px)+12px)] right-4 z-40 px-4 h-11 rounded-full bg-primary text-primary-foreground shadow-lg"
-        onClick={() => {
-          const el = document.getElementById('comments-anchor')
-          if (el) el.scrollIntoView({ behavior:'smooth', block:'start' })
-        }}
-      >
-        發表回應
-      </button>
-
       {/* Share toast */}
       {shareMsg && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
