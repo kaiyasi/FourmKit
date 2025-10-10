@@ -44,11 +44,12 @@ COPY backend/ ./backend/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist/
 
 # Copy nginx configuration
-COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+# 單容器部署：使用指向本機 127.0.0.1:8080 的反代設定
+COPY docker/nginx/default.single.conf /etc/nginx/conf.d/default.conf
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:80/api/status || exit 1
+    CMD curl -fsS http://localhost:80/api/mode || exit 1
 
 EXPOSE 80
 

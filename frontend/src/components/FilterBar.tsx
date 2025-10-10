@@ -115,7 +115,7 @@ export default function FilterBar() {
               <select
                 className="form-control form-control--compact text-sm"
                 value={selectedSlug}
-                onChange={(e) => { const v = e.target.value; setSelectedSlug(v); setStoredSchool(v) }}
+                onChange={(e) => { const val = e.target.value || ''; setSelectedSlug(val); setStoredSchool(val) }}
               >
                 <option value="__ALL__">全部（所有學校）</option>
                 <option value="">跨校</option>

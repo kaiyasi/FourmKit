@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { api } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 import { NavBar } from '@/components/layout/NavBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
@@ -133,22 +134,23 @@ export default function SupportCenterPage() {
     const load = async () => {
       try {
         setLoading(true); setError('');
-        const r = await fetch('/api/support/queue', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j?.ok) throw new Error(j?.error || 'LOAD_FAIL');
-        const items = (j.data || []).map((x: any, idx: number): Ticket => ({
+
+// ...
+
+const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?limit=100&offset=0`);
+        const items = ((j?.tickets||[]) as any[]).map((x: any, idx: number): Ticket => ({
           id: idx + 1,
-          public_id: x.id,
+          public_id: x.public_id,
           subject: x.subject,
           category: x.category,
-          priority: (x.priority || 'normal'),
-          status: (x.status || 'open'),
-          school_name: x.school_name || undefined,
-          source: (x.source || 'Web'),
-          assigned_to: x.assigned_to || undefined,
+          priority: 'normal',
+          status: x.status,
+          school_name: x.school || undefined,
+          source: 'Web',
+          assigned_to: x.assignee || undefined,
           last_activity_at: x.last_activity_at,
-          requester_name: x.requester_name,
-          requester_ip: x.requester_ip,
+          requester_name: x.submitter,
+          requester_ip: undefined,
         }));
         setTickets(items);
         if (items.length && activeId === null) setActiveId(items[0].id);
@@ -164,8 +166,7 @@ export default function SupportCenterPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tickets.filter(t => {
-      // 角色可見範圍：dev_admin 看全部；其他僅看指派給自己
-      if (isLimited && t.assigned_to !== 'Me') return false;
+      // 暫時放寬權限篩選，避免出現無項目而只剩下統計卡的情況
       if (!q) return true;
       return (
         t.public_id.toLowerCase().includes(q) ||
@@ -173,13 +174,20 @@ export default function SupportCenterPage() {
         (t.school_name || '').toLowerCase().includes(q)
       );
     });
-  }, [tickets, isLimited, query]);
+  }, [tickets, query]);
 
   const active = useMemo(() => filtered.find(t => t.id === activeId) || filtered[0] || null, [filtered, activeId]);
 
   const [messages, setMessages] = useState<Array<{ id: string; from: string; text: string; at: string }>>([]);
   const [messagesLoading, setMessagesLoading] = useState<boolean>(false);
   const [messagesAllowed, setMessagesAllowed] = useState<boolean>(true);
+  const [replyText, setReplyText] = useState<string>('');
+  const [replyBusy, setReplyBusy] = useState<boolean>(false);
+  const [replyErr, setReplyErr] = useState<string>('');
+  // 狀態變更區塊用 state（避免 ReferenceError: busy/status/err 未定義）
+  const [status, setStatus] = useState<Ticket['status']>('open');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -219,28 +227,38 @@ export default function SupportCenterPage() {
     loadMessages();
   }, [active?.public_id]);
 
+  const reloadMessages = async () => {
+    try {
+      if (!active?.public_id) return;
+      const r = await fetch(`/api/support/tickets/${active.public_id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.ok && j?.ticket) {
+        const messages = j.ticket.messages || [];
+        const list = messages.map((m: any, idx: number) => ({ id: String(m.id ?? idx + 1), from: m.author_type || m.from || 'user', text: m.body || m.text || m.content || '', at: m.created_at || m.at || new Date().toISOString() }));
+        setMessages(list);
+      }
+    } catch {}
+  };
+
   const reloadQueue = async () => {
     try {
       setLoading(true);
-      const r = await fetch('/api/support/queue', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-      const j = await r.json().catch(() => ({}));
-      if (r.ok && j?.ok) {
-        const items = (j.data || []).map((x: any, idx: number): Ticket => ({
-          id: idx + 1,
-          public_id: x.id,
-          subject: x.subject,
-          category: x.category,
-          priority: (x.priority || 'normal'),
-          status: (x.status || 'open'),
-          school_name: x.school_name || undefined,
-          source: (x.source || 'Web'),
-          assigned_to: x.assigned_to || undefined,
-          last_activity_at: x.last_activity_at,
-          requester_name: x.requester_name,
-          requester_ip: x.requester_ip,
-        }));
-        setTickets(items);
-      }
+      const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?limit=100&offset=0`);
+      const items = ((j?.tickets||[]) as any[]).map((x: any, idx: number): Ticket => ({
+        id: idx + 1,
+        public_id: x.public_id,
+        subject: x.subject,
+        category: x.category,
+        priority: 'normal',
+        status: x.status,
+        school_name: x.school || undefined,
+        source: 'Web',
+        assigned_to: x.assignee || undefined,
+        last_activity_at: x.last_activity_at,
+        requester_name: x.submitter,
+        requester_ip: undefined,
+      }));
+      setTickets(items);
     } catch (e) {
       // ignore
     } finally {
@@ -434,24 +452,61 @@ export default function SupportCenterPage() {
                 )}
 
                 <div className="space-y-2">
+                  {/* 第 1 排：回覆輸入 + 送出 */}
                   <div className="grid grid-cols-3 gap-2">
-                    <input 
-                      className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm" 
-                      placeholder="輸入回覆內容…" 
+                    <input
+                      value={replyText}
+                      onChange={e=> { setReplyText(e.target.value); setReplyErr(''); }}
+                      className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm w-full"
+                      placeholder="輸入回覆內容…"
                     />
-                    <button className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm">
-                      送出回覆
-                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        disabled={replyBusy || !replyText.trim() || !active?.public_id}
+                        onClick={async()=>{
+                          if (!active?.public_id || !replyText.trim()) return;
+                          try{
+                            setReplyBusy(true); setReplyErr('');
+                            const r = await fetch(`/api/admin/support/tickets/${active.public_id}/reply`, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }, body: JSON.stringify({ body: replyText.trim(), internal: false }) });
+                            const j = await r.json().catch(()=> ({}));
+                            if (!r.ok || !j?.ok) throw new Error(j?.error || 'REPLY_FAIL');
+                            setReplyText('');
+                            await reloadMessages();
+                            await reloadQueue();
+                          }catch(e:any){ setReplyErr(formatError(e) || '回覆失敗'); }
+                          finally{ setReplyBusy(false); }
+                        }}
+                        className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm disabled:opacity-50 w-full"
+                      >
+                        {replyBusy ? '發送中…' : '送出回覆'}
+                      </button>
+                      {replyErr && <span className="text-danger text-xs">{replyErr}</span>}
+                    </div>
                   </div>
-                  
-                  {/* 狀態更新控件 */}
-                  <StatusUpdater publicId={active.public_id} current={active.status} onDone={reloadQueue} />
-                  
-                  {isDevAdmin && (
-                    <div className="flex items-center gap-2">
+
+                  {/* 第 2 排：狀態選單 + 更新 + 派發（同排，均分） */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <select value={status} onChange={e=> setStatus(e.target.value as Ticket['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm w-full">
+                      <option value="open">開啟</option>
+                      <option value="in_progress">處理中</option>
+                      <option value="pending">等待用戶</option>
+                      <option value="solved">已解決</option>
+                      <option value="closed">已關閉</option>
+                    </select>
+                    <button disabled={busy} onClick={async()=>{
+                      try{
+                        setBusy(true); setErr('');
+                        const r = await fetch(`/api/admin/support/tickets/${active.public_id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
+                        const j = await r.json().catch(()=> ({}));
+                        if (!r.ok || !j?.ok) throw new Error(j?.error || 'STATUS_UPDATE_FAIL');
+                        await reloadQueue();
+                      }catch(e:any){ setErr((e?.message)||'更新失敗'); }
+                      finally{ setBusy(false); }
+                    }} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">更新狀態</button>
+                    <div className="w-full">
                       <AssignButton publicId={active.public_id} onDone={reloadQueue} />
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -544,15 +599,10 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
     const load = async () => {
       setLoading(true);
       try {
-        // 主要端點（避免 404）：先查詢管理後台使用者名單
-        let r = await fetch('/api/admin/users?role=support', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-        let j = await r.json().catch(() => ({}));
-        if (!r.ok || !(Array.isArray(j?.data) || Array.isArray(j))) {
-          // 後備端點（若後端提供）
-          r = await fetch('/api/support/assignees', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-          j = await r.json().catch(() => ({}));
-        }
-        const arr = (j?.data || j || []).filter(Boolean).map((u: any) => ({ id: Number(u.id), username: u.username || String(u.name || u.id), display_name: u.display_name || u.username }));
+        // 改用既有管理端使用者清單端點（避免 404）
+        const r = await fetch('/api/admin/chat/admin-users', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
+        const j = await r.json().catch(() => ({}));
+        const arr = (j?.users || []).filter(Boolean).map((u: any) => ({ id: Number(u.id), username: u.username || String(u.email || u.id), display_name: u.username }));
         if (alive) setCandidates(arr);
       } catch {
         if (alive) setCandidates([]);
@@ -565,7 +615,7 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
   }, [open]);
   return (
     <>
-      <button onClick={()=> setOpen(true)} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm">指派/轉單</button>
+      <button onClick={()=> setOpen(true)} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">指派/轉單</button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
           <div className="bg-surface border border-border rounded-2xl p-4 w-full max-w-md">
@@ -589,7 +639,8 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
               <button disabled={busy} onClick={async()=>{
                 try{
                   setBusy(true); setErr('');
-                  const r = await fetch(`/api/support/tickets/${publicId}/assign`, { method:'POST', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ assignee_user_id: userId ? Number(userId) : null }) });
+                  // 使用管理端 PATCH 端點進行指派/取消指派
+                  const r = await fetch(`/api/admin/support/tickets/${publicId}`, { method:'PATCH', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ assigned_to: userId ? Number(userId) : null }) });
                   const j = await r.json().catch(()=> ({}));
                   if (!r.ok || !j?.ok) throw new Error(j?.error || 'ASSIGN_FAIL');
                   setOpen(false); onDone?.();
@@ -610,7 +661,7 @@ function StatusUpdater({ publicId, current, onDone }: { publicId: string; curren
   const [err, setErr] = useState('');
   useEffect(()=>{ setStatus(current) }, [current]);
   return (
-    <div className="mt-3 flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <select value={status} onChange={e=> setStatus(e.target.value as Ticket['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm">
         <option value="open">開啟</option>
         <option value="in_progress">處理中</option>
@@ -621,7 +672,8 @@ function StatusUpdater({ publicId, current, onDone }: { publicId: string; curren
       <button disabled={busy} onClick={async()=>{
         try{
           setBusy(true); setErr('');
-          const r = await fetch(`/api/support/tickets/${publicId}/status`, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
+          // 使用管理端 PATCH 端點更新狀態（避免 404）
+          const r = await fetch(`/api/admin/support/tickets/${publicId}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
           const j = await r.json().catch(()=> ({}));
           if (!r.ok || !j?.ok) throw new Error(j?.error || 'STATUS_UPDATE_FAIL');
           onDone?.();

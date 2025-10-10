@@ -328,7 +328,8 @@ export default function SettingsPage() {
       </div>
 
         <div className="space-y-6">
-          {/* 通知 Webhook 綁定 */}
+          {/* 通知 Webhook 綁定（暫時下線） */}
+          {false && (
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-4">
               <LinkIcon className="w-6 h-6 text-primary" />
@@ -382,6 +383,7 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          )}
           {/* 學校設定（依 SchoolSwitcher 決定學校）- 僅管理員可見 */}
           {isAdmin && (
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
@@ -462,19 +464,18 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-muted mb-1">最小發文字數</label>
-                <input
-                  type="number"
-                  disabled={!canEditSchool || !schoolMeta}
-                  value={Number(schoolSettings?.min_post_chars ?? 15)}
-                  onChange={(e)=> setSchoolSettings(prev=> ({ ...(prev||{}), min_post_chars: Number(e.target.value || 15) }))}
-                  className="w-40 p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  min={1}
-                />
-              </div>
-
-              <div className="flex justify-end">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <label className="block text-sm font-medium text-muted">最小發文字數</label>
+                  <input
+                    type="number"
+                    disabled={!canEditSchool || !schoolMeta}
+                    value={Number(schoolSettings?.min_post_chars ?? 15)}
+                    onChange={(e)=> setSchoolSettings(prev=> ({ ...(prev||{}), min_post_chars: Number(e.target.value || 15) }))}
+                    className="w-40 p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    min={1}
+                  />
+                </div>
                 <button
                   onClick={saveSchoolSettings}
                   disabled={!canEditSchool || !schoolMeta || saving}

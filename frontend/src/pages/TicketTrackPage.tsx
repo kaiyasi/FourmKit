@@ -15,6 +15,7 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { api } from '@/services/api'
+import MobileSupportDetailPage from './MobileSupportDetailPage'
 
 interface TicketDetail {
   id: number
@@ -48,7 +49,7 @@ export default function TicketTrackPage() {
   const [replyText, setReplyText] = useState('')
   const [replyLoading, setReplyLoading] = useState(false)
   // 登入者列表模式（無 token/無單號時顯示）
-  const [myTickets, setMyTickets] = useState<Array<{ id:string; subject:string; status:string; priority:string; last_activity_at:string }>>([])
+  const [myTickets, setMyTickets] = useState<Array<{ id:string; subject:string; status:string; last_activity_at:string }>>([])
   const [myLoading, setMyLoading] = useState(false)
   const reloadMyTickets = async () => {
     try {
@@ -501,6 +502,32 @@ export default function TicketTrackPage() {
   if (!ticket) {
     return null
   }
+  // 行動裝置：使用專屬詳情介面（混合式）
+  if (ticket && window.innerWidth <= 768) {
+    return (
+      <MobileSupportDetailPage
+        ticket={{
+          ticket_id: ticket.ticket_id,
+          subject: ticket.subject,
+          status: ticket.status,
+          category: ticket.category,
+          created_at: ticket.created_at,
+          messages: ticket.messages as any,
+        }}
+        newMessage={replyText}
+        setNewMessage={setReplyText}
+        sending={replyLoading}
+        onSend={handleReply}
+        onBack={() => navigate('/support')}
+        refreshing={loading}
+        onReload={() => {
+          if (token) fetchTicketByToken(ticket.ticket_id, token)
+          else if (isLoggedIn) fetchTicketByAuth(ticket.ticket_id)
+        }}
+      />
+    )
+  }
+
 
   return (
     <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">

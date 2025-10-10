@@ -48,8 +48,6 @@ def get_queue():
             total = query.count()
             posts = query.limit(limit).offset(offset).all()
 
-            print(f"[IG Queue] Found {len(posts)} posts for status '{status}' with limit {limit} and offset {offset}")
-
             # 格式化返回
             queue_data = []
             for post in posts:

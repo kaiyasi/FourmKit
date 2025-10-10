@@ -305,18 +305,15 @@
     border: 1px solid rgba(107, 114, 128, 0.3);
   }
   
-  /* 優先級指示器 */
-  .priority-high {
-    color: #DC2626;
-  }
-  
-  .priority-medium {
-    color: #D97706;
-  }
-  
-  .priority-low {
-    color: #059669;
-  }
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
   
   /* 載入動畫 */
   .mobile-loading {

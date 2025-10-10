@@ -28,7 +28,7 @@ export default function RulesPage() {
     <PageLayout pathname={pathname} maxWidth="max-w-3xl">
       <MobileHeader subtitle="Rules" />
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
-          <h1 className="text-xl sm:text-2xl font-semibold dual-text mb-3">社群規範</h1>
+          <h1 className="hidden sm:block text-xl sm:text-2xl font-semibold dual-text mb-3">社群規範</h1>
           {loading ? (
             <div className="text-muted">載入中...</div>
           ) : error ? (

@@ -503,7 +503,7 @@ export default function ModerationPage() {
       <NavBar pathname="/admin/moderation" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-7xl px-4 pt-8 sm:pt-20 md:pt-24 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
         {/* 頁面標題 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
@@ -939,14 +939,14 @@ export default function ModerationPage() {
                             </div>
                           </div>
                           <div className="text-xs text-muted">
-                            {formatDate(log.created_at)}
+                            {new Date(log.created_at).toLocaleDateString('zh-TW')}
                           </div>
                         </div>
                         
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-xs">
                             <User className="w-3 h-3" />
-                            <span className="text-muted">經手人：</span>
+                            <span className="text-muted">經手：</span>
                             <span className="text-fg font-medium">
                               {typeof log.moderator === 'string' 
                                 ? log.moderator 

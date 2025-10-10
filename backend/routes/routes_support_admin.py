@@ -11,7 +11,7 @@ from sqlalchemy import desc, func
 
 from models.support import (
     SupportTicket, SupportMessage, SupportEvent, SupportLabel, SupportTicketLabel,
-    TicketStatus, TicketPriority, AuthorType, EventType
+    TicketStatus, AuthorType, EventType
 )
 from models.base import User
 from models.school import School
@@ -48,7 +48,7 @@ def get_admin_tickets():
         school_id = request.args.get('school_id', type=int)
         assigned_to = request.args.get('assigned_to', type=int)
         category = request.args.get('category')
-        _ = request.args.get('priority')
+        # priority 參數已移除（資料模型不再使用）
         search_query = request.args.get('q', '').strip()
         
         # 分頁參數
@@ -103,7 +103,7 @@ def get_admin_tickets():
                     'subject': ticket.subject,
                     'status': ticket.status,
                     'category': ticket.category,
-                    'priority': ticket.priority,
+                    # priority 已移除
                     'submitter': ticket.get_display_name(),
                     'submitter_type': 'user' if ticket.user_id else 'guest',
                     'submitter_email': ticket.guest_email,
@@ -205,7 +205,7 @@ def get_admin_ticket_detail(public_id: str):
                 'subject': ticket.subject,
                 'status': ticket.status,
                 'category': ticket.category,
-                'priority': ticket.priority,
+                # priority 已移除
                 'submitter': ticket.get_display_name(),
                 'submitter_type': 'user' if ticket.user_id else 'guest',
                 'submitter_email': ticket.guest_email,
@@ -263,40 +263,23 @@ def update_ticket(public_id: str):
                     if SupportService.assign_ticket(
                         session, ticket.id, new_assignee, admin_user_id
                     ):
-                        old_name = "未指派"
-                        new_name = "未指派"
                         if ticket.assigned_to:
                             old_user = session.get(User, ticket.assigned_to)
                             old_name = old_user.username if old_user else f"用戶#{ticket.assigned_to}"
+                        else:
+                            old_name = "未分配"
                         if new_assignee:
                             new_user = session.get(User, new_assignee)
                             new_name = new_user.username if new_user else f"用戶#{new_assignee}"
-                        changes.append(f"指派: {old_name} → {new_name}")
-            
-            # 更新優先級
-            if 'priority' in data:
-                new_priority = data['priority']
-                if new_priority != ticket.priority and new_priority in [p.value for p in TicketPriority]:
-                    old_priority = ticket.priority
-                    ticket.priority = new_priority
-                    
-                    # 記錄事件
-                    event = SupportEvent(
-                        ticket_id=ticket.id,
-                        event_type=EventType.PRIORITY_CHANGED,
-                        actor_user_id=admin_user_id,
-                        payload={'old_priority': old_priority, 'new_priority': new_priority}
-                    )
-                    session.add(event)
-                    changes.append(f"優先級: {old_priority} → {new_priority}")
-            
+                            changes.append(f"指派: {old_name} → {new_name}")
+                        else:
+                            changes.append(f"指派: {old_name} → 未分配")
+
             # 更新標籤
-            if 'labels' in data:
+            if 'labels' in data and isinstance(data['labels'], list):
                 label_keys = data['labels']  # 標籤 key 列表
-                
                 # 移除現有標籤
                 session.query(SupportTicketLabel).filter_by(ticket_id=ticket.id).delete()
-                
                 # 添加新標籤
                 if label_keys:
                     labels = session.query(SupportLabel).filter(SupportLabel.key.in_(label_keys)).all()
@@ -307,14 +290,13 @@ def update_ticket(public_id: str):
                             added_by=admin_user_id
                         )
                         session.add(ticket_label)
-                
                 changes.append(f"標籤已更新: {', '.join(label_keys) if label_keys else '無'}")
-            
+
             # 更新最後活動時間
             if changes:
                 ticket.last_activity_at = datetime.now(timezone.utc)
                 session.commit()
-            
+
             # 發送通知
             if changes:
                 try:
@@ -331,9 +313,9 @@ def update_ticket(public_id: str):
                     )
                 except Exception as e:
                     current_app.logger.warning(f"Failed to send admin event: {e}")
-            
+
             return jsonify({
-                'ok': True, 
+                'ok': True,
                 'msg': '工單已更新',
                 'changes': changes
             })

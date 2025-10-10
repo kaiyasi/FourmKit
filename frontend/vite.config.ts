@@ -26,7 +26,8 @@ export default defineConfig(({ mode }) => {
       include: ['react', 'react-dom']
     },
     build: {
-      chunkSizeWarningLimit: 1000
+      chunkSizeWarningLimit: 1000,
+      sourcemap: true,
     },
     server: {
       port: 5173,

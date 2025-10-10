@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Menu, Bell, Search, MoreVertical } from 'lucide-react'
 import { useNotifications } from '@/hooks/useNotifications'
 import NotificationCenter from '@/components/notifications/NotificationCenter'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
 interface MobileAdminLayoutProps {
   title: string
@@ -98,7 +99,7 @@ export function MobileAdminLayout({
       {/* 主要內容區域 */}
       <div className="flex-1 overflow-hidden">
         <div className="h-full overflow-y-auto mobile-scroll-smooth">
-          <div className="p-4">
+          <div className="p-4" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 64px)' }}>
             {children}
           </div>
         </div>
@@ -111,6 +112,9 @@ export function MobileAdminLayout({
           <div className="pb-safe-bottom" />
         </div>
       )}
+
+      {/* 行動版底部導覽列：全後台手機頁共用 */}
+      <MobileBottomNav />
 
       {/* 通知中心面板（手機版適配） */}
       {showNotifications && (

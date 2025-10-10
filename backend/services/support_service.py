@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func
 
 from models.support import (
-    SupportTicket, SupportMessage, SupportEvent, TicketStatus, TicketCategory, TicketPriority, AuthorType, EventType
+    SupportTicket, SupportMessage, SupportEvent, TicketStatus, TicketCategory, AuthorType, EventType
 )
 from models.base import User
 from flask import current_app
@@ -29,7 +29,6 @@ class SupportService:
         subject: str,
         body: str,
         category: str = TicketCategory.OTHER,
-        priority: str = TicketPriority.MEDIUM,
         user_id: Optional[int] = None,
         guest_email: Optional[str] = None,
         school_id: Optional[int] = None,
@@ -55,7 +54,6 @@ class SupportService:
         ticket = SupportTicket(
             subject=subject.strip()[:500],  # 限制長度
             category=category,
-            priority=priority,
             user_id=user_id,
             guest_email=guest_email.strip().lower() if guest_email else None,
             school_id=school_id,
@@ -84,7 +82,6 @@ class SupportService:
             payload={
                 'subject': subject,
                 'category': category,
-                'priority': priority,
                 'is_guest': user_id is None,
                 'guest_email': guest_email
             }
@@ -103,7 +100,6 @@ class SupportService:
             broadcast_support_event("ticket_created", ticket.public_id, {
                 "subject": ticket.subject,
                 "category": ticket.category,
-                "priority": ticket.priority,
                 "submitter": ticket.get_display_name(),
                 "is_guest": user_id is None
             })
@@ -341,7 +337,6 @@ class SupportService:
                     fields=[
                         {"name": "工單編號", "value": ticket.public_id, "inline": True},
                         {"name": "主旨", "value": ticket.subject, "inline": True},
-                        {"name": "優先級", "value": ticket.priority, "inline": True},
                         {"name": "指派者", "value": f"管理員 #{actor_user_id}" if actor_user_id else "系統", "inline": True}
                     ],
                     source=f"/api/admin/support/tickets/{ticket.public_id}",
@@ -513,12 +508,6 @@ class SupportService:
         resolved_tickets = base_query.filter(SupportTicket.status == TicketStatus.RESOLVED).count()
         closed_tickets = base_query.filter(SupportTicket.status == TicketStatus.CLOSED).count()
         
-        # 優先級統計
-        priority_stats = session.query(
-            SupportTicket.priority,
-            func.count(SupportTicket.id)
-        ).group_by(SupportTicket.priority).all()
-        
         # 分類統計
         category_stats = session.query(
             SupportTicket.category,
@@ -535,7 +524,6 @@ class SupportService:
             'resolved_tickets': resolved_tickets,
             'closed_tickets': closed_tickets,
             'today_tickets': today_tickets,
-            'priority_stats': dict(priority_stats),
             'category_stats': dict(category_stats)
         }
 

@@ -48,6 +48,7 @@ import PostDetailPage from './pages/PostDetailPage'
 import MobilePostDetailPage from './pages/MobilePostDetailPage'
 import RouteError from './components/ui/RouteError'
 import ExternalAccountErrorPage from './pages/ExternalAccountErrorPage'
+import OAuthFailedPage from './pages/OAuthFailedPage'
 import RegisterConfirmPage from './pages/RegisterConfirmPage'
 import LoginRestrictedPage from './pages/LoginRestrictedPage'
 import Root from './router/Root';
@@ -55,6 +56,7 @@ import { AppProvider } from './contexts/AppContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import AdminChatPage from './pages/admin/AdminChatPage';
+import AdminChatMobile from './pages/admin/chat/AdminChatMobile';
 
 const router = createBrowserRouter([
     {
@@ -65,6 +67,7 @@ const router = createBrowserRouter([
             { path: "/auth", element: <AuthPage /> },
             { path: "/auth/register-confirm", element: <RegisterConfirmPage /> },
             { path: "/error/external-account", element: <ExternalAccountErrorPage /> },
+            { path: "/error/oauth-failed", element: <OAuthFailedPage /> },
             { path: "/error/login-restricted", element: <LoginRestrictedPage /> },
             { path: "/boards", element: <BoardsPage /> },
             { path: "/about", element: <AboutPage /> },
@@ -139,6 +142,14 @@ const router = createBrowserRouter([
                 element: (
                     <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator']}>
                         <AdminChatPage />
+                    </RequireRoles>
+                ),
+            },
+            {
+                path: "/m/admin/chat",
+                element: (
+                    <RequireRoles allow={['dev_admin','campus_admin','cross_admin','campus_moderator']}>
+                        <AdminChatMobile />
                     </RequireRoles>
                 ),
             },

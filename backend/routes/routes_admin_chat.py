@@ -11,7 +11,7 @@ import os
 
 from utils.db import get_session
 from models.base import User
-from models.admin_chat import MessageType, ChatRoomType
+from models.admin_chat import MessageType, ChatRoomType, AdminChatRoom
 from services.admin_chat_service import AdminChatService
 from utils.ratelimit import rate_limit as ratelimit
 from sqlalchemy import or_
@@ -414,11 +414,101 @@ def get_vote(vote_id: int):
 def initialize_chat():
     """初始化聊天室（僅限 dev_admin）"""
     user_id = get_jwt_identity()
-    
+
     with get_session() as db:
         user = db.get(User, user_id)
         if not user or user.role != "dev_admin":
             return jsonify({"error": "權限不足"}), 403
-    
+
     AdminChatService.initialize_default_rooms()
     return jsonify({"message": "聊天室初始化完成"})
+
+
+@bp.route("/rooms/<int:room_id>", methods=["DELETE"])
+@jwt_required()
+@ratelimit(calls=5, per_seconds=60)
+def delete_room(room_id: int):
+    """刪除聊天室"""
+    user_id = get_jwt_identity()
+
+    success, message = AdminChatService.delete_room(room_id, user_id)
+
+    if not success:
+        return jsonify({"error": message}), 403 if message == "權限不足" else 400
+
+    return jsonify({"message": message})
+
+
+@bp.route("/rooms/<int:room_id>", methods=["PATCH"])
+@jwt_required()
+@ratelimit(calls=10, per_seconds=60)
+def update_room(room_id: int):
+    """更新聊天室設置"""
+    user_id = get_jwt_identity()
+    data = request.get_json()
+
+    success, message, room_data = AdminChatService.update_room(
+        room_id, user_id, **data
+    )
+
+    if not success:
+        return jsonify({"error": message}), 403 if message == "權限不足" else 400
+
+    return jsonify({"message": message, "room": room_data})
+
+
+@bp.route("/rooms/<int:room_id>/members/<int:target_user_id>", methods=["DELETE"])
+@jwt_required()
+@ratelimit(calls=10, per_seconds=60)
+def remove_member(room_id: int, target_user_id: int):
+    """移除聊天室成員"""
+    user_id = get_jwt_identity()
+
+    success, message = AdminChatService.remove_member(room_id, user_id, target_user_id)
+
+    if not success:
+        return jsonify({"error": message}), 403 if message == "權限不足" else 400
+
+    return jsonify({"message": message})
+
+
+@bp.route("/rooms/<int:room_id>/members/<int:target_user_id>/role", methods=["PATCH"])
+@jwt_required()
+@ratelimit(calls=10, per_seconds=60)
+def update_member_role(room_id: int, target_user_id: int):
+    """更新成員角色"""
+    user_id = get_jwt_identity()
+    data = request.get_json()
+
+    new_role = data.get("role")
+    if not new_role:
+        return jsonify({"error": "缺少角色參數"}), 400
+
+    success, message = AdminChatService.update_member_role(
+        room_id, user_id, target_user_id, new_role
+    )
+
+    if not success:
+        return jsonify({"error": message}), 403 if message == "權限不足" else 400
+
+    return jsonify({"message": message})
+
+
+@bp.route("/rooms/<int:room_id>/members/<int:target_user_id>/mute", methods=["POST"])
+@jwt_required()
+@ratelimit(calls=10, per_seconds=60)
+def mute_member(room_id: int, target_user_id: int):
+    """禁言成員"""
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+
+    mute = data.get("mute", True)
+
+    success, message = AdminChatService.mute_member(
+        room_id, user_id, target_user_id, mute
+    )
+
+    if not success:
+        return jsonify({"error": message}), 403 if message == "權限不足" else 400
+
+    return jsonify({"message": message})

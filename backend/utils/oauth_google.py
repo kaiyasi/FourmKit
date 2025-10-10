@@ -14,13 +14,40 @@ GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
+def _normalize_url(u: str) -> str:
+    u = (u or "").strip()
+    if not u:
+        return u
+    # 去除尾端多餘斜線
+    while len(u) > 1 and u.endswith('/'):
+        u = u[:-1]
+    return u
+
+
+def _resolve_redirect_uri() -> str:
+    # 優先使用明確設定的 OAUTH_REDIRECT_URL
+    explicit = _normalize_url(os.getenv("OAUTH_REDIRECT_URL", ""))
+    if explicit:
+        return explicit
+    # 後備：由 PUBLIC_BASE_URL 推導
+    base = _normalize_url(os.getenv("PUBLIC_BASE_URL", ""))
+    if base:
+        return f"{base}/api/auth/google/callback"
+    # 仍無：回傳空字串（由呼叫方判斷）
+    return ""
+
+
 def is_config_ready() -> bool:
-    return bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID") and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") and os.getenv("OAUTH_REDIRECT_URL"))
+    return bool(
+        os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+        and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+        and _resolve_redirect_uri()
+    )
 
 
 def build_auth_redirect(scope: str = "openid email profile") -> str:
     client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-    redirect_uri = os.getenv("OAUTH_REDIRECT_URL", "")
+    redirect_uri = _resolve_redirect_uri()
     qs = urllib.parse.urlencode({
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -59,7 +86,7 @@ def _get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: int =
 def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
     client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
-    redirect_uri = os.getenv("OAUTH_REDIRECT_URL", "")
+    redirect_uri = _resolve_redirect_uri()
     payload = {
         "code": code,
         "client_id": client_id,

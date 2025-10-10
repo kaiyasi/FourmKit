@@ -118,9 +118,17 @@ export default function MobileSupportPage() {
     setSelectedFiles(prev => [...prev, ...files])
   }
 
+  const getToken = (): string | null => {
+    try {
+      return localStorage.getItem('token') || localStorage.getItem('access_token') || sessionStorage.getItem('token') || null
+    } catch {
+      try { return sessionStorage.getItem('token') } catch { return null }
+    }
+  }
+
   useEffect(() => {
     // 檢查登入狀態
-    const token = localStorage.getItem('access_token')
+    const token = getToken()
     setIsLoggedIn(!!token)
     
     if (token) {
@@ -132,10 +140,10 @@ export default function MobileSupportPage() {
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('access_token')
+      const token = getToken()
       const response = await fetch('/api/support/my-tickets', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
       })
       
@@ -167,7 +175,7 @@ export default function MobileSupportPage() {
     setError(null)
 
     try {
-      const token = localStorage.getItem('access_token')
+      const token = getToken()
       
       // 如果有附件，使用 FormData；否則使用 JSON
       let response: Response
@@ -232,14 +240,15 @@ export default function MobileSupportPage() {
         setSelectedFiles([])
         setCreateStep(1)
         
-        // 顯示成功訊息
-        const priorityText = data.ticket?.priority === 'low' ? '低' : 
-                            data.ticket?.priority === 'medium' ? '中' : 
-                            data.ticket?.priority === 'high' ? '高' : '緊急';
-        
+        // 顯示成功訊息（採用後端新回應欄位）
+        const ticketId = data.ticket_id || data.public_id || data.id
+        const subject = data.subject || createForm.subject
+        const status = data.status || 'open'
+        const category = data.category || createForm.category
+
         const successMsg = isLoggedIn 
-          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${data.ticket?.public_id}\n• 優先級：${priorityText}\n\n您可以在工單列表中查看進度。`
-          : `✅ 支援單已建立！\n\n📋 工單編號：#${data.ticket?.public_id}\n• 優先級：${priorityText}\n\n請記住您的工單編號以便日後追蹤。`;
+          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${ticketId}\n• 狀態：${status === 'open' ? '已開啟' : status}\n• 分類：${category}\n\n您可以在工單列表中查看進度。`
+          : `✅ 支援單已建立！\n\n📋 工單編號：#${ticketId}\n• 狀態：${status === 'open' ? '已開啟' : status}\n• 分類：${category}\n\n請記住您的工單編號以便日後追蹤。`;
         
         alert(successMsg)
         
@@ -248,16 +257,16 @@ export default function MobileSupportPage() {
           setCurrentView('list')
           fetchMyTickets()
         } else {
-          // 訪客：導向追蹤頁面
-          if (data.tracking_url) {
-            window.location.href = data.tracking_url
+          // 訪客：導向追蹤頁面（有 guest_token 則帶 sig）
+          if (data.guest_token) {
+            window.location.href = `/support/track?ticket=${encodeURIComponent(String(ticketId))}&sig=${encodeURIComponent(data.guest_token)}`
           } else {
             setCurrentView('track')
           }
         }
       } else {
-        const errorData = await response.json()
-        throw new Error(errorData.msg || '建立支援單失敗')
+        const errorData = await response.json().catch(()=>({}))
+        throw new Error(errorData?.msg || errorData?.error || '建立支援單失敗')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '未知錯誤')
@@ -527,19 +536,43 @@ export default function MobileSupportPage() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">優先級</label>
-              <select
-                value={createForm.priority}
-                onChange={(e) => setCreateForm(prev => ({ ...prev, priority: e.target.value }))}
-                className="w-full p-3 border border-border rounded-lg"
-              >
-                <option value="low">低優先級</option>
-                <option value="medium">中優先級</option>
-                <option value="high">高優先級</option>
-                <option value="urgent">緊急</option>
-              </select>
-            </div>
+
+
+// ... (其他代碼)
+
+    formData.append('subject', createForm.subject);
+    formData.append('category', createForm.category);
+    formData.append('body', createForm.body);
+
+// ... (其他代碼)
+
+        const successMessage = resp.ok && resp.ticket?.public_id
+          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${resp.ticket?.public_id}\n\n您可以在工單列表中查看進度。`
+          : `✅ 支援單已建立！\n\n📋 工單編號：#${resp.ticket?.public_id}\n\n請記住您的工單編號以便日後追蹤。`;
+
+// ... (其他代碼)
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">分類</label>
+                <select 
+                  value={createForm.category}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, category: e.target.value }))}
+                  className="support-input w-full"
+                >
+                  <option value="other">其他問題</option>
+                  <option value="technical">技術問題</option>
+                  <option value="account">帳戶問題</option>
+                  <option value="feature">功能建議</option>
+                  <option value="bug">錯誤回報</option>
+                  <option value="abuse">濫用檢舉</option>
+                </select>
+              </div>
+
+// ... (其他代碼)
+
+              <div><strong>主旨：</strong>{createForm.subject}</div>
+              <div><strong>分類：</strong>{createForm.category}</div>
+              <div><strong>內容：</strong><pre className="whitespace-pre-wrap font-sans">{createForm.body}</pre></div>
 
             <div>
               <label className="block text-sm font-medium mb-2">問題主題</label>
@@ -723,7 +756,7 @@ export default function MobileSupportPage() {
 
   const renderTrackForm = () => (
     <div className="max-w-md mx-auto p-6">
-      <div className="bg-surface border border-border rounded-lg p-6">
+      <div className="bg-surface border border-border rounded-lg p-6 mobile-card w-full">
         <div className="text-center mb-6">
           <Search className="w-12 h-12 mx-auto text-muted mb-4" />
           <h1 className="text-xl font-bold mb-2">追蹤支援單</h1>

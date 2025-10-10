@@ -106,6 +106,7 @@ export default function AdminSupportPage() {
 
   const [reply, setReply] = useState('')
   const [replyLoading, setReplyLoading] = useState(false)
+  const [replyErr, setReplyErr] = useState('')
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assignLoading, setAssignLoading] = useState(false)
   const [adminUsers, setAdminUsers] = useState<any[]>([])
@@ -152,11 +153,12 @@ export default function AdminSupportPage() {
 
   const loadAdminUsers = useCallback(async () => {
     try {
-      const resp = await api<{ ok: boolean; items: any[] }>('/api/admin/users')
-      const adminUsers = resp.items.filter(user => 
-        ['campus_admin', 'cross_admin'].includes(user.role)
+      // 改用後端提供的管理端使用者清單（避免 404）
+      const resp = await api<{ users: any[] }>(
+        '/api/admin/chat/admin-users'
       )
-      setAdminUsers(adminUsers)
+      const users = (resp.users || []).filter((u:any)=> ['campus_admin','cross_admin','dev_admin'].includes(u.role))
+      setAdminUsers(users)
     } catch (e) {
       console.error('載入管理員列表失敗:', e)
     }
@@ -243,6 +245,12 @@ export default function AdminSupportPage() {
         return status
     }
   }
+
+  // 第二排：狀態選單用
+  const [statusChoice, setStatusChoice] = useState<TicketListItem['status']>('open')
+  useEffect(() => {
+    if (selected?.status) setStatusChoice(selected.status)
+  }, [selected?.status])
 
   return (
     <div className="min-h-screen">
@@ -457,47 +465,50 @@ export default function AdminSupportPage() {
                     ))}
                   </div>
 
-                  {/* 操作區（對齊審核樣式） */}
+                  {/* 操作區：兩排佈局 */}
                   <div className="mt-3 space-y-2">
+                    {/* 排 1：回覆輸入 + 送出（2:1） */}
                     {selected.status !== 'closed' && (
-                      <div className="bg-surface-hover rounded-lg p-3 border border-border">
-                        <div className="text-sm font-medium mb-2">新增回覆</div>
-                        <textarea
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
                           value={reply}
-                          onChange={(e) => setReply(e.target.value)}
-                          rows={3}
-                          className="form-control"
-                          placeholder="輸入您的回覆..."
+                          onChange={(e) => { setReply(e.target.value); setReplyErr('') }}
+                          className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm w-full"
+                          placeholder="輸入回覆內容…"
                           maxLength={10000}
                           disabled={!canManage}
                         />
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-muted">{reply.length}/10000</span>
-                          <button onClick={submitReply} disabled={!canManage || !reply.trim() || replyLoading} className="btn-primary px-4 py-2">
-                            {replyLoading ? <><RefreshCw className="w-4 h-4 inline animate-spin mr-2" />發送中...</> : <><Send className="w-4 h-4 inline mr-2" />發送回覆</>}
+                        <div className="flex flex-col items-end gap-1">
+                          <button onClick={submitReply} disabled={!canManage || !reply.trim() || replyLoading} className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm disabled:opacity-50 w-full">
+                            {replyLoading ? '發送中…' : '送出回覆'}
                           </button>
+                          {replyErr && <span className="text-danger text-xs">{replyErr}</span>}
                         </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2">
-                      {isDevAdmin ? (
+                    {/* 排 2：狀態選單 + 更新 + 指派（1:1:1） */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <select value={statusChoice} onChange={(e)=> setStatusChoice(e.target.value as TicketListItem['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm w-full">
+                        <option value="open">開啟</option>
+                        <option value="awaiting_admin">待處理</option>
+                        <option value="awaiting_user">待回覆</option>
+                        <option value="resolved">已解決</option>
+                        <option value="closed">已關閉</option>
+                      </select>
+                      <button onClick={() => updateStatus(statusChoice)} disabled={!canManage} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">更新狀態</button>
+                      {isDevAdmin && (
                         <button 
-                          onClick={() => {
-                            loadAdminUsers()
-                            setShowAssignModal(true)
-                          }} 
-                          disabled={!canManage} 
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-secondary disabled:opacity-50"
+                          onClick={() => { loadAdminUsers(); setShowAssignModal(true) }}
+                          disabled={!canManage}
+                          className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full"
                         >
-                          <User className="w-4 h-4" />找支援
+                          指派/轉單
                         </button>
-                      ) : (
-                        <button onClick={() => updateStatus('awaiting_user')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-secondary disabled:opacity-50"><MessageSquare className="w-4 h-4" />等用戶</button>
                       )}
-                      <button onClick={() => updateStatus('resolved')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-primary disabled:opacity-50"><CheckCircle className="w-4 h-4" />已解決</button>
-                      <button onClick={() => updateStatus('awaiting_admin')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-secondary disabled:opacity-50"><Clock className="w-4 h-4" />等處理</button>
-                      <button onClick={() => updateStatus('closed')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-danger disabled:opacity-50"><XCircle className="w-4 h-4" />關閉單</button>
+                      {!isDevAdmin && (
+                        <div className="w-full" />
+                      )}
                     </div>
                   </div>
                 </div>
