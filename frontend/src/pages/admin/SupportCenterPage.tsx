@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { api } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 import { NavBar } from '@/components/layout/NavBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
@@ -133,22 +134,23 @@ export default function SupportCenterPage() {
     const load = async () => {
       try {
         setLoading(true); setError('');
-        const r = await fetch('/api/support/queue', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j?.ok) throw new Error(j?.error || 'LOAD_FAIL');
-        const items = (j.data || []).map((x: any, idx: number): Ticket => ({
+
+// ...
+
+const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?limit=100&offset=0`);
+        const items = ((j?.tickets||[]) as any[]).map((x: any, idx: number): Ticket => ({
           id: idx + 1,
-          public_id: x.id,
+          public_id: x.public_id,
           subject: x.subject,
           category: x.category,
-          priority: (x.priority || 'normal'),
-          status: (x.status || 'open'),
-          school_name: x.school_name || undefined,
-          source: (x.source || 'Web'),
-          assigned_to: x.assigned_to || undefined,
+          priority: 'normal',
+          status: x.status,
+          school_name: x.school || undefined,
+          source: 'Web',
+          assigned_to: x.assignee || undefined,
           last_activity_at: x.last_activity_at,
-          requester_name: x.requester_name,
-          requester_ip: x.requester_ip,
+          requester_name: x.submitter,
+          requester_ip: undefined,
         }));
         setTickets(items);
         if (items.length && activeId === null) setActiveId(items[0].id);
@@ -222,25 +224,22 @@ export default function SupportCenterPage() {
   const reloadQueue = async () => {
     try {
       setLoading(true);
-      const r = await fetch('/api/support/queue', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-      const j = await r.json().catch(() => ({}));
-      if (r.ok && j?.ok) {
-        const items = (j.data || []).map((x: any, idx: number): Ticket => ({
-          id: idx + 1,
-          public_id: x.id,
-          subject: x.subject,
-          category: x.category,
-          priority: (x.priority || 'normal'),
-          status: (x.status || 'open'),
-          school_name: x.school_name || undefined,
-          source: (x.source || 'Web'),
-          assigned_to: x.assigned_to || undefined,
-          last_activity_at: x.last_activity_at,
-          requester_name: x.requester_name,
-          requester_ip: x.requester_ip,
-        }));
-        setTickets(items);
-      }
+      const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?limit=100&offset=0`);
+      const items = ((j?.tickets||[]) as any[]).map((x: any, idx: number): Ticket => ({
+        id: idx + 1,
+        public_id: x.public_id,
+        subject: x.subject,
+        category: x.category,
+        priority: 'normal',
+        status: x.status,
+        school_name: x.school || undefined,
+        source: 'Web',
+        assigned_to: x.assignee || undefined,
+        last_activity_at: x.last_activity_at,
+        requester_name: x.submitter,
+        requester_ip: undefined,
+      }));
+      setTickets(items);
     } catch (e) {
       // ignore
     } finally {
