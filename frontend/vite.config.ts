@@ -29,6 +29,31 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 1000,
       sourcemap: true,
     },
+    build: {
+      rollupOptions: {
+        input: {
+          index: path.resolve(__dirname, 'index.html'),
+          admin: path.resolve(__dirname, 'admin.html'),
+        },
+        output: {
+          chunkFileNames: (info: any) => {
+            const name = info.name || ''
+            return name.includes('admin') ? 'assets/admin/[name]-[hash].js' : 'assets/[name]-[hash].js'
+          },
+          assetFileNames: (assetInfo: any) => {
+            const n = assetInfo.name || ''
+            return n.includes('admin') ? 'assets/admin/[name]-[hash][extname]' : 'assets/[name]-[hash][extname]'
+          },
+          manualChunks: (id: string) => {
+            const p = id.replace(/\\/g, '/').toLowerCase()
+            if (p.includes('/src/pages/admin/') || p.includes('/src/components/admin/')) {
+              return 'admin/admin'
+            }
+            return undefined
+          }
+        }
+      }
+    },
     server: {
       port: 5173,
       proxy: {
