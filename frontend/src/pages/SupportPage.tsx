@@ -37,7 +37,6 @@ interface Ticket {
   subject: string;
   status: 'open' | 'awaiting_user' | 'awaiting_admin' | 'resolved' | 'closed';
   category: 'technical' | 'account' | 'feature' | 'bug' | 'abuse' | 'other';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
   created_at: string;
   last_activity_at: string;
   message_count: number;
@@ -665,12 +664,10 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
             <div className="px-4 sm:px-6 py-6">
               {/* 工單資訊 */}
               <div className="bg-surface/70 backdrop-blur-md border border-border rounded-2xl p-6 mb-6">
-                <div className="flex flex-wrap items-center gap-4 mb-4">
-                  <StatusBadge status={selectedTicket.status} />
-                  <CategoryBadge category={selectedTicket.category} />
-                  <PriorityBadge priority={selectedTicket.priority} />
-                </div>
-                <div className="flex items-center gap-6 text-sm text-muted">
+                              <div className="flex flex-wrap items-center gap-4 mb-4">
+                                <StatusBadge status={selectedTicket.status} />
+                                <CategoryBadge category={selectedTicket.category} />
+                              </div>                <div className="flex items-center gap-6 text-sm text-muted">
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />
                     建立於 {new Date(selectedTicket.created_at).toLocaleDateString('zh-TW')}
@@ -745,12 +742,18 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
   return (
     <PageLayout pathname="/support">
         <div className="min-h-screen">
-          {/* Compact Header - 移除左側主副標，保留操作按鈕 */}
-          {/* Compact Header：保留一組主要標題 */}
+          {/* Mobile header mimic homepage */}
+          <div className="sm:hidden text-center py-2 mb-1">
+            <div className="h-2" />
+            <h1 className="text-3xl font-extrabold dual-text tracking-wide leading-tight">ForumKit</h1>
+            <p className="text-base text-muted -mt-1">Support Center</p>
+          </div>
+
+          {/* Compact Header - 操作列（桌面優先） */}
           <div className="border-b border-border bg-surface/80 backdrop-blur-sm">
             <div className="max-w-7xl mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="hidden sm:block">
                   <h1 className="text-xl font-semibold dual-text">Support Center</h1>
                 </div>
                 <div className="flex items-center gap-2">
@@ -772,7 +775,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
 
                 {/* Inline Stats */}
                 {tickets.length > 0 && (
-                  <div className="flex items-center gap-6 mt-3 text-sm text-muted">
+                  <div className="hidden sm:flex items-center gap-6 mt-3 text-sm text-muted">
                     <span>總共 <strong className="text-fg">{tickets.length}</strong> 個工單</span>
                     <span>進行中 <strong className="text-yellow-600 dark:text-yellow-400">{tickets.filter(t => ['open', 'awaiting_user', 'awaiting_admin'].includes(t.status)).length}</strong></span>
                     <span>已解決 <strong className="text-green-600 dark:text-green-400">{tickets.filter(t => t.status === 'resolved').length}</strong></span>
@@ -799,7 +802,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   />
                 </div>
               </div>
-              <div className="sm:w-1/3 flex gap-2">
+              <div className="sm:w-1/3 grid grid-cols-2 gap-2">
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
@@ -862,7 +865,6 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                       <div className="col-span-2 text-center">狀態</div>
                       <div className="col-span-2 text-center">分類</div>
                       <div className="col-span-2 text-center">回覆</div>
-                      <div className="col-span-1 text-center">優先度</div>
                     </div>
                   </div>
 
@@ -876,7 +878,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                       >
                         <div className="grid grid-cols-12 gap-4 items-center">
                           {/* Ticket Info */}
-                          <div className="col-span-5">
+                          <div className="col-span-6">
                             <div className="flex items-start space-x-3">
                               <div className="flex-1 min-w-0">
                                 <h4 className="font-medium dual-text group-hover:text-primary transition-colors truncate">
@@ -907,11 +909,6 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                               <MessageSquare className="w-4 h-4 text-muted" />
                               <span className="text-sm text-muted">{ticket.message_count}</span>
                             </div>
-                          </div>
-
-                          {/* Priority */}
-                          <div className="col-span-1 text-center">
-                            <PriorityBadge priority={ticket.priority} />
                           </div>
                         </div>
                       </div>
