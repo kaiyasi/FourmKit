@@ -58,6 +58,15 @@ from utils.ratelimit import is_ip_blocked
 from flask_jwt_extended import JWTManager
 from routes.routes_admin_chat import bp as admin_chat_bp
 
+_sid_rooms = {}
+_sid_client = {}
+_room_clients = {}
+_client_user = {}
+_room_msgs = {}
+_custom_rooms = {}
+_client_rooms = {}
+
+
 APP_BUILD_VERSION = os.getenv("APP_BUILD_VERSION", "forumkit-v1.1.0")
 
 # 先建立未綁定 app 的全域 socketio，在 create_app() 裡再 init_app
@@ -629,25 +638,26 @@ def create_app() -> Flask:
 
         # 初始化自定義聊天室到內存中
         try:
-            from models import ChatRoom
+            from models import AdminChatRoom
+            from models.admin_chat import ChatRoomType
             from utils.db import get_session
             from sqlalchemy import and_
             with get_session() as s:
-                custom_rooms = s.query(ChatRoom).filter(
+                custom_rooms = s.query(AdminChatRoom).filter(
                     and_(
-                        ChatRoom.room_type == "custom",
-                        ChatRoom.is_active == True
+                        AdminChatRoom.type == ChatRoomType.CUSTOM,
+                        AdminChatRoom.is_active == True
                     )
                 ).all()
-                
+
                 for room in custom_rooms:
                     _custom_rooms[room.id] = {
-                        'owner_id': room.owner_id,
+                        'owner_id': room.created_by,
                         'name': room.name,
                         'description': room.description,
                         'members': set()
                     }
-                
+
                 print(f"[ForumKit] 已載入 {len(custom_rooms)} 個自定義聊天室到內存")
         except Exception as e:
             print(f"[ForumKit] 載入自定義聊天室失敗: {e}")

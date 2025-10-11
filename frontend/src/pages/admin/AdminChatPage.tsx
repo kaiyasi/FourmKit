@@ -4,7 +4,7 @@ import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { 
   ArrowLeft, MessageSquare, Send, Users, Settings, Clock, Search, Filter, 
   RefreshCw, CheckCircle, XCircle, AlertTriangle, FileText, Vote, 
-  Eye, MoreVertical, Trash2, Edit3, Pin, Archive 
+  Eye, MoreVertical, Trash2, Edit3, Pin, Archive, UserPlus 
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/services/api'
@@ -14,7 +14,7 @@ interface ChatRoom {
   id: number
   name: string
   description: string
-  type: 'school' | 'cross' | 'emergency' | 'system' | 'developer' | 'global'
+  type: 'school' | 'cross' | 'emergency' | 'system' | 'developer' | 'global' | 'custom'
   school_name?: string
   member_count?: number
   unread_count: number
@@ -96,8 +96,21 @@ export default function AdminChatPage() {
   const { user, role, username } = useAuth()
   const isDev = (role === 'dev_admin')
   const canModerate = ['dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator'].includes(role || '')
-  
+  // 行動裝置偵測（保障手機版不渲染建立房間功能）
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try { return window.matchMedia('(max-width: 767px)').matches } catch { return false }
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mq.matches)
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
+
   // 狀態管理
+
   const [loading, setLoading] = useState(true)
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null)
@@ -137,6 +150,73 @@ export default function AdminChatPage() {
     search: '',
     candidates: [] as Array<{ id: number; username: string; email?: string; role: string }>,
   })
+
+  // 編輯自訂聊天室
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    description: '',
+    is_private: false,
+    max_members: 100,
+  })
+  // 編輯-邀請管理
+  const [members, setMembers] = useState<Array<{ id:number; username:string; role?:string }>>([])
+
+  const deleteRoom = useCallback(async () => {
+    if (!selectedRoom) return
+    if (!confirm(`確定要刪除頻道「${selectedRoom.name}」嗎？此動作無法復原。`)) return
+    try {
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}`, { method: 'DELETE' })
+      // 從列表移除並清空選擇
+      setRooms(prev => prev.filter(r => r.id !== selectedRoom.id))
+      setSelectedRoom(null)
+    } catch (e:any) {
+      alert(e?.message || '刪除頻道失敗')
+    }
+  }, [selectedRoom, setRooms, setSelectedRoom])
+
+  const loadMembers = useCallback(async () => {
+    if (!selectedRoom) return
+    try {
+      const res = await api<{ members: Array<{ id:number; username:string; role?:string }> }>(`/api/admin/chat/rooms/${selectedRoom.id}/members`)
+      setMembers(res.members || [])
+    } catch {
+      setMembers([])
+    }
+  }, [selectedRoom])
+
+  const removeMember = useCallback(async (userId: number) => {
+    if (!selectedRoom) return
+    try {
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}/members/${userId}`, { method: 'DELETE' })
+      setMembers(prev => prev.filter(m => m.id !== userId))
+      // 同步更新右上顯示的成員數
+      setSelectedRoom(prev => prev ? ({ ...prev, member_count: Math.max(0, (prev.member_count || 1) - 1) }) as any : prev)
+    } catch (e:any) {
+      alert(e?.message || '移除成員失敗')
+    }
+  }, [selectedRoom])
+
+  useEffect(() => {
+    if (showEditModal) {
+      loadMembers()
+    }
+  }, [showEditModal, loadMembers])
+
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [inviteCandidates, setInviteCandidates] = useState<Array<{ id:number; username:string; email?:string }>>([])
+  const [invited, setInvited] = useState<Array<{ id:number; username:string }>>([])
+
+  const searchInviteCandidates = useCallback(async (q: string) => {
+    if (!q.trim()) { setInviteCandidates([]); return }
+    try {
+      const res = await api<{ users: Array<{ id:number; username:string; email?:string }> }>(`/api/admin/chat/admin-users?q=${encodeURIComponent(q)}`)
+      setInviteCandidates(res.users || [])
+    } catch {
+      setInviteCandidates([])
+    }
+  }, [])
+
   
   // 引用
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -589,6 +669,38 @@ export default function AdminChatPage() {
     }
   }, [createForm, fetchRooms])
 
+  const submitEditRoom = useCallback(async () => {
+    if (!selectedRoom) return
+    try {
+      const payload: any = {
+        name: editForm.name.trim(),
+        description: editForm.description.trim(),
+        is_private: editForm.is_private,
+        max_members: editForm.max_members,
+      }
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+      // 若勾選私有且有新增邀請，追加邀請
+      if (editForm.is_private && invited.length > 0) {
+        await api<{ added:number }>(`/api/admin/chat/rooms/${selectedRoom.id}/invite`, {
+          method: 'POST',
+          body: JSON.stringify({ user_ids: invited.map(x => x.id) }),
+        })
+      }
+      setShowEditModal(false)
+      // 重新載入列表與當前房間資訊
+      await fetchRooms()
+      // 更新選中的房間基本資訊
+      setSelectedRoom(prev => prev ? ({ ...prev, ...payload }) as any : prev)
+      // 清空邀請狀態
+      setInvited([]); setInviteCandidates([]); setInviteSearch('')
+    } catch (e:any) {
+      alert(e?.message || '更新聊天室失敗')
+    }
+  }, [selectedRoom, editForm, fetchRooms])
+
   // 滾動到底部
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -679,7 +791,7 @@ export default function AdminChatPage() {
       <div className="min-h-screen">
         <NavBar pathname="/admin/chat" />
         <MobileBottomNav />
-        <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+        <main className="mx-auto max-w-7xl px-4 pt-16 sm:pt-20 md:pt-28 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
           <div className="text-center py-8">
             <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
             <p className="text-muted">載入中...</p>
@@ -694,7 +806,7 @@ export default function AdminChatPage() {
       <NavBar pathname="/admin/chat" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-7xl px-4 pt-12 sm:pt-20 md:pt-24 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
         {/* 頁面標題 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
@@ -722,7 +834,7 @@ export default function AdminChatPage() {
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
-              {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && (
+              {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && !isMobile && (
                 <button onClick={()=> setShowCreateModal(true)} className="btn-primary px-3 py-1.5 text-sm">建立自訂房間</button>
               )}
             </div>
@@ -730,7 +842,7 @@ export default function AdminChatPage() {
       </div>
 
       {/* 建立房間彈窗 */}
-      {showCreateModal && (
+      {showCreateModal && !isMobile && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-surface border border-border rounded-xl p-4 w-full max-w-lg shadow-lg">
             <div className="flex items-center justify-between mb-2">
@@ -753,7 +865,7 @@ export default function AdminChatPage() {
               <div>
                 <label className="block text-sm mb-1">邀請成員</label>
                 <div className="flex items-center gap-2 mb-2">
-                  <input className="flex-1 input" placeholder="搜尋使用者（帳號/Email）" value={createForm.search} onChange={(e)=> { const v=e.target.value; setCreateForm(p=>({...p, search:v})); if (v.trim().length>=1) searchCandidates(v.trim()); }} />
+                  <input className="flex-1 input" placeholder="搜尋使用者（帳號/Email）" value={createForm.search} onChange={(e)=> { const val = e.target.value || ''; setCreateForm(p=>({...p, search: val})); if (val.trim().length >= 1) searchCandidates(val.trim()); }} />
                   <button onClick={()=> searchCandidates(createForm.search)} className="btn-secondary px-2"><Search className="w-4 h-4"/></button>
                 </div>
                 <div className="max-h-40 overflow-auto border border-border rounded p-2 mb-2">
@@ -776,13 +888,119 @@ export default function AdminChatPage() {
                 <button onClick={()=> setShowCreateModal(false)} className="btn-secondary">取消</button>
                 <button onClick={submitCreateRoom} className="btn-primary">建立</button>
               </div>
+              {/* 既有成員（可移除） */}
+              <div className="rounded-lg border border-border p-3 bg-surface/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    <span className="text-sm font-medium">現有成員</span>
+                  </div>
+                </div>
+                {members.length === 0 ? (
+                  <div className="text-sm text-muted">暫無成員</div>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto divide-y divide-border">
+                    {members.map(m => (
+                      <div key={m.id} className="flex items-center justify-between py-2 px-1">
+                        <div className="text-sm">{m.username} <span className="text-muted">{m.role || ''}</span></div>
+                        <button className="text-danger text-sm" onClick={()=> removeMember(m.id)}>移除</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* 編輯自訂聊天室彈窗 */}
+      {showEditModal && <>
+
+              {/* 私有房間邀請管理 */}
+              <div className="rounded-lg border border-border p-3 bg-surface/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="w-4 h-4" />
+                    <span className="text-sm font-medium">邀請成員</span>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs">
+                    <input type="checkbox" checked={editForm.is_private} onChange={(e)=> setEditForm(p=>({...p, is_private:e.target.checked}))} />
+                    私有頻道（需邀請）
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    value={inviteSearch}
+                    onChange={(e)=> { setInviteSearch(e.target.value); searchInviteCandidates(e.target.value) }}
+                    placeholder="搜尋使用者帳號或 Email"
+                    className="flex-1 input"
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={()=> searchInviteCandidates(inviteSearch)}
+                  >搜尋</button>
+                </div>
+                {inviteCandidates.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto border border-border rounded mb-2">
+                    {inviteCandidates.map(u => (
+                      <div key={u.id} className="flex items-center justify-between px-3 py-2 border-b border-border/60 last:border-0">
+                        <div className="text-sm">{u.username} <span className="text-muted">{u.email || ''}</span></div>
+                        <button className="text-primary text-sm" onClick={()=> setInvited(prev => prev.find(x=>x.id===u.id) ? prev : [...prev, { id:u.id, username:u.username }])}>加入邀請</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {invited.length > 0 && (
+                  <div className="rounded border border-border p-2">
+                    <div className="text-xs text-muted mb-1">已邀請</div>
+                    <div className="flex flex-wrap gap-2">
+                      {invited.map(x => (
+                        <span key={x.id} className="px-2 py-1 rounded bg-surface-hover border border-border text-sm flex items-center gap-2">
+                          {x.username}
+                          <button className="text-danger" onClick={()=> setInvited(prev => prev.filter(i => i.id !== x.id))}>移除</button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-surface border border-border rounded-xl p-4 w-full max-w-lg shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-semibold">編輯聊天室</div>
+              <button onClick={()=> setShowEditModal(false)} className="text-muted hover:text-fg"><XCircle className="w-5 h-5"/></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm mb-1">名稱</label>
+                <input className="w-full input" value={editForm.name} onChange={(e)=> setEditForm(p=>({...p, name:e.target.value}))} />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">描述（可選）</label>
+                <textarea className="w-full input" rows={2} value={editForm.description} onChange={(e)=> setEditForm(p=>({...p, description:e.target.value}))} />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.is_private} onChange={(e)=> setEditForm(p=>({...p, is_private:e.target.checked}))}/> 私有頻道（需邀請）</label>
+                <label className="flex items-center gap-2 text-sm">最大人數 <input type="number" min={2} max={500} className="w-20 input" value={editForm.max_members} onChange={(e)=> setEditForm(p=>({...p, max_members: parseInt(e.target.value||'100') }))} /></label>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <button onClick={deleteRoom} className="btn-danger px-3 py-2">刪除頻道</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=> setShowEditModal(false)} className="btn-secondary">取消</button>
+                  <button onClick={submitEditRoom} className="btn-primary">儲存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+      }
+
+      
+
         {/* 統計資訊 */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           <div className="bg-surface border border-border rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <MessageSquare className="w-4 h-4 text-blue-500" />
@@ -848,13 +1066,13 @@ export default function AdminChatPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 聊天室列表 */}
-          <div className="lg:col-span-1 bg-surface border border-border rounded-2xl shadow-soft">
+          <div className="lg:col-span-1 bg-surface border border-border rounded-2xl shadow-soft flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100dvh - var(--fk-navbar-offset, 84px) - 120px)' }}>
             <div className="p-4 border-b border-border">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-fg">聊天室列表</h2>
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className="p-2 text-muted hover:text-fg transition-colors"
+                  className="hidden md:inline-flex p-2 text-muted hover:text-fg transition-colors"
                 >
                   <Filter className="w-4 h-4" />
                 </button>
@@ -896,7 +1114,7 @@ export default function AdminChatPage() {
               )}
             </div>
             
-            <div className="max-h-96 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
               {rooms.length === 0 ? (
                 <div className="p-6 text-center text-muted">
                   <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -904,6 +1122,7 @@ export default function AdminChatPage() {
                 </div>
               ) : (
                 <div className="space-y-1">
+                      {/* 刪除頻道操作已移至編輯彈窗 */}
                   {rooms.map(room => (
                     <div
                       key={room.id}
@@ -938,6 +1157,9 @@ export default function AdminChatPage() {
                         </div>
                       </div>
                       
+                      {room.description && (
+                        <div className="text-xs text-muted whitespace-normal break-words mb-2">{room.description}</div>
+                      )}
                       <div className="flex items-center gap-2 text-xs text-muted mb-2">
                         <Users className="w-3 h-3" />
                         <span>{room.member_count || room.online_count || 0} 成員</span>
@@ -951,7 +1173,7 @@ export default function AdminChatPage() {
                       
                       {room.latest_message && (
                         <div className="text-xs text-muted">
-                          <p className="truncate">
+                          <p className="whitespace-normal break-words">
                             <span className="font-medium">{room.latest_message.user_name}:</span>{' '}
                             {room.latest_message.content}
                           </p>
@@ -966,7 +1188,7 @@ export default function AdminChatPage() {
           </div>
 
           {/* 聊天區域 */}
-          <div className="lg:col-span-2 bg-surface border border-border rounded-2xl shadow-soft flex flex-col">
+          <div className="lg:col-span-2 bg-surface border border-border rounded-2xl shadow-soft flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100dvh - var(--fk-navbar-offset, 84px) - 120px)' }}>
             {selectedRoom ? (
               <>
                 {/* 聊天室標題 */}
@@ -979,7 +1201,21 @@ export default function AdminChatPage() {
                         <p className="text-sm text-muted">{selectedRoom.description}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    {/* Mobile actions */}
+                    <div className="flex md:hidden items-center gap-2 mt-2">
+                      {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && ((selectedRoom as any).type === 'custom' || !!selectedRoom.is_private) && (
+                        <button onClick={()=> {
+                          setEditForm({
+                            name: selectedRoom.name || '',
+                            description: selectedRoom.description || '',
+                            is_private: !!selectedRoom.is_private,
+                            max_members: (selectedRoom as any).max_members || 100,
+                          });
+                          setShowEditModal(true);
+                        }} className="px-3 py-1.5 text-sm btn-secondary">編輯</button>
+                      )}
+                    </div>
+                    <div className="hidden md:flex items-center gap-3">
                       {messageSearch && (
                         <div className="flex items-center gap-2">
                           <Search className="w-4 h-4 text-muted" />
@@ -1002,12 +1238,23 @@ export default function AdminChatPage() {
                         <Users className="w-4 h-4" />
                         <span>{selectedRoom.member_count || selectedRoom.online_count || 0} 成員</span>
                       </div>
+                      {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && ((selectedRoom as any).type === 'custom' || !!selectedRoom.is_private) && (
+                        <button onClick={()=> {
+                          setEditForm({
+                            name: selectedRoom.name || '',
+                            description: selectedRoom.description || '',
+                            is_private: !!selectedRoom.is_private,
+                            max_members: (selectedRoom as any).max_members || 100,
+                          });
+                          setShowEditModal(true);
+                        }} className="px-3 py-1.5 text-sm btn-secondary">編輯</button>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* 訊息列表 */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-96 max-h-96">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-4 md:pb-0">
                   {messages.length === 0 ? (
                     <div className="text-center py-8 text-muted">
                       <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -1256,7 +1503,7 @@ export default function AdminChatPage() {
 
                 {/* 回覆預覽 */}
                 {replyTo && (
-                  <div className="px-4 py-2 bg-muted/10 border-t border-border">
+                  <div className="hidden md:block px-4 py-2 bg-muted/10 border-t border-border">
                     <div className="flex items-center justify-between">
                       <div className="text-sm">
                         <span className="text-muted">回覆 </span>
@@ -1273,7 +1520,7 @@ export default function AdminChatPage() {
                   </div>
                 )}
 
-                {/* 訊息輸入區 */}
+                {/* 訊息輸入區（行動與桌面） */}
                 <div className="p-4 border-t border-border">
                   {/* 系統頻道權限檢查 */}
                   {selectedRoom?.type === 'system' && role !== 'dev_admin' ? (
@@ -1338,7 +1585,7 @@ export default function AdminChatPage() {
                       {/* 投票按鈕 - 獨立元素 */}
                       <button
                         onClick={() => setShowVoteModal(true)}
-                        className="px-3 h-12 border border-border rounded-lg hover:bg-surface-hover flex items-center gap-1 shrink-0 bg-surface"
+                        className="hidden md:inline-flex px-3 h-12 border border-border rounded-lg hover:bg-surface-hover items-center gap-1 shrink-0 bg-surface"
                         title="發起投票"
                         disabled={selectedRoom?.type === 'system'}
                       >

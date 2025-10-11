@@ -5,12 +5,12 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify, current_app, send_file
+from flask import Blueprint, request, jsonify, current_app, send_file, g
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import desc, or_
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
-from models.support import SupportTicket, SupportMessage, TicketStatus, TicketCategory, TicketPriority, AuthorType
+from models.support import SupportTicket, SupportMessage, TicketStatus, TicketCategory, AuthorType
 from models.base import User
 from models.school import School
 from services.support_service import SupportService
@@ -44,95 +44,77 @@ def clean_input(text: str, max_length: int = 1000) -> str:
     
     return cleaned
 @bp.route("/tickets", methods=["POST"])
-@rate_limit(5, 60)  # 每60秒最多5次創建請求
+@rate_limit(5, 60)
 def create_ticket():
-    """創建新工單"""
+    """創建新工單（登入用戶或訪客）"""
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"ok": False, "error": "NO_DATA", "msg": "缺少請求數據"}), 400
-
-        # 取得參數
+        data = request.get_json(silent=True) or {}
         subject = clean_input(data.get('subject', ''), 500)
         body = clean_input(data.get('body', ''), 5000)
-        category = data.get('category', 'other')
-        priority = data.get('priority', 'medium')
-        guest_email = data.get('email', '').strip().lower() if data.get('email') else None
+        category = (data.get('category') or TicketCategory.OTHER)
+        email = (data.get('email') or '').strip().lower() or None
+        school_id = data.get('school_id')
+        attachments = data.get('attachments') or {}
 
-        # 驗證必要欄位
-        if not subject or not body:
-            return jsonify({"ok": False, "error": "MISSING_FIELDS", "msg": "主題和內容不能為空"}), 400
-
-        # 檢查是否登入
         user_id = None
         try:
             verify_jwt_in_request(optional=True)
-            user_id = get_jwt_identity()
-            if user_id:
-                user_id = int(user_id)
+            if get_jwt_identity() is not None:
+                user_id = int(get_jwt_identity())
         except Exception:
-            pass
+            user_id = None
 
-        # 未登入用戶需要提供 email
-        if not user_id and not guest_email:
-            return jsonify({"ok": False, "error": "EMAIL_REQUIRED", "msg": "請提供 Email 以便我們回覆"}), 400
+        if not user_id:
+            if not email or not validate_email(email):
+                return jsonify({"ok": False, "error": "INVALID_EMAIL", "msg": "訪客需提供有效 Email"}), 400
 
-        # 驗證 email 格式（僅訪客需要）
-        if guest_email and not validate_email(guest_email):
-            return jsonify({"ok": False, "error": "INVALID_EMAIL", "msg": "Email 格式不正確"}), 400
-
-        # 獲取用戶學校信息（如果已登入）
-        school_id = None
-        if user_id:
-            with get_main_session() as main_s:
-                user = main_s.get(User, user_id)
-                if user and user.school_id:
-                    school_id = user.school_id
-
-        # 創建工單
-        with get_support_session() as support_s:
+        with get_support_session() as session:
             ticket = SupportService.create_ticket(
-                session=support_s,
+                session=session,
                 subject=subject,
                 body=body,
                 category=category,
-                priority=priority,
                 user_id=user_id,
-                guest_email=guest_email,
-                school_id=school_id
+                guest_email=email,
+                school_id=school_id,
+                attachments=attachments,
             )
+            # 會話內先取出需要的欄位，避免離開會話後因為 expire_on_commit 導致 DetachedInstanceError
+            ticket_public_id = ticket.public_id
+            ticket_subject = ticket.subject
+            ticket_category = ticket.category
+            ticket_status = ticket.status
+            ticket_db_id = ticket.id
 
-            # 準備回應
-            response_data = {
-                "ok": True,
-                "ticket": {
-                    "id": ticket.id,
-                    "public_id": ticket.public_id,
-                    "subject": ticket.subject,
-                    "status": ticket.status,
-                    "category": ticket.category,
-                    "priority": ticket.priority,
-                    "created_at": ticket.created_at.isoformat()
-                }
-            }
+        payload = {
+            "ok": True,
+            "ticket_id": ticket_public_id,
+            "subject": ticket_subject,
+            "category": ticket_category,
+            "status": ticket_status,
+        }
+        if not user_id and email:
+            secret_key = current_app.config.get('SECRET_KEY', 'fallback-secret')
+            payload["guest_token"] = SupportService.generate_guest_token(ticket_db_id, email, secret_key)
 
-            # 訪客用戶：生成追蹤連結
-            if not user_id and guest_email:
-                token = SupportService.generate_guest_token(
-                    ticket.id,
-                    guest_email,
-                    current_app.config.get('SECRET_KEY', 'fallback-secret')
-                )
-                tracking_url = f"/support/track?ticket={ticket.public_id}&token={token}"
-                response_data["tracking_url"] = tracking_url
-
-            return jsonify(response_data), 201
-
+        return jsonify(payload), 201
     except ValueError as e:
         return jsonify({"ok": False, "error": "VALIDATION_ERROR", "msg": str(e)}), 400
     except Exception as e:
-        current_app.logger.error(f"Create ticket error: {e}")
-        return jsonify({"ok": False, "error": "SERVER_ERROR", "msg": "伺服器錯誤，請稍後再試"}), 500
+        try:
+            # 提供更完整的除錯資訊（但避免暴露內容）
+            current_app.logger.error(
+                "Create ticket error: %s | subject_len=%s, category=%s, has_user=%s, has_email=%s",
+                e,
+                len(subject) if 'subject' in locals() and isinstance(subject, str) else 'n/a',
+                category if 'category' in locals() else 'n/a',
+                bool(user_id) if 'user_id' in locals() else 'n/a',
+                bool(email) if 'email' in locals() else 'n/a',
+                exc_info=True,
+            )
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "SERVER_ERROR"}), 500
 
 
 @bp.route("/my-tickets", methods=["GET"])
@@ -146,30 +128,21 @@ def get_my_tickets():
         status = request.args.get('status')
 
         with get_support_session() as support_s:
-            tickets = SupportService.get_tickets_by_user(
-                session=support_s,
-                user_id=user_id,
-                status=status,
-                limit=limit,
-                offset=offset
-            )
-
-            # 轉換為前端格式
-            ticket_data = []
-            for t in tickets:
-                ticket_data.append({
-                    "id": t.id,
-                    "ticket_id": t.public_id,
-                    "subject": t.subject,
-                    "status": t.status,
-                    "category": t.category,
-                    "priority": t.priority,
-                    "created_at": t.created_at.strftime('%Y-%m-%d'),
-                    "last_activity_at": t.last_activity_at.isoformat(),
-                    "message_count": t.message_count
-                })
-
-            return jsonify({"ok": True, "tickets": ticket_data})
+            tickets = SupportService.get_tickets_by_user(support_s, user_id, status, limit, offset)
+            
+            return jsonify({
+                "ok": True,
+                "tickets": [
+                    {
+                        "id": t.public_id,
+                        "subject": t.subject,
+                        "status": t.status,
+                        "category": t.category,
+                        "last_activity_at": t.last_activity_at.isoformat()
+                    }
+                    for t in tickets
+                ]
+            })
 
     except Exception as e:
         current_app.logger.error(f"Get my tickets error: {e}")
@@ -257,7 +230,6 @@ def get_ticket_detail(ticket_id):
                 "subject": ticket.subject,
                 "status": ticket.status,
                 "category": ticket.category,
-                "priority": ticket.priority,
                 "submitter": ticket.get_display_name(),
                 "created_at": ticket.created_at.isoformat(),
                 "last_activity_at": ticket.last_activity_at.isoformat(),
@@ -475,106 +447,76 @@ def get_queue():
     篩選：status, priority, category, school_id, keyword
     """
     try:
-        ident = get_jwt_identity()
-        try:
-            user_id = int(ident) if ident is not None else None
-        except (TypeError, ValueError):
-            return jsonify({
-                "ok": False,
-                "error": "JWT_BAD_ID",
-                "msg": f"無效的使用者識別: {ident}"
-            }), 401
         status = (request.args.get('status') or '').strip().lower() or None
-        priority = (request.args.get('priority') or '').strip().lower() or None
+        school_id_str = (request.args.get('school_id') or '').strip() or None
+        assigned_to_str = (request.args.get('assigned_to') or '').strip() or None
         category = (request.args.get('category') or '').strip().lower() or None
-        school_id = request.args.get('school_id', type=int)
-        keyword = (request.args.get('q') or '').strip()
-        limit = min(int(request.args.get('limit', 50)), 200)
+        search_query = (request.args.get('q') or '').strip() or None
+        limit = min(int(request.args.get('limit', 50)), 100)
         offset = max(int(request.args.get('offset', 0)), 0)
 
-        with get_main_session() as main_s, get_support_session() as support_s:
-            me = main_s.get(User, user_id)
-            if not me:
-                return jsonify({"ok": False, "error": "AUTH_E_USER_NOT_FOUND", "msg": "用戶不存在，請重新登入"}), 401
+        school_id = int(school_id_str) if school_id_str and school_id_str.isdigit() else None
+        assigned_to = int(assigned_to_str) if assigned_to_str and assigned_to_str.isdigit() else None
 
-            q = support_s.query(SupportTicket)
+        # 取得當前用戶角色
+        with get_main_session() as ms:
+            me = ms.get(User, int(get_jwt_identity()))
+            user_role = me.role if me else None
 
-            # 角色可見範圍
-            role = (me.role or '').strip()
-            allowed_roles = ['dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator']
-            if role not in allowed_roles:
-                return jsonify({"ok": False, "error": "PERMISSION_DENIED", "msg": f"權限不足，需要管理員角色。當前角色: {role or '無'}"}), 403
-            
-            if role != 'dev_admin':
-                q = q.filter(SupportTicket.assigned_to == me.id)
+        try:
+            with get_support_session() as session:
+                tickets, total_count = SupportService.get_admin_tickets(
+                    session=session,
+                    status=status,
+                    school_id=school_id,
+                    assigned_to=assigned_to,
+                    category=category,
+                    search_query=search_query,
+                    limit=limit,
+                    offset=offset,
+                    user_role=user_role,
+                )
+        except Exception as e:
+            current_app.logger.error(f"Error in get_admin_tickets: {e}", exc_info=True)
+            return jsonify({"ok": False, "error": "GET_ADMIN_TICKETS_ERROR", "msg": str(e)}), 500
 
-            # 篩選條件
-            if status:
-                q = q.filter(SupportTicket.status == status)
-            if priority:
-                q = q.filter(SupportTicket.priority == priority)
-            if category:
-                q = q.filter(SupportTicket.category == category)
-            if school_id is not None:
-                q = q.filter(SupportTicket.school_id == school_id)
-            if keyword:
-                kw = f"%{keyword}%"
-                q = q.filter(or_(SupportTicket.subject.ilike(kw), SupportTicket.public_id.ilike(kw)))
+        # 預先載入用戶名稱，避免跨資料庫查詢
+        user_ids = [t.user_id for t in tickets if t.user_id]
+        assignee_ids = [t.assigned_to for t in tickets if t.assigned_to]
+        all_user_ids = list(set(user_ids + assignee_ids))
+        
+        users_map = {}
+        if all_user_ids:
+            with get_main_session() as main_s:
+                users = main_s.query(User).filter(User.id.in_(all_user_ids)).all()
+                users_map = {u.id: u.username or f"用戶 #{u.id}" for u in users}
 
-            total = q.count()
-            rows = (
-                q.order_by(desc(SupportTicket.last_activity_at))
-                 .offset(offset)
-                 .limit(limit)
-                 .all()
-            )
+        def get_display_name(ticket, users_map):
+            if ticket.user_id and ticket.user_id in users_map:
+                return users_map[ticket.user_id]
+            elif ticket.pseudonym_code:
+                return ticket.pseudonym_code
+            else:
+                return "匿名用戶"
 
-            items = []
-            for t in rows:
-                # 學校名稱
-                school_name = None
-                if t.school_id:
-                    try:
-                        sch = main_s.get(School, t.school_id)
-                        school_name = sch.name if sch else None
-                    except Exception:
-                        school_name = None
-
-                # 指派者名稱
-                assignee_name = None
-                if t.assigned_to:
-                    try:
-                        au = main_s.get(User, t.assigned_to)
-                        assignee_name = au.username if au else None
-                    except Exception:
-                        assignee_name = None
-
-                # 申請者顯示
-                requester_name = t.get_display_name()
-                requester_ip = None  # 如需，未來可在 ticket 增欄位或事件中取得
-
-                item = {
+        return jsonify({
+            "ok": True,
+            "total": total_count,
+            "tickets": [
+                {
                     "id": t.public_id,
                     "subject": t.subject,
-                    "category": t.category,
-                    "priority": t.priority,
                     "status": t.status,
-                    "school_name": school_name,
-                    "source": "Web",  # 佔位：可由 message/attachments 來源判斷
-                    "assigned_to": assignee_name,
-                    "last_activity_at": t.last_activity_at.isoformat(),
+                    "category": t.category,
+                    "last_activity_at": (t.last_activity_at.isoformat() if t.last_activity_at else None),
+                    "message_count": t.message_count,
+                    "submitter": get_display_name(t, users_map),
+                    "assigned_to": t.assigned_to,
+                    "assigned_to_name": users_map.get(t.assigned_to),
                 }
-                if role == 'dev_admin':
-                    item.update({"requester_name": requester_name, "requester_ip": requester_ip})
-                else:
-                    item.update({"requester_name": requester_name})
-                items.append(item)
-
-            return jsonify({
-                "ok": True,
-                "data": items,
-                "pagination": {"total": total, "limit": limit, "offset": offset, "has_more": offset + limit < total}
-            })
+                for t in tickets
+            ],
+        })
     except (OperationalError, SQLAlchemyError) as e:
         current_app.logger.error(f"Support queue DB error: {e}")
         return jsonify({"ok": False, "error": "SUPPORT_E_DB", "msg": "支援系統資料庫錯誤"}), 500

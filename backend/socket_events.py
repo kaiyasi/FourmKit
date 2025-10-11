@@ -219,19 +219,9 @@ def init_socket_events(socketio: SocketIO) -> None:
                 title = f"🎫 新客服單：{payload.get('subject', '無主題')}"
                 description = f"用戶 **{payload.get('submitter', '匿名')}** 建立了新的客服單"
 
-                # 優先級中英文對應
-                priority_map = {
-                    'low': '低',
-                    'medium': '中',
-                    'high': '高',
-                    'urgent': '緊急'
-                }
-                priority_text = priority_map.get(payload.get('priority', 'medium'), '中')
-
                 fields = [
                     {"name": "工單編號", "value": f"#{ticket_public_id}", "inline": True},
-                    {"name": "分類", "value": payload.get('category', '其他'), "inline": True},
-                    {"name": "優先級", "value": priority_text, "inline": True}
+                    {"name": "分類", "value": payload.get('category', '其他'), "inline": True}
                 ]
 
                 if payload.get('is_guest'):

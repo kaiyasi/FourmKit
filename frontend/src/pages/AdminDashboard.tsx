@@ -50,7 +50,7 @@ export default function AdminDashboard() {
       <NavBar pathname="/admin" />
       <MobileBottomNav />
 
-      <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-24 md:pb-8">
+      <main className="mx-auto max-w-6xl px-3 sm:px-4" style={{ paddingTop: 'var(--fk-navbar-offset, 84px)', paddingBottom: 'var(--fk-bottomnav-offset, 64px)' }}>
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center gap-3 mb-1">
             <LayoutDashboard className="w-5 h-5" />
@@ -64,7 +64,7 @@ export default function AdminDashboard() {
           <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋" icon={MessagesSquare} />
           {/* 聊天室快捷卡片 */}
           <Card to="/admin/chat" title="聊天室" desc="待處理請求、即時溝通、支援自訂聊天室" icon={MessageSquareDot} />
-          {/* 客服管理卡片 - 三個 _admin 可操作，其他管理角色唯讀 */}
+          {/* 客服管理卡片 - 三個 _admin 可操作，其他管理角色唯讀（桌面拉滿寬度） */}
           {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') ? (
             <Card to="/admin/support" title="客服管理" desc="支援單審核、狀態管理、訊息回覆與統計報表" icon={LifeBuoy} />
           ) : ['campus_moderator', 'cross_moderator'].includes(role || '') ? (

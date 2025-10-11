@@ -417,6 +417,31 @@ def google_callback():
         tokens = exchange_code_for_tokens(code)
         access_token = tokens.get('access_token')
         id_token = tokens.get('id_token')
+        if not access_token and not id_token:
+            return jsonify({
+                "success": False,
+                "error": tokens.get('error') or 'TOKEN_EXCHANGE_FAILED',
+                "error_description": tokens.get('error_description') or tokens.get('raw') or str(tokens),
+                "errorCode": "E_TOKEN_EXCHANGE"
+            }), 401
+        if not access_token and not id_token:
+            # 更可讀的錯誤輸出，便於定位 401/redirect_uri_mismatch 等
+            try:
+                err = tokens.get('error') or 'token_exchange_failed'
+                desc = tokens.get('error_description') or tokens.get('raw') or str(tokens)
+                admin_notify(
+                    kind='auth_error',
+                    title='Google Token 交換失敗',
+                    description=f"{err}: {desc}"[:500],
+                    actor='system',
+                    source='auth/google/callback',
+                    fields=[
+                        {"name": "redirect_uri", "value": os.getenv('OAUTH_REDIRECT_URL') or os.getenv('PUBLIC_BASE_URL') or 'n/a', "inline": False}
+                    ],
+                )
+            except Exception:
+                pass
+            return redirect("/error/oauth-failed", code=302)
 
         profile = fetch_user_info(access_token=access_token, id_token=id_token)
         email = (profile.get('email') or '').strip().lower()

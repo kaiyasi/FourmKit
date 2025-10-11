@@ -241,22 +241,17 @@ class AdminChatService:
             return result
 
     @classmethod
-    def send_message(cls, room_id: int, user_id: int, content: str, 
+    def send_message(cls, room_id: int, user_id: int, content: str,
                     message_type: MessageType = MessageType.TEXT,
                     post_id: Optional[int] = None,
                     file_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """發送訊息（含@提及處理）"""
         with get_session() as db:
-            # 檢查基本權限
-            if not cls.can_user_access_room(user_id, room_id):
+            # 檢查發送訊息權限
+            if not cls.can_user_send_message(user_id, room_id):
                 return None
-            
-            # 檢查系統通知頻道的特殊權限
+
             room = db.get(AdminChatRoom, room_id)
-            if room and room.type == ChatRoomType.SYSTEM:
-                user = db.get(User, user_id)
-                if not user or user.role != "dev_admin":
-                    return None  # 只有 dev_admin 可以在系統頻道發送訊息
             
             # 處理@提及
             mentioned_users = []
@@ -530,6 +525,227 @@ class AdminChatService:
                     db.add(room)
             
             db.commit()
+
+    @classmethod
+    def get_user_room_role(cls, user_id: int, room_id: int) -> Optional[str]:
+        """獲取用戶在聊天室中的角色"""
+        with get_session() as db:
+            member = db.query(AdminChatMember)\
+                .filter(AdminChatMember.room_id == room_id)\
+                .filter(AdminChatMember.user_id == user_id)\
+                .first()
+            return member.role if member else None
+
+    @classmethod
+    def can_user_send_message(cls, user_id: int, room_id: int) -> bool:
+        """檢查用戶是否可以在聊天室發送訊息"""
+        with get_session() as db:
+            # 檢查基本訪問權限
+            if not cls.can_user_access_room(user_id, room_id):
+                return False
+
+            room = db.get(AdminChatRoom, room_id)
+            user = db.get(User, user_id)
+
+            if not room or not user:
+                return False
+
+            # 系統通知頻道只有 dev_admin 可以發送
+            if room.type == ChatRoomType.SYSTEM:
+                return user.role == "dev_admin"
+
+            # 開發人員頻道只有 dev_admin 可以發送
+            if room.type == ChatRoomType.DEVELOPER:
+                return user.role == "dev_admin"
+
+            # 私有頻道需要檢查是否被禁言
+            if room.is_private:
+                member = db.query(AdminChatMember)\
+                    .filter(AdminChatMember.room_id == room_id)\
+                    .filter(AdminChatMember.user_id == user_id)\
+                    .first()
+                if member and member.is_muted:
+                    return False
+
+            return True
+
+    @classmethod
+    def can_user_manage_room(cls, user_id: int, room_id: int) -> bool:
+        """檢查用戶是否可以管理聊天室（刪除、修改設置等）"""
+        with get_session() as db:
+            user = db.get(User, user_id)
+            room = db.get(AdminChatRoom, room_id)
+
+            if not user or not room:
+                return False
+
+            # dev_admin 可以管理所有聊天室
+            if user.role == "dev_admin":
+                return True
+
+            # 創建者可以管理
+            if room.created_by == user_id:
+                return True
+
+            # 檢查是否為聊天室管理員
+            member = db.query(AdminChatMember)\
+                .filter(AdminChatMember.room_id == room_id)\
+                .filter(AdminChatMember.user_id == user_id)\
+                .first()
+
+            return member and member.role == "admin"
+
+    @classmethod
+    def delete_room(cls, room_id: int, user_id: int) -> Tuple[bool, str]:
+        """刪除聊天室"""
+        with get_session() as db:
+            room = db.get(AdminChatRoom, room_id)
+
+            if not room:
+                return False, "聊天室不存在"
+
+            # 檢查權限
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足"
+
+            # 系統預設聊天室不能刪除
+            if room.type in [ChatRoomType.SYSTEM, ChatRoomType.DEVELOPER,
+                            ChatRoomType.GLOBAL, ChatRoomType.CROSS,
+                            ChatRoomType.EMERGENCY]:
+                return False, "系統預設聊天室不能刪除"
+
+            # 軟刪除（設為非活躍狀態）
+            room.is_active = False
+            db.commit()
+
+            return True, "聊天室已刪除"
+
+    @classmethod
+    def update_room(cls, room_id: int, user_id: int, **kwargs) -> Tuple[bool, str, Optional[Dict]]:
+        """更新聊天室設置"""
+        with get_session() as db:
+            room = db.get(AdminChatRoom, room_id)
+
+            if not room:
+                return False, "聊天室不存在", None
+
+            # 檢查權限
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足", None
+
+            # 允許更新的欄位
+            allowed_fields = ['name', 'description', 'is_private', 'max_members']
+
+            for field, value in kwargs.items():
+                if field in allowed_fields and hasattr(room, field):
+                    setattr(room, field, value)
+
+            db.commit()
+            db.refresh(room)
+
+            return True, "聊天室設置已更新", {
+                "id": room.id,
+                "name": room.name,
+                "description": room.description,
+                "is_private": room.is_private,
+                "max_members": room.max_members
+            }
+
+    @classmethod
+    def remove_member(cls, room_id: int, user_id: int, target_user_id: int) -> Tuple[bool, str]:
+        """移除聊天室成員"""
+        with get_session() as db:
+            room = db.get(AdminChatRoom, room_id)
+
+            if not room:
+                return False, "聊天室不存在"
+
+            # 檢查操作者權限
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足"
+
+            # 不能移除創建者
+            if target_user_id == room.created_by:
+                return False, "不能移除創建者"
+
+            # 移除成員
+            member = db.query(AdminChatMember)\
+                .filter(AdminChatMember.room_id == room_id)\
+                .filter(AdminChatMember.user_id == target_user_id)\
+                .first()
+
+            if not member:
+                return False, "該用戶不是成員"
+
+            db.delete(member)
+            db.commit()
+
+            return True, "成員已移除"
+
+    @classmethod
+    def update_member_role(cls, room_id: int, user_id: int, target_user_id: int, new_role: str) -> Tuple[bool, str]:
+        """更新成員角色"""
+        with get_session() as db:
+            room = db.get(AdminChatRoom, room_id)
+
+            if not room:
+                return False, "聊天室不存在"
+
+            # 檢查操作者權限
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足"
+
+            # 驗證新角色
+            if new_role not in ["admin", "moderator", "member"]:
+                return False, "無效的角色"
+
+            # 更新成員角色
+            member = db.query(AdminChatMember)\
+                .filter(AdminChatMember.room_id == room_id)\
+                .filter(AdminChatMember.user_id == target_user_id)\
+                .first()
+
+            if not member:
+                return False, "該用戶不是成員"
+
+            member.role = new_role
+            db.commit()
+
+            return True, f"成員角色已更新為 {new_role}"
+
+    @classmethod
+    def mute_member(cls, room_id: int, user_id: int, target_user_id: int, mute: bool = True) -> Tuple[bool, str]:
+        """禁言/解禁成員"""
+        with get_session() as db:
+            room = db.get(AdminChatRoom, room_id)
+
+            if not room:
+                return False, "聊天室不存在"
+
+            # 檢查操作者權限（需要是管理員或版主）
+            operator_role = cls.get_user_room_role(user_id, room_id)
+            if operator_role not in ["admin", "moderator"]:
+                user = db.get(User, user_id)
+                if not user or user.role != "dev_admin":
+                    return False, "權限不足"
+
+            # 不能禁言創建者
+            if target_user_id == room.created_by:
+                return False, "不能禁言創建者"
+
+            # 更新成員禁言狀態
+            member = db.query(AdminChatMember)\
+                .filter(AdminChatMember.room_id == room_id)\
+                .filter(AdminChatMember.user_id == target_user_id)\
+                .first()
+
+            if not member:
+                return False, "該用戶不是成員"
+
+            member.is_muted = mute
+            db.commit()
+
+            return True, f"成員已{'禁言' if mute else '解禁'}"
 
     # 其他已有的方法保持不變...
     @classmethod

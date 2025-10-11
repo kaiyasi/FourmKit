@@ -59,6 +59,11 @@ services:
       - CDN_LOCAL_ROOT=/app/cdn-data
       - PUBLIC_CDN_URL=${PUBLIC_CDN_URL}
       - CDN_PUBLIC_BASE_URL=${PUBLIC_CDN_URL}
+      # Google OAuth (provide via .env)
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      # Explicit redirect (optional). If unset, backend derives from PUBLIC_BASE_URL
+      - OAUTH_REDIRECT_URL=${OAUTH_REDIRECT_URL:-${PUBLIC_BASE_URL}/api/auth/google/callback}
       # Frontend assets path for protected admin resources
       - FRONTEND_DIST_ROOT=/app/frontend-dist
       # Instagram token encryption key

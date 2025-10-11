@@ -119,20 +119,9 @@ export default function FAQPage() {
 
   return (
     <PageLayout pathname={pathname} maxWidth="max-w-4xl">
-      <MobileHeader subtitle="FAQ" />
+      {/* 移除主副標（MobileHeader 與內部標題） */}
       <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
-        {/* Header */}
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-              <HelpCircle className="w-5 h-5 text-primary" />
-            </div>
-            <h1 className="text-2xl font-semibold dual-text">常見問題</h1>
-          </div>
-          <p className="text-muted">
-            查找常見問題的解答，如果找不到您需要的資訊，歡迎聯絡我們的支援團隊
-          </p>
-        </div>
+        {/* 移除主副標 */}
 
         {/* Category Filter */}
         <div className="p-6 border-b border-border bg-surface/50">

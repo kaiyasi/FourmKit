@@ -6,7 +6,5 @@
   "enforce_min_post_chars": false,
   "min_post_chars": 15,
   "email_blacklist": [],
-  "suspended_users": [
-    9
-  ]
+  "suspended_users": []
 }

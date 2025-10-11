@@ -41,14 +41,6 @@ class TicketCategory(str, enum.Enum):
     OTHER = "other"               # 其他問題
 
 
-class TicketPriority(str, enum.Enum):
-    """支援單優先級"""
-    LOW = "low"           # 低優先級
-    MEDIUM = "medium"     # 中優先級  
-    HIGH = "high"         # 高優先級
-    URGENT = "urgent"     # 緊急
-
-
 class AuthorType(str, enum.Enum):
     """訊息作者類型"""
     USER = "user"         # 登入用戶
@@ -61,7 +53,6 @@ class EventType(str, enum.Enum):
     TICKET_CREATED = "ticket_created"
     MESSAGE_SENT = "message_sent"
     STATUS_CHANGED = "status_changed"
-    PRIORITY_CHANGED = "priority_changed"
     LABEL_ADDED = "label_added"
     LABEL_REMOVED = "label_removed"
     ASSIGNED = "assigned"
@@ -105,7 +96,6 @@ class SupportTicket(Base):
     # 支援單內容
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     category: Mapped[str] = mapped_column(String(20), nullable=False, default=TicketCategory.OTHER)
-    priority: Mapped[str] = mapped_column(String(10), nullable=False, default=TicketPriority.MEDIUM)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=TicketStatus.OPEN, index=True)
     
     # 指派與負責人

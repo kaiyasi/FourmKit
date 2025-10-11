@@ -23,7 +23,7 @@ export function MobileAdminDashboard() {
       to={disabled ? '#' : to} 
       className={`
         p-4 rounded-2xl border border-border bg-surface shadow-soft 
-        flex items-start gap-3 hover:bg-surface/80 transition-colors
+        flex items-start gap-3 hover:bg-surface/80 transition-colors w-full mobile-card
         ${disabled ? 'opacity-60 pointer-events-none' : ''}
       `}
     >
@@ -48,7 +48,7 @@ export function MobileAdminDashboard() {
       <div className="space-y-3">
         <Card to="/admin/moderation" title="審核管理" desc="待審核貼文、今日已處理、待處理請求" icon={ShieldCheck} />
         <Card to="/admin/comments" title="留言監控" desc="留言審核、統計分析、篩選搜尋" icon={MessagesSquare} />
-        <Card to="/admin/chat" title="聊天室" desc="待處理請求、即時溝通、支援自訂聊天室" icon={MessageSquareDot} />
+        <Card to="/m/admin/chat" title="聊天室" desc="待處理請求、即時溝通" icon={MessageSquareDot} />
       </div>
 
       {/* 統合的桌面版功能提示 */}

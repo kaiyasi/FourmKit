@@ -62,25 +62,6 @@ export const StatusBadge = ({ status }: { status: string }) => {
 };
 
 // 優先級顯示組件
-export const PriorityBadge = ({ priority }: { priority: string }) => {
-  const priorityConfig = {
-    low: { text: '低', className: 'text-success' },
-    medium: { text: '中', className: 'text-warning' },
-    high: { text: '高', className: 'text-warning hover:text-warning-hover' },
-    urgent: { text: '緊急', className: 'text-danger font-semibold' }
-  };
-
-  const config = priorityConfig[priority as keyof typeof priorityConfig] || priorityConfig.medium;
-
-  return (
-    <span className={`inline-flex items-center gap-1 text-sm font-medium ${config.className}`}>
-      <Star className="w-4 h-4" />
-      {config.text}
-    </span>
-  );
-};
-
-// 分類顯示組件
 export const CategoryBadge = ({ category }: { category: string }) => {
   const categoryConfig = {
     technical: { text: '技術問題', className: 'bg-surface text-fg border border-border' },
@@ -109,7 +90,6 @@ interface TicketCardProps {
     subject: string;
     status: string;
     category: string;
-    priority: string;
     created_at: string;
     last_activity_at: string;
     message_count: number;
@@ -151,7 +131,6 @@ export const TicketCard = ({ ticket, onClick, showUser = false }: TicketCardProp
           <div className="flex items-center gap-3 flex-wrap">
             <StatusBadge status={ticket.status} />
             <CategoryBadge category={ticket.category} />
-            <PriorityBadge priority={ticket.priority} />
           </div>
         </div>
         <div className="ml-4 text-right text-sm text-muted">

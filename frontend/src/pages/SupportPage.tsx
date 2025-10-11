@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import MobileSupportDetailPage from './MobileSupportDetailPage'
+
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -292,40 +294,23 @@ const SupportPage: React.FC = () => {
         });
 
         if (resp?.ok) {
-          // 顯示成功訊息給用戶，包含客服單資訊
-          const ticketInfo = resp.ticket;
-          const successMessage = `✅ 客服單建立成功！
+          // 調整為後端實際回應欄位（ticket_id 等）
+          const ticketId = resp.ticket_id || resp.public_id || resp.id
+          const subject = resp.subject || payload.subject
+          const status = resp.status || 'open'
+          const category = resp.category || payload.category
 
-📋 客服單資訊：
-• 工單編號：#${ticketInfo.public_id}
-• 主題：${ticketInfo.subject}
-• 狀態：${ticketInfo.status === 'open' ? '已開啟' : ticketInfo.status}
-• 分類：${ticketInfo.category}
-• 建立時間：${new Date(ticketInfo.created_at).toLocaleString('zh-TW')}
-
-${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住您的工單編號以便日後追蹤。'}`;
-
-          alert(successMessage);
+          // 成功後直接進入對話視圖
           setShowCreateModal(false);
           setPrefillTicketData(null);
 
-          // 登入者：刷新列表並選取新單
-          if (isLoggedIn && resp.ticket?.id) {
-            try {
-              localStorage.setItem('fk_last_ticket_id', resp.ticket.id);
-            } catch {
-              try {
-                sessionStorage.setItem('fk_last_ticket_id', resp.ticket.id);
-              } catch {
-                // 完全失敗時跳過存儲
-              }
-            }
+          if (isLoggedIn && ticketId) {
+            try { localStorage.setItem('fk_last_ticket_id', String(ticketId)); } catch { try { sessionStorage.setItem('fk_last_ticket_id', String(ticketId)); } catch {} }
             await loadTickets();
-            // 使用數字 ID 來選取工單
-            selectTicket(resp.ticket.id.toString());
-          } else if (resp.tracking_url) {
-            // 訪客：導航到追蹤頁面
-            navigate(resp.tracking_url);
+            setSearchParams({ ticket: String(ticketId) });
+            setTimeout(() => document.getElementById('support-messages-end')?.scrollIntoView({ behavior:'smooth' }), 80)
+          } else if (resp.guest_token) {
+            navigate(`/support/track?ticket=${encodeURIComponent(String(ticketId))}&sig=${encodeURIComponent(resp.guest_token)}`);
           }
         }
       } catch (error) {
@@ -583,60 +568,26 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
   }
 
   // 工單詳情視圖
-  // 手機版獨立詳情頁介面（最上層條件分支放在桌面詳情之前）
+  // 手機版：切換至獨立 MobileSupportDetailPage（混合式設計）
   if (selectedTicket && isMobile) {
     return (
-      <PageLayout pathname="/support">
-        <div className="max-w-4xl mx-auto">
-          <div className="px-4 py-3 border-b border-border bg-surface/95 backdrop-blur sticky top-0 z-20 flex items-center gap-2">
-            <button onClick={() => setSearchParams({})} className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-muted" aria-label="返回">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold truncate">工單 #{selectedTicket.ticket_id}</div>
-              <div className="text-xs text-muted truncate">{selectedTicket.subject}</div>
-            </div>
-            <Button variant="ghost" size="sm" icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />} onClick={() => loadTicketDetail(selectedTicket.id)} disabled={refreshing} />
-          </div>
-
-          <div className="px-4 py-4">
-            <div className="rounded-2xl bg-surface/70 border border-border p-3 mb-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                <StatusBadge status={selectedTicket.status} />
-                <CategoryBadge category={selectedTicket.category} />
-                <div className="flex items-center gap-1"><Calendar className="w-4 h-4" />{new Date(selectedTicket.created_at).toLocaleDateString('zh-TW')}</div>
-                <div className="flex items-center gap-1"><MessageSquare className="w-4 h-4" />{selectedTicket.messages.length} 則訊息</div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {selectedTicket.messages.map((message) => (
-                <div key={message.id} className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className="max-w-[85%]">
-                    <div className={`px-3 py-2 rounded-2xl ${message.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border'}`}>
-                      {message.body.split('\n').map((line, idx) => (
-                        <p key={idx} className={`text-sm ${message.author_type === 'user' ? 'text-primary-foreground' : 'text-fg'}`}>{line}</p>
-                      ))}
-                      <div className={`text-[10px] mt-1 ${message.author_type === 'user' ? 'text-primary-foreground/70' : 'text-muted'}`}>
-                        {message.author_display_name} • {new Date(message.created_at).toLocaleString('zh-TW')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {selectedTicket.status !== 'closed' && (
-            <div className="fixed left-0 right-0 border-t border-border bg-surface/95 backdrop-blur p-2 z-40" style={{ bottom: 'var(--fk-bottomnav-offset, 64px)' }}>
-              <div className="max-w-4xl mx-auto flex items-center gap-2 px-2">
-                <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="輸入您的回應..." rows={1} className="flex-1 form-control form-control--compact resize-none" />
-                <Button onClick={sendMessage} loading={sendingMessage} disabled={!newMessage.trim()} icon={<Send className="w-4 h-4" />}>發送</Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </PageLayout>
+      <MobileSupportDetailPage
+        ticket={{
+          ticket_id: selectedTicket.ticket_id,
+          subject: selectedTicket.subject,
+          status: selectedTicket.status,
+          category: selectedTicket.category,
+          created_at: selectedTicket.created_at,
+          messages: selectedTicket.messages as any,
+        }}
+        newMessage={newMessage}
+        setNewMessage={setNewMessage}
+        sending={sendingMessage}
+        onSend={sendMessage}
+        onBack={() => setSearchParams({})}
+        refreshing={refreshing}
+        onReload={() => loadTicketDetail(selectedTicket.id)}
+      />
     )
   }
 
@@ -669,11 +620,9 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                                 <CategoryBadge category={selectedTicket.category} />
                               </div>                <div className="flex items-center gap-6 text-sm text-muted">
                   <div className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
                     建立於 {new Date(selectedTicket.created_at).toLocaleDateString('zh-TW')}
                   </div>
                   <div className="flex items-center gap-1">
-                    <MessageSquare className="w-4 h-4" />
                     {selectedTicket.messages.length} 則訊息
                   </div>
                 </div>
@@ -701,8 +650,8 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                             </p>
                           ))}
                         </div>
-                        <div className={`text-xs mt-2 ${message.author_type === 'user' ? 'text-primary-foreground/70' : 'text-muted'}`}>
-                          {message.author_display_name} • {new Date(message.created_at).toLocaleString('zh-TW')}
+                        <div className={`text-xs mt-2 leading-tight ${message.author_type === 'user' ? 'text-primary-foreground/80' : 'text-muted'}`}>
+                          <div className="font-medium">{message.author_display_name}</div>
                         </div>
                       </div>
                     </div>
@@ -756,7 +705,7 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                 <div className="hidden sm:block">
                   <h1 className="text-xl font-semibold dual-text">Support Center</h1>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -831,6 +780,18 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
               </div>
             </div>
 
+            {/* Mobile: 新工單白色長形按鈕（置於篩選與列表之間） */}
+            {isMobile && (
+              <div className="mb-3">
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="w-full py-3 rounded-lg border border-border bg-white dark:bg-surface text-fg shadow-sm active:scale-[0.99] transition-transform"
+                >
+                  新工單
+                </button>
+              </div>
+            )}
+
             {/* Table-like Ticket List */}
             <div className="bg-surface border border-border rounded-lg overflow-hidden shadow-soft">
               {loading ? (
@@ -857,64 +818,97 @@ ${isLoggedIn ? '您可以在「我的工單」中查看進度。' : '請記住�
                   )}
                 </div>
               ) : (
-                <>
-                  {/* Table Header */}
-                  <div className="px-6 py-3 border-b border-border bg-surface/50">
-                    <div className="grid grid-cols-12 gap-4 text-xs font-medium text-muted uppercase tracking-wide">
-                      <div className="col-span-5">工單</div>
-                      <div className="col-span-2 text-center">狀態</div>
-                      <div className="col-span-2 text-center">分類</div>
-                      <div className="col-span-2 text-center">回覆</div>
-                    </div>
-                  </div>
-
-                  {/* Table Body */}
+                isMobile ? (
                   <div className="divide-y divide-border">
-                    {filteredTickets.map((ticket, index) => (
-                      <div
+                    {filteredTickets.map((ticket) => (
+                      <button
                         key={ticket.id}
-                        className="px-6 py-4 hover:bg-surface-hover transition-colors cursor-pointer group"
-                        onClick={() => selectTicket(ticket.id)}
+                        className="w-full text-left px-4 py-3 hover:bg-surface-hover transition-colors"
+                        onClick={() => selectTicket(ticket.ticket_id || ticket.id)}
                       >
-                        <div className="grid grid-cols-12 gap-4 items-center">
-                          {/* Ticket Info */}
-                          <div className="col-span-6">
-                            <div className="flex items-start space-x-3">
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-medium dual-text group-hover:text-primary transition-colors truncate">
-                                  {ticket.subject}
-                                </h4>
-                                <div className="flex items-center space-x-2 mt-1">
-                                  <span className="text-xs text-muted">#{ticket.ticket_id}</span>
-                                  <span className="text-xs text-muted">•</span>
-                                  <span className="text-xs text-muted">{ticket.created_at}</span>
-                                </div>
-                              </div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium dual-text truncate">{ticket.subject}</div>
+                            <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                              <span>#{ticket.ticket_id}</span>
+                              <span>•</span>
+                              <span>{new Date(ticket.last_activity_at || ticket.created_at).toLocaleString('zh-TW')}</span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <StatusBadge status={ticket.status} />
+                              <CategoryBadge category={ticket.category} />
                             </div>
                           </div>
-
-                          {/* Status */}
-                          <div className="col-span-2 text-center">
-                            <StatusBadge status={ticket.status} />
-                          </div>
-
-                          {/* Category */}
-                          <div className="col-span-2 text-center">
-                            <CategoryBadge category={ticket.category} />
-                          </div>
-
-                          {/* Message Count */}
-                          <div className="col-span-2 text-center">
-                            <div className="flex items-center justify-center space-x-1">
+                          <div className="shrink-0 text-xs text-muted">
+                            <div className="flex items-center gap-1">
                               <MessageSquare className="w-4 h-4 text-muted" />
-                              <span className="text-sm text-muted">{ticket.message_count}</span>
+                              <span>{ticket.message_count}</span>
                             </div>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
-                </>
+                ) : (
+                  <>
+                    {/* Table Header */}
+                    <div className="px-6 py-3 border-b border-border bg-surface/50">
+                      <div className="grid grid-cols-12 gap-4 text-xs font-medium text-muted uppercase tracking-wide">
+                        <div className="col-span-6">工單</div>
+                        <div className="col-span-2 text-center">狀態</div>
+                        <div className="col-span-2 text-center">分類</div>
+                        <div className="col-span-2 text-center">回覆</div>
+                      </div>
+                    </div>
+
+                    {/* Table Body */}
+                    <div className="divide-y divide-border">
+                      {filteredTickets.map((ticket, index) => (
+                        <div
+                          key={ticket.id}
+                          className="px-6 py-4 hover:bg-surface-hover transition-colors cursor-pointer group"
+                          onClick={() => selectTicket(ticket.ticket_id || ticket.id)}
+                        >
+                          <div className="grid grid-cols-12 gap-4 items-center">
+                            {/* Ticket Info */}
+                            <div className="col-span-6">
+                              <div className="flex items-start space-x-3">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium dual-text group-hover:text-primary transition-colors truncate">
+                                    {ticket.subject}
+                                  </h4>
+                                  <div className="flex items-center space-x-2 mt-1">
+                                    <span className="text-xs text-muted">#{ticket.ticket_id}</span>
+                                    <span className="text-xs text-muted">•</span>
+                                    <span className="text-xs text-muted">{new Date(ticket.last_activity_at || ticket.created_at).toLocaleString('zh-TW')}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Status */}
+                            <div className="col-span-2 text-center">
+                              <StatusBadge status={ticket.status} />
+                            </div>
+
+                            {/* Category */}
+                            <div className="col-span-2 text-center">
+                              <CategoryBadge category={ticket.category} />
+                            </div>
+
+                            {/* Message Count */}
+                            <div className="col-span-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <MessageSquare className="w-4 h-4 text-muted" />
+                                <span className="text-sm text-muted">{ticket.message_count}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )
               )}
             </div>
           </div>

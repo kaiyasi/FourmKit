@@ -33,79 +33,20 @@ import {
 import { api } from '@/services/api';
 import { QueueTabs } from '@/components/support/admin/QueueTabs';
 import { FilterBar } from '@/components/support/admin/FilterBar';
-import { TicketList } from '@/components/support/admin/TicketList';
-import { StatusBadge, CategoryBadge, PriorityBadge } from '@/components/support/SupportComponents';
-import { useAdminSupportSocket } from '@/hooks/useAdminSupportSocket';
+import TicketList from '@/components/support/admin/TicketList';
+import { StatusBadge, CategoryBadge } from '@/components/support/SupportComponents';
 
-interface AdminTicket {
-  id: string;
-  ticket_id: string;
-  subject: string;
-  status: 'open' | 'awaiting_user' | 'awaiting_admin' | 'resolved' | 'closed';
-  category: 'technical' | 'account' | 'feature' | 'bug' | 'abuse' | 'other';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  created_at: string;
-  last_activity_at: string;
-  message_count: number;
-  user_name: string;
-  user_email?: string;
-  assigned_to?: string;
-  assignee_name?: string;
-  school?: string;
-  labels?: string[];
-  processing?: boolean;
-}
+// ... (其他導入)
 
-interface TicketMessage {
-  id: string;
-  body: string;
-  author_type: 'user' | 'admin' | 'system';
-  author_display_name: string;
-  created_at: string;
-}
-
-interface AdminTicketDetail extends AdminTicket {
-  messages: TicketMessage[];
-  user_info?: {
-    id: string;
-    username: string;
-    email: string;
-    role: string;
-    created_at: string;
-    last_login_at?: string;
-  };
-}
-
-interface TicketStats {
-  total: number;
-  open: number;
-  awaiting_admin: number;
-  awaiting_user: number;
-  resolved: number;
-  closed: number;
-  unassigned: number;
-  overdue: number;
-}
-
-const AdminSupportPageNew: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  
-  // 狀態管理
-  const [tickets, setTickets] = useState<AdminTicket[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<AdminTicketDetail | null>(null);
-  const [stats, setStats] = useState<TicketStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+function AdminSupportPageNew() {
+  // ... (其他狀態)
   const [filters, setFilters] = useState({
-    search: '',
+    page: 1,
+    per_page: 50,
     status: 'all',
     category: 'all',
-    priority: 'all',
     assignee: 'all',
-    page: 1,
-    per_page: 20
+    search: '',
   });
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -531,7 +472,6 @@ const AdminSupportPageNew: React.FC = () => {
                     <div className="flex flex-wrap gap-2">
                       <StatusBadge status={selectedTicket.status} />
                       <CategoryBadge category={selectedTicket.category} />
-                      <PriorityBadge priority={selectedTicket.priority} />
                     </div>
                     
                     <div className="space-y-3 text-sm">

@@ -271,7 +271,7 @@ export default function AdminCommentsMonitorPage() {
       <NavBar pathname="/admin/comments" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-8 sm:pt-20 md:pt-24 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
         {/* 頁首 */}
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">

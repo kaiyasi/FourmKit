@@ -7,8 +7,6 @@ interface FilterBarProps {
   onStatus: (v: string) => void
   category: string
   onCategory: (v: string) => void
-  priority: string
-  onPriority: (v: string) => void
   assignee: string
   onAssignee: (v: string) => void
 }
@@ -17,7 +15,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   search, onSearch,
   status, onStatus,
   category, onCategory,
-  priority, onPriority,
   assignee, onAssignee,
 }) => {
   return (
@@ -48,13 +45,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <option value="bug">錯誤報告</option>
           <option value="abuse">濫用舉報</option>
           <option value="other">其他</option>
-        </select>
-        <select value={priority} onChange={(e)=>onPriority(e.target.value)} className="support-control bg-surface border border-border rounded-lg text-sm">
-          <option value="all">所有優先級</option>
-          <option value="low">低</option>
-          <option value="medium">中</option>
-          <option value="high">高</option>
-          <option value="urgent">緊急</option>
         </select>
         <select value={assignee} onChange={(e)=>onAssignee(e.target.value)} className="support-control bg-surface border border-border rounded-lg text-sm">
           <option value="all">所有分配</option>

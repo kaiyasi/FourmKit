@@ -174,8 +174,18 @@ rebuild_services() {
     
     info "清理前端舊版編譯產物 (frontend/dist)..."
     if [ -d "$PROJECT_ROOT/frontend/dist" ]; then
-        rm -rf "$PROJECT_ROOT/frontend/dist"
-        success "已刪除 frontend/dist"
+        if rm -rf "$PROJECT_ROOT/frontend/dist" 2>/dev/null; then
+            success "已刪除 frontend/dist"
+        else
+            warning "刪除失敗，嘗試修復權限後再刪除..."
+            chmod -R u+rwX "$PROJECT_ROOT/frontend/dist" 2>/dev/null || true
+            find "$PROJECT_ROOT/frontend/dist" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+            if rm -rf "$PROJECT_ROOT/frontend/dist" 2>/dev/null; then
+                success "已刪除 frontend/dist（經權限修復）"
+            else
+                warning "仍無法刪除 frontend/dist，將保留並於建置時覆寫"
+            fi
+        fi
     else
         info "未發現 frontend/dist，略過"
     fi
