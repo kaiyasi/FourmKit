@@ -29,6 +29,7 @@ import {
   ArrowLeft,
   Eye,
   Clock,
+  User,
   Search
 } from 'lucide-react';
 import { api } from '@/services/api';
@@ -81,7 +82,6 @@ const SupportPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // 狀態管理
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<TicketDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,7 +94,6 @@ const SupportPage: React.FC = () => {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [prefillTicketData, setPrefillTicketData] = useState<PrefillTicket | null>(null);
 
-  // 響應式檢測
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   
   useEffect(() => {
@@ -103,15 +102,12 @@ const SupportPage: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 從 URL 參數讀取選中的工單
   const selectedTicketId = searchParams.get('ticket');
 
-  // 載入數據
   useEffect(() => {
     loadTickets();
   }, []);
 
-  // 載入選中的工單詳情
   useEffect(() => {
     if (selectedTicketId) {
       loadTicketDetail(selectedTicketId);
@@ -158,7 +154,6 @@ const SupportPage: React.FC = () => {
   const loadTickets = async () => {
     try {
       setLoading(true);
-      // 僅登入用戶可載入「我的工單」
       if (!isLoggedIn) {
         setTickets([]);
         return;
@@ -194,7 +189,6 @@ const SupportPage: React.FC = () => {
     setRefreshing(false);
   };
 
-  // 篩選工單
   const filteredTickets = tickets.filter(ticket => {
     const matchesSearch = ticket.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          ticket.ticket_id.toLowerCase().includes(searchTerm.toLowerCase());
@@ -232,7 +226,6 @@ const SupportPage: React.FC = () => {
     }
   };
 
-  // 創建工單模態框
   const CreateTicketModal = () => {
     const initialFormData: TicketFormState = {
       subject: typeof prefillTicketData?.subject === 'string' ? prefillTicketData.subject : '',
@@ -262,22 +255,18 @@ const SupportPage: React.FC = () => {
 
       try {
         setCreating(true);
-        // 未登入用戶處理 email
         const payload: any = { subject: formData.subject, category: formData.category, body: formData.body }
         if (!isLoggedIn) {
           let email = (formData.email || '').trim();
           
-          // 只在沒有輸入 email 時顯示錯誤
           if (!email) {
             alert('請輸入 Email 以便我們回覆您');
             return;
           }
           
-          // 輕量自動補齊：輸入純字串 → 預設加上 @gmail.com；輸入 *@gmail → 補 .com
           if (email && !email.includes('@')) email = `${email}@gmail.com`;
           if (/^.+@gmail$/i.test(email)) email = `${email}.com`;
           
-          // 與後端一致的格式驗證
           const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
           if (!EMAIL_RE.test(email)) {
             alert('Email 格式不正確，請輸入有效 Email（例如 name@gmail.com）');
@@ -294,13 +283,19 @@ const SupportPage: React.FC = () => {
         });
 
         if (resp?.ok) {
+<<<<<<< Updated upstream
           // 調整為後端實際回應欄位（ticket_id 等）
+=======
+>>>>>>> Stashed changes
           const ticketId = resp.ticket_id || resp.public_id || resp.id
           const subject = resp.subject || payload.subject
           const status = resp.status || 'open'
           const category = resp.category || payload.category
 
+<<<<<<< Updated upstream
           // 成功後直接進入對話視圖
+=======
+>>>>>>> Stashed changes
           setShowCreateModal(false);
           setPrefillTicketData(null);
 
@@ -316,10 +311,8 @@ const SupportPage: React.FC = () => {
       } catch (error) {
         console.error('創建工單失敗:', error);
 
-        // 手機瀏覽器特殊錯誤處理
         const errorMessage = error instanceof Error ? error.message : '創建工單失敗';
 
-        // 檢查是否為網路錯誤或手機瀏覽器限制
         if (errorMessage.includes('NetworkError') || errorMessage.includes('Failed to fetch')) {
           alert('網路連線問題，請檢查網路連線後重試');
         } else if (errorMessage.includes('localStorage') || errorMessage.includes('sessionStorage')) {
@@ -333,8 +326,8 @@ const SupportPage: React.FC = () => {
     };
 
     return (<>
-      {/* 背景遮罩，阻擋互動 */}
-      {/* 禁用觸控滾動（iOS） */}
+      
+      
       <div className="fixed inset-0 z-[96]" style={{ touchAction: 'none' }} />
 
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[95]" />
@@ -445,19 +438,18 @@ const SupportPage: React.FC = () => {
       </>);
   };
 
-  // 未登入狀態 - 支援匿名訪問
   if (!isLoggedIn) {
     return (
       <PageLayout pathname="/support">
         <div className="max-w-4xl mx-auto px-6 py-12">
-          {/* Header：保留下方主要大標題，已移除最上層主副標 */}
+          
           <div className="text-center mb-12">
             <h1 className="text-4xl font-bold dual-text mb-3">ForumKit</h1>
             <p className="text-xl text-muted">Support Center</p>
           </div>
 
           <div className="space-y-6">
-            {/* Primary Action */}
+            
             <div className="bg-surface border border-border rounded-xl p-6 shadow-soft">
               <h3 className="font-semibold dual-text mb-4 flex items-center">
                 <Plus className="w-5 h-5 mr-2 text-primary" />
@@ -479,7 +471,7 @@ const SupportPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Secondary Actions */}
+            
             <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-surface border border-border rounded-xl p-6 shadow-soft hover:shadow-medium transition-shadow">
                 <h3 className="font-semibold dual-text mb-4 flex items-center">
@@ -522,7 +514,7 @@ const SupportPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Tips Section */}
+            
             <div className="bg-surface border border-border rounded-xl p-6 shadow-soft">
               <h4 className="font-medium dual-text mb-3 flex items-center">
                 <Star className="w-4 h-4 mr-2 text-primary" />
@@ -544,7 +536,7 @@ const SupportPage: React.FC = () => {
               </ul>
             </div>
 
-            {/* Login Prompt */}
+            
             <div className="bg-surface border border-border rounded-xl p-6 text-center shadow-soft">
               <h4 className="font-medium dual-text mb-2">已有帳號？</h4>
               <p className="text-sm text-muted mb-4">
@@ -567,8 +559,11 @@ const SupportPage: React.FC = () => {
     );
   }
 
+<<<<<<< Updated upstream
   // 工單詳情視圖
   // 手機版：切換至獨立 MobileSupportDetailPage（混合式設計）
+=======
+>>>>>>> Stashed changes
   if (selectedTicket && isMobile) {
     return (
       <MobileSupportDetailPage
@@ -592,26 +587,39 @@ const SupportPage: React.FC = () => {
   }
 
   if (selectedTicket) {
+    if (isMobile) {
+      return (
+        <MobileSupportDetailPage
+          ticket={{
+            ticket_id: selectedTicket.ticket_id,
+            subject: selectedTicket.subject,
+            status: selectedTicket.status,
+            category: selectedTicket.category,
+            created_at: selectedTicket.created_at,
+            messages: selectedTicket.messages as any,
+          }}
+          newMessage={newMessage}
+          setNewMessage={setNewMessage}
+          sending={sendingMessage}
+          onSend={sendMessage}
+          onBack={goBack}
+          refreshing={refreshing}
+          onReload={() => loadTicketDetail(selectedTicket.id)}
+        />
+      )
+    }
     return (
       <PageLayout pathname="/support">
-          <div className="max-w-4xl mx-auto">
-            <PageHeader
-              title={`工單 #${selectedTicket.ticket_id}`}
-              subtitle={selectedTicket.subject}
-              showBackButton={true}
-              onBack={goBack}
-              isMobile={isMobile}
-              actions={
-                <Button
-                  variant="secondary"
-                  icon={<RefreshCw className="w-4 h-4" />}
-                  onClick={() => loadTicketDetail(selectedTicket.id)}
-                >
-                  重新載入
-                </Button>
-              }
-            />
+        <div className="max-w-4xl mx-auto">
+          
+          <div className="flex items-center justify-between px-4 sm:px-6 pt-4">
+            <button onClick={goBack} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-muted hover:text-fg hover:bg-surface-hover transition-colors">
+              <ArrowLeft className="w-4 h-4" /> 返回
+            </button>
+            <Button variant="secondary" size="sm" icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />} onClick={() => loadTicketDetail(selectedTicket.id)} disabled={refreshing}>重新載入</Button>
+          </div>
 
+<<<<<<< Updated upstream
             <div className="px-4 sm:px-6 py-6">
               {/* 工單資訊 */}
               <div className="bg-surface/70 backdrop-blur-md border border-border rounded-2xl p-6 mb-6">
@@ -624,13 +632,44 @@ const SupportPage: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1">
                     {selectedTicket.messages.length} 則訊息
+=======
+          <div className="px-4 sm:px-6 py-4">
+            
+            <div className="bg-surface border border-border rounded-lg p-4 mb-4">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className="font-mono text-lg font-bold text-primary">#{selectedTicket.ticket_id}</span>
+>>>>>>> Stashed changes
                   </div>
+                  <h1 className="text-xl font-bold">{selectedTicket.subject}</h1>
                 </div>
               </div>
+              {(() => {
+                const openedAt = new Date(selectedTicket.created_at).toLocaleString('zh-TW')
+                const userMsg = selectedTicket.messages.find(m => m.author_type === 'user')
+                const submitter = userMsg?.author_display_name || '—'
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted mt-2">
+                    <div className="flex items-center gap-2"><Tag className="w-4 h-4" /><span>分類：{selectedTicket.category}</span></div>
+                    <div className="flex items-center gap-2"><User className="w-4 h-4" /><span>提交者：{submitter}</span></div>
+                    <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>建立時間：{openedAt}</span></div>
+                  </div>
+                )
+              })()}
+            </div>
 
-              {/* 對話記錄 */}
-              <div className="space-y-4 mb-6">
+            
+            <div className="bg-surface border border-border rounded-lg">
+              <div className="p-4 border-b border-border">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  對話記錄 ({selectedTicket.messages.length})
+                </h2>
+              </div>
+              <div className="p-3 space-y-2">
                 {selectedTicket.messages.map((message) => (
+<<<<<<< Updated upstream
                   <div
                     key={message.id}
                     className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -651,6 +690,15 @@ const SupportPage: React.FC = () => {
                           ))}
                         </div>
                         <div className={`text-xs mt-2 leading-tight ${message.author_type === 'user' ? 'text-primary-foreground/80' : 'text-muted'}`}>
+=======
+                  <div key={message.id} className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className="max-w-[80%]">
+                      <div className={`${message.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border'} px-3 py-2 rounded-2xl`} style={{ maxWidth: '100%' }}>
+                        {message.body.split('\n').map((line, idx) => (
+                          <p key={idx} className={`text-sm ${message.author_type === 'user' ? 'text-primary-foreground' : 'text-fg'}`}>{line}</p>
+                        ))}
+                        <div className={`text-[11px] mt-1 leading-tight ${message.author_type === 'user' ? 'text-primary-foreground/80' : 'text-muted'}`}>
+>>>>>>> Stashed changes
                           <div className="font-medium">{message.author_display_name}</div>
                         </div>
                       </div>
@@ -659,60 +707,67 @@ const SupportPage: React.FC = () => {
                 ))}
               </div>
 
-              {/* 發送訊息 */}
+              
               {selectedTicket.status !== 'closed' && (
-                <div className="bg-surface/70 backdrop-blur-md border border-border rounded-2xl p-4">
-                  <div className="flex gap-3">
+                <div className="p-3 border-t border-border bg-surface/50">
+                  <div className="flex items-end gap-2">
                     <textarea
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
+                      onChange={(e) => {
+                        const el = e.target as HTMLTextAreaElement
+                        setNewMessage(el.value)
+                        el.style.height = 'auto'
+                        el.style.height = Math.min(el.scrollHeight, 240) + 'px'
+                      }}
                       placeholder="輸入您的回應..."
-                      rows={3}
-                      className="flex-1 px-4 py-3 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                      rows={1}
+                      className="flex-1 px-3 py-2 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none overflow-hidden leading-snug"
                     />
-                    <Button
-                      onClick={sendMessage}
-                      loading={sendingMessage}
-                      disabled={!newMessage.trim()}
-                      icon={<Send className="w-4 h-4" />}
-                    >
-                      發送
-                    </Button>
+                    <Button onClick={sendMessage} loading={sendingMessage} disabled={!newMessage.trim()} size="sm" icon={<Send className="w-4 h-4" />}>發送</Button>
                   </div>
                 </div>
               )}
             </div>
           </div>
+        </div>
       </PageLayout>
-    );
+    )
   }
 
-  // 工單列表視圖
   return (
     <PageLayout pathname="/support">
         <div className="min-h-screen">
-          {/* Mobile header mimic homepage */}
+          
           <div className="sm:hidden text-center py-2 mb-1">
             <div className="h-2" />
             <h1 className="text-3xl font-extrabold dual-text tracking-wide leading-tight">ForumKit</h1>
             <p className="text-base text-muted -mt-1">Support Center</p>
           </div>
 
-          {/* Compact Header - 操作列（桌面優先） */}
+          
           <div className="border-b border-border bg-surface/80 backdrop-blur-sm">
             <div className="max-w-7xl mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="hidden sm:block">
                   <h1 className="text-xl font-semibold dual-text">Support Center</h1>
                 </div>
+<<<<<<< Updated upstream
                 <div className="hidden sm:flex items-center gap-2">
+=======
+
+
+                
+                <div className="hidden sm:flex items-center gap-2 mt-3">
+>>>>>>> Stashed changes
                   <Button
                     variant="ghost"
                     size="sm"
                     icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />}
                     onClick={refreshTickets}
                     disabled={refreshing}
-                  />
+                  >
+                    重新整理
+                  </Button>
                   <Button
                     size="sm"
                     icon={<Plus className="w-4 h-4" />}
@@ -722,15 +777,6 @@ const SupportPage: React.FC = () => {
                   </Button>
                 </div>
 
-                {/* Inline Stats */}
-                {tickets.length > 0 && (
-                  <div className="hidden sm:flex items-center gap-6 mt-3 text-sm text-muted">
-                    <span>總共 <strong className="text-fg">{tickets.length}</strong> 個工單</span>
-                    <span>進行中 <strong className="text-yellow-600 dark:text-yellow-400">{tickets.filter(t => ['open', 'awaiting_user', 'awaiting_admin'].includes(t.status)).length}</strong></span>
-                    <span>已解決 <strong className="text-green-600 dark:text-green-400">{tickets.filter(t => t.status === 'resolved').length}</strong></span>
-                  </div>
-                )}
-
               </div>
             </div>
           </div>
@@ -738,7 +784,7 @@ const SupportPage: React.FC = () => {
 
 
           <div className="max-w-7xl mx-auto px-6 py-6">
-            {/* Compact Search & Filters */}
+            
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
               <div className="sm:w-2/3">
                 <div className="relative">
@@ -780,7 +826,11 @@ const SupportPage: React.FC = () => {
               </div>
             </div>
 
+<<<<<<< Updated upstream
             {/* Mobile: 新工單白色長形按鈕（置於篩選與列表之間） */}
+=======
+            
+>>>>>>> Stashed changes
             {isMobile && (
               <div className="mb-3">
                 <button
@@ -792,7 +842,11 @@ const SupportPage: React.FC = () => {
               </div>
             )}
 
+<<<<<<< Updated upstream
             {/* Table-like Ticket List */}
+=======
+            
+>>>>>>> Stashed changes
             <div className="bg-surface border border-border rounded-lg overflow-hidden shadow-soft">
               {loading ? (
                 <div className="p-8 text-center">
@@ -851,7 +905,11 @@ const SupportPage: React.FC = () => {
                   </div>
                 ) : (
                   <>
+<<<<<<< Updated upstream
                     {/* Table Header */}
+=======
+                    
+>>>>>>> Stashed changes
                     <div className="px-6 py-3 border-b border-border bg-surface/50">
                       <div className="grid grid-cols-12 gap-4 text-xs font-medium text-muted uppercase tracking-wide">
                         <div className="col-span-6">工單</div>
@@ -861,7 +919,11 @@ const SupportPage: React.FC = () => {
                       </div>
                     </div>
 
+<<<<<<< Updated upstream
                     {/* Table Body */}
+=======
+                    
+>>>>>>> Stashed changes
                     <div className="divide-y divide-border">
                       {filteredTickets.map((ticket, index) => (
                         <div
@@ -870,7 +932,11 @@ const SupportPage: React.FC = () => {
                           onClick={() => selectTicket(ticket.ticket_id || ticket.id)}
                         >
                           <div className="grid grid-cols-12 gap-4 items-center">
+<<<<<<< Updated upstream
                             {/* Ticket Info */}
+=======
+                            
+>>>>>>> Stashed changes
                             <div className="col-span-6">
                               <div className="flex items-start space-x-3">
                                 <div className="flex-1 min-w-0">
@@ -886,17 +952,29 @@ const SupportPage: React.FC = () => {
                               </div>
                             </div>
 
+<<<<<<< Updated upstream
                             {/* Status */}
+=======
+                            
+>>>>>>> Stashed changes
                             <div className="col-span-2 text-center">
                               <StatusBadge status={ticket.status} />
                             </div>
 
+<<<<<<< Updated upstream
                             {/* Category */}
+=======
+                            
+>>>>>>> Stashed changes
                             <div className="col-span-2 text-center">
                               <CategoryBadge category={ticket.category} />
                             </div>
 
+<<<<<<< Updated upstream
                             {/* Message Count */}
+=======
+                            
+>>>>>>> Stashed changes
                             <div className="col-span-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
                                 <MessageSquare className="w-4 h-4 text-muted" />

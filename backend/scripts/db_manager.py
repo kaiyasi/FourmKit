@@ -9,7 +9,6 @@ import sys
 import argparse
 from datetime import datetime
 
-# 添加父目錄到路徑
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.db_multi import db_service, DB_SERVICES, backup_all_databases
@@ -38,30 +37,24 @@ class DatabaseCLI:
         
         subparsers = parser.add_subparsers(dest='command', help='可用命令')
         
-        # status 命令
         status_parser = subparsers.add_parser('status', help='查看資料庫狀態')
         status_parser.add_argument('--detailed', '-d', action='store_true', help='顯示詳細資訊')
         
-        # init 命令
         init_parser = subparsers.add_parser('init', help='初始化資料庫')
         init_parser.add_argument('--force', '-f', action='store_true', help='強制重新初始化')
         
-        # backup 命令
         backup_parser = subparsers.add_parser('backup', help='備份資料庫')
         backup_parser.add_argument('--service', '-s', choices=list(DB_SERVICES.keys()), help='指定服務')
         backup_parser.add_argument('--output', '-o', default='./backups', help='備份輸出目錄')
         
-        # migrate 命令
         migrate_parser = subparsers.add_parser('migrate', help='從舊資料庫遷移')
         migrate_parser.add_argument('source', help='原始資料庫檔案路徑')
         migrate_parser.add_argument('--backup-first', action='store_true', help='遷移前先備份')
         
-        # cleanup 命令
         cleanup_parser = subparsers.add_parser('cleanup', help='清理舊備份')
         cleanup_parser.add_argument('--days', '-d', type=int, default=30, help='保留天數')
         cleanup_parser.add_argument('--backup-dir', default='./backups', help='備份目錄')
         
-        # info 命令
         info_parser = subparsers.add_parser('info', help='顯示資料庫架構資訊')
         
         return parser
@@ -125,14 +118,12 @@ class DatabaseCLI:
         os.makedirs(args.output, exist_ok=True)
         
         if args.service:
-            # 備份指定服務
             try:
                 backup_path = db_service.backup_database(args.service, args.output)
                 print(f"✅ 成功備份 {args.service}: {backup_path}")
             except Exception as e:
                 print(f"❌ 備份 {args.service} 失敗: {str(e)}")
         else:
-            # 備份所有資料庫
             backup_paths = backup_all_databases()
             print(f"✅ 成功備份 {len(backup_paths)} 個資料庫")
             
@@ -152,7 +143,6 @@ class DatabaseCLI:
             print("📦 遷移前先備份現有資料庫...")
             backup_all_databases()
         
-        # 導入遷移器
         from migrate_to_multi_db import DatabaseMigrator
         
         migrator = DatabaseMigrator()
@@ -200,7 +190,6 @@ class DatabaseCLI:
             self.parser.print_help()
             return
         
-        # 執行對應命令
         method_name = f"cmd_{args.command}"
         if hasattr(self, method_name):
             try:

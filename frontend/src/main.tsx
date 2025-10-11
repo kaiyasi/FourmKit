@@ -2,7 +2,6 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import './index.css'
-// 確保主題在應用啟動時即刻套用（不依賴 NavBar/ThemeToggle 出現）
 import './lib/theme'
 import './styles/markdown.css'
 import App from './utils/App'
@@ -18,7 +17,6 @@ import AdminUsersPage from './pages/admin/UsersPage'
 import AdminSchoolsPage from './pages/admin/SchoolsPage'
 import AdminIntegrationsPage from './pages/admin/IntegrationsPage'
 import AdminPagesEditor from './pages/admin/PagesEditor'
-// Instagram 整合系統
 import IGAccountManagementPage from './pages/admin/ig/AccountManagementPage'
 import IGPublishDashboardPage from './pages/admin/ig/PublishDashboardPage'
 import IGTemplateManagementPage from './pages/admin/ig/TemplateManagementPage'
@@ -26,15 +24,12 @@ import IGFontManagementPage from './pages/admin/ig/FontManagementPage'
 import IGQueueManagementPage from './pages/admin/ig/QueueManagementPage'
 import IGPostDetailPage from './pages/admin/ig/PostDetailPage'
 import IGAnalyticsPage from './pages/admin/ig/AnalyticsPage'
-// 聊天室功能已移除
 import AdminEventsPage from './pages/admin/EventsPage'
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage'
 import SupportCenterPage from './pages/admin/SupportCenterPage'
 import ServerStatusPage from './pages/admin/ServerStatusPage'
 import ProjectStatusPage from './pages/admin/ProjectStatusPage'
 import MemberManagementPage from './pages/admin/MemberManagementPage'
-// FontManagementPage 已移除
-// TokenManagementPage 已移除
 import ResponsiveSupportPage from './pages/ResponsiveSupportPage'
 import TicketTrackPage from './pages/TicketTrackPage'
 import AboutPage from './pages/AboutPage'

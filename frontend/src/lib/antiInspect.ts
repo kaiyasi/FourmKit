@@ -1,9 +1,9 @@
-/*
-  Simple anti-inspect deterrent for non-admin users.
-  - Blocks context menu and common devtools shortcuts
-  - Detects devtools open and shows overlay warning
-  - Opt-in via VITE_ANTI_INSPECT (default on)
-*/
+/**
+ *Simple anti-inspect deterrent for non-admin users.
+ *- Blocks context menu and common devtools shortcuts
+ *- Detects devtools open and shows overlay warning
+ *- Opt-in via VITE_ANTI_INSPECT (default on)
+ */
 
 type Options = {
   enabled?: boolean
@@ -43,7 +43,6 @@ function createOverlay(message: string) {
 }
 
 function isDevtoolsOpen(): boolean {
-  // Heuristic: large devtools panel width/height difference or time to eval debugger
   const threshold = 160
   const w = window.outerWidth - window.innerWidth
   const h = window.outerHeight - window.innerHeight
@@ -86,6 +85,9 @@ function isExempt(exemptRoles: string[]): boolean {
   } catch { return hasAdminCookie() }
 }
 
+/**
+ *
+ */
 export function initAntiInspect(opts: Options = {}) {
   const enabled = opts.enabled ?? (import.meta.env.VITE_ANTI_INSPECT !== '0')
   if (!enabled) return
@@ -93,14 +95,11 @@ export function initAntiInspect(opts: Options = {}) {
   const exemptRoles = opts.exemptRoles ?? ['dev_admin']
   if (isExempt(exemptRoles)) return
 
-  // 狀態：允許在獲得豁免後自動停用阻擋（避免你登入後仍被攔）
   let active = true
 
-  // Block context menu
   const onContext = (e: Event) => { if (!active) return; e.preventDefault() }
   window.addEventListener('contextmenu', onContext)
 
-  // Block common devtools shortcuts
   const onKeydown = (e: KeyboardEvent) => {
     if (!active) return
     const k = e.key.toLowerCase()
@@ -117,10 +116,8 @@ export function initAntiInspect(opts: Options = {}) {
   }
   window.addEventListener('keydown', onKeydown, { capture: true })
 
-  // Poll devtools open
   const interval = setInterval(() => {
     try {
-      // 若中途取得豁免（登入變 dev_admin 或獲得 cookie），自動解除阻擋
       if (isExempt(exemptRoles)) {
         active = false
         window.removeEventListener('contextmenu', onContext)

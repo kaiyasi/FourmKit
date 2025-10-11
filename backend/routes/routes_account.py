@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_account.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 import hmac, hashlib, base64, os
@@ -9,9 +13,9 @@ import os
 import json as _json
 from urllib.parse import urlparse
 try:
-    import redis  # type: ignore
-except Exception:  # pragma: no cover
-    redis = None  # type: ignore
+    import redis
+except Exception:
+    redis = None
 
 bp = Blueprint("account", __name__, url_prefix="/api/account")
 
@@ -20,7 +24,7 @@ bp = Blueprint("account", __name__, url_prefix="/api/account")
 @jwt_required()
 def get_profile():
     ident = get_jwt_identity()
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         u = s.get(User, int(ident)) if ident is not None else None
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
@@ -31,7 +35,6 @@ def get_profile():
                 auth_provider = 'google'
         except Exception:
             pass
-        # 生成穩定且無法反推的個人識別碼（亂碼顯示）
         try:
             secret = os.getenv('SECRET_KEY', 'forumkit-dev-secret')
             digest = hmac.new(secret.encode('utf-8'), str(u.id).encode('utf-8'), hashlib.sha256).digest()
@@ -64,11 +67,10 @@ def update_profile():
         return jsonify({ 'msg': '名稱至少 2 字' }), 400
     if not all(ch.isalnum() or ch in '-_.' for ch in new_name):
         return jsonify({ 'msg': '名稱限英數與 - _ .'}), 400
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         u = s.get(User, int(ident)) if ident is not None else None
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
-        # 唯一性
         other = s.query(User).filter(User.username==new_name, User.id!=u.id).first()
         if other:
             return jsonify({ 'msg': '名稱已被使用' }), 409
@@ -96,12 +98,43 @@ def upload_avatar():
         rel = os.path.relpath(out_path, start=root).replace('\\','/')
     except Exception as e:
         return jsonify({ 'msg': f'處理圖片失敗: {e}' }), 400
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         u = s.get(User, int(ident)) if ident is not None else None
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
         u.avatar_path = rel
         s.commit()
+    return jsonify({ 'ok': True, 'path': rel })
+
+
+@bp.post("/profile-card")
+@jwt_required()
+def upload_profile_card():
+    """上傳個人卡片預覽圖（Base64 Data URL），存入 CDN 公開目錄。
+    參數：{ image_data: 'data:image/png;base64,...' }
+    輸出：{ ok: true, path: 'public/profile_cards/<uid>/card.webp' }
+    """
+    ident = get_jwt_identity()
+    data = request.get_json(silent=True) or {}
+    data_url = str(data.get('image_data') or '').strip()
+    if not data_url.startswith('data:image/') or ';base64,' not in data_url:
+        return jsonify({ 'msg': '缺少或無效的 image_data' }), 400
+
+    try:
+        header, b64 = data_url.split(',', 1)
+        raw = base64.b64decode(b64)
+        from io import BytesIO
+        im = Image.open(BytesIO(raw))
+        im = im.convert('RGB')
+        root = os.getenv('UPLOAD_ROOT', 'uploads')
+        dirp = os.path.join(root, 'public', 'profile_cards', str(ident))
+        os.makedirs(dirp, exist_ok=True)
+        out_path = os.path.join(dirp, 'card.webp')
+        im.save(out_path, format='WEBP', quality=90, method=6)
+        rel = os.path.relpath(out_path, start=root).replace('\\','/')
+    except Exception as e:
+        return jsonify({ 'msg': f'處理圖片失敗: {e}' }), 400
+
     return jsonify({ 'ok': True, 'path': rel })
 
 
@@ -120,7 +153,6 @@ def get_user_webhook():
     except Exception:
         data = {}
     last = r.get(f'user:webhooks:last:{ident}')
-    # 預設 kinds：僅新貼文
     kinds = data.get('kinds') if isinstance(data.get('kinds'), dict) else { 'posts': True, 'comments': False, 'announcements': False }
     data['kinds'] = {
         'posts': bool(kinds.get('posts')),
@@ -141,7 +173,6 @@ def set_user_webhook():
     data = request.get_json(silent=True) or {}
     urlv = str(data.get('url') or '').strip()
     enabled = bool(data.get('enabled', True))
-    # kinds: { posts?:bool, comments?:bool, announcements?:bool }
     raw_kinds = data.get('kinds') or {}
     kinds = {
         'posts': bool(raw_kinds.get('posts', True)),
@@ -155,7 +186,6 @@ def set_user_webhook():
     if enabled:
         if not urlv:
             return jsonify({ 'ok': False, 'msg': '請輸入 Webhook URL' }), 400
-        # 基本格式檢查（允許 Discord/GH 等 https webhook）
         try:
             u = urlparse(urlv)
             if u.scheme not in {'http','https'} or not u.netloc:
@@ -163,7 +193,6 @@ def set_user_webhook():
         except Exception:
             return jsonify({ 'ok': False, 'msg': 'Webhook URL 格式無效' }), 400
 
-    # 綁定學校固定使用使用者的 school_id（前端不再自填 school_slug）
     payload = { 'url': urlv, 'enabled': enabled, 'kinds': kinds, 'batch': batch }
     r = redis.from_url(os.getenv('REDIS_URL','redis://redis:80/0'), decode_responses=True)
     r.hset('user:webhooks', str(ident), _json.dumps(payload))
@@ -192,7 +221,6 @@ def test_user_webhook():
     emb = build_embed('user_webhook_test', 'ForumKit 測試通知', 'Webhook 設定成功，將自動推送新貼文')
     res = post_discord(urlv, { 'content': None, 'embeds': [emb] })
     
-    # 提供更友好的錯誤訊息
     response = { 'ok': bool(res.get('ok')), 'status': res.get('status') }
     if not res.get('ok'):
         error = res.get('error', '未知錯誤')

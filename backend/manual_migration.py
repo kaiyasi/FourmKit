@@ -17,7 +17,6 @@ def run_manual_migration():
     """手動運行遷移"""
     try:
         with get_session() as db:
-            # 檢查並添加 use_unified_templates 欄位
             try:
                 result = db.execute(text("""
                     SELECT column_name FROM information_schema.columns 
@@ -37,7 +36,6 @@ def run_manual_migration():
             except Exception as e:
                 logger.warning(f"添加 use_unified_templates 欄位時出錯: {e}")
             
-            # 檢查並添加 default_unified_template_id 欄位
             try:
                 result = db.execute(text("""
                     SELECT column_name FROM information_schema.columns 
@@ -57,7 +55,6 @@ def run_manual_migration():
             except Exception as e:
                 logger.warning(f"添加 default_unified_template_id 欄位時出錯: {e}")
             
-            # 檢查是否需要創建統一模板表（暫時跳過，避免複雜性）
             try:
                 result = db.execute(text("""
                     SELECT table_name FROM information_schema.tables 

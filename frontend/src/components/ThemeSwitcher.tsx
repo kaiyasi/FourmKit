@@ -10,6 +10,9 @@ const THEMES: { key: ThemeName; label: string }[] = [
   { key: 'dark',    label: '灰黑' },
 ]
 
+/**
+ *
+ */
 export function ThemeSwitcher(){
   const [theme, setTheme] = useState(loadTheme().theme)
   useEffect(()=>{ applyTheme(theme, true) }, [theme])
@@ -28,7 +31,7 @@ export function ThemeSwitcher(){
       >
         {THEMES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
       </select>
-      {/* 已移除深/淺色切換，僅保留主題選擇 */}
+      
     </div>
   )
 }

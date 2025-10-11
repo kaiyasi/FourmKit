@@ -6,8 +6,10 @@ interface ErrorBoxProps {
 	className?: string;
 }
 
+/**
+ *
+ */
 export function ErrorBox({ message, title = "發生錯誤", className = "" }: ErrorBoxProps) {
-	// 確保 message 是字串
 	const safeMessage = typeof message === 'string' 
 		? message 
 		: message && typeof message === 'object' && 'message' in (message as any)

@@ -36,10 +36,18 @@ import { FilterBar } from '@/components/support/admin/FilterBar';
 import TicketList from '@/components/support/admin/TicketList';
 import { StatusBadge, CategoryBadge } from '@/components/support/SupportComponents';
 
+<<<<<<< Updated upstream
 // ... (其他導入)
 
 function AdminSupportPageNew() {
   // ... (其他狀態)
+=======
+
+/**
+ *
+ */
+function AdminSupportPageNew() {
+>>>>>>> Stashed changes
   const [filters, setFilters] = useState({
     page: 1,
     per_page: 50,
@@ -52,7 +60,6 @@ function AdminSupportPageNew() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [showTicketActions, setShowTicketActions] = useState(false);
   
-  // 響應式檢測
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   
   useEffect(() => {
@@ -61,15 +68,12 @@ function AdminSupportPageNew() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 從 URL 參數讀取選中的工單
   const selectedTicketId = searchParams.get('ticket');
 
-  // 載入數據
   useEffect(() => {
     loadData();
   }, [filters.page, filters.per_page, filters.status, filters.category, filters.priority, filters.assignee]);
 
-  // 載入選中的工單詳情
   useEffect(() => {
     if (selectedTicketId) {
       loadTicketDetail(selectedTicketId);
@@ -78,15 +82,12 @@ function AdminSupportPageNew() {
     }
   }, [selectedTicketId]);
 
-  // 即時事件：刷新列表或當前詳情，並處理提及通知
   useAdminSupportSocket((ev) => {
     try {
-      // 提及通知邏輯
       if (ev.event_type === 'message_sent' && ev.payload && user) {
         const messageBody = ev.payload.body || '';
         const authorUserId = ev.payload.author_user_id;
         
-        // 檢查是否提及當前用戶，且不是自己提及自己
         if (authorUserId !== user.id) {
           const mentionPattern = new RegExp(`@${user.username}\b`, 'i');
           if (mentionPattern.test(messageBody)) {
@@ -96,12 +97,9 @@ function AdminSupportPageNew() {
         }
       }
 
-      // 更新工單列表或詳情
       if (selectedTicket && ev.ticket_id === selectedTicket.ticket_id) {
         loadTicketDetail(selectedTicket.id);
       } else {
-        // 優化：僅在列表可見時刷新，或根據事件類型決定是否刷新
-        // 為簡化，暫時保留原邏輯
         loadTickets();
       }
     } catch (e) {
@@ -120,13 +118,11 @@ function AdminSupportPageNew() {
       if (filters.search) params.set('q', filters.search);
       if (filters.status && filters.status !== 'all') params.set('status', filters.status);
       if (filters.category && filters.category !== 'all') params.set('category', filters.category);
-      // 這裡暫不傳 priority/assignee（保持前端篩選），僅做最小修復
       const limit = filters.per_page || 20; const page = filters.page || 1;
       params.set('limit', String(limit));
       params.set('offset', String((page - 1) * limit));
       const resp = await api<any>(`/api/admin/support/tickets?${params.toString()}`);
       if (resp?.ok && Array.isArray(resp.tickets)) {
-        // 後端欄位 public_id/id 混用，這裡做基本映射以符合現有 UI 使用
         const list = resp.tickets.map((t: any) => ({
           id: t.public_id || t.id,
           ticket_id: t.public_id || t.id,
@@ -189,7 +185,6 @@ function AdminSupportPageNew() {
     setRefreshing(false);
   };
 
-  // 篩選工單
   const filteredTickets = tickets.filter(ticket => {
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
@@ -250,7 +245,6 @@ function AdminSupportPageNew() {
         await Promise.all([loadTicketDetail(selectedTicket.id), loadData()]);
         setShowTicketActions(false);
         
-        // 顯示成功通知
         showNotification('工單狀態已更新');
       }
     } catch (error) {
@@ -293,9 +287,7 @@ function AdminSupportPageNew() {
     }));
   };
 
-  // 使用共用的 StatusBadge / PriorityBadge / CategoryBadge（來自 SupportComponents）
 
-  // 統計卡片組件 - 採用審核管理的風格
   const StatsCard = ({ title, value, color, icon: Icon, description }: { 
     title: string; 
     value: number; 
@@ -315,7 +307,6 @@ function AdminSupportPageNew() {
     </div>
   );
 
-  // 工單操作菜單
   const TicketActionsMenu = () => (
     <div className="absolute right-0 top-full mt-2 w-56 bg-surface border border-border rounded-xl shadow-lg z-50 py-2">
       <div className="px-4 py-2 text-sm font-medium text-muted border-b border-border">
@@ -357,14 +348,13 @@ function AdminSupportPageNew() {
     </div>
   );
 
-  // 工單詳情視圖
   if (selectedTicket) {
     return (
       <div className="min-h-screen bg-bg">
         <NavBar pathname="/admin/support" />
         <div className="page-content">
           <div className="max-w-7xl mx-auto px-4 py-6">
-            {/* 返回按鈕和標題 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
               <div className="flex items-center gap-3 mb-2">
                 <button
@@ -402,9 +392,9 @@ function AdminSupportPageNew() {
               </div>
             </div>
 
-            {/* 主內容區域 */}
+            
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 對話區域 */}
+              
               <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h2 className="text-lg font-semibold text-fg flex items-center gap-2 mb-4">
                   <MessageSquare className="w-5 h-5" />
@@ -439,7 +429,7 @@ function AdminSupportPageNew() {
                   ))}
                 </div>
 
-                {/* 發送訊息 */}
+                
                 {selectedTicket.status !== 'closed' && (
                   <div className="p-4 bg-surface-hover rounded-lg">
                     <div className="flex gap-3">
@@ -463,9 +453,9 @@ function AdminSupportPageNew() {
                 )}
               </div>
 
-              {/* 資訊側欄 */}
+              
               <div className="space-y-6">
-                {/* 工單資訊 */}
+                
                 <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                   <h3 className="text-lg font-semibold text-fg mb-4">工單資訊</h3>
                   <div className="space-y-4">
@@ -498,7 +488,7 @@ function AdminSupportPageNew() {
                   </div>
                 </div>
 
-                {/* 用戶資訊 */}
+                
                 {selectedTicket.user_info && (
                   <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                     <h3 className="text-lg font-semibold text-fg mb-4">用戶資訊</h3>
@@ -541,13 +531,12 @@ function AdminSupportPageNew() {
     );
   }
 
-  // 工單列表視圖 - 採用審核管理的布局風格
   return (
     <div className="min-h-screen bg-bg">
       <NavBar pathname="/admin/support" />
       <div className="page-content">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          {/* 頁面標題 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
             <div className="flex items-center justify-between">
               <div>
@@ -571,7 +560,7 @@ function AdminSupportPageNew() {
             </div>
           </div>
 
-          {/* Queue 分頁 + 統計概覽（簡化） */}
+          
           {stats && (
             <div className="mb-6">
               <div className="mb-4">
@@ -608,7 +597,7 @@ function AdminSupportPageNew() {
             </div>
           )}
 
-          {/* FilterBar */}
+          
           <div className="mb-4">
             <FilterBar
               search={filters.search}
@@ -624,9 +613,9 @@ function AdminSupportPageNew() {
             />
           </div>
 
-          {/* 主內容區域 */}
+          
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* 工單列表 */}
+            
             <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -645,9 +634,9 @@ function AdminSupportPageNew() {
               )}
             </div>
 
-            {/* 統計和快速操作側欄 */}
+            
             <div className="space-y-6">
-              {/* 快速統計 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">快速統計</h3>
                 <div className="space-y-4">
@@ -681,7 +670,7 @@ function AdminSupportPageNew() {
                 </div>
               </div>
 
-              {/* 快速操作 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">快速操作</h3>
                 <div className="space-y-3">
@@ -716,6 +705,6 @@ function AdminSupportPageNew() {
       {isMobile && <MobileBottomNav />}
     </div>
   );
-};
+}
 
 export default AdminSupportPageNew;

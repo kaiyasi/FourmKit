@@ -37,7 +37,6 @@ export function PlatformPageLayout({
 }: PlatformPageLayoutProps) {
   const { isMobile, isTablet, isDesktop } = usePlatform()
   
-  // 根據平台選擇樣式
   let responsiveClassName = className
   let responsiveMaxWidth = maxWidth
   
@@ -54,12 +53,12 @@ export function PlatformPageLayout({
 
   return (
     <div className="min-h-screen min-h-dvh">
-      {/* 平台特定導航 */}
+      
       {showNavigation && (
         <PlatformNavigation pathname={pathname} {...navigationProps} />
       )}
       
-      {/* 頁面內容 */}
+      
       <main className={`mx-auto ${responsiveMaxWidth} px-3 sm:px-4 md:px-6 page-content ${responsiveClassName}`}>
         {children}
       </main>

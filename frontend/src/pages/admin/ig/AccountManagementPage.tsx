@@ -15,7 +15,6 @@ const AccountManagementPage: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleEdit = async (account: any) => {
-    // 獲取完整的帳號資訊（包含 has_access_token 和 has_app_secret）
     try {
       const response = await fetch(`/api/admin/ig/accounts/${account.id}`, {
         headers: {
@@ -60,7 +59,7 @@ const AccountManagementPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -88,7 +87,7 @@ const AccountManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 表單或列表 */}
+        
         {showForm ? (
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <div className="flex items-center justify-between mb-4">

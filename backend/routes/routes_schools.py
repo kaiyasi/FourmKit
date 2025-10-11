@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_schools.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import Blueprint, jsonify, request
 from utils.db import get_session
 from models import School, User, Post, Media, SchoolSetting, Comment
@@ -12,12 +16,12 @@ import json
 import secrets
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
-from utils.oauth_google import derive_school_slug_from_domain, check_school_domain  # noqa: F401  # 可能未用到
+from utils.oauth_google import derive_school_slug_from_domain, check_school_domain
 from pathlib import Path
 
 
 ALLOWED_LOGO_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.svg'}
-MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024  # 5MB 安全上限
+MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024
 
 bp = Blueprint("schools", __name__, url_prefix="/api/schools")
 
@@ -41,7 +45,6 @@ def _relative_to_root(target: Path, root: Path) -> str:
     try:
         return target.resolve().relative_to(root).as_posix()
     except Exception:
-        # 若發生任何奇怪的路徑錯誤，退回一般化處理
         rel = os.path.relpath(target.resolve(), root)
         return Path(rel).as_posix()
 
@@ -78,7 +81,6 @@ def _save_logo_variants(data: bytes, directory: Path, base_name: str) -> str:
                 img.save(webp_path, format='WEBP', quality=90)
                 primary = f"{name}.webp"
         except Exception:
-            # 轉檔失敗時保留原檔
             pass
     return primary
 
@@ -162,7 +164,7 @@ def _log_unauthorized(actor: User | None, action: str, slug_or_id: str | int | N
 @jwt_required(optional=True)
 def get_school_settings(slug: str):
     """取得某校設定。未登入允許讀取（僅公開內容），但目前返回整包 JSON，前端自行控制。"""
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
             return jsonify({'msg': 'not found'}), 404
@@ -179,7 +181,6 @@ def update_school_settings(slug: str):
     """更新某校設定。校內管理員僅能更新自己學校；dev_admin 無限制。"""
     data = request.get_json(silent=True) or {}
     try:
-        # 僅允許 JSON 物件或 JSON 字串
         if isinstance(data, str):
             json.loads(data)  # 驗證字串是有效 JSON
             payload = data
@@ -193,11 +194,9 @@ def update_school_settings(slug: str):
         if not sch:
             return jsonify({'msg': 'not found'}), 404
 
-        # 權限：campus_moderator 必須同校；dev_admin 無限制
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid else None
         
-        # 詳細除錯資訊
         debug_info = {
             'user_id': actor.id if actor else None,
             'user_role': actor.role if actor else None,
@@ -208,7 +207,6 @@ def update_school_settings(slug: str):
         }
         print(f"[DEBUG] 學校設定更新權限檢查: {debug_info}")
         
-        # 權限檢查：campus_moderator 和 campus_admin 只能編輯自己學校的設定
         if actor and (actor.role == 'campus_moderator' or actor.role == 'campus_admin'):
             if not actor.school_id or int(actor.school_id) != int(sch.id):
                 debug_msg = f"權限檢查失敗: user_id={actor.id}, user_role={actor.role}, user_school_id={actor.school_id}, target_school_id={sch.id}, slug={slug}"
@@ -227,7 +225,6 @@ def update_school_settings(slug: str):
             row.data = payload
         s.commit()
 
-        # 紀錄系統事件（best-effort）
         try:
             actor_user = None
             actor_name = None
@@ -259,12 +256,10 @@ def update_school_settings(slug: str):
 
 @bp.get("")
 def list_schools():
-    # Logo 處理器功能已停用，使用基本邏輯
     with get_session() as s:  # type: Session
         rows = s.query(School).order_by(School.slug.asc()).all()
         items = []
         for x in rows:
-            # 直接使用路徑，不經過 logo_handler
             url = None
             if getattr(x, 'logo_path', None):
                 url = f"/uploads/{x.logo_path}" if not x.logo_path.startswith('/') else x.logo_path
@@ -307,7 +302,6 @@ def update_school(sid: int):
     name = (data.get('name') or '').strip()
     new_slug = (data.get('slug') or '').strip().lower()
 
-    # slug 驗證（若要更新）
     if new_slug:
         if not all(ch.isalnum() or ch in '-_' for ch in new_slug):
             return jsonify({'msg': 'slug 僅能包含英數與 - _'}), 400
@@ -324,11 +318,9 @@ def update_school(sid: int):
                 _log_unauthorized(actor, 'update_school', sid)
                 return jsonify({'msg': '僅能修改所屬學校'}), 403
 
-        # 名稱更新
         if name:
             sch.name = name
 
-        # 代碼(slug)更新：需唯一
         if new_slug and new_slug != sch.slug:
             exists = s.query(School).filter(School.slug == new_slug).first()
             if exists:
@@ -344,12 +336,11 @@ def update_school(sid: int):
 @require_role("dev_admin")
 def delete_school(sid: int):
     """刪除學校：預設需無關聯。若 ?force=1，會清除關聯貼文/媒體/留言，並將使用者 school_id 置空。"""
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         sch = s.get(School, sid)
         if not sch:
             return jsonify({'msg': 'not found'}), 404
 
-        # 檢查關聯
         has_user = s.query(User).filter(User.school_id == sid).first() is not None
         has_post = s.query(Post).filter(Post.school_id == sid).first() is not None
         has_media = s.query(Media).filter(Media.school_id == sid).first() is not None
@@ -359,7 +350,6 @@ def delete_school(sid: int):
             return jsonify({'msg': '存在關聯資料，無法刪除（可加 ?force=1 強制）'}), 409
 
         if force:
-            # 1) 先清除與該校相關的貼文/媒體/留言
             try:
                 post_ids = [pid for (pid,) in s.query(Post.id).filter(Post.school_id == sid).all()]
                 if post_ids:
@@ -368,17 +358,14 @@ def delete_school(sid: int):
                     s.query(Post).filter(Post.id.in_(post_ids)).delete(synchronize_session=False)
             except Exception:
                 pass
-            # 2) 使用者 school 綁定解除
             try:
                 s.query(User).filter(User.school_id == sid).update({User.school_id: None})
             except Exception:
                 pass
 
-        # 刪除資料列
         s.delete(sch)
         s.commit()
 
-        # 嘗試移除校徽檔案夾（best-effort）
         try:
             root = os.getenv("UPLOAD_ROOT", "uploads")
             dirp = os.path.join(root, "public", "schools", str(sid))
@@ -434,7 +421,6 @@ def upload_school_logo(sid: int):
                 _log_unauthorized(actor, 'upload_school_logo', sid)
                 return jsonify({'msg': '僅能修改所屬學校的校徽'}), 403
 
-        # 清理舊檔，儲存新版
         _purge_existing_files(school_dir, 'logo.')
         primary_name = _save_logo_variants(data, school_dir, f"logo{ext}")
         relative_path = _relative_to_root(school_dir / primary_name, upload_root)
@@ -546,7 +532,6 @@ def admin_list():
             if sch:
                 setting_row = s.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
                 setting_data = _settings_dict(setting_row)
-                # Logo 處理器功能已停用，使用基本 URL
                 url = None
                 if getattr(sch, 'logo_path', None):
                     url = f"/uploads/{sch.logo_path}" if not sch.logo_path.startswith('/') else sch.logo_path
@@ -561,7 +546,6 @@ def admin_list():
                 })
             return jsonify({'items': items})
         rows = s.query(School).order_by(School.slug.asc()).all()
-        # Logo 處理器功能已停用，使用基本 URL
         school_ids = [x.id for x in rows]
         settings_rows = []
         if school_ids:
@@ -590,7 +574,7 @@ def admin_list():
 @require_role('dev_admin', 'campus_admin')
 def admin_overview(slug: str):
     """學校管理總覽（統計＋偵測回饋）"""
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
             return jsonify({'msg': 'not found'}), 404
@@ -602,10 +586,8 @@ def admin_overview(slug: str):
                 _log_unauthorized(actor, 'admin_overview', slug)
                 return jsonify({'msg': '僅能檢視自己學校'}), 403
 
-        # 總數
         users_total = s.query(func.count(User.id)).filter(User.school_id == sch.id).scalar() or 0
         posts_total = s.query(func.count(Post.id)).filter(Post.school_id == sch.id).scalar() or 0
-        # join Comment 計算該校貼文下的留言量
         comments_total = (
             s.query(func.count(Comment.id))
             .join(Post, Comment.post_id == Post.id)
@@ -619,7 +601,6 @@ def admin_overview(slug: str):
             .scalar() or 0
         )
 
-        # 期間統計（今日/本週/本月）
         now = datetime.now(timezone.utc)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=today_start.weekday())
@@ -680,7 +661,6 @@ def admin_overview(slug: str):
             },
         }
 
-        # 校內 vs 跨校發文比例（作者學校==本校 為校內）
         campus_posts = 0
         cross_posts = 0
         try:
@@ -698,7 +678,6 @@ def admin_overview(slug: str):
         except Exception:
             pass
 
-        # Email 網域分佈（前 5 名）
         domain_counts: dict[str, int] = {}
         top_domains: list[tuple[str, int]] = []
         try:
@@ -718,7 +697,6 @@ def admin_overview(slug: str):
         gmail_count = domain_counts.get('gmail.com', 0)
         edu_count = sum(cnt for dom, cnt in domain_counts.items() if ('.edu' in dom))
 
-        # 偵測推導 slug（取最多數網域作為樣本）
         suggested_from_domain = None
         if top_domains:
             try:
@@ -836,7 +814,6 @@ def list_school_domains(slug: str):
         sch = s.query(School).filter(School.slug == slug).first()
         if not sch:
             return jsonify({'msg': 'not found'}), 404
-        # 權限：campus_admin 僅能操作自己學校
         uid = get_jwt_identity()
         actor = s.get(User, int(uid)) if uid is not None else None
         if actor and actor.role == 'campus_admin' and (not actor.school_id or int(actor.school_id) != int(sch.id)):
@@ -852,7 +829,6 @@ def list_school_domains(slug: str):
         allowed = data.get('allowed_domains') if isinstance(data, dict) else None
         if not isinstance(allowed, list):
             allowed = []
-        # 僅回傳字串陣列
         out = [x for x in allowed if isinstance(x, str)]
         return jsonify({'items': out})
 

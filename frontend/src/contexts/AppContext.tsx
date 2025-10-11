@@ -1,7 +1,9 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 
-// Define the structure of the IP blocked error information
+/**
+ *
+ */
 export interface IpBlockedError {
   code: 'IP_BLOCKED';
   title: string;
@@ -26,6 +28,9 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+/**
+ *
+ */
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ipBlockedInfo, setIpBlockedInfo] = useState<IpBlockedError | null>(null);
 
@@ -48,6 +53,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ *
+ */
 export function useAppContext() {
   const context = useContext(AppContext);
   if (context === undefined) {

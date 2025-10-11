@@ -38,12 +38,10 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
     fetchFonts();
   }, [filter]);
 
-  // 動態載入字體並檢測載入狀態
   useEffect(() => {
     if (fonts.length === 0) return;
 
     fonts.forEach(font => {
-      // 注入 @font-face CSS
       const fontFaceRule = `
         @font-face {
           font-family: '${font.font_family}';
@@ -53,7 +51,6 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
         }
       `;
 
-      // 檢查是否已存在該字體的 style 標籤
       let styleElement = document.getElementById(`font-${font.id}`);
       if (!styleElement) {
         styleElement = document.createElement('style');
@@ -62,18 +59,14 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
         document.head.appendChild(styleElement);
       }
 
-      // 檢測字體載入狀態
       const checkFont = async () => {
         try {
           setFontLoadStatus(prev => ({ ...prev, [font.id]: 'loading' }));
 
-          // 等待字體載入
           await document.fonts.load(`16px "${font.font_family}"`);
 
-          // 短暫延遲確保字體渲染完成
           await new Promise(resolve => setTimeout(resolve, 100));
 
-          // 檢查是否真的載入成功
           const isLoaded = document.fonts.check(`16px "${font.font_family}"`);
 
           setFontLoadStatus(prev => ({
@@ -92,7 +85,6 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
       checkFont();
     });
 
-    // 清理函數：移除注入的 style 標籤
     return () => {
       fonts.forEach(font => {
         const styleElement = document.getElementById(`font-${font.id}`);
@@ -149,7 +141,7 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
 
   return (
     <div className="space-y-4">
-      {/* 過濾器 */}
+      
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setFilter('all')}
@@ -183,7 +175,7 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
         </button>
       </div>
 
-      {/* 字體列表 */}
+      
       {fonts.length === 0 ? (
         <div className="text-center py-8 text-muted">沒有找到字體</div>
       ) : (
@@ -193,7 +185,7 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
               key={font.id}
               className="border border-border rounded-lg p-4 hover:border-primary transition-colors"
             >
-              {/* 字體預覽 */}
+              
               <div className="mb-3 p-4 bg-surface-hover rounded text-center">
                 {fontLoadStatus[font.id] === 'loading' && (
                   <div className="text-sm text-muted py-2">載入中...</div>
@@ -221,12 +213,12 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
                 )}
               </div>
 
-              {/* 字體資訊 */}
+              
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg">{font.display_name}</h3>
                   <div className="flex gap-2 items-center flex-wrap">
-                    {/* 語言支援標籤 */}
+                    
                     {font.is_chinese_supported && (
                       <span className="px-2 py-1 bg-success-bg text-success-text text-xs rounded">
                         中文
@@ -235,11 +227,11 @@ const FontList: React.FC<FontListProps> = ({ onEdit }) => {
                     <span className="px-2 py-1 bg-info-bg text-info-text text-xs rounded">
                       英文
                     </span>
-                    {/* 作用範圍標籤 */}
+                    
                     <span className="px-2 py-1 bg-surface-hover text-muted text-xs rounded border border-border">
                       {font.scope === 'global' ? '全域' : '學校'}
                     </span>
-                    {/* 編輯按鈕 */}
+                    
                     {isDevAdmin && onEdit && (
                       <button
                         onClick={() => onEdit(font)}

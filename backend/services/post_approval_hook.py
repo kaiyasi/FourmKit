@@ -1,4 +1,7 @@
-# backend/services/post_approval_hook.py
+"""
+Module: backend/services/post_approval_hook.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 """
 貼文審核通過鉤子
 當論壇貼文狀態變為 'approved' 時觸發 Instagram 自動發布
@@ -41,7 +44,6 @@ class PostApprovalHook:
         try:
             logger.info(f"[Post Approval Hook] 貼文 {forum_post.id} 審核通過")
 
-            # 檢查是否符合自動發布條件
             if not self._should_auto_publish(forum_post):
                 return {
                     'success': True,
@@ -50,7 +52,6 @@ class PostApprovalHook:
                 }
 
             with get_session() as db:
-                # 1. 獲取對應的 Instagram 帳號
                 account = self._get_account(db, forum_post)
                 if not account:
                     logger.warning(f"[Post Approval Hook] 貼文 {forum_post.id} 找不到對應的 Instagram 帳號")
@@ -60,10 +61,8 @@ class PostApprovalHook:
                         'reason': '找不到對應的 Instagram 帳號'
                     }
 
-                # 2. 確定發布模式和模板類型
                 publish_mode, template_type = self._determine_publish_mode(db, forum_post)
 
-                # 3. 選擇模板
                 template = self._get_template(db, forum_post.school_id, template_type)
                 if not template:
                     logger.warning(f"[Post Approval Hook] 找不到合適的模板（school_id={forum_post.school_id}, type={template_type}）")
@@ -73,7 +72,6 @@ class PostApprovalHook:
                         'reason': f'找不到 {template_type} 類型的模板'
                     }
 
-                # 4. 建立 InstagramPost 記錄
                 ig_post = InstagramPost(
                     public_id=_generate_public_id(),
                     forum_post_id=forum_post.id,
@@ -81,7 +79,7 @@ class PostApprovalHook:
                     template_id=template.id,
                     status=PostStatus.PENDING,
                     publish_mode=publish_mode,
-                    scheduled_at=None  # 排程時間由發布服務設定
+                    scheduled_at=None
                 )
 
                 db.add(ig_post)
@@ -109,24 +107,19 @@ class PostApprovalHook:
         """
         檢查貼文是否符合自動發布條件
         """
-        # 基本條件檢查
         if not forum_post:
             return False
 
-        # 檢查貼文狀態
         if forum_post.status != 'approved':
             return False
 
-        # 檢查是否已被刪除
         if getattr(forum_post, 'is_deleted', False):
             return False
 
-        # 排除廣告貼文
         if getattr(forum_post, 'is_advertisement', False):
             logger.info(f"[Post Approval Hook] 貼文 {forum_post.id} 為廣告貼文，跳過")
             return False
 
-        # 檢查內容基本要求
         if not forum_post.content or not forum_post.content.strip():
             logger.info(f"[Post Approval Hook] 貼文 {forum_post.id} 內容為空")
             return False
@@ -142,7 +135,6 @@ class PostApprovalHook:
             InstagramAccount.is_active == True
         )
 
-        # 優先選擇學校專屬帳號
         if forum_post.school_id:
             school_account = query.filter(
                 InstagramAccount.school_id == forum_post.school_id
@@ -151,7 +143,6 @@ class PostApprovalHook:
             if school_account:
                 return school_account
 
-        # 回退到全域帳號
         global_account = query.filter(
             InstagramAccount.school_id.is_(None)
         ).first()
@@ -166,14 +157,11 @@ class PostApprovalHook:
         - 公告類型貼文 → instant + announcement 模板（檢查 post.announcement_type）
         - 一般貼文 → 根據發布設定決定（batch/scheduled）+ general 模板
         """
-        # 檢查貼文是否為公告類型（使用 Post.announcement_type 欄位）
         is_announcement = getattr(forum_post, 'announcement_type', None) is not None
 
         if is_announcement:
             return PublishMode.INSTANT, TemplateType.ANNOUNCEMENT
         else:
-            # 一般貼文：預設使用批次發布
-            # TODO: 未來可以從學校設定讀取發布策略
             return PublishMode.BATCH, TemplateType.GENERAL
 
     def _get_template(self, db, school_id: Optional[int], template_type: TemplateType) -> Optional[IGTemplate]:
@@ -186,7 +174,6 @@ class PostApprovalHook:
             IGTemplate.template_type == template_type
         )
 
-        # 優先選擇學校專屬模板
         if school_id:
             school_template = query.filter(
                 IGTemplate.school_id == school_id
@@ -195,7 +182,6 @@ class PostApprovalHook:
             if school_template:
                 return school_template
 
-        # 回退到全域模板
         global_template = query.filter(
             IGTemplate.school_id.is_(None)
         ).first()
@@ -203,7 +189,6 @@ class PostApprovalHook:
         return global_template
 
 
-# 全域鉤子實例
 post_approval_hook = PostApprovalHook()
 
 def trigger_auto_publish_on_approval(forum_post: ForumPost) -> Dict[str, Any]:

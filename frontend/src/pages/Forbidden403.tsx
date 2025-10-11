@@ -1,6 +1,9 @@
 import { ShieldAlert, Home, ArrowLeft } from 'lucide-react'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
+/**
+ *
+ */
 export default function Forbidden403() {
   return (
     <div className="min-h-screen grid place-items-center p-6 pb-24">

@@ -1,10 +1,18 @@
-// src/utils/tickets.ts
+/**
+ *
+ */
 export type Delivery = "discord" | "local_only" | string | undefined;
 
+/**
+ *
+ */
 export async function parseJsonSafe(res: Response) {
   try { return await res.json(); } catch { return {}; }
 }
 
+/**
+ *
+ */
 export function extractTicket(res: Response, data: any) {
   return (
     res.headers.get("X-ForumKit-Ticket") ||
@@ -13,6 +21,9 @@ export function extractTicket(res: Response, data: any) {
   );
 }
 
+/**
+ *
+ */
 export function statusUI(delivery: Delivery, ok: boolean) {
   if (ok && delivery === "discord") {
     return { tone: "success" as const, title: "已送出", desc: "已送達通知管道" };
@@ -23,6 +34,9 @@ export function statusUI(delivery: Delivery, ok: boolean) {
   return { tone: "error" as const, title: "送出失敗", desc: "請稍後重試或回報" };
 }
 
+/**
+ *
+ */
 export function pushRecentTicket(entry: { id: string; kind: string; ts?: number; note?: string }) {
   const key = "forumkit_recent_tickets";
   const now = Date.now();

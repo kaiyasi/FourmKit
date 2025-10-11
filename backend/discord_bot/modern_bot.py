@@ -9,7 +9,6 @@ import sys
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-# 添加父目錄到路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import discord
@@ -20,10 +19,8 @@ from ui_components import TerminalEmbed
 from config import init_config
 from dotenv import load_dotenv
 
-# 載入環境變數
 load_dotenv()
 
-# 設置日誌
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,7 +36,6 @@ class ForumKitBot(commands.Bot):
     """ForumKit Discord Bot 主類別"""
     
     def __init__(self, **kwargs):
-        # 設置所需的 intents
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
@@ -61,11 +57,9 @@ class ForumKitBot(commands.Bot):
         logger.info("正在設置 Bot...")
         
         try:
-            # 載入斜線指令 cog
             await self.load_extension('slash_commands')
             logger.info("✅ 斜線指令 Cog 載入成功")
             
-            # 檢查指令樹內容
             commands = self.tree.get_commands()
             logger.info(f"📋 指令樹中有 {len(commands)} 個指令")
             for cmd in commands:
@@ -83,11 +77,9 @@ class ForumKitBot(commands.Bot):
         try:
             logger.info("🔄 開始同步斜線指令...")
             
-            # 全域同步
             synced_global = await self.tree.sync()
             logger.info(f"✅ 全域同步: {len(synced_global)} 個指令")
             
-            # 為每個伺服器同步
             for guild in self.guilds:
                 try:
                     synced_guild = await self.tree.sync(guild=guild)
@@ -107,30 +99,24 @@ class ForumKitBot(commands.Bot):
         logger.info(f'🆔 Bot ID: {self.user.id}')
         logger.info(f'🌐 已連接到 {len(self.guilds)} 個伺服器')
         
-        # 設置 Bot 狀態
         activity = discord.Activity(
             type=discord.ActivityType.watching,
             name=self.config.get('activity_name', 'ForumKit 管理')
         )
         await self.change_presence(activity=activity)
         
-        # 載入完成後顯示伺服器資訊
         for guild in self.guilds:
             logger.info(f"  📍 {guild.name} (ID: {guild.id}, 成員: {guild.member_count})")
         
-        # 自動同步指令到所有伺服器
         await self.sync_commands_to_guilds()
     
     async def on_guild_join(self, guild):
         """加入新伺服器事件"""
         logger.info(f"🆕 加入新伺服器: {guild.name} (ID: {guild.id})")
         
-        # 發送歡迎訊息到伺服器
         try:
-            # 嘗試找到合適的頻道發送歡迎訊息
             channel = None
             
-            # 優先尋找系統頻道或第一個可發言的文字頻道
             if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
                 channel = guild.system_channel
             else:
@@ -198,13 +184,11 @@ class ForumKitBot(commands.Bot):
         """一般錯誤處理"""
         logger.error(f"Bot 事件錯誤 ({event})", exc_info=True)
 
-# ===================== 全域指令 (不需要 Cog) =====================
 
 @app_commands.command(name="sync", description="🔄 手動同步斜線指令")
 async def manual_sync_command(interaction: discord.Interaction):
     """手動同步指令"""
     
-    # 檢查權限 - 只有 Bot 擁有者可以使用
     app_info = await interaction.client.application_info()
     if interaction.user.id != app_info.owner.id:
         embed = TerminalEmbed.create(
@@ -218,10 +202,8 @@ async def manual_sync_command(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
     
     try:
-        # 全域同步
         synced_global = await interaction.client.tree.sync()
         
-        # 當前伺服器同步
         synced_guild = await interaction.client.tree.sync(guild=interaction.guild)
         
         embed = TerminalEmbed.create(
@@ -246,7 +228,6 @@ async def botinfo_command(interaction: discord.Interaction):
     """Bot 資訊指令"""
     bot = interaction.client
     
-    # 計算運行時間
     if hasattr(bot, 'start_time'):
         uptime = datetime.now() - bot.start_time
         uptime_str = f"{uptime.days}天 {uptime.seconds//3600}小時 {(uptime.seconds//60)%60}分"
@@ -279,19 +260,16 @@ Python: {sys.version.split()[0]}
 async def main():
     """主要啟動函數"""
     
-    # 檢查必要的環境變數
     bot_token = os.getenv('DISCORD_BOT_TOKEN')
     if not bot_token:
         logger.error("❌ 錯誤: 未找到 DISCORD_BOT_TOKEN 環境變數")
         logger.error("請檢查 .env 檔案是否已正確設定")
         return
     
-    # 初始化並啟動 Bot
     try:
         bot = ForumKitBot()
         bot.start_time = datetime.now()  # 記錄啟動時間
         
-        # 添加全域指令
         bot.tree.add_command(manual_sync_command)
         bot.tree.add_command(botinfo_command)
         

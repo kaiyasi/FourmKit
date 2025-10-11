@@ -11,19 +11,19 @@ interface MobilePostCardProps {
   schools?: { id:number; slug:string; name:string }[]
 }
 
+/**
+ *
+ */
 export function MobilePostCard({ post, onReaction, onShare, schools = [] }: MobilePostCardProps) {
   const [showActions, setShowActions] = useState(false)
   
-  // 防止背景滑動
   useEffect(() => {
     if (showActions) {
-      // 禁用背景滾動
       document.body.style.overflow = 'hidden'
       document.body.style.position = 'fixed'
       document.body.style.top = `-${window.scrollY}px`
       document.body.style.width = '100%'
     } else {
-      // 恢復背景滾動
       const scrollY = document.body.style.top
       document.body.style.overflow = ''
       document.body.style.position = ''
@@ -34,7 +34,6 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
       }
     }
     
-    // 清理函數
     return () => {
       document.body.style.overflow = ''
       document.body.style.position = ''
@@ -104,7 +103,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                    mobile-post-card mobile-touch-target
                    shadow-soft transition-all duration-150"
       >
-        {/* 頭部信息 */}
+        
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
@@ -156,7 +155,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                     return name
                   })()}
                 </span>
-                {/* 不再顯示送審預覽狀態 */}
+                
               </div>
               <div className="flex items-center gap-1 text-xs text-muted">
                 <Clock className="w-3 h-3" />
@@ -183,7 +182,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
           </div>
         </div>
 
-        {/* 內容 */}
+        
         <div className="mb-3">
           <SafeHtmlContent 
             html={post.content}
@@ -199,10 +198,10 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
           </Link>
         </div>
 
-        {/* 媒體預覽 - 響應式網格 */}
+        
         {post.cover_path && (
           <div className="mb-3 rounded-xl overflow-hidden relative">
-            {/* 判斷是否為影片 */}
+            
             {(() => {
               const isVideo = /\.(mp4|webm|mov)$/i.test(post.cover_path || '') || 
                               (post.media_kind && post.media_kind === 'video')
@@ -221,7 +220,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                       preload="metadata"
                       muted
                     />
-                    {/* 播放圖標覆蓋層 */}
+                    
                     <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center">
                         <svg className="w-8 h-8 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
@@ -229,7 +228,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
                         </svg>
                       </div>
                     </div>
-                    {/* 影片標識 */}
+                    
                     <div className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded-md bg-red-600/90 text-white flex items-center gap-1">
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M8 5v14l11-7z"/>
@@ -267,7 +266,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
           </div>
         )}
 
-        {/* 底部操作欄 */}
+        
         <div className="flex items-center justify-between pt-3 border-t border-border/30">
           <div className="flex items-center gap-1">
             <button
@@ -303,7 +302,7 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
         </div>
       </article>
 
-      {/* 底部抽屜操作面板 */}
+      
       {showActions && (
         <div 
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
@@ -314,12 +313,12 @@ export function MobilePostCard({ post, onReaction, onShare, schools = [] }: Mobi
               className="bg-surface rounded-t-2xl border-t border-border shadow-2xl mobile-drawer-content"
               onClick={e => e.stopPropagation()}
             >
-              {/* 抽屜把手 */}
+              
               <div className="flex justify-center py-3">
                 <div className="w-8 h-1 bg-border rounded-full"></div>
               </div>
               
-              {/* 操作選項 */}
+              
               <div className="px-4 pb-4 space-y-2">
                 <button
                   onClick={() => {

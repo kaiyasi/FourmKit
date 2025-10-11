@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
     build: {
       chunkSizeWarningLimit: 1000,
       sourcemap: true,
+<<<<<<< Updated upstream
     },
     build: {
       rollupOptions: {
@@ -53,6 +54,8 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
+=======
+>>>>>>> Stashed changes
     },
     server: {
       port: 5173,

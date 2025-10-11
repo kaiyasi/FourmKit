@@ -5,7 +5,9 @@
 
 import { api } from './api'
 
-// 類型定義
+/**
+ *
+ */
 export interface GoogleAuthResponse {
   success: boolean
   requiresRegistration: boolean
@@ -30,6 +32,9 @@ export interface GoogleAuthResponse {
   errorCode?: string
 }
 
+/**
+ *
+ */
 export interface School {
   id: number
   name: string
@@ -39,6 +44,9 @@ export interface School {
   type?: 'university' | 'college' | 'institute' | 'other'
 }
 
+/**
+ *
+ */
 export interface QuickRegistrationPayload {
   email: string // 來自 Google，唯讀
   username: string
@@ -59,11 +67,17 @@ export interface QuickRegistrationPayload {
   }
 }
 
+/**
+ *
+ */
 export interface LoginPayload {
   email: string
   password: string
 }
 
+/**
+ *
+ */
 export interface AdminNotificationEvent {
   type: 'school_request' | 'slug_report' | 'domain_attempt' | 'google_binding'
   timestamp: string
@@ -71,6 +85,9 @@ export interface AdminNotificationEvent {
   details: Record<string, any>
 }
 
+/**
+ *
+ */
 export interface AuditLogEntry {
   id: number
   event_type: string

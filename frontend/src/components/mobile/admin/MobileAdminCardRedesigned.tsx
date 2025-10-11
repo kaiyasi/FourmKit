@@ -39,7 +39,7 @@ export const MobileAdminCardRedesigned: React.FC<MobileAdminCardProps> = ({
     <div className={`group relative overflow-hidden rounded-3xl border border-border bg-surface shadow-soft hover:shadow-medium transition-all duration-300 ${
       disabled ? 'opacity-60' : 'hover:scale-105 active:scale-95'
     } ${className}`}>
-      {/* 背景漸層 */}
+      
       <div className={`absolute inset-0 bg-gradient-to-br ${colorClasses[color]} opacity-5 group-hover:opacity-10 transition-opacity`}></div>
       
       {urgent && (

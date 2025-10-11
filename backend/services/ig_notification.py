@@ -28,7 +28,6 @@ class IGNotificationService:
             db_session: 資料庫 Session（用於平台內通知）
         """
         try:
-            # 平台內通知
             if db_session:
                 self._send_platform_notification(
                     db_session,
@@ -39,7 +38,6 @@ class IGNotificationService:
                     notification_type='ig_publish_success'
                 )
 
-            # Discord 通知
             if self.discord_webhook_url:
                 self._send_discord_success(post, account)
 
@@ -59,7 +57,6 @@ class IGNotificationService:
             db_session: 資料庫 Session
         """
         try:
-            # 平台內通知（給貼文作者）
             if db_session:
                 self._send_platform_notification(
                     db_session,
@@ -70,7 +67,6 @@ class IGNotificationService:
                     level='error'
                 )
 
-                # 通知 Campus Admin
                 if account.school_id:
                     self._notify_campus_admin(
                         db_session,
@@ -79,14 +75,12 @@ class IGNotificationService:
                         error_message
                     )
 
-                # 通知 Dev Admin
                 self._notify_dev_admin(
                     db_session,
                     f"Instagram 發布失敗: {post.public_id}",
                     f"帳號: {account.username}\n錯誤: {error_message}"
                 )
 
-            # Discord 通知
             if self.discord_webhook_url:
                 self._send_discord_failure(post, account, error_message)
 
@@ -106,7 +100,6 @@ class IGNotificationService:
         """
         try:
             if db_session:
-                # 通知 Campus Admin
                 if account.school_id:
                     self._notify_campus_admin(
                         db_session,
@@ -115,14 +108,12 @@ class IGNotificationService:
                         f"帳號 {account.username} 的 Token 將在 {days_remaining} 天後過期，請及時更新。"
                     )
 
-                # 通知 Dev Admin
                 self._notify_dev_admin(
                     db_session,
                     f"Instagram Token 即將過期",
                     f"帳號: {account.username}\n剩餘天數: {days_remaining}"
                 )
 
-            # Discord 通知
             if self.discord_webhook_url:
                 self._send_discord_token_expiring(account, days_remaining)
 
@@ -174,7 +165,6 @@ class IGNotificationService:
         try:
             from models import User, UserRole
 
-            # 查找該學校的 Campus Admin
             admins = db_session.query(User).filter(
                 User.school_id == school_id,
                 User.role == UserRole.CAMPUS_ADMIN
@@ -198,7 +188,6 @@ class IGNotificationService:
         try:
             from models import User, UserRole
 
-            # 查找所有 Dev Admin
             dev_admins = db_session.query(User).filter(
                 User.role == UserRole.DEV_ADMIN
             ).all()
@@ -221,7 +210,7 @@ class IGNotificationService:
         try:
             embed = {
                 "title": "✅ Instagram 發布成功",
-                "color": 0x00FF00,  # 綠色
+                "color": 0x00FF00,
                 "fields": [
                     {"name": "貼文 ID", "value": post.public_id, "inline": True},
                     {"name": "帳號", "value": account.username, "inline": True},
@@ -261,7 +250,7 @@ class IGNotificationService:
         try:
             embed = {
                 "title": "⚠️ Instagram Token 即將過期",
-                "color": 0xFFA500,  # 橘色
+                "color": 0xFFA500,
                 "fields": [
                     {"name": "帳號", "value": account.username, "inline": True},
                     {"name": "剩餘天數", "value": str(days_remaining), "inline": True},

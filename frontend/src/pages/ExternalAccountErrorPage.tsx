@@ -3,6 +3,9 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { ShieldAlert, Mail, School, AlertTriangle, Check, Home, RefreshCw } from 'lucide-react'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
+/**
+ *
+ */
 export default function ExternalAccountErrorPage() {
   const [searchParams] = useSearchParams()
   const [notificationSent, setNotificationSent] = useState(false)
@@ -38,14 +41,12 @@ export default function ExternalAccountErrorPage() {
   }
 
   const unlinkSchool = () => {
-    // 清除所有學校相關的 localStorage
     try {
       localStorage.removeItem('school_slug')
       localStorage.removeItem('current_school_slug')
       localStorage.removeItem('selected_school_slug')
       window.dispatchEvent(new CustomEvent('fk_school_changed', { detail: { slug: null } }))
       
-      // 重定向到跨校模式
       window.location.href = '/boards'
     } catch (error) {
       console.warn('解綁學校失敗:', error)
@@ -55,15 +56,15 @@ export default function ExternalAccountErrorPage() {
   return (
     <div className="min-h-screen grid place-items-center p-4 pb-24 bg-bg">
       <div className="max-w-md w-full rounded-2xl border border-border bg-surface p-6 shadow-soft text-center">
-        {/* 錯誤圖標 */}
+        
         <div className="mx-auto w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
           <ShieldAlert className="w-8 h-8 text-red-600 dark:text-red-400" />
         </div>
 
-        {/* 主標題 */}
+        
         <h1 className="text-xl font-bold text-fg mb-2">無法使用校外帳號</h1>
         
-        {/* 顯示嘗試登入的信箱 */}
+        
         {fullEmail && (
           <div className="flex items-center justify-center gap-2 text-sm text-muted mb-4 p-2 bg-surface-hover rounded-lg">
             <Mail className="w-4 h-4" />
@@ -71,7 +72,7 @@ export default function ExternalAccountErrorPage() {
           </div>
         )}
 
-        {/* 錯誤原因列表 */}
+        
         <div className="text-left mb-6">
           <p className="text-sm text-muted mb-3">您選擇的校外帳號目前無法使用，可能的原因：</p>
           <ul className="text-sm text-muted space-y-2">
@@ -90,9 +91,9 @@ export default function ExternalAccountErrorPage() {
           </ul>
         </div>
 
-        {/* 操作按鈕 */}
+        
         <div className="space-y-3">
-          {/* 通知管理員 */}
+          
           {!notificationSent ? (
             <button
               onClick={notifyAdmin}
@@ -118,7 +119,7 @@ export default function ExternalAccountErrorPage() {
             </div>
           )}
 
-          {/* 解綁學校，使用跨校模式 */}
+          
           <button
             onClick={unlinkSchool}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-surface-hover text-fg rounded-xl font-medium hover:bg-surface border border-border transition-colors"
@@ -127,7 +128,7 @@ export default function ExternalAccountErrorPage() {
             <span>解綁學校，切換至跨校模式</span>
           </button>
 
-          {/* 回到首頁 */}
+          
           <Link
             to="/"
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-surface-hover text-muted rounded-xl font-medium hover:bg-surface border border-border transition-colors"
@@ -137,7 +138,7 @@ export default function ExternalAccountErrorPage() {
           </Link>
         </div>
 
-        {/* 提示文字 */}
+        
         <p className="text-xs text-muted mt-4">
           如果您的學校應該在系統中，請聯絡管理員或稍後再試。
         </p>

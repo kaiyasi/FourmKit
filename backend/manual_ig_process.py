@@ -19,7 +19,6 @@ def main():
         print("Instagram 佇列處理腳本")
         print("=" * 60)
 
-        # Step 1: 渲染所有 PENDING 貼文
         print("\n[步驟 1] 渲染 PENDING 貼文...")
         pending_posts = db.query(InstagramPost).filter_by(
             status=PostStatus.PENDING
@@ -42,7 +41,6 @@ def main():
 
         print(f"渲染完成: {rendered_count}/{len(pending_posts)}")
 
-        # Step 2: 發布即時模式的 READY 貼文
         print("\n[步驟 2] 發布即時模式貼文...")
         instant_ready = db.query(InstagramPost).filter_by(
             status=PostStatus.READY,
@@ -66,7 +64,6 @@ def main():
 
         print(f"即時發布完成: {published_count}/{len(instant_ready)}")
 
-        # Step 3: 處理批次模式貼文
         print("\n[步驟 3] 處理批次模式貼文...")
         batch_ready = db.query(InstagramPost).filter_by(
             status=PostStatus.READY,
@@ -75,7 +72,6 @@ def main():
 
         print(f"找到 {len(batch_ready)} 篇批次模式貼文（等待組成輪播）")
 
-        # 按帳號分組
         from collections import defaultdict
         by_account = defaultdict(list)
         for post in batch_ready:
@@ -86,7 +82,6 @@ def main():
 
         print("\n提示：批次模式貼文需要等待達到設定數量後自動組成輪播")
 
-        # 總結
         print("\n" + "=" * 60)
         print("處理完成")
         print("=" * 60)

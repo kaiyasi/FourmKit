@@ -6,6 +6,9 @@
 import { NotificationPlugin } from '@/types/notifications'
 import { AtSign } from 'lucide-react'
 
+/**
+ *
+ */
 export interface AdminChatMentionNotificationData {
   room_id: number
   room_name: string

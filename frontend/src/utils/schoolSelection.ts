@@ -2,6 +2,9 @@
  * 學校選擇與 slug 管理工具函數
  */
 
+/**
+ *
+ */
 export interface School {
   id: number
   name: string
@@ -11,6 +14,9 @@ export interface School {
   type?: 'university' | 'college' | 'institute' | 'other'
 }
 
+/**
+ *
+ */
 export interface SchoolSelectionState {
   selectedSchoolId: number | null
   selectedSchool: School | null
@@ -72,7 +78,6 @@ export function suggestSchoolFromEmail(schools: School[], email: string): School
     return null
   }
   
-  // 嘗試完全匹配域名
   const exactMatch = schools.find(school => 
     school.domain?.toLowerCase() === domain
   )
@@ -81,7 +86,6 @@ export function suggestSchoolFromEmail(schools: School[], email: string): School
     return exactMatch
   }
   
-  // 嘗試模糊匹配（去除 .edu.tw 或 .edu 後匹配）
   const baseDomain = domain.replace(/\.edu(\.tw)?$/, '')
   const fuzzyMatch = schools.find(school => {
     const schoolBaseDomain = school.domain?.replace(/\.edu(\.tw)?$/, '')
@@ -101,7 +105,6 @@ export function validateSchoolSlug(slug: string): { valid: boolean; error?: stri
   
   const normalizedSlug = slug.trim().toLowerCase()
   
-  // 基本格式檢查：只允許字母、數字、連字號
   if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
     return { 
       valid: false, 
@@ -109,7 +112,6 @@ export function validateSchoolSlug(slug: string): { valid: boolean; error?: stri
     }
   }
   
-  // 長度檢查
   if (normalizedSlug.length < 2 || normalizedSlug.length > 50) {
     return { 
       valid: false, 
@@ -117,7 +119,6 @@ export function validateSchoolSlug(slug: string): { valid: boolean; error?: stri
     }
   }
   
-  // 不能以連字號開頭或結尾
   if (normalizedSlug.startsWith('-') || normalizedSlug.endsWith('-')) {
     return { 
       valid: false, 
@@ -158,7 +159,6 @@ export function getSchoolTypeDisplayName(type?: School['type']): string {
  */
 export function sortSchools(schools: School[]): School[] {
   return [...schools].sort((a, b) => {
-    // 先按類型排序（大學優先）
     const typeOrder = { university: 0, college: 1, institute: 2, other: 3 }
     const aTypeOrder = typeOrder[a.type || 'other']
     const bTypeOrder = typeOrder[b.type || 'other']
@@ -167,7 +167,6 @@ export function sortSchools(schools: School[]): School[] {
       return aTypeOrder - bTypeOrder
     }
     
-    // 再按名稱排序
     return a.name.localeCompare(b.name, 'zh-TW')
   })
 }

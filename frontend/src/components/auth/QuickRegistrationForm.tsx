@@ -32,6 +32,9 @@ interface QuickRegistrationFormProps {
   error?: string
 }
 
+/**
+ *
+ */
 export default function QuickRegistrationForm({
   googleEmail,
   googleName,
@@ -41,7 +44,6 @@ export default function QuickRegistrationForm({
   loading = false,
   error
 }: QuickRegistrationFormProps) {
-  // 表單狀態
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -51,7 +53,6 @@ export default function QuickRegistrationForm({
   const [customSchoolDomain, setCustomSchoolDomain] = useState('')
   const [customSchoolInfo, setCustomSchoolInfo] = useState('')
   
-  // UI 狀態
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [schools, setSchools] = useState<School[]>([])
@@ -62,7 +63,6 @@ export default function QuickRegistrationForm({
   const [requestingSchool, setRequestingSchool] = useState(false)
   const [requestSent, setRequestSent] = useState<null | 'ok' | 'fail'>(null)
   
-  // 驗證結果
   const passwordValidation = useMemo(() => 
     validatePasswordWithConfirmation(password, confirmPassword), 
     [password, confirmPassword]
@@ -78,13 +78,11 @@ export default function QuickRegistrationForm({
     []
   )
 
-  // 載入學校清單
   useEffect(() => {
     const loadSchools = async () => {
       try {
         const response = await NewAuthAPI.getSchools()
         setSchools([...response.schools, CUSTOM_SCHOOL_OPTION])
-        // 自動建議學校：先做網域偵測（slug/city），再回退到簡易匹配
         const detect = detectSchoolFromEmail(googleEmail)
         let preselect: School | null = null
         if (detect.ok && detect.slug) {
@@ -101,16 +99,13 @@ export default function QuickRegistrationForm({
       }
     }
     loadSchools()
-    // 確保用戶名永遠不會被自動填入
     setUsername('')
   }, [googleEmail])
 
-  // 確保組件掛載時用戶名為空
   useEffect(() => {
     setUsername('')
   }, [])
 
-  // 檢查使用者名稱可用性（防抖）
   useEffect(() => {
     if (!username || !usernameValidation.isValid) {
       setUsernameAvailable(null)
@@ -133,7 +128,6 @@ export default function QuickRegistrationForm({
     return () => clearTimeout(timer)
   }, [username, usernameValidation.isValid])
 
-  // 處理學校選擇變更
   const handleSchoolChange = (schoolId: string) => {
     const id = schoolId === '' ? null : parseInt(schoolId)
     setSelectedSchoolId(id)
@@ -148,7 +142,6 @@ export default function QuickRegistrationForm({
     }
   }
 
-  // 處理 slug 錯誤回報
   const handleSlugReport = async () => {
     if (!selectedSchoolId || selectedSchoolId === CUSTOM_SCHOOL_OPTION.id) return
     
@@ -171,7 +164,6 @@ export default function QuickRegistrationForm({
     }
   }
 
-  // 回報「找不到我的學校」：直接送出新增學校請求
   const handleRequestNewSchool = async () => {
     try {
       setRequestingSchool(true)
@@ -185,7 +177,6 @@ export default function QuickRegistrationForm({
       const r = await NewAuthAPI.requestSchool(payload)
       setRequestSent(r.success ? 'ok' : 'fail')
       if (r.success) {
-        // 清空輸入以避免重複誤送
         setCustomSchoolName('')
         setCustomSchoolDomain('')
         setCustomSchoolInfo('')
@@ -199,7 +190,6 @@ export default function QuickRegistrationForm({
     }
   }
 
-  // 表單提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -234,7 +224,7 @@ export default function QuickRegistrationForm({
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
-        {/* 標題與 Google 資訊 */}
+        
         <div className="mb-6 text-center">
           <div className="flex items-center justify-center gap-3 mb-3">
             {googlePicture && (
@@ -251,7 +241,7 @@ export default function QuickRegistrationForm({
           </div>
         </div>
 
-        {/* 錯誤提示 */}
+        
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-danger-bg border border-danger-border text-danger-text">
             <div className="flex items-start gap-2">
@@ -262,7 +252,7 @@ export default function QuickRegistrationForm({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Gmail（唯讀） */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               Gmail
@@ -283,12 +273,12 @@ export default function QuickRegistrationForm({
             </p>
           </div>
 
-          {/* 學校選擇 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               學校 *
             </label>
-            {/* 偵測提示 */}
+            
             {(() => {
               const d = detectSchoolFromEmail(googleEmail)
               if (!d.ok) return null
@@ -322,7 +312,7 @@ export default function QuickRegistrationForm({
             )}
           </div>
 
-          {/* 學校 slug 顯示 */}
+          
           {selectedSchool && selectedSchool.id !== CUSTOM_SCHOOL_OPTION.id && (
             <div>
               <label className="block text-sm font-medium text-fg mb-2">
@@ -355,7 +345,7 @@ export default function QuickRegistrationForm({
             </div>
           )}
 
-          {/* 自訂學校資訊 */}
+          
           {customSchoolRequested && (
             <div className="space-y-3 p-3 bg-muted/20 rounded-lg border border-border">
               <div>
@@ -411,7 +401,7 @@ export default function QuickRegistrationForm({
             </div>
           )}
 
-          {/* 暱稱 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               暱稱 *
@@ -456,7 +446,7 @@ export default function QuickRegistrationForm({
             )}
           </div>
 
-          {/* 密碼 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               密碼 *
@@ -479,7 +469,7 @@ export default function QuickRegistrationForm({
             </div>
           </div>
 
-          {/* 確認密碼 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               確認密碼 *
@@ -507,7 +497,7 @@ export default function QuickRegistrationForm({
             )}
           </div>
 
-          {/* 密碼規範檢查 */}
+          
           {password && (
             <div className="p-3 bg-muted/20 rounded-lg">
               <p className="text-sm font-medium text-fg mb-2">密碼規範：</p>
@@ -534,7 +524,7 @@ export default function QuickRegistrationForm({
             </div>
           )}
 
-          {/* 提交按鈕 */}
+          
           <div className="flex gap-3 pt-2">
             <button
               type="button"

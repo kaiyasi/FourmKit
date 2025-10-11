@@ -1,3 +1,7 @@
+"""
+Module: backend/infra/heartbeat_server.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import socket
 import threading
 
@@ -12,7 +16,7 @@ def start_heartbeat_server(host="0.0.0.0", port=12007):
     for attempt in range(max_retries):
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # 允許端口重用
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((host, port))
             s.listen(5)
             
@@ -37,7 +41,7 @@ def start_heartbeat_server(host="0.0.0.0", port=12007):
             return
             
         except OSError as e:
-            if e.errno == 98:  # Address already in use
+            if e.errno == 98:
                 port += 1
                 print(f"[heartbeat] port {port-1} in use, trying {port}")
                 continue

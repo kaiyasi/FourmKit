@@ -16,12 +16,10 @@ def update_to_latest_version():
         with engine.connect() as conn:
             print("🔧 更新資料庫版本到最新...")
             
-            # 檢查當前版本
             result = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
             current_version = result.scalar()
             print(f"📋 當前版本: {current_version}")
             
-            # 更新到最新版本（移除 Instagram 系統後的版本）
             latest_version = '2025_09_02_remove_instagram_system'
             
             if current_version != latest_version:
@@ -33,7 +31,6 @@ def update_to_latest_version():
             else:
                 print(f"ℹ️ 已經是最新版本: {latest_version}")
             
-            # 驗證更新
             result = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
             final_version = result.scalar()
             print(f"📋 最終版本: {final_version}")

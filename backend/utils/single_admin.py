@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/single_admin.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 import os
 from typing import Optional
@@ -17,7 +21,6 @@ def configured_username() -> str:
 
 
 def configured_password() -> Optional[str]:
-    # 建議在環境變數設定強密碼；若未設定，回傳 None 代表保持現有密碼（若有）
     pwd = os.getenv("SINGLE_ADMIN_PASSWORD", "").strip()
     return pwd or None
 
@@ -36,9 +39,7 @@ def ensure_single_admin() -> None:
     username = configured_username()
     override_pwd = configured_password()
 
-    with get_session() as s:  # type: Session
-        # 不再刪除其他使用者，避免觸發外鍵約束
-        # 僅確保指定帳號存在且為最高權限，並在提供密碼時同步更新
+    with get_session() as s:
         u = s.query(User).filter_by(username=username).first()
         if not u:
             temp_pwd = override_pwd or "admin123"

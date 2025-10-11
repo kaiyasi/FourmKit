@@ -35,10 +35,8 @@ def clean_input(text: str, max_length: int = 1000) -> str:
     if not text:
         return ""
     
-    # 移除多餘空白並限制長度
     cleaned = text.strip()[:max_length]
     
-    # HTML 清理（如果內容包含 HTML）
     if '<' in cleaned and '>' in cleaned:
         cleaned = sanitize_html(cleaned)
     
@@ -67,7 +65,27 @@ def create_ticket():
         if not user_id:
             if not email or not validate_email(email):
                 return jsonify({"ok": False, "error": "INVALID_EMAIL", "msg": "訪客需提供有效 Email"}), 400
+<<<<<<< Updated upstream
 
+=======
+        else:
+            if not email:
+                try:
+                    with get_main_session() as main_s:
+                        me = main_s.get(User, user_id)
+                        if me and me.email and validate_email(me.email):
+                            email = me.email.strip().lower()
+                except Exception:
+                    pass
+
+        from utils.ratelimit import get_client_ip
+        client_ip = None
+        try:
+            client_ip = get_client_ip()
+        except Exception:
+            client_ip = request.headers.get('X-Real-IP') or request.remote_addr
+
+>>>>>>> Stashed changes
         with get_support_session() as session:
             ticket = SupportService.create_ticket(
                 session=session,
@@ -78,8 +96,13 @@ def create_ticket():
                 guest_email=email,
                 school_id=school_id,
                 attachments=attachments,
+<<<<<<< Updated upstream
             )
             # 會話內先取出需要的欄位，避免離開會話後因為 expire_on_commit 導致 DetachedInstanceError
+=======
+                client_ip=client_ip,
+            )
+>>>>>>> Stashed changes
             ticket_public_id = ticket.public_id
             ticket_subject = ticket.subject
             ticket_category = ticket.category
@@ -93,7 +116,11 @@ def create_ticket():
             "category": ticket_category,
             "status": ticket_status,
         }
+<<<<<<< Updated upstream
         if not user_id and email:
+=======
+        if email:
+>>>>>>> Stashed changes
             secret_key = current_app.config.get('SECRET_KEY', 'fallback-secret')
             payload["guest_token"] = SupportService.generate_guest_token(ticket_db_id, email, secret_key)
 
@@ -102,7 +129,10 @@ def create_ticket():
         return jsonify({"ok": False, "error": "VALIDATION_ERROR", "msg": str(e)}), 400
     except Exception as e:
         try:
+<<<<<<< Updated upstream
             # 提供更完整的除錯資訊（但避免暴露內容）
+=======
+>>>>>>> Stashed changes
             current_app.logger.error(
                 "Create ticket error: %s | subject_len=%s, category=%s, has_user=%s, has_email=%s",
                 e,
@@ -153,7 +183,6 @@ def get_my_tickets():
 def get_ticket_detail(ticket_id):
     """取得工單詳情"""
     try:
-        # 檢查是否登入
         user_id = None
         try:
             verify_jwt_in_request(optional=True)
@@ -163,7 +192,6 @@ def get_ticket_detail(ticket_id):
         except Exception:
             pass
 
-        # 訪客驗證 token
         guest_email = None
         if not user_id:
             token = request.args.get('sig')
@@ -187,9 +215,7 @@ def get_ticket_detail(ticket_id):
             if not ticket:
                 return jsonify({"ok": False, "error": "TICKET_NOT_FOUND", "msg": "工單不存在"}), 404
 
-            # 權限檢查
             if user_id:
-                # 登入用戶：檢查是否為工單擁有者或管理員
                 with get_main_session() as main_s:
                     user = main_s.get(User, user_id)
                     if not user:
@@ -203,16 +229,13 @@ def get_ticket_detail(ticket_id):
                     if not is_owner and not is_admin:
                         return jsonify({"ok": False, "error": "ACCESS_DENIED", "msg": "無權查看此工單"}), 403
             else:
-                # 訪客：檢查 email 匹配
                 if ticket.guest_email != guest_email:
                     return jsonify({"ok": False, "error": "ACCESS_DENIED", "msg": "無權查看此工單"}), 403
 
-            # 取得訊息
             messages = support_s.query(SupportMessage).filter(
                 SupportMessage.ticket_id == ticket.id
             ).order_by(SupportMessage.created_at).all()
 
-            # 組裝回應
             message_data = []
             for m in messages:
                 message_data.append({
@@ -259,12 +282,10 @@ def add_ticket_message(ticket_id):
             return jsonify({"ok": False, "error": "EMPTY_MESSAGE", "msg": "訊息內容不能為空"}), 400
 
         with get_support_session() as support_s:
-            # 檢查工單是否存在且用戶有權限
             ticket = support_s.get(SupportTicket, ticket_id)
             if not ticket:
                 return jsonify({"ok": False, "error": "TICKET_NOT_FOUND"}), 404
 
-            # 權限檢查：工單擁有者或管理員
             with get_main_session() as main_s:
                 user = main_s.get(User, user_id)
                 if not user:
@@ -278,7 +299,13 @@ def add_ticket_message(ticket_id):
                 if not is_owner and not is_admin:
                     return jsonify({"ok": False, "error": "ACCESS_DENIED"}), 403
 
-                # 新增訊息
+                from utils.ratelimit import get_client_ip
+                client_ip = None
+                try:
+                    client_ip = get_client_ip()
+                except Exception:
+                    client_ip = request.headers.get('X-Real-IP') or request.remote_addr
+
                 author_type = AuthorType.ADMIN if is_admin else AuthorType.USER
                 message = SupportService.add_message(
                     session=support_s,
@@ -287,6 +314,18 @@ def add_ticket_message(ticket_id):
                     author_user_id=user_id,
                     author_type=author_type
                 )
+
+                try:
+                    from models.support import SupportEvent, EventType
+                    from sqlalchemy import desc as _desc
+                    ev = support_s.query(SupportEvent).filter_by(
+                        ticket_id=ticket_id, event_type=EventType.MESSAGE_SENT
+                    ).order_by(_desc(SupportEvent.created_at)).first()
+                    if ev and isinstance(ev.payload, dict):
+                        ev.payload['client_ip'] = client_ip
+                        support_s.commit()
+                except Exception:
+                    pass
 
                 return jsonify({"ok": True, "message_id": message.id})
 
@@ -298,7 +337,7 @@ def add_ticket_message(ticket_id):
 
 
 @bp.route("/guest/verify", methods=["POST"])
-@rate_limit(10, 60)  # 每60秒最多10次驗證請求
+@rate_limit(10, 60)
 def verify_guest_token():
     """驗證訪客 token 並返回重定向 URL"""
     try:
@@ -310,7 +349,6 @@ def verify_guest_token():
         if not token:
             return jsonify({"ok": False, "error": "MISSING_TOKEN", "msg": "缺少 token"}), 400
 
-        # 驗證 token
         ticket_info = SupportService.verify_guest_token(
             token,
             current_app.config.get('SECRET_KEY', 'fallback-secret')
@@ -320,13 +358,11 @@ def verify_guest_token():
 
         ticket_id, guest_email = ticket_info
 
-        # 查找工單
         with get_support_session() as support_s:
             ticket = support_s.get(SupportTicket, ticket_id)
             if not ticket:
                 return jsonify({"ok": False, "error": "TICKET_NOT_FOUND", "msg": "工單不存在"}), 404
 
-            # 生成重定向 URL
             redirect_url = f"/support/track?ticket={ticket.public_id}&token={token}"
             return jsonify({
                 "ok": True,
@@ -355,32 +391,25 @@ def track_guest_ticket():
         ticket_id = data.get('ticket_id', '').strip()
         email = data.get('email', '').strip().lower()
 
-        # 至少需要提供一個欄位
         if not ticket_id and not email:
             return jsonify({"ok": False, "error": "MISSING_FIELDS", "msg": "請提供工單編號或 Email"}), 400
 
-        # 驗證 email 格式（如果有提供）
         if email and not validate_email(email):
             return jsonify({"ok": False, "error": "INVALID_EMAIL", "msg": "Email 格式不正確"}), 400
 
-        # 查找工單
         with get_support_session() as support_s:
-            # 根據提供的資訊查找工單
             query = support_s.query(SupportTicket)
 
             if ticket_id and email:
-                # 兩者都有：使用 ticket_id 並驗證 email
                 ticket = query.filter(SupportTicket.public_id == ticket_id).first()
                 if not ticket:
                     return jsonify({"ok": False, "error": "TICKET_NOT_FOUND", "msg": "找不到該工單"}), 404
                 if ticket.guest_email != email:
                     return jsonify({"ok": False, "error": "EMAIL_MISMATCH", "msg": "Email 與工單不符"}), 403
             elif ticket_id:
-                # 只有 ticket_id：直接查找並返回（需要 token 才能訪問）
                 ticket = query.filter(SupportTicket.public_id == ticket_id).first()
                 if not ticket:
                     return jsonify({"ok": False, "error": "TICKET_NOT_FOUND", "msg": "找不到該工單"}), 404
-                # 沒有 email 時，使用工單已有的 email
                 email = ticket.guest_email
                 if not email and ticket.user_id:
                     try:
@@ -390,7 +419,6 @@ def track_guest_ticket():
                 if not email:
                     return jsonify({"ok": False, "error": "NO_EMAIL", "msg": "該工單沒有關聯的 Email，請同時提供工單編號和 Email"}), 400
             else:
-                # 只有 email：查找該 email 的最新工單
                 tickets = query.filter(
                     SupportTicket.guest_email == email
                 ).order_by(SupportTicket.created_at.desc()).all()
@@ -399,7 +427,6 @@ def track_guest_ticket():
                     return jsonify({"ok": False, "error": "TICKET_NOT_FOUND", "msg": "找不到該 Email 相關的工單"}), 404
 
                 if len(tickets) > 1:
-                    # 有多個工單，返回列表讓用戶選擇
                     ticket_list = [
                         {
                             "ticket_id": t.public_id,
@@ -407,7 +434,7 @@ def track_guest_ticket():
                             "status": t.status,
                             "created_at": t.created_at.isoformat()
                         }
-                        for t in tickets[:10]  # 最多返回10個
+                        for t in tickets[:10]
                     ]
                     return jsonify({
                         "ok": True,
@@ -416,10 +443,8 @@ def track_guest_ticket():
                         "msg": "找到多個工單，請選擇一個或提供工單編號"
                     })
 
-                # 只有一個工單
                 ticket = tickets[0]
 
-            # 生成新的追蹤 token
             token = SupportService.generate_guest_token(
                 ticket.id,
                 email,
@@ -458,7 +483,10 @@ def get_queue():
         school_id = int(school_id_str) if school_id_str and school_id_str.isdigit() else None
         assigned_to = int(assigned_to_str) if assigned_to_str and assigned_to_str.isdigit() else None
 
+<<<<<<< Updated upstream
         # 取得當前用戶角色
+=======
+>>>>>>> Stashed changes
         with get_main_session() as ms:
             me = ms.get(User, int(get_jwt_identity()))
             user_role = me.role if me else None
@@ -480,7 +508,10 @@ def get_queue():
             current_app.logger.error(f"Error in get_admin_tickets: {e}", exc_info=True)
             return jsonify({"ok": False, "error": "GET_ADMIN_TICKETS_ERROR", "msg": str(e)}), 500
 
+<<<<<<< Updated upstream
         # 預先載入用戶名稱，避免跨資料庫查詢
+=======
+>>>>>>> Stashed changes
         user_ids = [t.user_id for t in tickets if t.user_id]
         assignee_ids = [t.assigned_to for t in tickets if t.assigned_to]
         all_user_ids = list(set(user_ids + assignee_ids))

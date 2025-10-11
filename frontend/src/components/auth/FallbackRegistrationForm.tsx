@@ -29,13 +29,15 @@ interface FallbackRegistrationFormProps {
   error?: string
 }
 
+/**
+ *
+ */
 export default function FallbackRegistrationForm({
   onSubmit,
   onCancel,
   loading = false,
   error
 }: FallbackRegistrationFormProps) {
-  // 表單狀態
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -46,7 +48,6 @@ export default function FallbackRegistrationForm({
   const [customSchoolDomain, setCustomSchoolDomain] = useState('')
   const [customSchoolInfo, setCustomSchoolInfo] = useState('')
   
-  // UI 狀態
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [schools, setSchools] = useState<School[]>([])
@@ -54,7 +55,6 @@ export default function FallbackRegistrationForm({
   const [usernameChecking, setUsernameChecking] = useState(false)
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
   
-  // 驗證結果
   const emailValidation = useMemo(() => 
     validateEducationalEmail(email), 
     [email]
@@ -75,7 +75,6 @@ export default function FallbackRegistrationForm({
     []
   )
 
-  // 載入學校清單
   useEffect(() => {
     const loadSchools = async () => {
       try {
@@ -91,7 +90,6 @@ export default function FallbackRegistrationForm({
     loadSchools()
   }, [])
 
-  // 檢查使用者名稱可用性（防抖處理 Debounce）
   useEffect(() => {
     if (!username || !usernameValidation.isValid) {
       setUsernameAvailable(null)
@@ -114,7 +112,6 @@ export default function FallbackRegistrationForm({
     return () => clearTimeout(timer)
   }, [username, usernameValidation.isValid])
 
-  // 處理學校選擇變更
   const handleSchoolChange = (schoolId: string) => {
     const id = schoolId === '' ? null : parseInt(schoolId)
     setSelectedSchoolId(id)
@@ -129,7 +126,6 @@ export default function FallbackRegistrationForm({
     }
   }
 
-  // 表單提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -166,7 +162,7 @@ export default function FallbackRegistrationForm({
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
-        {/* 標題與警告 */}
+        
         <div className="mb-6 text-center">
           <h1 className="text-xl font-semibold">以學校 Email 註冊</h1>
           <p className="text-sm text-muted mt-1">備援註冊方式</p>
@@ -178,7 +174,7 @@ export default function FallbackRegistrationForm({
           </div>
         </div>
 
-        {/* 錯誤提示 */}
+        
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-danger-bg border border-danger-border text-danger-text">
             <div className="flex items-start gap-2">
@@ -189,7 +185,7 @@ export default function FallbackRegistrationForm({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               學校 Email *
@@ -217,7 +213,7 @@ export default function FallbackRegistrationForm({
             </p>
           </div>
 
-          {/* 學校選擇 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               學校 *
@@ -242,7 +238,7 @@ export default function FallbackRegistrationForm({
             )}
           </div>
 
-          {/* 學校 slug 顯示（唯讀） */}
+          
           {selectedSchool && selectedSchool.id !== CUSTOM_SCHOOL_OPTION.id && (
             <div>
               <label className="block text-sm font-medium text-fg mb-2">
@@ -260,7 +256,7 @@ export default function FallbackRegistrationForm({
             </div>
           )}
 
-          {/* 自訂學校資訊 */}
+          
           {customSchoolRequested && (
             <div className="space-y-3 p-3 bg-muted/20 rounded-lg border border-border">
               <div>
@@ -304,7 +300,7 @@ export default function FallbackRegistrationForm({
             </div>
           )}
 
-          {/* 暱稱 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               暱稱 *
@@ -349,7 +345,7 @@ export default function FallbackRegistrationForm({
             )}
           </div>
 
-          {/* 密碼 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               密碼 *
@@ -373,7 +369,7 @@ export default function FallbackRegistrationForm({
             </div>
           </div>
 
-          {/* 確認密碼 */}
+          
           <div>
             <label className="block text-sm font-medium text-fg mb-2">
               確認密碼 *
@@ -402,7 +398,7 @@ export default function FallbackRegistrationForm({
             )}
           </div>
 
-          {/* 密碼規範檢查 */}
+          
           {password && (
             <div className="p-3 bg-muted/20 rounded-lg">
               <p className="text-sm font-medium text-fg mb-2">密碼規範：</p>
@@ -429,7 +425,7 @@ export default function FallbackRegistrationForm({
             </div>
           )}
 
-          {/* 提交按鈕 */}
+          
           <div className="flex gap-3 pt-2">
             <button
               type="button"

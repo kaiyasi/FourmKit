@@ -25,7 +25,6 @@ def check_available_pages():
         print(f"🔑 使用 User Token: {token[:30]}...")
         
         try:
-            # 檢查用戶管理的 Pages
             response = requests.get(
                 "https://graph.facebook.com/v23.0/me/accounts",
                 params={
@@ -71,7 +70,6 @@ def check_available_pages():
                     ig_account = page['instagram_business_account']
                     print(f"   Instagram Account ID: {ig_account['id']}")
                     
-                    # 取得 Instagram 帳號詳情
                     if has_token:
                         try:
                             ig_response = requests.get(
@@ -140,7 +138,6 @@ def test_updated_config():
         print(f"Page ID: {page_id}")
         
         try:
-            # 步驟1: 用 User Token 取得 Page Token
             page_response = requests.get(
                 f"https://graph.facebook.com/v23.0/{page_id}",
                 params={
@@ -168,7 +165,6 @@ def test_updated_config():
             print(f"✅ Page Token 取得成功: {page_token[:30]}...")
             print(f"✅ Instagram Account ID: {ig_account['id']}")
             
-            # 步驟2: 測試 Instagram API
             ig_response = requests.get(
                 f"https://graph.facebook.com/v23.0/{ig_account['id']}",
                 params={
@@ -197,13 +193,11 @@ def main():
     print("🛠️ Facebook Page ID 修復工具")
     print("=" * 50)
     
-    # 檢查可用的 Pages
     pages = check_available_pages()
     
     if not pages:
         return
     
-    # 如果只有一個有效的 Page，自動選擇
     if len(pages) == 1:
         page = pages[0]
         print(f"🎯 自動選擇唯一的有效 Page: {page['name']} (ID: {page['id']})")
@@ -212,7 +206,6 @@ def main():
             print()
             test_updated_config()
     else:
-        # 讓用戶選擇
         print("請選擇要使用的 Facebook Page:")
         for i, page in enumerate(pages, 1):
             print(f"{i}. {page['name']} (ID: {page['id']})")

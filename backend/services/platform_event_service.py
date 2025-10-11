@@ -31,14 +31,11 @@ class PlatformEventService:
     
     def _setup_shutdown_handlers(self):
         """設置關閉事件處理器"""
-        # 註冊正常關閉處理器
         atexit.register(self._on_shutdown)
         
-        # 註冊信號處理器
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
         
-        # 在 Windows 上處理 Ctrl+C
         if os.name == 'nt':
             signal.signal(signal.SIGBREAK, self._signal_handler)
     
@@ -61,7 +58,6 @@ class PlatformEventService:
         try:
             self.record_platform_stopped("應用程序正常關閉")
         except Exception as e:
-            # 在關閉時記錄錯誤，但不拋出異常
             print(f"記錄平台關閉事件時出錯: {e}")
     
     def record_platform_started(self, reason: str = "應用程序啟動") -> None:
@@ -162,7 +158,6 @@ class PlatformEventService:
         """獲取運行時間（秒）"""
         if hasattr(self, '_start_time'):
             current_time = datetime.now(pytz.timezone('Asia/Taipei'))
-            # 確保 _start_time 也有時區資訊
             start_time = self._start_time
             if start_time.tzinfo is None:
                 start_time = pytz.timezone('Asia/Taipei').localize(start_time)
@@ -174,5 +169,4 @@ class PlatformEventService:
         self._start_time = start_time
 
 
-# 全局實例
 platform_event_service = PlatformEventService()

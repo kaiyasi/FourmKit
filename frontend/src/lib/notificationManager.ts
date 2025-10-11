@@ -85,5 +85,4 @@ export class NotificationManager implements INotificationManager {
   }
 }
 
-// 全域單例
 export const notificationManager = new NotificationManager()

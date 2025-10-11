@@ -18,7 +18,6 @@ bp = Blueprint("events", __name__, url_prefix="/api/events")
 def get_events():
     """獲取事件列表"""
     try:
-        # 獲取查詢參數
         limit = min(int(request.args.get("limit", 50)), 200)
         offset = int(request.args.get("offset", 0))
         category = request.args.get("category")
@@ -29,21 +28,18 @@ def get_events():
         unread_only = request.args.get("unread_only", "false").lower() == "true"
         important_only = request.args.get("important_only", "false").lower() == "true"
         
-        # 權限檢查 - 校內管理員只能看到自己學校的事件
         current_user_id = get_jwt_identity()
         with get_session() as s:
             current_user = s.get(User, current_user_id)
             if not current_user:
                 return jsonify({"error": "用戶不存在"}), 404
             
-            # 校內管理員權限限制
             if current_user.role in ["campus_admin", "campus_moderator"] and current_user.school_id:
                 if school_id is None:
                     school_id = current_user.school_id
                 elif school_id != current_user.school_id:
                     return jsonify({"error": "權限不足"}), 403
             
-            # 獲取事件列表
             events = EventService.get_events(
                 session=s,
                 limit=limit,
@@ -57,16 +53,13 @@ def get_events():
                 important_only=important_only
             )
             
-            # 轉換為字典格式
             events_data = []
             for event in events:
                 event_dict = event.to_dict()
-                # 非dev_admin用戶隱藏敏感信息
                 if current_user.role != "dev_admin":
                     event_dict["client_ip"] = None
                     event_dict["user_agent"] = None
                     if event_dict.get("metadata"):
-                        # 移除敏感的metadata
                         sensitive_keys = ["ip", "user_agent", "password", "token"]
                         for key in sensitive_keys:
                             event_dict["metadata"].pop(key, None)
@@ -102,14 +95,11 @@ def mark_events_read():
         user_id = get_jwt_identity()
         
         with get_session() as s:
-            # 權限檢查
             current_user = s.get(User, user_id)
             if not current_user:
                 return jsonify({"error": "用戶不存在"}), 404
             
-            # 校內管理員只能標記自己學校的事件
             if current_user.role in ["campus_admin", "campus_moderator"] and current_user.school_id:
-                # 驗證事件是否屬於用戶的學校
                 events = s.query(SystemEvent).filter(
                     SystemEvent.id.in_(event_ids),
                     SystemEvent.school_id == current_user.school_id
@@ -122,7 +112,6 @@ def mark_events_read():
             else:
                 valid_event_ids = event_ids
             
-            # 標記為已讀
             updated_count = EventService.mark_as_read(s, valid_event_ids, user_id)
             s.commit()
             
@@ -151,14 +140,12 @@ def get_event_statistics():
             if not current_user:
                 return jsonify({"error": "用戶不存在"}), 404
             
-            # 權限檢查
             if current_user.role in ["campus_admin", "campus_moderator"] and current_user.school_id:
                 if school_id is None:
                     school_id = current_user.school_id
                 elif school_id != current_user.school_id:
                     return jsonify({"error": "權限不足"}), 403
             
-            # 獲取統計數據
             stats = EventService.get_event_statistics(
                 session=s,
                 days=days,
@@ -181,7 +168,6 @@ def get_event_statistics():
 def get_event_categories():
     """獲取事件分類列表"""
     try:
-        # 從EventService獲取所有事件類型
         categories = {}
         for event_type, info in EventService.EVENT_TYPES.items():
             category = info["category"]
@@ -214,13 +200,11 @@ def _get_category_display_name(category: str) -> str:
         "school": "學校管理",
         "system": "系統管理",
         "security": "安全事件",
-        # 支援功能已移除
         "moderation": "審核管理"
     }
     return names.get(category, category.title())
 
 
-# 通知中心專用API
 @bp.get("/notifications")
 @jwt_required()
 @require_role("dev_admin", "campus_admin", "cross_admin", "campus_moderator", "cross_moderator")
@@ -234,12 +218,10 @@ def get_notifications():
             if not current_user:
                 return jsonify({"error": "用戶不存在"}), 404
             
-            # 根據用戶角色設置學校過濾
             school_id = None
             if current_user.role in ["campus_admin", "campus_moderator"] and current_user.school_id:
                 school_id = current_user.school_id
             
-            # 獲取最近的重要事件（未讀）
             important_events = EventService.get_events(
                 session=s,
                 limit=10,
@@ -250,7 +232,6 @@ def get_notifications():
                 current_user_role=current_user.role
             )
             
-            # 獲取最近的一般事件（未讀）
             recent_events = EventService.get_events(
                 session=s,
                 limit=20,
@@ -260,16 +241,14 @@ def get_notifications():
                 current_user_role=current_user.role
             )
             
-            # 獲取統計數據
             stats = EventService.get_event_statistics(
                 session=s,
-                days=1,  # 今日統計
+                days=1,
                 school_id=school_id,
                 current_user_id=current_user.id,
                 current_user_role=current_user.role
             )
             
-            # 處理敏感信息
             def clean_event(event):
                 event_dict = event.to_dict()
                 if current_user.role != "dev_admin":

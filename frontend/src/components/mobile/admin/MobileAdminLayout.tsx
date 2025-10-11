@@ -2,8 +2,13 @@ import React, { ReactNode, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Menu, Bell, Search, MoreVertical } from 'lucide-react'
 import { useNotifications } from '@/hooks/useNotifications'
+<<<<<<< Updated upstream
 import NotificationCenter from '@/components/notifications/NotificationCenter'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+=======
+import NotificationCenter from '@/components/notifications/NotificationCenter'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+>>>>>>> Stashed changes
 
 interface MobileAdminLayoutProps {
   title: string
@@ -18,6 +23,9 @@ interface MobileAdminLayoutProps {
   bottomContent?: ReactNode
 }
 
+/**
+ *
+ */
 export function MobileAdminLayout({
   title,
   subtitle,
@@ -36,11 +44,17 @@ export function MobileAdminLayout({
   const [isNotificationOpen, setIsNotificationOpen] = useState(false)
   const notificationButtonRef = React.useRef<HTMLButtonElement>(null)
 
+<<<<<<< Updated upstream
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* 頂部工具列 */}
+=======
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      
+>>>>>>> Stashed changes
       <div className="sticky top-0 z-50 bg-surface/90 backdrop-blur-md border-b border-border">
-        {/* 安全區域 */}
+        
         <div className="pt-safe-top" />
         
         <div className="flex items-center justify-between px-4 py-3">
@@ -96,6 +110,7 @@ export function MobileAdminLayout({
         </div>
       </div>
 
+<<<<<<< Updated upstream
       {/* 主要內容區域 */}
       <div className="flex-1 overflow-hidden">
         <div className="h-full overflow-y-auto mobile-scroll-smooth">
@@ -115,8 +130,29 @@ export function MobileAdminLayout({
 
       {/* 行動版底部導覽列：全後台手機頁共用 */}
       <MobileBottomNav />
+=======
+      
+      <div className="flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto mobile-scroll-smooth">
+          <div className="p-4" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 64px)' }}>
+            {children}
+          </div>
+        </div>
+      </div>
 
-      {/* 通知中心面板（手機版適配） */}
+      
+      {bottomContent && (
+        <div className="sticky bottom-0 bg-surface/90 backdrop-blur-md border-t border-border">
+          {bottomContent}
+          <div className="pb-safe-bottom" />
+        </div>
+      )}
+>>>>>>> Stashed changes
+
+      
+      <MobileBottomNav />
+
+      
       {showNotifications && (
         <NotificationCenter
           isOpen={isNotificationOpen}
@@ -124,6 +160,12 @@ export function MobileAdminLayout({
           anchorRef={notificationButtonRef}
         />
       )}
+<<<<<<< Updated upstream
     </div>
   )
 }
+=======
+    </div>
+  )
+}
+>>>>>>> Stashed changes

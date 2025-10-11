@@ -7,6 +7,9 @@ interface QuickPostFabProps {
   onPostCreated?: (post: any) => void
 }
 
+/**
+ *
+ */
 export function QuickPostFab({ onPostCreated }: QuickPostFabProps) {
   const { isLoggedIn } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
@@ -21,7 +24,7 @@ export function QuickPostFab({ onPostCreated }: QuickPostFabProps) {
 
   return (
     <>
-      {/* 主 FAB 按鈕 */}
+      
       <button
         onClick={() => {
           haptic(8)
@@ -36,7 +39,7 @@ export function QuickPostFab({ onPostCreated }: QuickPostFabProps) {
         <Edit3 className="w-6 h-6 text-white" />
       </button>
 
-      {/* 使用新的螢幕自適應發文組件 */}
+      
       <MobilePostComposer
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}

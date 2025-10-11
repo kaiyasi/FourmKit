@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_moderation.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import Blueprint, jsonify, request, abort, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy.orm import Session
@@ -21,14 +25,12 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("moderation", __name__, url_prefix="/api/moderation")
 
-# 審核狀態枚舉
 MODERATION_STATUS = {
     "PENDING": "pending",
     "APPROVED": "approved",
     "REJECTED": "rejected",
 }
 
-# 審核類型枚舉
 MODERATION_TYPE = {"POST": "post", "MEDIA": "media", "COMMENT": "comment"}
 
 
@@ -37,14 +39,11 @@ def _markdown_to_html(md: str) -> str:
     if not md:
         return ""
 
-    # 檢測是否已經是HTML格式（包含HTML標籤）
     if re.search(r"<[^>]+>", md):
-        # 如果已經是HTML，直接返回，但進行安全清理
         from utils.sanitize import clean_html
 
         return clean_html(md)
 
-    # 先轉義HTML特殊字符
     def escape_html(s: str) -> str:
         return (
             s.replace("&", "&amp;")
@@ -53,7 +52,6 @@ def _markdown_to_html(md: str) -> str:
             .replace('"', "&quot;")
         )
 
-    # 處理程式碼區塊（先保存）
     code_blocks = []
 
     def save_code_block(match):
@@ -62,14 +60,11 @@ def _markdown_to_html(md: str) -> str:
 
     md = re.sub(r"```([\s\S]*?)```", save_code_block, md)
 
-    # 轉義HTML
     md = escape_html(md)
 
-    # 保護被反斜線轉義的 Markdown 符號（目前支援 *）
     ESCAPED_ASTERISK_TOKEN = "__ESCAPED_ASTERISK__"
     md = re.sub(r"\\\*", ESCAPED_ASTERISK_TOKEN, md)
 
-    # 處理標題（在段落處理之前）
     md = re.sub(r"^#{6}\s*(.+)$", r"<h6>\1</h6>", md, flags=re.MULTILINE)
     md = re.sub(r"^#{5}\s*(.+)$", r"<h5>\1</h5>", md, flags=re.MULTILINE)
     md = re.sub(r"^#{4}\s*(.+)$", r"<h4>\1</h4>", md, flags=re.MULTILINE)
@@ -77,21 +72,17 @@ def _markdown_to_html(md: str) -> str:
     md = re.sub(r"^#{2}\s*(.+)$", r"<h2>\1</h2>", md, flags=re.MULTILINE)
     md = re.sub(r"^#{1}\s*(.+)$", r"<h1>\1</h1>", md, flags=re.MULTILINE)
 
-    # 處理粗體和斜體
     md = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", md)
     md = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", md)
 
-    # 處理行內程式碼
     md = re.sub(r"`([^`]+)`", r"<code>\1</code>", md)
 
-    # 處理連結
     md = re.sub(
         r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
         r'<a href="\2" target="_blank" rel="noreferrer">\1</a>',
         md,
     )
 
-    # 處理清單和段落
     lines = md.split("\n")
     result_lines = []
     in_list = False
@@ -108,7 +99,6 @@ def _markdown_to_html(md: str) -> str:
                 in_quote = False
             continue
 
-        # 處理引用區段 (> 開頭)
         if line.startswith("> "):
             if not in_quote:
                 result_lines.append("<blockquote>")
@@ -120,7 +110,6 @@ def _markdown_to_html(md: str) -> str:
             result_lines.append("</blockquote>")
             in_quote = False
 
-        # 處理橫隔線 (---)
         if line == "---":
             if in_list:
                 result_lines.append("</ul>")
@@ -132,14 +121,12 @@ def _markdown_to_html(md: str) -> str:
             if not in_list:
                 result_lines.append("<ul>")
                 in_list = True
-            # 移除列表標記並包裝內容
             content = re.sub(r"^[-*]\s+", "", line)
             result_lines.append(f"<li>{content}</li>")
         else:
             if in_list:
                 result_lines.append("</ul>")
                 in_list = False
-            # 檢查是否已經是標題
             if line.startswith("<h"):
                 result_lines.append(line)
             else:
@@ -152,7 +139,6 @@ def _markdown_to_html(md: str) -> str:
 
     html = "\n".join(result_lines)
 
-    # 恢復程式碼區塊
     def restore_code_block(match):
         idx = int(match.group(1))
         code = code_blocks[idx]
@@ -160,7 +146,6 @@ def _markdown_to_html(md: str) -> str:
 
     html = re.sub(r"__CODE_BLOCK_(\d+)__", restore_code_block, html)
 
-    # 還原被保護的符號
     html = html.replace(ESCAPED_ASTERISK_TOKEN, "*")
 
     return html
@@ -190,8 +175,6 @@ def write_log(
             {"tt": ttype, "ti": tid, "ac": act, "os": old, "ns": new, "rs": reason, "mi": mid},
         )
     except Exception:
-        # 如果寫入日誌失敗，不影響主流程（避免 500）
-        # 讓呼叫端照常提交主要交易
         pass
 
 def upsert_log_by_replacing_last(
@@ -216,7 +199,6 @@ def upsert_log_by_replacing_last(
              .first()
         )
         if last is not None:
-            # 僅更新可變欄位，保留最初 old_status 與 created_at
             try:
                 last.action = act
                 last.new_status = new
@@ -226,10 +208,8 @@ def upsert_log_by_replacing_last(
                 return
             except Exception as e:
                 logger.error(f"Failed to upsert moderation log: {e}")
-        # 找不到舊紀錄時，退回新增一筆
         write_log(s, ttype, tid, act, old, new, reason, mid)
     except Exception:
-        # 降級策略：任何查詢/更新異常時，至少寫一筆新紀錄
         write_log(s, ttype, tid, act, old, new, reason, mid)
 
 
@@ -240,13 +220,10 @@ def _get_signed_media_url(mid: int) -> str | None:
         exp = int(time.time()) + max(30, min(600, ttl))
         secret = os.getenv("MEDIA_PREVIEW_SECRET", os.getenv("SECRET_KEY", "dev-only-key-not-for-production"))
         sig = _sign(mid, exp, secret)
-        # 使用絕對路徑，確保前端能正確訪問
         url = f"/api/moderation/media/preview?mid={mid}&exp={exp}&sig={sig}"
 
-        # 檢查URL長度，避免過長導致413錯誤
         if len(url) > 2000:  # 一般瀏覽器URL長度限制約2000字符
             print(f"Warning: Generated URL too long ({len(url)} chars) for media {mid}")
-            # 如果URL太長，使用更短的簽名格式
             short_sig = sig[:16]  # 只取前16個字符
             url = f"/api/moderation/media/preview?mid={mid}&exp={exp}&sig={short_sig}"
             print(f"Using shortened URL ({len(url)} chars): {url}")
@@ -268,12 +245,9 @@ def _verify(mid: int, exp: int, sig: str, secret: str) -> bool:
         return False
     try:
         expected = _sign(mid, exp, secret)
-        # 支援完整簽名和短簽名（前16字符）
         if len(sig) <= 16:
-            # 短簽名驗證
             return hmac.compare_digest(expected[:16], sig)
         else:
-            # 完整簽名驗證
             return hmac.compare_digest(expected, sig)
     except Exception:
         return False
@@ -292,7 +266,6 @@ def my_moderation_progress():
     limit = min(max(int(request.args.get("limit") or 20), 1), 50)
     uid = get_jwt_identity()
     if mine and uid is None:
-        # 未登入情境回傳空清單，避免 404/401 造成前端報錯
         return jsonify({"ok": True, "data": {"items": [], "pagination": {"page": 1, "per_page": limit, "total": 0, "has_next": False}}})
     try:
         with get_session() as s:
@@ -302,7 +275,6 @@ def my_moderation_progress():
             rows = q.limit(limit).all()
             items = []
             for p in rows:
-                # 學校資訊（對齊貼文清單的欄位）
                 school_obj = None
                 school_name = None
                 try:
@@ -331,7 +303,6 @@ def my_moderation_progress():
                 },
             })
     except Exception:
-        # 降級：任何錯誤時回空清單以穩定 UI
         return jsonify({"ok": True, "data": {"items": [], "pagination": {"page": 1, "per_page": limit, "total": 0, "has_next": False}}})
 
 
@@ -341,67 +312,54 @@ def my_moderation_progress():
 def get_moderation_queue():
     """獲取審核隊列"""
     try:
-        # 獲取查詢參數
         page = request.args.get("page", 1, type=int)
         per_page = min(request.args.get("per_page", 20, type=int), 100)
         status = request.args.get("status", MODERATION_STATUS["PENDING"])
-        content_type = request.args.get("type")  # post, media, comment
+        content_type = request.args.get("type")
         school_slug = request.args.get("school")
-        scope = request.args.get("scope")  # cross, all, 或 None
+        scope = request.args.get("scope")
         client_id = request.args.get("client_id")
         ip = request.args.get("ip")
 
         with get_session() as s:
-            # 獲取用戶資訊和權限
             user_id = get_jwt_identity()
             user = s.query(User).get(user_id)
             if not user:
                 return jsonify({"ok": False, "error": "用戶不存在"}), 401
 
-            # 構建查詢條件
             posts_query = s.query(Post).filter(Post.status == status)
             
-            # 媒體查詢：不單獨顯示媒體，只通過貼文來審核
-            media_query = s.query(Media).filter(text("1=0"))  # 不返回任何媒體
+            media_query = s.query(Media).filter(text("1=0"))
 
-            # 根據內容類型篩選
             if content_type == MODERATION_TYPE["POST"]:
-                media_query = media_query.filter(text("1=0"))  # 不返回媒體
+                media_query = media_query.filter(text("1=0"))
             elif content_type == MODERATION_TYPE["MEDIA"]:
-                posts_query = posts_query.filter(text("1=0"))  # 不返回貼文
+                posts_query = posts_query.filter(text("1=0"))
             elif content_type == "delete_request":
-                # 刪文請求類型：不返回貼文和媒體，只返回刪文請求
                 posts_query = posts_query.filter(text("1=0"))
                 media_query = media_query.filter(text("1=0"))
-                # 注意：刪文請求有獨立的 API 端點 /api/admin/delete-requests
 
-            # 根據學校篩選
             if school_slug:
                 school = s.query(School).filter(School.slug == school_slug).first()
                 if school:
                     posts_query = posts_query.filter(Post.school_id == school.id)
                     media_query = media_query.filter(Media.school_id == school.id)
 
-            # 根據用戶權限和 scope 參數篩選
             if user.role == "dev_admin":
-                # dev_admin 可以根據 scope 參數決定查看範圍
                 if scope == "cross":
                     posts_query = posts_query.filter(Post.school_id.is_(None))
                     media_query = media_query.filter(Media.school_id.is_(None))
-                # scope == "all" 或 None 時，不額外篩選，可以看到所有貼文
             elif user.role in ["campus_admin", "campus_moderator"]:
                 if user.school_id:
                     posts_query = posts_query.filter(Post.school_id == user.school_id)
                     media_query = media_query.filter(Media.school_id == user.school_id)
                 else:
-                    # 無綁定學校時，不顯示任何資料
                     posts_query = posts_query.filter(text("1=0"))
                     media_query = media_query.filter(text("1=0"))
             elif user.role in ["cross_admin", "cross_moderator"]:
                 posts_query = posts_query.filter(Post.school_id.is_(None))
                 media_query = media_query.filter(Media.school_id.is_(None))
 
-            # 根據client_id和IP篩選
             if client_id:
                 posts_query = posts_query.filter(Post.client_id.ilike(f"%{client_id}%"))
                 media_query = media_query.filter(Media.client_id.ilike(f"%{client_id}%"))
@@ -410,7 +368,6 @@ def get_moderation_queue():
                 posts_query = posts_query.filter(Post.ip.ilike(f"%{ip}%"))
                 media_query = media_query.filter(Media.ip.ilike(f"%{ip}%"))
 
-            # 分頁查詢
             posts_offset = (page - 1) * per_page
             media_offset = (page - 1) * per_page
 
@@ -421,27 +378,22 @@ def get_moderation_queue():
                 media_query.order_by(Media.id.desc()).offset(media_offset).limit(per_page).all()
             )
 
-            # 是否允許顯示敏感資訊（作者真名、client_id、IP）
             show_sensitive = (user.role == 'dev_admin')
 
-            # 處理貼文數據
             posts_data = []
             for post in posts:
-                # 獲取學校名稱
                 school_name = None
                 if post.school_id:
                     school = s.query(School).filter(School.id == post.school_id).first()
                     if school:
                         school_name = school.name
 
-                # 獲取作者資訊（僅 dev_admin 看到細節）
                 author_info = None
                 if show_sensitive and post.author_id:
                     author = s.query(User).filter(User.id == post.author_id).first()
                     if author:
                         author_info = {"id": int(author.id), "username": author.username, "school_name": school_name}
 
-                # 獲取貼文的媒體附件
                 post_media = []
                 media_items = s.query(Media).filter(Media.post_id == post.id).all()
                 for media_item in media_items:
@@ -486,24 +438,20 @@ def get_moderation_queue():
                     }
                 )
 
-            # 處理媒體數據
             media_data = []
             for media_item in media:
-                # 獲取學校名稱
                 school_name = None
                 if media_item.school_id:
                     school = s.query(School).filter(School.id == media_item.school_id).first()
                     if school:
                         school_name = school.name
 
-                # 獲取作者資訊（僅 dev_admin 看到細節）
                 author_info = None
                 if show_sensitive and media_item.author_id:
                     author = s.query(User).filter(User.id == media_item.author_id).first()
                     if author:
                         author_info = {"id": int(author.id), "username": author.username, "school_name": school_name}
 
-                # 生成預覽URL
                 preview_url = _get_signed_media_url(media_item.id)
 
                 media_data.append(
@@ -528,7 +476,6 @@ def get_moderation_queue():
                     }
                 )
 
-            # 合併並排序結果
             all_items = posts_data + media_data
             all_items.sort(key=lambda x: x["created_at"] or "", reverse=True)
 
@@ -544,7 +491,6 @@ def get_moderation_queue():
                             "has_next": len(all_items) == per_page,
                         },
                     },
-                    # 向後相容性：同時提供 posts 欄位
                     "posts": all_items,
                 }
             )
@@ -564,20 +510,17 @@ def get_post_detail(post_id: int):
             if not post:
                 return jsonify({"ok": False, "error": "貼文不存在"}), 404
 
-            # 檢查權限
             user_id = get_jwt_identity()
             user = s.query(User).get(user_id)
             if not can_moderate_content(user, post.school_id, post):
                 return jsonify({"ok": False, "error": "沒有權限查看此貼文"}), 403
 
-            # 獲取學校名稱
             school_name = None
             if post.school_id:
                 school = s.query(School).filter(School.id == post.school_id).first()
                 if school:
                     school_name = school.name
 
-            # 獲取作者資訊
             author_info = None
             if post.author_id:
                 author = s.query(User).filter(User.id == post.author_id).first()
@@ -588,7 +531,6 @@ def get_post_detail(post_id: int):
                         "school_name": school_name,
                     }
 
-            # 獲取媒體列表
             media_list = []
             media_items = (
                 s.query(Media).filter(Media.post_id == post_id).order_by(Media.id.asc()).all()
@@ -679,12 +621,10 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
     if not post:
         return jsonify({"ok": False, "error": "貼文不存在"}), 404
 
-    # 檢查權限
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, post.school_id, post):
         return jsonify({"ok": False, "error": "沒有權限核准此貼文"}), 403
 
-    # Idempotent：已核准則略過，避免重複寫日誌
     if (post.status or '').lower() == MODERATION_STATUS["APPROVED"]:
         return jsonify({"ok": True, "message": "貼文已是核准狀態，略過"})
 
@@ -692,7 +632,6 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
     post.status = MODERATION_STATUS["APPROVED"]
     post.rejected_reason = None
 
-    # 核准相關的媒體
     media_items = s.query(Media).filter(Media.post_id == post_id).all()
     for media_item in media_items:
         if media_item.status != MODERATION_STATUS["APPROVED"]:
@@ -721,14 +660,12 @@ def _approve_post(s: Session, post_id: int, user_id: int, reason: str):
     )
     s.commit()
 
-    # 發送SocketIO事件
     try:
         from app import socketio
         socketio.emit("post.approved", {"id": post_id, "status": "approved"})
     except Exception:
         pass
 
-    # 觸發新的自動發布系統
     try:
         from services.post_approval_hook import trigger_auto_publish_on_approval
         result = trigger_auto_publish_on_approval(post)
@@ -746,12 +683,10 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
     if not media_item:
         return jsonify({"ok": False, "error": "媒體不存在"}), 404
 
-    # 檢查權限
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, media_item.school_id):
         return jsonify({"ok": False, "error": "沒有權限核准此媒體"}), 403
 
-    # Idempotent：已核准則略過
     if (media_item.status or '').lower() == MODERATION_STATUS["APPROVED"]:
         return jsonify({"ok": True, "message": "媒體已是核准狀態，略過"})
 
@@ -761,17 +696,14 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
         if new_rel.startswith('public/'):
             media_item.path = new_rel
 
-            # **新增**: 審核通過後觸發CDN上傳
             try:
                 from utils.upload_utils import resolve_or_publish_public_media
                 cdn_url = resolve_or_publish_public_media(new_rel, int(media_item.id), getattr(media_item, 'mime_type', None))
                 if cdn_url and not cdn_url.startswith('/uploads/'):
-                    # 成功上傳到CDN，記錄日誌
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.info(f"媒體 {media_item.id} 已上傳到CDN: {cdn_url}")
             except Exception as e:
-                # CDN上傳失敗不影響審核流程
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning(f"媒體 {media_item.id} CDN上傳失敗: {e}")
@@ -786,7 +718,6 @@ def _approve_media(s: Session, media_id: int, user_id: int, reason: str):
     )
     s.commit()
 
-    # 發送SocketIO事件
     try:
         from app import socketio
         socketio.emit("media.approved", {"id": media_id})
@@ -841,12 +772,10 @@ def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
     if not post:
         return jsonify({"ok": False, "error": "貼文不存在"}), 404
 
-    # 檢查權限
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, post.school_id, post):
         return jsonify({"ok": False, "error": "沒有權限拒絕此貼文"}), 403
 
-    # Idempotent：已拒絕則略過
     if (post.status or '').lower() == MODERATION_STATUS["REJECTED"]:
         return jsonify({"ok": True, "message": "貼文已是拒絕狀態，略過"})
 
@@ -854,7 +783,6 @@ def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
     post.status = MODERATION_STATUS["REJECTED"]
     post.rejected_reason = reason
 
-    # 拒絕相關的媒體
     media_items = s.query(Media).filter(Media.post_id == post_id).all()
     for media_item in media_items:
         if media_item.status != MODERATION_STATUS["REJECTED"]:
@@ -897,7 +825,6 @@ def _reject_post(s: Session, post_id: int, user_id: int, reason: str):
         pass
     s.commit()
 
-    # 發送SocketIO事件
     try:
         from app import socketio
         socketio.emit("post.rejected", {"id": post_id, "status": "rejected", "reason": reason})
@@ -915,12 +842,10 @@ def _reject_media(s: Session, media_id: int, user_id: int, reason: str):
     if not media_item:
         return jsonify({"ok": False, "error": "媒體不存在"}), 404
 
-    # 檢查權限
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, media_item.school_id):
         return jsonify({"ok": False, "error": "沒有權限拒絕此媒體"}), 403
 
-    # Idempotent：已拒絕則略過
     if (media_item.status or '').lower() == MODERATION_STATUS["REJECTED"]:
         return jsonify({"ok": True, "message": "媒體已是拒絕狀態，略過"})
 
@@ -953,7 +878,6 @@ def _reject_media(s: Session, media_id: int, user_id: int, reason: str):
         pass
     s.commit()
 
-    # 發送SocketIO事件
     try:
         from app import socketio
         socketio.emit("media.rejected", {"id": media_id})
@@ -990,7 +914,6 @@ def override_decision():
             if not user:
                 return jsonify({"ok": False, "error": "用戶不存在"}), 401
 
-            # 檢查否決權限
             if not _can_override_decision(user):
                 return jsonify({"ok": False, "error": "沒有否決權限"}), 403
 
@@ -1007,11 +930,9 @@ def override_decision():
 
 def _can_override_decision(user: User) -> bool:
     """檢查用戶是否有否決權限"""
-    # 總管理（開發者）有最高否決權
     if user.role == "dev_admin":
         return True
     
-    # 校內/跨校管理員可以否決審核員的決策
     if user.role in ["campus_admin", "cross_admin"]:
         return True
     
@@ -1024,12 +945,10 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
     if not post:
         return jsonify({"ok": False, "error": "貼文不存在"}), 404
 
-    # 檢查權限
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, post.school_id, post):
         return jsonify({"ok": False, "error": "沒有權限操作此貼文"}), 403
 
-    # 不允許非 dev_admin 否決 dev_admin 的決策
     try:
         last_log = (
             s.query(ModerationLog)
@@ -1051,7 +970,6 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
 
     old_status = post.status
     target_status = MODERATION_STATUS["APPROVED"] if action == "approve" else MODERATION_STATUS["REJECTED"]
-    # 若狀態本已一致，視為無變更（避免重複否決/寫日誌）
     if (old_status or '').lower() == target_status:
         return jsonify({"ok": True, "message": "狀態未變更，略過"})
     
@@ -1059,7 +977,6 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
         post.status = MODERATION_STATUS["APPROVED"]
         post.rejected_reason = None
         
-        # 核准相關的媒體
         media_items = s.query(Media).filter(Media.post_id == post_id).all()
         for media_item in media_items:
             if media_item.status != MODERATION_STATUS["APPROVED"]:
@@ -1106,7 +1023,6 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
         post.status = MODERATION_STATUS["REJECTED"]
         post.rejected_reason = reason
         
-        # 拒絕相關的媒體
         media_items = s.query(Media).filter(Media.post_id == post_id).all()
         for media_item in media_items:
             if media_item.status != MODERATION_STATUS["REJECTED"]:
@@ -1136,7 +1052,6 @@ def _override_post_decision(s: Session, post_id: int, user_id: int, action: str,
     )
     s.commit()
 
-    # 發送SocketIO事件
     try:
         from app import socketio
         if action == "approve":
@@ -1155,12 +1070,10 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
     if not media_item:
         return jsonify({"ok": False, "error": "媒體不存在"}), 404
 
-    # 檢查權限
     user = s.query(User).get(user_id)
     if not can_moderate_content(user, media_item.school_id):
         return jsonify({"ok": False, "error": "沒有權限操作此媒體"}), 403
 
-    # 不允許非 dev_admin 否決 dev_admin 的決策
     try:
         last_log = (
             s.query(ModerationLog)
@@ -1214,7 +1127,7 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
             )
         except Exception:
             pass
-    else:  # reject
+    else:
         media_item.status = MODERATION_STATUS["REJECTED"]
         media_item.rejected_reason = reason
 
@@ -1230,7 +1143,6 @@ def _override_media_decision(s: Session, media_id: int, user_id: int, action: st
     )
     s.commit()
 
-    # 發送SocketIO事件
     try:
         from app import socketio
         if action == "approve":
@@ -1259,7 +1171,6 @@ def escalate_log():
         with get_session() as s:
             uid = int(get_jwt_identity() or 0)
             u = s.get(User, uid)
-            # 建立事件供 dev_admin 追蹤
             try:
                 EventService.log_event(
                     session=s,
@@ -1315,31 +1226,24 @@ def get_moderation_logs():
         moderator_id = request.args.get("moderator_id", type=int)
 
         with get_session() as s:
-            # 檢查權限 - 是否為 dev_admin
             user_id = get_jwt_identity()
             user = s.query(User).get(user_id)
             show_sensitive = (user and user.role == 'dev_admin')
             
             query = s.query(ModerationLog)
 
-            # 篩選條件
             if content_type:
                 query = query.filter(ModerationLog.target_type == content_type)
             else:
-                # 預設僅顯示貼文類型，以避免媒體紀錄干擾審核視圖
                 query = query.filter(ModerationLog.target_type == MODERATION_TYPE["POST"])
             if action:
                 query = query.filter(ModerationLog.action == action)
             if moderator_id:
                 query = query.filter(ModerationLog.moderator_id == moderator_id)
 
-            # 依角色範圍過濾
             try:
                 if user and user.role in ["campus_admin", "campus_moderator"]:
-                    # 只看綁定學校的項目
                     if user.school_id:
-                        # 僅過濾貼文/媒體所屬學校（以目標物件的 school_id 為準）
-                        # 以子查詢方式找出該學校的貼文/媒體 id
                         post_ids = [p.id for p in s.query(Post.id).filter(Post.school_id == user.school_id).all()]
                         media_ids = [m.id for m in s.query(Media.id).filter(Media.school_id == user.school_id).all()]
                         query = query.filter(
@@ -1349,10 +1253,8 @@ def get_moderation_logs():
                             )
                         )
                     else:
-                        # 無綁定學校時不可見
                         query = query.filter(text("1=0"))
                 elif user and user.role in ["cross_admin", "cross_moderator"]:
-                    # 只看跨校內容（school_id is NULL）
                     post_ids = [p.id for p in s.query(Post.id).filter(Post.school_id.is_(None)).all()]
                     media_ids = [m.id for m in s.query(Media.id).filter(Media.school_id.is_(None)).all()]
                     query = query.filter(
@@ -1361,11 +1263,9 @@ def get_moderation_logs():
                             and_(ModerationLog.target_type == MODERATION_TYPE["MEDIA"], ModerationLog.target_id.in_(media_ids or [0]))
                         )
                     )
-                # dev_admin 視野不受限
             except Exception as e:
                 logger.error(f"Failed to publish media during approval process: {e}")
 
-            # 分頁查詢
             total = query.count()
             logs = (
                 query.order_by(ModerationLog.id.desc())
@@ -1374,16 +1274,13 @@ def get_moderation_logs():
                 .all()
             )
 
-            # 處理日誌數據（僅 dev_admin 可見，以避免個資外流）
             logs_data = []
             for log in logs:
-                # 獲取審核者資訊
                 moderator = s.query(User).filter(User.id == log.moderator_id).first()
                 moderator_info = None
                 if moderator:
                     moderator_info = {"id": moderator.id, "username": moderator.username}
 
-                # 來源：嘗試讀取目標之 school 以顯示「跨校/某校」
                 source = None
                 try:
                     if log.target_type == MODERATION_TYPE["POST"]:
@@ -1400,7 +1297,6 @@ def get_moderation_logs():
                             sch = s.query(School).get(sch_id)
                             source = sch.name if sch else None
                         else:
-                            # 若媒體未綁 school，嘗試從所屬貼文帶出
                             if m and getattr(m, 'post_id', None):
                                 p2 = s.query(Post).get(m.post_id)
                                 if p2 and getattr(p2, 'school_id', None):
@@ -1413,7 +1309,6 @@ def get_moderation_logs():
                 except Exception:
                     source = None
 
-                # 獲取原作者資訊（顯示誰的請求但控制 IP 顯示）
                 author_info = None
                 author_ip = None
                 try:
@@ -1472,7 +1367,6 @@ def get_moderation_logs():
                             "has_next": page * per_page < total,
                         },
                     },
-                    # 向後相容性：同時提供 items 欄位
                     "items": logs_data,
                 }
             )
@@ -1488,12 +1382,10 @@ def get_moderation_stats():
     """獲取審核統計"""
     try:
         with get_session() as s:
-            # 今日統計
             today = datetime.now().date()
             today_start = datetime.combine(today, datetime.min.time())
             today_end = datetime.combine(today, datetime.max.time())
 
-            # 待審數量
             pending_posts = (
                 s.query(func.count()).select_from(Post).filter(Post.status == MODERATION_STATUS["PENDING"]).scalar()
             )
@@ -1501,7 +1393,6 @@ def get_moderation_stats():
                 s.query(func.count()).select_from(Media).filter(Media.status == MODERATION_STATUS["PENDING"]).scalar()
             )
 
-            # 今日處理數量（包含貼文/媒體和刪文請求的核准及拒絕）
             today_processed = (
                 s.query(func.count())
                 .select_from(ModerationLog)
@@ -1515,7 +1406,6 @@ def get_moderation_stats():
                 .scalar()
             )
 
-            # 今日核准數量（包含貼文/媒體核准和刪文請求核准）
             today_approved = (
                 s.query(func.count())
                 .select_from(ModerationLog)
@@ -1529,7 +1419,6 @@ def get_moderation_stats():
                 .scalar()
             )
 
-            # 今日拒絕數量（包含貼文/媒體拒絕和刪文請求拒絕）
             today_rejected = (
                 s.query(func.count())
                 .select_from(ModerationLog)
@@ -1558,7 +1447,6 @@ def get_moderation_stats():
                             "rejected": today_rejected or 0,
                         },
                     },
-                    # 相容舊前端格式
                     "processed_today": today_processed or 0,
                     "pending_posts": pending_posts or 0
                 }
@@ -1568,12 +1456,10 @@ def get_moderation_stats():
         return jsonify({"ok": False, "error": f"獲取統計失敗: {str(e)}"}), 500
 
 
-# 保留原有的媒體預覽端點
 @bp.get("/media/<int:mid_>/preview")
 @jwt_required()
 @require_role("dev_admin", "campus_admin", "cross_admin", "campus_moderator", "cross_moderator")
 def issue_media_preview(mid_: int):
-    # 產生短效簽名 URL（預設 2 分鐘）
     ttl = int(os.getenv("MEDIA_PREVIEW_TTL", "120"))
     exp = int(time.time()) + max(30, min(600, ttl))
     secret = os.getenv("MEDIA_PREVIEW_SECRET", os.getenv("SECRET_KEY", "dev-only-key-not-for-production"))
@@ -1596,7 +1482,6 @@ def get_media_signed_url(mid_: int):
 
             status = (m.status or '').lower()
             if status != 'approved':
-                # 嚴格限制：僅審核角色可在未核准時取得預覽
                 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
                 try:
                     verify_jwt_in_request(optional=True)
@@ -1625,7 +1510,6 @@ def serve_media_preview():
         exp = int(request.args.get("exp") or "0")
         sig = (request.args.get("sig") or "").strip()
 
-        # 調試信息
         print(f"Media preview request: mid={mid}, exp={exp}, sig={sig[:10]}...")
 
         if mid <= 0 or exp <= 0 or not sig:
@@ -1643,7 +1527,6 @@ def serve_media_preview():
 
     print(f"Signature verified for media {mid}, serving file...")
 
-    # 與 preview_media_file 相同的檔案尋找與 CDN 代理邏輯
     with get_session() as s:
         m = s.get(Media, mid)
         if not m or not m.path:
@@ -1679,7 +1562,6 @@ def serve_media_preview():
             print(f"Serving local file: {fpath} (mime: {mime})")
             return send_file(str(fpath), mimetype=mime or "application/octet-stream")
 
-        # HTTP 代理
         print("Local file not found, trying CDN proxy...")
         try:
             import requests  # type: ignore
@@ -1725,7 +1607,6 @@ def serve_media_file_compat(mid_: int):
         m = s.get(Media, mid_)
         if not m:
             abort(404)
-        # 若為非核准狀態，要求審核權限
         if (m.status or "").lower() != "approved":
             try:
                 verify_jwt_in_request(optional=False)
@@ -1739,15 +1620,12 @@ def serve_media_file_compat(mid_: int):
         rel = (m.path or '').lstrip('/')
         base = Path(UPLOAD_ROOT)
         candidates = []
-        # 直接相對路徑（包含 public/, pending/, media/ 等）
         candidates.append(base / rel)
-        # 新結構：public/<id>.<ext>
         try:
             ext = (rel.rsplit('.',1)[-1] if '.' in rel else (m.file_type or 'jpg')).strip('.')
         except Exception:
             ext = 'jpg'
         candidates.append(base / 'public' / f"{m.id}.{ext}")
-        # 舊結構：public/media/<id>.<ext>
         candidates.append(base / 'public' / 'media' / f"{m.id}.{ext}")
 
         fpath = None
@@ -1759,7 +1637,6 @@ def serve_media_file_compat(mid_: int):
             except Exception:
                 continue
         if not fpath:
-            # 廣義搜尋：在 public/media 與 public 根目錄找任意符合 id.* 的檔
             try:
                 pat1 = (base / 'public' / 'media').glob(f"{m.id}.*")
                 pat2 = (base / 'public').glob(f"{m.id}.*")

@@ -1,4 +1,3 @@
-// frontend/src/components/PostList.tsx
 import { useEffect, useState, useRef } from 'react'
 import { getJSON, HttpError } from '../lib/http'
 import { validatePostList, type PostList as PostListType } from '../schemas/post'
@@ -13,9 +12,7 @@ import CommentSection from '@/components/CommentSection'
 
 type SchoolInfo = { id: number; slug: string; name: string }
 
-// 只有正整數 id 才算「真 ID」
 const isRealId = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
-// true-ish：true / 1 / '1' / 'true' / 'yes'
 const isTrue = (v: any) => v === true || v === 1 || v === '1' || (typeof v === 'string' && ['true','yes'].includes(v.toLowerCase()))
 
 function isVideoPath(path: string | null | undefined, kind?: string | null): boolean {
@@ -26,20 +23,15 @@ function isVideoPath(path: string | null | undefined, kind?: string | null): boo
 
 function hasImageAttachment(p: any): boolean {
   try {
-    // 後端若提供 has_media 且不是影片，直接用
     if (p?.has_media && !isVideoPath(p?.cover_path, p?.media_kind)) return true
-    // 以 cover_path 判斷常見影像
     const cover = (p?.cover_path || '').toLowerCase()
     if (cover && !isVideoPath(cover, p?.media_kind)) return true
-    // 僅有 media_count 時，以 >0 做寬鬆顯示（列表提示用）
     if (typeof p?.media_count === 'number' && p.media_count > 0) return true
   } catch {}
   return false
 }
 
-// 簡化的公告偵測：與 PostDetailPage 保持一致
 function getAnnouncementInfo(p: any): { isAnnouncement: boolean; label: string } {
-  // 只檢查 is_announcement 欄位，與 PostDetailPage 邏輯一致
   if ((p as any).is_announcement) {
     const announcementType = (p as any).announcement_type
     switch(announcementType) {
@@ -52,21 +44,17 @@ function getAnnouncementInfo(p: any): { isAnnouncement: boolean; label: string }
   return { isAnnouncement: false, label: '' }
 }
 
-// 簡化的廣告偵測：與 PostDetailPage 保持一致
 function isAdvertisement(p: any): boolean {
   return !!(p as any).is_advertisement
 }
 
-// 與 Detail 一致：公告 > 廣告 > 校名 > 跨校
 function displayMetaName(p: any, schools: SchoolInfo[]) {
-  // 檢查是否為公告，優先顯示公告類型
   if (p.is_announcement === true || p.is_announcement === 1 || p.is_announcement === '1' || p.is_announcement === 'true') {
     const announcementType = p.announcement_type
     switch(announcementType) {
       case 'platform': return '全平台公告'
       case 'cross': return '跨校公告'
       case 'school': {
-        // 學校公告只顯示學校名稱
         const obj = p?.school && typeof p.school === 'object' ? p.school : null
         const fromObj = obj ? String(obj.name || obj.slug || '').trim() : ''
         if (fromObj) return fromObj
@@ -87,12 +75,10 @@ function displayMetaName(p: any, schools: SchoolInfo[]) {
     }
   }
   
-  // 檢查是否為廣告
   if (p.is_advertisement === true || p.is_advertisement === 1 || p.is_advertisement === '1' || p.is_advertisement === 'true') {
     return '廣告'
   }
 
-  // 一般貼文顯示學校名稱
   const obj = p?.school && typeof p.school === 'object' ? p.school : null
   const fromObj = obj ? String(obj.name || obj.slug || '').trim() : ''
   if (fromObj) return fromObj
@@ -107,6 +93,9 @@ function displayMetaName(p: any, schools: SchoolInfo[]) {
   return (found?.name || found?.slug || '').trim() || '跨校'
 }
 
+/**
+ *
+ */
 export default function PostList({ injectedItems = [], showAll = false }: { injectedItems?: any[], showAll?: boolean }) {
   const [data, setData] = useState<PostListType | null>(null)
   const [page, setPage] = useState(1)
@@ -150,13 +139,10 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
       let q = ''
 
       if (raw === null || raw === '__ALL__') {
-        // 所有用戶選擇「全部」時都顯示所有學校的貼文
         q = '&all_schools=true'
       } else if (!raw || raw === '') {
-        // 選擇「跨校」時只顯示跨校貼文
         q = '&cross_only=true'
       } else {
-        // 選擇特定學校
         q = `&school=${encodeURIComponent(raw)}`
       }
 
@@ -224,7 +210,6 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
     }
   }, [])
 
-  // Scroll-based auto-loading
   useEffect(() => {
     const container = containerRef.current || document.documentElement
     
@@ -233,7 +218,6 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
         { scrollTop: window.scrollY, scrollHeight: document.body.scrollHeight, clientHeight: window.innerHeight } :
         container
       
-      // Load more when user is near bottom (300px threshold)
       if (scrollHeight - scrollTop - clientHeight < 300 && hasMore && !loading) {
         fetchPage(page + 1)
       }
@@ -436,7 +420,7 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
           >
             <div className="text-xs text-muted mb-2 mobile-text-sm oppo-text-lg break-words">
               <div className="flex items-center gap-2 flex-wrap">
-                {/* 置頂與公告/廣告徽章 */}
+                
                 {p.is_pinned && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-xs font-medium">
                     <Pin className="w-3 h-3" />
@@ -478,7 +462,7 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
 
             <Cover />
 
-            {/* 回覆提示（灰色小字） */}
+            
             {isRealId(p.reply_to_id) && (
               <div className="text-xs text-muted mb-2">
                 <Link to={`/posts/${p.reply_to_id}`} className="hover:underline">回覆貼文 #{p.reply_to_id}</Link>
@@ -501,7 +485,7 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
               />
             )}
 
-            {/* 留言區：點擊留言按鈕時顯示完整的留言系統 */}
+            
             {realId && showComments[p.id] && (
               <div className="mt-4">
                 <CommentSection 
@@ -517,13 +501,12 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
                 if (!realId) return
                 try { if (!matchMedia('(pointer: coarse)').matches) return } catch {}
                 if (longPressRef.current) clearTimeout(longPressRef.current as any)
-                // @ts-ignore
                 longPressRef.current = setTimeout(() => copyLink(p.id), 600) as any
               }}
               onTouchEnd={() => { if (longPressRef.current) { clearTimeout(longPressRef.current as any); longPressRef.current = null } }}
               onTouchCancel={() => { if (longPressRef.current) { clearTimeout(longPressRef.current as any); longPressRef.current = null } }}
             >
-              {/* 第一排：置頂與留言 */}
+              
               <div className="flex items-center justify-end gap-2">
                 {realId && (
                   p.is_pinned
@@ -569,7 +552,7 @@ export default function PostList({ injectedItems = [], showAll = false }: { inje
                 )}
               </div>
 
-              {/* 第二排：刪文請求與貼文連結 */}
+              
               <div className="flex items-center justify-end gap-2">
                 {realId && (
                   <button

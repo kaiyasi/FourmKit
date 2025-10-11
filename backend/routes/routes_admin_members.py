@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_admin_members.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.db import get_session
@@ -18,7 +22,6 @@ def get_members():
     with get_session() as s:
         _ = s.get(User, int(ident))
         
-        # 獲取所有用戶
         users = s.query(User).all()
         users_data = []
         
@@ -60,7 +63,6 @@ def update_member_premium_status(user_id: int):
         is_premium = data.get('is_premium', False)
         premium_until = data.get('premium_until')
         
-        # 更新會員狀態
         target_user.is_premium = is_premium
         if premium_until:
             try:
@@ -72,7 +74,6 @@ def update_member_premium_status(user_id: int):
         
         s.commit()
         
-        # 記錄事件
         try:
             EventService.log_event(
                 session=s,
@@ -115,7 +116,6 @@ def get_advertisement_posts():
     with get_session() as s:
         _ = s.get(User, int(ident))
         
-        # 獲取所有廣告貼文
         posts = s.query(Post).filter(Post.is_advertisement == True).order_by(Post.created_at.desc()).all()
         posts_data = []
         
@@ -160,14 +160,12 @@ def review_advertisement_post(post_id: int):
         if status not in ['approved', 'rejected']:
             return jsonify({"ok": False, "error": "無效的狀態"}), 400
         
-        # 更新貼文狀態
         post.status = status
         if status == 'rejected' and reason:
             post.rejected_reason = reason
         
         s.commit()
         
-        # 記錄事件
         try:
             EventService.log_event(
                 session=s,
@@ -217,7 +215,6 @@ def delete_advertisement_post(post_id: int):
         if not post.is_advertisement:
             return jsonify({"ok": False, "error": "此貼文不是廣告貼文"}), 400
         
-        # 記錄刪除事件
         try:
             EventService.log_event(
                 session=s,
@@ -238,7 +235,6 @@ def delete_advertisement_post(post_id: int):
         except Exception:
             pass
         
-        # 刪除貼文
         s.delete(post)
         s.commit()
         

@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/notify.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 import os
 import json
@@ -12,21 +16,20 @@ import json
 try:
     from redis import Redis
     import redis
-except Exception:  # pragma: no cover - redis optional in some envs
-    Redis = None  # type: ignore
-    redis = None  # type: ignore
+except Exception:
+    Redis = None
+    redis = None
 
 
-# Morandi palette (muted, non-overlapping)
 _MORANDI_HEX = [
-    "#B8C0C2",  # mist blue-gray
-    "#CDB7A3",  # warm taupe
-    "#A8B8A5",  # sage
-    "#B9A5B2",  # mauve
-    "#C6C3B9",  # stone beige
-    "#AEB6BF",  # steel blue
-    "#B7C1AA",  # olive gray
-    "#BFA8A0",  # dusty rose
+    "#B8C0C2",
+    "#CDB7A3",
+    "#A8B8A5",
+    "#B9A5B2",
+    "#C6C3B9",
+    "#AEB6BF",
+    "#B7C1AA",
+    "#BFA8A0",
 ]
 
 def _hex_to_int(color_hex: str) -> int:
@@ -51,7 +54,6 @@ EVENT_COLOR: Dict[str, int] = {
 def color_for_kind(kind: str) -> int:
     if kind in EVENT_COLOR:
         return EVENT_COLOR[kind]
-    # stable rotate by hash
     idx = (abs(hash(kind)) % len(MORANDI))
     return MORANDI[idx]
 
@@ -60,7 +62,6 @@ def get_admin_webhook_url() -> str:
     url = os.getenv("ADMIN_NOTIFY_WEBHOOK", "").strip()
     if url:
         return url
-    # backward compatibility
     return os.getenv("DISCORD_REPORT_WEBHOOK", os.getenv("DISCORD_THEME_WEBHOOK", "")).strip()
 
 
@@ -82,7 +83,6 @@ def _get_redis() -> Optional[Redis]:  # type: ignore
         url = os.getenv("REDIS_URL", "redis://redis:80/0")
         if not url:
             return None
-        # Use synchronous client; bot will consume asynchronously
         _redis_client = redis.from_url(url, decode_responses=True)  # type: ignore
         return _redis_client
     except Exception:
@@ -121,12 +121,10 @@ def _enqueue_announcement(kind: str, title: str, description: str, **kwargs: Any
             'title': title,
             'description': description,
         }
-        # include subset of kwargs
         for k in ('actor','source','fields','footer','color'):
             if k in kwargs:
                 payload[k] = kwargs[k]
         cli.zadd('fk:announcements', {json.dumps(payload): ts})
-        # trim to last 200
         try:
             cli.zremrangebyrank('fk:announcements', 0, -201)
         except Exception:
@@ -169,12 +167,10 @@ def build_embed(kind: str, title: str, description: str, *,
         "description": description,
         "color": color if isinstance(color, int) else color_for_kind(kind),
     }
-    # Branding author
     if author:
         embed["author"] = {"name": author}
     else:
         embed["author"] = _brand_author()
-    # Footer
     embed["footer"] = {"text": footer or _brand_footer_text()}
     if fields:
         embed["fields"] = fields
@@ -185,7 +181,6 @@ def post_discord(webhook_url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     if not webhook_url:
         return {"ok": False, "status": 0, "error": "缺少 Webhook URL"}
     
-    # 驗證 URL 格式
     try:
         from urllib.parse import urlparse
         parsed = urlparse(webhook_url)
@@ -255,7 +250,6 @@ def admin_notify(kind: str, title: str, description: str, *,
     return post_discord(hook, {"content": None, "embeds": [embed]})
 
 
-# ---- Unified message format (Morandi-themed) ----
 def build_event_payload(
     kind: str,
     title: str,
@@ -288,7 +282,6 @@ def build_event_payload(
     std_footer = " | ".join(std_footer_parts)
     footer_text = footer or std_footer
 
-    # Use brand author; include actor in fields
     embed = build_embed(
         kind,
         title,
@@ -329,31 +322,26 @@ def send_admin_event(
             **{k: v for k, v in kwargs.items() if k in {"actor", "source", "fields", "request_id", "ticket_id", "ts", "footer", "color"}},
         }))
 
-    # Announcement source hook
     try:
         if str(kind).lower() in {"announcement", "announce", "system_announcement"}:
             _enqueue_announcement(kind, title, description, **kwargs)
     except Exception:
         pass
 
-    # unify: success if any ok
     ok_any = any(r.get("ok") for r in results) if results else False
     status = next((r.get("status") for r in results if r.get("ok")), 0)
     err = ";".join(filter(None, [str(r.get("error")) for r in results if not r.get("ok")])) or None
     result = {"ok": ok_any, "status": status, **({"error": err} if err else {})}
     _log_admin_event(kind, result)
 
-    # 可選：同步寫入站內事件中心（預設啟用）。
-    # 目的：避免只有 Discord 有通知、事件中心無紀錄的情況。
     try:
         enabled = (os.getenv("ADMIN_NOTIFY_LOG_EVENTS", "1").strip().lower() in {"1","true","yes","on"})
     except Exception:
         enabled = True
     if enabled:
         try:
-            from services.event_service import EventService  # 避免模組層循環
+            from services.event_service import EventService
             from utils.db import get_session
-            # 盡力紀錄；失敗不影響 webhook 結果
             with get_session() as s:
                 meta: Dict[str, Any] = {}
                 for k in ("source","fields","request_id","ticket_id","ts","footer","color"):
@@ -387,7 +375,6 @@ def send_admin_event(
     return result
 
 
-# ---- Lightweight delivery log (in-memory) ----
 _ADMIN_EVT_LOG: Deque[Dict[str, Any]] = deque(maxlen=30)
 
 def _log_admin_event(kind: str, result: Dict[str, Any]) -> None:

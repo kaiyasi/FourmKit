@@ -2,6 +2,12 @@ import React from 'react'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { AlertTriangle, RefreshCw, LogIn } from 'lucide-react'
 
+<<<<<<< Updated upstream
+=======
+/**
+ *
+ */
+>>>>>>> Stashed changes
 export default function OAuthFailedPage() {
   return (
     <PageLayout pathname="/error/oauth-failed">

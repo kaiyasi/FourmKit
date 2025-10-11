@@ -9,7 +9,6 @@ import socket
 import psutil
 import os
 
-# ============== 裝飾性符號定義 ==============
 DECORATIONS = {
     "system": {
         "header": "═══════════════════════════════════════════════════════",
@@ -133,7 +132,6 @@ def build_enhanced_theme_webhook(
     
     header = format_server_status_header("theme")
     
-    # 構建詳細的主題資訊
     theme_details = f"""
 {DECORATIONS['theme']['proposal']} **主題提案**: {theme_name}
 {DECORATIONS['theme']['proposal']} **描述**: {description}
@@ -194,7 +192,6 @@ def build_enhanced_system_webhook(
     category = event_type.split('.')[0] if '.' in event_type else 'system'
     header = format_server_status_header(category)
     
-    # 嚴重程度指標
     severity_indicators = {
         "low": DECORATIONS["system"]["status_info"],
         "medium": DECORATIONS["system"]["status_warn"], 
@@ -204,7 +201,6 @@ def build_enhanced_system_webhook(
     
     severity_icon = severity_indicators.get(severity, DECORATIONS["system"]["status_info"])
     
-    # 系統狀態詳情
     system_details = f"""
 {severity_icon} **事件**: {title}
 {severity_icon} **類型**: {event_type}
@@ -235,7 +231,7 @@ def build_enhanced_system_webhook(
 
 def build_enhanced_content_webhook(
     action: str,
-    content_type: str,  # post, comment, media
+    content_type: str,
     content_id: Union[int, str],
     title: str,
     author: str,
@@ -246,7 +242,6 @@ def build_enhanced_content_webhook(
     
     header = format_server_status_header("content")
     
-    # 動作指標
     action_indicators = {
         "created": DECORATIONS["content"]["post"],
         "approved": DECORATIONS["content"]["approve"],
@@ -266,7 +261,7 @@ def build_enhanced_content_webhook(
 
 {DECORATIONS['system']['subsection']}
 {DECORATIONS['system']['database']} **內容資訊**
-{DECORATIONS['system']['bullet']} 內容 ID: #{content_id}
+{DECORATIONS['system']['bullet']} 內容 ID:
 {DECORATIONS['system']['bullet']} 字數: {kwargs.get('word_count', 'N/A')}
 {DECORATIONS['system']['bullet']} 媒體數量: {kwargs.get('media_count', 0)}
 {DECORATIONS['system']['bullet']} 審核狀態: {kwargs.get('moderation_status', 'N/A')}
@@ -297,7 +292,6 @@ def build_enhanced_user_webhook(
     
     header = format_server_status_header("user")
     
-    # 用戶動作指標
     action_indicators = {
         "registered": DECORATIONS["user"]["register"],
         "login": DECORATIONS["user"]["login"],
@@ -336,7 +330,6 @@ def build_enhanced_user_webhook(
     
     return {"content": header, "embeds": [embed]}
 
-# =============== 統一發送介面 ===============
 def send_enhanced_webhook(webhook_type: str, **kwargs: Any) -> Dict[str, Any]:
     """統一的增強版 Webhook 發送介面"""
     
@@ -353,7 +346,6 @@ def send_enhanced_webhook(webhook_type: str, **kwargs: Any) -> Dict[str, Any]:
     
     payload = builder(**kwargs)
     
-    # 使用現有的發送機制
     from utils.notify import post_discord, get_admin_webhook_url
     
     webhook_url = get_admin_webhook_url()
@@ -362,7 +354,6 @@ def send_enhanced_webhook(webhook_type: str, **kwargs: Any) -> Dict[str, Any]:
     
     return post_discord(webhook_url, payload)
 
-# =============== 批次事件補丁 ===============  
 def patch_missing_webhooks():
     """為缺失的事件類型添加 Webhook 支援"""
     
@@ -379,7 +370,6 @@ def patch_missing_webhooks():
         "performance.slow_query"
     ]
     
-    # 這裡可以加入自動註冊缺失事件的 webhook 處理器
     print(f"[INFO] Need to implement webhooks for: {missing_events}")
     
     return missing_events

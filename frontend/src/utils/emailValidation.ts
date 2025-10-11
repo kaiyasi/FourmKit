@@ -15,12 +15,10 @@ export function isValidEducationalEmail(email: string): boolean {
 
   const normalizedEmail = email.toLowerCase().trim()
   
-  // 基本 email 格式檢查
   if (!/@/.test(normalizedEmail) || normalizedEmail.length < 5) {
     return false
   }
 
-  // 檢查是否以允許的教育網域結尾
   return ALLOWED_EMAIL_DOMAINS.some(domain => normalizedEmail.endsWith(domain))
 }
 
@@ -73,7 +71,6 @@ export function validateEducationalEmail(email: string): {
 
   const normalizedEmail = normalizeEmail(email)
 
-  // 基本格式檢查
   if (!EMAIL_VALIDATION_REGEX.test(normalizedEmail)) {
     return {
       valid: false,
@@ -81,7 +78,6 @@ export function validateEducationalEmail(email: string): {
     }
   }
 
-  // 教育網域檢查
   if (!isValidEducationalEmail(normalizedEmail)) {
     return {
       valid: false,

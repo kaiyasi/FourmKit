@@ -1,6 +1,9 @@
 import React from 'react'
 import { ChevronRight } from 'lucide-react'
 
+/**
+ *
+ */
 export interface MobileAdminCardProps {
   title: React.ReactNode
   subtitle?: React.ReactNode
@@ -18,6 +21,9 @@ export interface MobileAdminCardProps {
   compact?: boolean
 }
 
+/**
+ *
+ */
 export function MobileAdminCard({
   title,
   subtitle,
@@ -86,14 +92,14 @@ export function MobileAdminCard({
       tabIndex={isClickable ? 0 : -1}
     >
       <div className="flex items-start gap-3">
-        {/* 圖示 */}
+        
         {icon && (
           <div className={`flex-shrink-0 ${compact ? 'p-2' : 'p-2.5'} rounded-xl bg-surface-hover border border-border`}>
             {icon}
           </div>
         )}
 
-        {/* 內容 */}
+        
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 mb-1">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -126,7 +132,7 @@ export function MobileAdminCard({
           )}
         </div>
 
-        {/* 箭頭指示 */}
+        
         {isClickable && (
           <div className="flex-shrink-0 ml-2">
             <ChevronRight className="w-5 h-5 text-muted" />
@@ -137,7 +143,9 @@ export function MobileAdminCard({
   )
 }
 
-// 專用於列表項目的緊湊版本
+/**
+ *
+ */
 export function MobileAdminListItem({
   title,
   subtitle,
@@ -159,7 +167,9 @@ export function MobileAdminListItem({
   )
 }
 
-// 統計卡片專用版本
+/**
+ *
+ */
 export function MobileAdminStatCard({
   title,
   value,

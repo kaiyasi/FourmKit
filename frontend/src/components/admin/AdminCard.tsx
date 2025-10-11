@@ -2,6 +2,9 @@ import React from 'react'
 
 type Badge = { label: string; tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' }
 
+/**
+ *
+ */
 export interface AdminCardProps {
   title: React.ReactNode
   subtitle?: React.ReactNode
@@ -25,6 +28,9 @@ const badgeTone = (tone?: Badge['tone']) => {
   }
 }
 
+/**
+ *
+ */
 export default function AdminCard({ title, subtitle, meta, badges, content, footer, selected, disabled, interactive = true, onClick }: AdminCardProps) {
   return (
     <div

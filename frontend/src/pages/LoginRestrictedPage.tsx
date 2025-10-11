@@ -3,12 +3,14 @@ import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { useSearchParams } from 'react-router-dom'
 
+/**
+ *
+ */
 export default function LoginRestrictedPage() {
   const [searchParams] = useSearchParams()
   const mode = searchParams.get('mode')
 
   const handleRetry = () => {
-    // 重新嘗試登入
     window.location.href = '/api/auth/google/login'
   }
 

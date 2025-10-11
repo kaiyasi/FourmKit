@@ -6,7 +6,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Bell } from 'lucide-react'
 import { useNotifications } from '@/hooks/useNotifications'
-// 聊天通知功能已移除
 import NotificationCenter from './NotificationCenter'
 
 interface NotificationButtonProps {
@@ -15,13 +14,15 @@ interface NotificationButtonProps {
   size?: 'sm' | 'md' | 'lg'
 }
 
+/**
+ *
+ */
 export default function NotificationButton({
   className = '',
   showLabel = false,
   size = 'md'
 }: NotificationButtonProps) {
   const { unreadCount, showBadge, showCount } = useNotifications()
-  // 聊天通知功能已移除
   const chatUnreadCount = 0
   const combinedUnread = (unreadCount || 0) + (chatUnreadCount || 0)
   const combinedShowBadge = (showBadge || false) || (chatUnreadCount > 0)
@@ -37,7 +38,6 @@ export default function NotificationButton({
       mq.addEventListener('change', update)
       return () => mq.removeEventListener('change', update)
     } catch {
-      // Safari fallback
       window.addEventListener('resize', update)
       return () => window.removeEventListener('resize', update)
     }
@@ -58,7 +58,6 @@ export default function NotificationButton({
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // 手機版不開啟詳細面板，僅顯示徽章與使用瀏覽器通知（若使用者已允許）
     if (isMobile) return
     setIsOpen(!isOpen)
   }
@@ -83,11 +82,10 @@ export default function NotificationButton({
       >
         <Bell className={`${iconSizes[size]} text-muted hover:text-fg transition-colors`} />
         
-        {/* 通知徽章 */}
+        
         {combinedShowBadge && (
           <div className="absolute -top-1 -right-1">
             {showCount && combinedUnread > 0 ? (
-              // 顯示數字徽章（10秒內）
               combinedUnread < 10 ? (
                 <div className="
                   w-5 h-5 bg-red-500 text-white text-xs font-bold 
@@ -106,7 +104,6 @@ export default function NotificationButton({
                 </div>
               )
             ) : (
-              // 10秒後顯示紅點
               <div className="
                 w-3 h-3 bg-red-500 rounded-full 
                 shadow-sm animate-pulse
@@ -115,13 +112,13 @@ export default function NotificationButton({
           </div>
         )}
 
-        {/* 有新通知時的呼吸光暈效果 */}
+        
         {combinedShowBadge && showCount && (
           <div className="absolute inset-0 rounded-full bg-primary/10 animate-ping" />
         )}
       </button>
 
-      {/* 標籤文字（可選） */}
+      
       {showLabel && (
         <span className="ml-2 text-sm text-muted">
           通知
@@ -133,7 +130,7 @@ export default function NotificationButton({
         </span>
       )}
 
-      {/* 通知中心面板 */}
+      
       <NotificationCenter
         isOpen={isOpen && !isMobile}
         onClose={() => setIsOpen(false)}

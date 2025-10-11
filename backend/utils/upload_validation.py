@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/upload_validation.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import mimetypes, os
 
 IMG_EXT = {".jpg",".jpeg",".png",".webp"}
@@ -18,19 +22,14 @@ def sniff_kind(head: bytes) -> str:
     if not head:
         return 'unknown'
     b = head[:64]
-    # JPEG
     if len(b) >= 2 and b[0] == 0xFF and b[1] == 0xD8:
         return 'jpeg'
-    # PNG
     if b.startswith(b"\x89PNG\r\n\x1a\n"):
         return 'png'
-    # RIFF WEBP
     if b.startswith(b'RIFF') and b[8:12] == b'WEBP':
         return 'webp'
-    # MP4 (ftyp box hints)
     if b[4:8] == b'ftyp':
         return 'mp4'
-    # WebM (EBML)
     if b.startswith(b"\x1A\x45\xDF\xA3"):
         return 'webm'
     return 'unknown'

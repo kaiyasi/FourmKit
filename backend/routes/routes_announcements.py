@@ -24,14 +24,11 @@ def get_announcements():
         user_id = get_jwt_identity()
         
         with get_session() as s:
-            # 獲取用戶信息
             user = s.get(User, user_id)
             if not user:
                 return jsonify({"ok": False, "error": "用戶不存在"}), 404
             
-            # 根據角色決定要顯示的公告範圍
             if user.role in ["dev_admin", "campus_admin", "cross_admin"]:
-                # 管理員：使用專門的管理員方法
                 announcements = AnnouncementService.get_admin_announcements(
                     session=s,
                     user_id=user_id,
@@ -41,7 +38,6 @@ def get_announcements():
                     include_read=include_read
                 )
             else:
-                # 一般用戶：顯示自己學校的公告和全域公告
                 announcements = AnnouncementService.get_active_announcements(
                     session=s,
                     user_id=user_id,
@@ -153,7 +149,6 @@ def mark_announcements_read_batch():
         return jsonify({"ok": False, "error": f"批量標記失敗: {str(e)}"}), 500
 
 
-# 管理員專用 API
 @bp.post("/")
 @jwt_required()
 @require_role("dev_admin", "campus_admin", "cross_admin")
@@ -173,7 +168,6 @@ def create_announcement():
         
         user_id = get_jwt_identity()
         
-        # 解析時間
         start_at = None
         end_at = None
         if start_at_str:
@@ -189,12 +183,10 @@ def create_announcement():
                 return jsonify({"ok": False, "error": "結束時間格式錯誤"}), 400
         
         with get_session() as s:
-            # 權限檢查：根據角色限制公告範圍
             user = s.get(User, user_id)
             if not user:
                 return jsonify({"ok": False, "error": "用戶不存在"}), 404
             
-            # campus_admin: 只能為自己的學校創建公告
             if user.role == "campus_admin":
                 if not user.school_id:
                     return jsonify({"ok": False, "error": "校內管理員必須綁定學校"}), 403
@@ -203,18 +195,14 @@ def create_announcement():
                 elif school_id != user.school_id:
                     return jsonify({"ok": False, "error": "權限不足：只能為自己的學校發布公告"}), 403
             
-            # cross_admin: 只能為全平台創建公告（school_id 必須為 None）
             elif user.role == "cross_admin":
                 if school_id is not None:
                     return jsonify({"ok": False, "error": "權限不足：跨校管理員只能發布全平台公告"}), 403
                 school_id = None
             
-            # dev_admin: 可以選擇全平台或指定學校
             elif user.role == "dev_admin":
-                # school_id 可以為 None（全平台）或指定學校 ID
                 pass
             
-            # 創建公告
             announcement = AnnouncementService.create_announcement(
                 session=s,
                 title=title,
@@ -228,21 +216,18 @@ def create_announcement():
             
             s.commit()
             
-            # 觸發通知事件（異步執行）
             try:
                 import threading
                 from utils.enhanced_notify import send_enhanced_webhook
                 
                 def send_notification_async():
                     try:
-                        # 獲取學校名稱
                         school_name = None
                         if school_id:
                             school = s.get(School, school_id)
                             if school:
                                 school_name = school.name
                         
-                        # 發送增強版 webhook
                         webhook_result = send_enhanced_webhook(
                             webhook_type="system_event",
                             event_type="announcement.published",
@@ -267,7 +252,6 @@ def create_announcement():
                     except Exception as e:
                         print(f"[WARNING] Failed to send announcement notification: {e}")
                 
-                # 異步執行通知
                 notification_thread = threading.Thread(target=send_notification_async, daemon=True)
                 notification_thread.start()
                 
@@ -306,7 +290,6 @@ def update_announcement(announcement_id: int):
         
         user_id = get_jwt_identity()
         
-        # 解析時間
         start_at = None
         end_at = None
         if start_at_str:
@@ -322,7 +305,6 @@ def update_announcement(announcement_id: int):
                 return jsonify({"ok": False, "error": "結束時間格式錯誤"}), 400
         
         with get_session() as s:
-            # 權限檢查
             user = s.get(User, user_id)
             if not user:
                 return jsonify({"ok": False, "error": "用戶不存在"}), 404
@@ -331,24 +313,19 @@ def update_announcement(announcement_id: int):
             if not announcement:
                 return jsonify({"ok": False, "error": "公告不存在"}), 404
             
-            # 權限檢查：根據角色限制編輯範圍
-            # campus_admin: 只能編輯自己學校的公告
             if user.role == "campus_admin":
                 if not user.school_id:
                     return jsonify({"ok": False, "error": "校內管理員必須綁定學校"}), 403
                 if announcement.school_id != user.school_id:
                     return jsonify({"ok": False, "error": "權限不足：只能編輯自己學校的公告"}), 403
             
-            # cross_admin: 只能編輯全平台公告（school_id 為 None）
             elif user.role == "cross_admin":
                 if announcement.school_id is not None:
                     return jsonify({"ok": False, "error": "權限不足：跨校管理員只能編輯全平台公告"}), 403
             
-            # dev_admin: 可以編輯任何公告
             elif user.role == "dev_admin":
                 pass
             
-            # 更新公告
             updated_announcement = AnnouncementService.update_announcement(
                 session=s,
                 announcement_id=announcement_id,
@@ -391,7 +368,6 @@ def delete_announcement(announcement_id: int):
         user_id = get_jwt_identity()
         
         with get_session() as s:
-            # 權限檢查
             user = s.get(User, user_id)
             if not user:
                 return jsonify({"ok": False, "error": "用戶不存在"}), 404
@@ -400,20 +376,16 @@ def delete_announcement(announcement_id: int):
             if not announcement:
                 return jsonify({"ok": False, "error": "公告不存在"}), 404
             
-            # 權限檢查：根據角色限制刪除範圍
-            # campus_admin: 只能刪除自己學校的公告
             if user.role == "campus_admin":
                 if not user.school_id:
                     return jsonify({"ok": False, "error": "校內管理員必須綁定學校"}), 403
                 if announcement.school_id != user.school_id:
                     return jsonify({"ok": False, "error": "權限不足：只能刪除自己學校的公告"}), 403
             
-            # cross_admin: 只能刪除全平台公告（school_id 為 None）
             elif user.role == "cross_admin":
                 if announcement.school_id is not None:
                     return jsonify({"ok": False, "error": "權限不足：跨校管理員只能刪除全平台公告"}), 403
             
-            # dev_admin: 可以刪除任何公告
             elif user.role == "dev_admin":
                 pass
             

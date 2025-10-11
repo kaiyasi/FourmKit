@@ -25,7 +25,6 @@ class IGTokenCrypto:
             )
 
         try:
-            # 驗證金鑰格式
             self.cipher = Fernet(encryption_key.encode())
         except Exception as e:
             raise ValueError(f"Invalid IG_TOKEN_ENCRYPTION_KEY format: {e}")
@@ -78,7 +77,6 @@ class IGTokenCrypto:
             raise RuntimeError(f"Failed to decrypt token: {e}")
 
 
-# 全域單例
 _crypto_instance: Optional[IGTokenCrypto] = None
 
 
@@ -136,15 +134,12 @@ def generate_encryption_key() -> str:
 
 
 if __name__ == "__main__":
-    # 測試用例
     print("=== Instagram Token Crypto Test ===\n")
 
-    # 1. 生成加密金鑰
     print("1. Generate encryption key:")
     key = generate_encryption_key()
     print(f"   IG_TOKEN_ENCRYPTION_KEY={key}\n")
 
-    # 2. 設置環境變數並測試加密/解密
     os.environ['IG_TOKEN_ENCRYPTION_KEY'] = key
 
     test_token = "IGQWRN1234567890abcdefghijklmnopqrstuvwxyz"
@@ -159,7 +154,6 @@ if __name__ == "__main__":
     print(f"   Decrypted: {decrypted}")
     print(f"   Match: {decrypted == test_token}\n")
 
-    # 3. 測試錯誤處理
     print("4. Test error handling:")
     try:
         encrypt_token("")

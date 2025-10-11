@@ -30,12 +30,10 @@ class AdminChatService:
                    is_private: bool = False, max_members: int = 100) -> Optional[Dict[str, Any]]:
         """創建聊天室"""
         with get_session() as db:
-            # 檢查權限
             user = db.get(User, created_by)
             if not user or user.role not in ["dev_admin", "campus_admin", "cross_admin"]:
                 return None
             
-            # 檢查同名聊天室
             existing = db.query(AdminChatRoom)\
                 .filter(AdminChatRoom.name == name)\
                 .filter(AdminChatRoom.is_active == True)\
@@ -44,7 +42,6 @@ class AdminChatService:
             if existing:
                 return None
             
-            # 創建聊天室
             room = AdminChatRoom(
                 name=name,
                 description=description,
@@ -59,7 +56,6 @@ class AdminChatService:
             db.commit()
             db.refresh(room)
             
-            # 自動添加創建者為管理員
             cls.add_user_to_room(room.id, created_by, role="admin")
             
             return {
@@ -80,15 +76,12 @@ class AdminChatService:
             query = db.query(AdminChatRoom).filter(AdminChatRoom.is_active == True)
             
             if user_role == "dev_admin":
-                # dev_admin 可訪問所有頻道
                 pass
             elif user_role == "cross_admin":
-                # cross_admin 可訪問跨校、緊急、總聊天群
                 query = query.filter(AdminChatRoom.type.in_([
                     ChatRoomType.CROSS, ChatRoomType.EMERGENCY, ChatRoomType.GLOBAL
                 ]))
             elif user_role in ["campus_admin", "campus_moderator"]:
-                # 校園管理員可訪問自己學校、跨校、總聊天群
                 if school_id:
                     query = query.filter(or_(
                         AdminChatRoom.school_id == school_id,
@@ -97,14 +90,12 @@ class AdminChatService:
                 else:
                     query = query.filter(AdminChatRoom.type.in_([ChatRoomType.CROSS, ChatRoomType.GLOBAL]))
             else:
-                # 其他角色無權訪問
                 return []
                 
             rooms = query.order_by(AdminChatRoom.type, AdminChatRoom.name).all()
             
             result = []
             for room in rooms:
-                # 檢查私有頻道權限
                 if room.is_private:
                     member = db.query(AdminChatMember)\
                         .filter(AdminChatMember.room_id == room.id)\
@@ -113,14 +104,12 @@ class AdminChatService:
                     if not member:
                         continue
                 
-                # 獲取最新訊息
                 latest_message = db.query(AdminChatMessage)\
                     .filter(AdminChatMessage.room_id == room.id)\
                     .filter(AdminChatMessage.is_deleted == False)\
                     .order_by(desc(AdminChatMessage.created_at))\
                     .first()
                 
-                # 獲取未讀數量
                 member = db.query(AdminChatMember)\
                     .filter(AdminChatMember.room_id == room.id)\
                     .filter(AdminChatMember.user_id == user_id)\
@@ -136,7 +125,6 @@ class AdminChatService:
                         .filter(AdminChatMessage.is_deleted == False)\
                         .count()
                     
-                    # 未讀提及數量
                     mention_count = db.query(AdminChatMention)\
                         .filter(AdminChatMention.room_id == room.id)\
                         .filter(AdminChatMention.mentioned_user_id == user_id)\
@@ -144,14 +132,12 @@ class AdminChatService:
                         .count()
                         
                 elif not member:
-                    # 自動加入用戶到聊天室
                     cls.add_user_to_room(room.id, user_id)
                     unread_count = db.query(AdminChatMessage)\
                         .filter(AdminChatMessage.room_id == room.id)\
                         .filter(AdminChatMessage.is_deleted == False)\
                         .count()
                 
-                # 獲取在線成員數
                 online_count = db.query(AdminChatMember)\
                     .filter(AdminChatMember.room_id == room.id)\
                     .filter(AdminChatMember.last_active_at > datetime.now(timezone.utc) - timedelta(minutes=5))\
@@ -189,7 +175,6 @@ class AdminChatService:
                        limit: int = 50) -> List[Dict[str, Any]]:
         """搜尋訊息"""
         with get_session() as db:
-            # 檢查權限
             if not cls.can_user_access_room(user_id, room_id):
                 return []
             
@@ -197,19 +182,16 @@ class AdminChatService:
                 .filter(AdminChatMessage.room_id == room_id)\
                 .filter(AdminChatMessage.is_deleted == False)
             
-            # 文字搜尋
             if query:
                 search_query = search_query.filter(
                     AdminChatMessage.content.ilike(f'%{query}%')
                 )
             
-            # 訊息類型過濾
             if message_type:
                 search_query = search_query.filter(
                     AdminChatMessage.message_type == message_type
                 )
             
-            # 日期範圍過濾
             if date_from:
                 search_query = search_query.filter(
                     AdminChatMessage.created_at >= date_from
@@ -247,26 +229,26 @@ class AdminChatService:
                     file_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """發送訊息（含@提及處理）"""
         with get_session() as db:
+<<<<<<< Updated upstream
             # 檢查發送訊息權限
+=======
+>>>>>>> Stashed changes
             if not cls.can_user_send_message(user_id, room_id):
                 return None
 
             room = db.get(AdminChatRoom, room_id)
             
-            # 處理@提及
             mentioned_users = []
             if content:
                 mention_pattern = r'@(\w+)'
                 mentions = re.findall(mention_pattern, content)
                 
                 if mentions:
-                    # 查找被提及的用戶
                     mentioned_users = db.query(User)\
                         .filter(User.username.in_(mentions))\
                         .filter(User.role.in_(["dev_admin", "campus_admin", "campus_moderator", "cross_admin"]))\
                         .all()
             
-            # 創建訊息
             message = AdminChatMessage(
                 room_id=room_id,
                 user_id=user_id,
@@ -278,7 +260,6 @@ class AdminChatService:
             
             if file_path:
                 message.file_path = file_path
-                # 從檔案路徑提取檔案資訊
                 if os.path.exists(file_path):
                     message.file_name = os.path.basename(file_path)
                     message.file_size = os.path.getsize(file_path)
@@ -288,9 +269,7 @@ class AdminChatService:
             db.commit()
             db.refresh(message)
             
-            # 處理@提及通知
             for mentioned_user in mentioned_users:
-                # 創建提及記錄
                 mention = AdminChatMention(
                     message_id=message.id,
                     mentioned_user_id=mentioned_user.id,
@@ -299,34 +278,17 @@ class AdminChatService:
                 )
                 db.add(mention)
                 
-                # 發送通知
                 try:
                     room = db.get(AdminChatRoom, room_id)
                     sender = db.get(User, user_id)
                     
-                    # 簡單的通知處理 - 可以後續整合到完整的通知系統
                     print(f"Admin chat mention: {sender.username} mentioned {mentioned_user.username} in {room.name}")
                     
-                    # TODO: 整合到通知系統
-                    # addNotification({
-                    #     'type': 'admin_chat.mention',
-                    #     'text': f'{sender.username} 在 {room.name} 中提及了您',
-                    #     'user_id': mentioned_user.id,
-                    #     'school': room.school.slug if room.school else 'cross',
-                    #     'urgent': True,
-                    #     'data': {
-                    #         'room_id': room_id,
-                    #         'message_id': message.id,
-                    #         'room_name': room.name,
-                    #         'sender': sender.username
-                    #     }
-                    # })
                 except Exception as e:
                     print(f"Failed to send mention notification: {e}")
             
             db.commit()
             
-            # 更新發送者活躍時間
             cls.update_user_activity(room_id, user_id)
             
             return {
@@ -357,7 +319,6 @@ class AdminChatService:
     def get_room_messages(cls, room_id: int, user_id: int, limit: int = 50, before: Optional[int] = None) -> List[Dict[str, Any]]:
         """獲取聊天室訊息（增強版）"""
         with get_session() as db:
-            # 檢查權限
             if not cls.can_user_access_room(user_id, room_id):
                 return []
             
@@ -372,10 +333,8 @@ class AdminChatService:
                 .limit(limit)\
                 .all()
             
-            # 更新最後閱讀時間
             cls.update_last_read(room_id, user_id)
             
-            # 標記提及為已讀
             db.query(AdminChatMention)\
                 .filter(AdminChatMention.room_id == room_id)\
                 .filter(AdminChatMention.mentioned_user_id == user_id)\
@@ -384,8 +343,7 @@ class AdminChatService:
             db.commit()
             
             result = []
-            for msg in reversed(messages):  # 反轉以時間順序顯示
-                # 解析被提及用戶
+            for msg in reversed(messages):
                 mentioned_users = []
                 if msg.mentioned_users:
                     try:
@@ -411,12 +369,10 @@ class AdminChatService:
                     "mentioned_users": [{"id": u.id, "username": u.username} for u in mentioned_users]
                 }
                 
-                # 如果是投票訊息，添加投票詳情
                 if msg.vote:
                     vote_data = cls.get_vote_details(msg.vote.id, user_id)
                     msg_data["vote"] = vote_data
                 
-                # 如果是貼文審核訊息，添加貼文詳情
                 if msg.post:
                     msg_data["post"] = {
                         "id": msg.post.id,
@@ -426,7 +382,6 @@ class AdminChatService:
                         "created_at": msg.post.created_at.isoformat()
                     }
                 
-                # 如果有檔案，添加檔案資訊
                 if msg.file_path:
                     msg_data["file"] = {
                         "name": msg.file_name,
@@ -443,12 +398,10 @@ class AdminChatService:
     def initialize_default_rooms(cls) -> None:
         """初始化預設聊天室（增強版）"""
         with get_session() as db:
-            # 創建系統管理員用戶
             admin_user = db.query(User).filter(User.role == "dev_admin").first()
             if not admin_user:
                 return
             
-            # 預設房間配置
             default_rooms = [
                 {
                     "name": "開發人員頻道",
@@ -504,7 +457,6 @@ class AdminChatService:
                     )
                     db.add(room)
             
-            # 為每個學校創建專屬頻道
             schools = db.query(School).all()
             for school in schools:
                 school_room_name = f"{school.name} 管理頻道"
@@ -540,7 +492,10 @@ class AdminChatService:
     def can_user_send_message(cls, user_id: int, room_id: int) -> bool:
         """檢查用戶是否可以在聊天室發送訊息"""
         with get_session() as db:
+<<<<<<< Updated upstream
             # 檢查基本訪問權限
+=======
+>>>>>>> Stashed changes
             if not cls.can_user_access_room(user_id, room_id):
                 return False
 
@@ -550,6 +505,7 @@ class AdminChatService:
             if not room or not user:
                 return False
 
+<<<<<<< Updated upstream
             # 系統通知頻道只有 dev_admin 可以發送
             if room.type == ChatRoomType.SYSTEM:
                 return user.role == "dev_admin"
@@ -559,6 +515,14 @@ class AdminChatService:
                 return user.role == "dev_admin"
 
             # 私有頻道需要檢查是否被禁言
+=======
+            if room.type == ChatRoomType.SYSTEM:
+                return user.role == "dev_admin"
+
+            if room.type == ChatRoomType.DEVELOPER:
+                return user.role == "dev_admin"
+
+>>>>>>> Stashed changes
             if room.is_private:
                 member = db.query(AdminChatMember)\
                     .filter(AdminChatMember.room_id == room_id)\
@@ -579,6 +543,7 @@ class AdminChatService:
             if not user or not room:
                 return False
 
+<<<<<<< Updated upstream
             # dev_admin 可以管理所有聊天室
             if user.role == "dev_admin":
                 return True
@@ -588,6 +553,14 @@ class AdminChatService:
                 return True
 
             # 檢查是否為聊天室管理員
+=======
+            if user.role == "dev_admin":
+                return True
+
+            if room.created_by == user_id:
+                return True
+
+>>>>>>> Stashed changes
             member = db.query(AdminChatMember)\
                 .filter(AdminChatMember.room_id == room_id)\
                 .filter(AdminChatMember.user_id == user_id)\
@@ -604,17 +577,26 @@ class AdminChatService:
             if not room:
                 return False, "聊天室不存在"
 
+<<<<<<< Updated upstream
             # 檢查權限
             if not cls.can_user_manage_room(user_id, room_id):
                 return False, "權限不足"
 
             # 系統預設聊天室不能刪除
+=======
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足"
+
+>>>>>>> Stashed changes
             if room.type in [ChatRoomType.SYSTEM, ChatRoomType.DEVELOPER,
                             ChatRoomType.GLOBAL, ChatRoomType.CROSS,
                             ChatRoomType.EMERGENCY]:
                 return False, "系統預設聊天室不能刪除"
 
+<<<<<<< Updated upstream
             # 軟刪除（設為非活躍狀態）
+=======
+>>>>>>> Stashed changes
             room.is_active = False
             db.commit()
 
@@ -629,11 +611,17 @@ class AdminChatService:
             if not room:
                 return False, "聊天室不存在", None
 
+<<<<<<< Updated upstream
             # 檢查權限
             if not cls.can_user_manage_room(user_id, room_id):
                 return False, "權限不足", None
 
             # 允許更新的欄位
+=======
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足", None
+
+>>>>>>> Stashed changes
             allowed_fields = ['name', 'description', 'is_private', 'max_members']
 
             for field, value in kwargs.items():
@@ -660,6 +648,7 @@ class AdminChatService:
             if not room:
                 return False, "聊天室不存在"
 
+<<<<<<< Updated upstream
             # 檢查操作者權限
             if not cls.can_user_manage_room(user_id, room_id):
                 return False, "權限不足"
@@ -669,6 +658,14 @@ class AdminChatService:
                 return False, "不能移除創建者"
 
             # 移除成員
+=======
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足"
+
+            if target_user_id == room.created_by:
+                return False, "不能移除創建者"
+
+>>>>>>> Stashed changes
             member = db.query(AdminChatMember)\
                 .filter(AdminChatMember.room_id == room_id)\
                 .filter(AdminChatMember.user_id == target_user_id)\
@@ -691,6 +688,7 @@ class AdminChatService:
             if not room:
                 return False, "聊天室不存在"
 
+<<<<<<< Updated upstream
             # 檢查操作者權限
             if not cls.can_user_manage_room(user_id, room_id):
                 return False, "權限不足"
@@ -700,6 +698,14 @@ class AdminChatService:
                 return False, "無效的角色"
 
             # 更新成員角色
+=======
+            if not cls.can_user_manage_room(user_id, room_id):
+                return False, "權限不足"
+
+            if new_role not in ["admin", "moderator", "member"]:
+                return False, "無效的角色"
+
+>>>>>>> Stashed changes
             member = db.query(AdminChatMember)\
                 .filter(AdminChatMember.room_id == room_id)\
                 .filter(AdminChatMember.user_id == target_user_id)\
@@ -722,18 +728,27 @@ class AdminChatService:
             if not room:
                 return False, "聊天室不存在"
 
+<<<<<<< Updated upstream
             # 檢查操作者權限（需要是管理員或版主）
+=======
+>>>>>>> Stashed changes
             operator_role = cls.get_user_room_role(user_id, room_id)
             if operator_role not in ["admin", "moderator"]:
                 user = db.get(User, user_id)
                 if not user or user.role != "dev_admin":
                     return False, "權限不足"
 
+<<<<<<< Updated upstream
             # 不能禁言創建者
             if target_user_id == room.created_by:
                 return False, "不能禁言創建者"
 
             # 更新成員禁言狀態
+=======
+            if target_user_id == room.created_by:
+                return False, "不能禁言創建者"
+
+>>>>>>> Stashed changes
             member = db.query(AdminChatMember)\
                 .filter(AdminChatMember.room_id == room_id)\
                 .filter(AdminChatMember.user_id == target_user_id)\
@@ -747,7 +762,10 @@ class AdminChatService:
 
             return True, f"成員已{'禁言' if mute else '解禁'}"
 
+<<<<<<< Updated upstream
     # 其他已有的方法保持不變...
+=======
+>>>>>>> Stashed changes
     @classmethod
     def can_user_access_room(cls, user_id: int, room_id: int) -> bool:
         """檢查用戶是否可訪問聊天室"""
@@ -758,7 +776,6 @@ class AdminChatService:
             if not user or not room or not room.is_active:
                 return False
             
-            # 檢查私有頻道
             if room.is_private:
                 member = db.query(AdminChatMember)\
                     .filter(AdminChatMember.room_id == room_id)\
@@ -767,7 +784,6 @@ class AdminChatService:
                 if not member:
                     return False
             
-            # 檢查角色權限
             if user.role == "dev_admin":
                 return True
             elif user.role == "cross_admin":
@@ -782,7 +798,6 @@ class AdminChatService:
     def add_user_to_room(cls, room_id: int, user_id: int, role: str = "member") -> bool:
         """添加用戶到聊天室"""
         with get_session() as db:
-            # 這裡允許由外部驗證後強制加入（邀請流程會先驗證邀請者權限）
             
             existing = db.query(AdminChatMember)\
                 .filter(AdminChatMember.room_id == room_id)\
@@ -812,7 +827,6 @@ class AdminChatService:
             if not room or not inviter:
                 return False, "房間或邀請者不存在", 0
 
-            # 檢查邀請者是否具備管理權限
             inviter_member = db.query(AdminChatMember)\
                 .filter(AdminChatMember.room_id == room_id)\
                 .filter(AdminChatMember.user_id == inviter_id)\
@@ -824,10 +838,8 @@ class AdminChatService:
             if not (is_room_admin or is_creator or is_dev):
                 return False, "權限不足，僅房間管理員/創建者可邀請", 0
 
-            # 可加入的角色白名單（僅管理端用戶）
             allowed_roles = {"dev_admin","cross_admin","campus_admin","campus_moderator","cross_moderator"}
 
-            # 計算已有人數
             current_count = db.query(AdminChatMember).filter(AdminChatMember.room_id == room_id).count()
             capacity_left = max(0, (room.max_members or 100) - current_count)
             if capacity_left <= 0:
@@ -889,4 +901,170 @@ class AdminChatService:
                 member.last_active_at = datetime.now(timezone.utc)
                 db.commit()
 
-    # 投票相關方法保持不變...（為了簡潔，這裡省略）
+    @staticmethod
+    def _parse_options_raw(options_text: str) -> tuple[bool, list[dict]]:
+        """解析投票 options 欄位
+        支援兩種格式：
+          1) 舊版：純陣列 [{id, text}, ...] → allow_multiple = False
+          2) 新版：物件 { allow_multiple: bool, items: [{id, text}, ...] }
+        """
+        try:
+            data = json.loads(options_text or "[]")
+            if isinstance(data, dict):
+                allow_multiple = bool(data.get("allow_multiple", False))
+                items = data.get("items") or []
+                if isinstance(items, list):
+                    return allow_multiple, items
+                return allow_multiple, []
+            elif isinstance(data, list):
+                return False, data
+            else:
+                return False, []
+        except Exception:
+            return False, []
+
+    @staticmethod
+    def _build_options_text(allow_multiple: bool, options: list[str]) -> str:
+        items = []
+        next_id = 1
+        for t in options:
+            items.append({"id": next_id, "text": t})
+            next_id += 1
+        return json.dumps({"allow_multiple": bool(allow_multiple), "items": items}, ensure_ascii=False)
+
+    @classmethod
+    def create_vote(
+        cls,
+        room_id: int,
+        user_id: int,
+        title: str,
+        description: str,
+        options: list[str],
+        post_id: int | None = None,
+        expires_hours: int = 24,
+        allow_multiple: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        with get_session() as db:
+            if not cls.can_user_access_room(user_id, room_id):  # type: ignore[attr-defined]
+                return None
+
+            opt_text = cls._build_options_text(allow_multiple, options)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=max(1, int(expires_hours)))
+            vote = AdminChatVote(
+                room_id=room_id,
+                created_by=user_id,
+                title=title.strip(),
+                description=description.strip() if description else None,
+                options=opt_text,
+                expires_at=expires_at,
+                status=VoteStatus.ACTIVE,
+            )
+            db.add(vote)
+            db.commit()
+            db.refresh(vote)
+
+            msg = AdminChatMessage(
+                room_id=room_id,
+                user_id=user_id,
+                content=f"[投票] {title}",
+                message_type=MessageType.VOTE,
+                vote_id=vote.id,
+                post_id=post_id,
+            )
+            db.add(msg)
+            db.commit()
+
+            return cls.get_vote_details(vote.id, user_id)
+
+    @classmethod
+    def get_vote_details(cls, vote_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+        with get_session() as db:
+            vote = db.get(AdminChatVote, vote_id)
+            if not vote:
+                return None
+
+            allow_multiple, items = cls._parse_options_raw(vote.options or "[]")
+
+            counts: dict[int, int] = {}
+            my_options: set[int] = set()
+            ballots = db.query(AdminChatVoteBallot).filter(AdminChatVoteBallot.vote_id == vote_id).all()
+            for b in ballots:
+                counts[b.option_id] = counts.get(b.option_id, 0) + 1
+                if b.user_id == user_id:
+                    my_options.add(b.option_id)
+
+            options_out = []
+            for it in items:
+                oid = int(it.get("id"))
+                options_out.append({
+                    "id": oid,
+                    "text": it.get("text", ""),
+                    "votes": counts.get(oid, 0),
+                    "me": (oid in my_options),
+                })
+
+            now = datetime.now(timezone.utc)
+            is_expired = bool(vote.expires_at and vote.expires_at <= now)
+            status = vote.status.value if hasattr(vote.status, 'value') else str(vote.status)
+
+            return {
+                "id": vote.id,
+                "room_id": vote.room_id,
+                "title": vote.title,
+                "description": vote.description,
+                "allow_multiple": allow_multiple,
+                "status": "expired" if is_expired else status,
+                "expires_at": vote.expires_at.isoformat() if vote.expires_at else None,
+                "options": options_out,
+            }
+
+    @classmethod
+    def cast_vote(cls, vote_id: int, user_id: int, option_id: int) -> tuple[bool, str]:
+        with get_session() as db:
+            vote = db.get(AdminChatVote, vote_id)
+            if not vote:
+                return False, "投票不存在"
+
+            if not cls.can_user_access_room(user_id, vote.room_id):  # type: ignore[attr-defined]
+                return False, "無權訪問該投票"
+
+            now = datetime.now(timezone.utc)
+            status_val = vote.status.value if hasattr(vote.status, 'value') else str(vote.status)
+            if (vote.expires_at and vote.expires_at <= now) or (status_val.lower() != VoteStatus.ACTIVE.value):
+                return False, "投票已結束"
+
+            allow_multiple, items = cls._parse_options_raw(vote.options or "[]")
+            valid_ids = {int(it.get("id")) for it in items}
+            if option_id not in valid_ids:
+                return False, "選項無效"
+
+            my_ballots = db.query(AdminChatVoteBallot).filter(
+                AdminChatVoteBallot.vote_id == vote_id,
+                AdminChatVoteBallot.user_id == user_id
+            ).all()
+
+            if not allow_multiple:
+                if my_ballots:
+                    same = [b for b in my_ballots if b.option_id == option_id]
+                    if same:
+                        for b in same:
+                            db.delete(b)
+                        db.commit()
+                        return True, "已取消投票"
+                    else:
+                        return False, "單選模式，請先取消原投票再選擇其他選項"
+                else:
+                    db.add(AdminChatVoteBallot(vote_id=vote_id, user_id=user_id, option_id=option_id))
+                    db.commit()
+                    return True, "投票成功"
+
+            existing = [b for b in my_ballots if b.option_id == option_id]
+            if existing:
+                for b in existing:
+                    db.delete(b)
+                db.commit()
+                return True, "已取消該選項"
+            else:
+                db.add(AdminChatVoteBallot(vote_id=vote_id, user_id=user_id, option_id=option_id))
+                db.commit()
+                return True, "已新增該選項"

@@ -1,4 +1,3 @@
-// components/ResizableSection.tsx
 import { useState, useEffect, useRef } from 'react'
 
 interface ResizableSectionProps {
@@ -11,6 +10,9 @@ interface ResizableSectionProps {
   className?: string
 }
 
+/**
+ *
+ */
 function ResizableSection({
   title,
   children,
@@ -24,7 +26,6 @@ function ResizableSection({
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 從 localStorage 恢復高度
   useEffect(() => {
     if (storageKey) {
       const saved = localStorage.getItem(storageKey)
@@ -37,7 +38,6 @@ function ResizableSection({
     }
   }, [storageKey, min, max])
 
-  // 保存高度到 localStorage
   useEffect(() => {
     if (storageKey) {
       localStorage.setItem(storageKey, height.toString())
@@ -105,12 +105,12 @@ function ResizableSection({
         <h3 className="font-semibold dual-text text-sm sm:text-base">{title}</h3>
       </div>
 
-      {/* 關鍵：flex-1 + min-h-0，內容在 sticky 下方可獨立滾動且不外溢 */}
+      
       <div className="flex-1 min-h-0 overflow-auto p-2 sm:p-3">
         {children}
       </div>
 
-      {/* 把手：可拖、支援觸控，範圍限制在自身容器 */}
+      
       <div
         className="absolute bottom-0 left-0 right-0 h-3 sm:h-3.5 bg-border/40 cursor-ns-resize hover:bg-primary/60 transition-colors"
         onMouseDown={onMouseDown}

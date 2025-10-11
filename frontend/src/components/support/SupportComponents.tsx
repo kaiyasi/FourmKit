@@ -20,7 +20,6 @@ import {
   Search
 } from 'lucide-react';
 
-// 統一的狀態顯示組件
 export const StatusBadge = ({ status }: { status: string }) => {
   const statusConfig = {
     open: {
@@ -61,7 +60,10 @@ export const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+<<<<<<< Updated upstream
 // 優先級顯示組件
+=======
+>>>>>>> Stashed changes
 export const CategoryBadge = ({ category }: { category: string }) => {
   const categoryConfig = {
     technical: { text: '技術問題', className: 'bg-surface text-fg border border-border' },
@@ -82,7 +84,6 @@ export const CategoryBadge = ({ category }: { category: string }) => {
   );
 };
 
-// 工單卡片組件
 interface TicketCardProps {
   ticket: {
     id: string;
@@ -155,7 +156,6 @@ export const TicketCard = ({ ticket, onClick, showUser = false }: TicketCardProp
   );
 };
 
-// 頁面標題組件 - 支援返回按鈕和 NavBar
 interface PageHeaderProps {
   title: string;
   subtitle?: string;
@@ -209,7 +209,6 @@ export const PageHeader = ({
   );
 };
 
-// 工具列組件
 interface ToolbarProps {
   searchValue?: string;
   onSearchChange?: (value: string) => void;
@@ -228,7 +227,7 @@ export const Toolbar = ({
   return (
     <div className={`${isMobile ? 'px-4 py-4' : 'px-6 py-5'} border-b border-border bg-bg/80 backdrop-blur-sm`}>
       <div className={`flex items-center ${isMobile ? 'flex-col gap-4' : 'justify-between'}`}>
-        {/* 搜尋區域 */}
+        
         <div className={`${isMobile ? 'w-full' : 'flex-1 max-w-md'} relative`}>
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted" />
           <input
@@ -240,7 +239,7 @@ export const Toolbar = ({
           />
         </div>
 
-        {/* 操作區域 */}
+        
         <div className={`flex items-center gap-3 ${isMobile ? 'w-full justify-between' : ''}`}>
           {filterOptions}
           {actions}
@@ -250,7 +249,6 @@ export const Toolbar = ({
   );
 };
 
-// 空狀態組件
 interface EmptyStateProps {
   icon?: React.ReactNode;
   title: string;
@@ -273,7 +271,6 @@ export const EmptyState = ({ icon, title, description, action }: EmptyStateProps
   );
 };
 
-// 載入狀態組件
 export const LoadingSpinner = ({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) => {
   const sizeClasses = {
     sm: 'w-5 h-5',
@@ -288,7 +285,6 @@ export const LoadingSpinner = ({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) =
   );
 };
 
-// 按鈕組件
 interface ButtonProps {
   children: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'danger';

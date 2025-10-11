@@ -44,6 +44,9 @@ interface EventStatistics {
   recent_events: AdminEvent[]
 }
 
+/**
+ *
+ */
 export default function EventsPage() {
   const navigate = useNavigate()
   const [events, setEvents] = useState<AdminEvent[]>([])
@@ -190,7 +193,6 @@ export default function EventsPage() {
 
   const parseEventDate = (raw: any): Date | null => {
     if (!raw && raw !== 0) return null
-    // 若為數字或數字字串，可能是秒或毫秒
     if (typeof raw === 'number' || /^(\d+)$/.test(String(raw))) {
       const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10)
       const ms = n < 10_000_000_000 ? n * 1000 : n // 小於 1e10 視為秒
@@ -235,9 +237,7 @@ export default function EventsPage() {
     }
   }
 
-  // 更穩健的時間顯示：優先使用 timestamp 計算相對時間，否則回退後端提供欄位
   const formatTimeAgo = (event: AdminEvent) => {
-    // 依序嘗試 timestamp → created_at → updated_at → metadata 常見欄位
     const candidate = (event as any)?.timestamp
       ?? (event as any)?.created_at
       ?? (event as any)?.updated_at
@@ -279,13 +279,12 @@ export default function EventsPage() {
     return null
   }
 
-  // 專用手機版介面
   const MobileLayout = () => (
     <div className="min-h-screen bg-background">
       <NavBar pathname="/admin/events" />
       <MobileBottomNav />
       
-      {/* 手機版固定頂部 */}
+      
       <div className="fixed top-16 left-0 right-0 bg-background border-b border-border z-10">
         <div className="px-4 py-3">
           <div className="flex items-center gap-3 mb-3">
@@ -308,7 +307,7 @@ export default function EventsPage() {
             </button>
           </div>
           
-          {/* 手機版快速統計 */}
+          
           {statistics && (
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div>
@@ -329,7 +328,7 @@ export default function EventsPage() {
           )}
         </div>
         
-        {/* 手機版篩選列 */}
+        
         <div className="px-4 pb-3">
           <div className="flex gap-2 overflow-x-auto">
             <select
@@ -370,7 +369,7 @@ export default function EventsPage() {
         </div>
       </div>
 
-      {/* 手機版事件列表 */}
+      
       <div className="pt-40 pb-20">
         {loading ? (
           <div className="flex justify-center py-8">
@@ -412,7 +411,7 @@ export default function EventsPage() {
                   }`}
                   onClick={() => setSelectedEvent(selectedEvent?.timestamp === event.timestamp ? null : event)}
                 >
-                  {/* 事件頭部 */}
+                  
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                       <EventTypeIcon className={`w-4 h-4 ${eventTypeConfig.color}`} />
@@ -424,12 +423,12 @@ export default function EventsPage() {
                     <span className="text-xs text-muted">{formatTimeAgo(event)}</span>
                   </div>
                   
-                  {/* 事件內容 */}
+                  
                   <div className="text-sm mb-1 line-clamp-2">
                     {event.title}
                   </div>
                   
-                  {/* 展開詳情 */}
+                  
                   {selectedEvent?.timestamp === event.timestamp && (
                     <div className="mt-2 pt-2 border-t border-border">
                       <p className="text-xs text-muted mb-2">{event.description}</p>
@@ -456,14 +455,13 @@ export default function EventsPage() {
     </div>
   )
 
-  // 桌面版佈局（比照審核管理風格）
   const DesktopLayout = () => (
     <div className="min-h-screen">
       <NavBar pathname="/admin/events" />
       <MobileBottomNav />
       
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -481,7 +479,7 @@ export default function EventsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 事件列表 */}
+          
           <div className="lg:col-span-2 bg-surface rounded-2xl p-4 shadow-soft">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -500,7 +498,7 @@ export default function EventsPage() {
               </div>
             </div>
 
-            {/* 篩選器 */}
+            
             <div className="mb-4 p-3 bg-surface-hover rounded-lg">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <input
@@ -540,7 +538,7 @@ export default function EventsPage() {
               </div>
             </div>
 
-            {/* 事件列表 */}
+            
             <div className="space-y-3">
               {loading ? (
                 <div className="text-center py-8 text-muted">載入中...</div>
@@ -615,9 +613,9 @@ export default function EventsPage() {
             </div>
           </div>
 
-          {/* 右側邊欄 */}
+          
           <div className="space-y-6">
-            {/* 統計 */}
+            
             {statistics && (
               <div className="bg-surface rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">事件統計</h3>
@@ -646,7 +644,7 @@ export default function EventsPage() {
               </div>
             )}
 
-            {/* 選中事件詳情 */}
+            
             {selectedEvent && (
               <div className="bg-surface rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">事件詳情</h3>
@@ -682,7 +680,7 @@ export default function EventsPage() {
               </div>
             )}
 
-            {/* 快速篩選 */}
+            
             <div className="bg-surface rounded-2xl p-4 shadow-soft">
               <h3 className="text-lg font-semibold text-fg mb-4">快速篩選</h3>
               <div className="space-y-2">
@@ -726,15 +724,14 @@ export default function EventsPage() {
     </div>
   )
 
-  // 根據螢幕尺寸選擇佈局
   return (
     <>
-      {/* 專用手機版 */}
+      
       <div className="block lg:hidden">
         <MobileLayout />
       </div>
       
-      {/* 桌面版 */}
+      
       <div className="hidden lg:block">
         <DesktopLayout />
       </div>

@@ -1,3 +1,7 @@
+"""
+Module: backend/models/moderation.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, ForeignKey, DateTime, Text, func
@@ -6,9 +10,9 @@ from utils.db import Base
 class ModerationLog(Base):
     __tablename__ = "moderation_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
-    target_type: Mapped[str] = mapped_column(String(16), nullable=False)  # "post" or "media"
+    target_type: Mapped[str] = mapped_column(String(16), nullable=False)
     target_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    action: Mapped[str] = mapped_column(String(16), nullable=False)  # "approve" or "reject"
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
     old_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     new_status: Mapped[str] = mapped_column(String(16), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)

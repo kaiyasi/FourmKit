@@ -1,3 +1,7 @@
+"""
+Module: backend/manage.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import sys
 from werkzeug.security import generate_password_hash
 from utils.db import get_session, init_engine_session
@@ -25,18 +29,12 @@ def seed_defaults() -> None:
 
 
 def main(argv: list[str]) -> int:
-    # 初始化資料庫連線與 Session
     try:
         init_engine_session()
     except Exception as e:
         print(f"DB init failed: {e}")
         return 1
 
-    # 簡單子指令：
-    #   python manage.py                          -> 建立預設三個帳號
-    #   python manage.py create-admin USER PASS   -> 建立管理員帳號
-    #   python manage.py create-superadmin USER PASS -> 建立/確保總管理（dev_admin）
-    #   python manage.py set-password USER PASS   -> 設定/重設指定使用者密碼（若不存在則建立 user）
     if len(argv) >= 2 and argv[1] == "create-admin":
         if len(argv) < 4:
             print("usage: python manage.py create-admin <username> <password>")
@@ -50,7 +48,6 @@ def main(argv: list[str]) -> int:
             print("usage: python manage.py create-superadmin <username> <password>")
             return 2
         username, password = argv[2], argv[3]
-        # 若已存在則僅提升角色，不更改密碼（避免誤覆寫）。
         from utils.db import get_session
         with get_session() as s:
             u = s.query(User).filter_by(username=username).first()
@@ -75,7 +72,6 @@ def main(argv: list[str]) -> int:
         with get_session() as s:
             u = s.query(User).filter_by(username=username).first()
             if not u:
-                # 若不存在則以一般使用者建立
                 u = User(username=username, password_hash=generate_password_hash(password), role="user")
                 s.add(u)
                 s.commit()
@@ -87,7 +83,6 @@ def main(argv: list[str]) -> int:
                 print(f"updated password: {username}")
         return 0
 
-    # 預設：播種基本帳號（具冪等性）
     seed_defaults()
     return 0
 

@@ -1,4 +1,7 @@
-# backend/models/base.py
+"""
+Module: backend/models/base.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -14,13 +17,13 @@ if TYPE_CHECKING:
     from .school import School
 
 class UserRole(str, enum.Enum):
-    user = "user"                    # 一般用戶
-    campus_moderator = "campus_moderator"  # 校內審核
-    cross_moderator = "cross_moderator"    # 跨校審核
-    campus_admin = "campus_admin"      # 校內板主
-    cross_admin = "cross_admin"        # 跨校板主
-    dev_admin = "dev_admin"            # 開發人員
-    commercial = "commercial"          # 廣告專用帳號（統一為 commercial）
+    user = "user"
+    campus_moderator = "campus_moderator"
+    cross_moderator = "cross_moderator"
+    campus_admin = "campus_admin"
+    cross_admin = "cross_admin"
+    dev_admin = "dev_admin"
+    commercial = "commercial"
 
 class User(Base):
     __tablename__ = "users"
@@ -33,11 +36,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     avatar_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     
-    # 會員相關欄位
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     premium_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # 反向關係
     posts: Mapped[list["Post"]] = relationship("Post", foreign_keys="Post.author_id", back_populates="author")
     deleted_posts: Mapped[list["Post"]] = relationship("Post", foreign_keys="Post.deleted_by", back_populates="deleted_by_user")
     comments: Mapped[list["Comment"]] = relationship("Comment", foreign_keys="Comment.author_id", back_populates="author")
@@ -46,7 +47,6 @@ class User(Base):
     deleted_media: Mapped[list["Media"]] = relationship("Media", foreign_keys="Media.deleted_by")
     reviewed_delete_requests: Mapped[list["DeleteRequest"]] = relationship("DeleteRequest", foreign_keys="DeleteRequest.reviewed_by", back_populates="reviewed_by_user")
     
-    # 支援工單系統關聯
     submitted_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.user_id", back_populates="user")
     assigned_tickets: Mapped[list["SupportTicket"]] = relationship("SupportTicket", foreign_keys="SupportTicket.assigned_to", back_populates="assigned_user")
     support_messages: Mapped[list["SupportMessage"]] = relationship("SupportMessage", back_populates="author_user")
@@ -64,26 +64,21 @@ class Post(Base):
     school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 刪文相關欄位
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     delete_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     delete_request_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # 置頂相關欄位
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pinned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     
-    # 廣告貼文標記 (school_id=null 且作者具廣告權限時標記為廣告)
     is_advertisement: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
-    # 公告貼文標記
     is_announcement: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    announcement_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # platform, cross, school
+    announcement_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
-    # 回覆貼文：若此貼文是回覆某一篇貼文，記錄其來源貼文 ID
     reply_to_post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), nullable=True)
 
     delete_requests: Mapped[list["DeleteRequest"]] = relationship(
@@ -93,9 +88,7 @@ class Post(Base):
     comments: Mapped[list["Comment"]] = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
     reactions: Mapped[list["PostReaction"]] = relationship("PostReaction", back_populates="post", cascade="all, delete-orphan")
     
-    # Instagram 關聯 (已移除，因為 models.instagram 不存在)
     
-    # 明確指定外鍵關係
     author: Mapped["User"] = relationship("User", foreign_keys=[author_id], back_populates="posts")
     deleted_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[deleted_by], back_populates="deleted_posts")
     pinned_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[pinned_by])
@@ -108,7 +101,7 @@ class DeleteRequest(Base):
     reason: Mapped[str] = mapped_column(Text)
     requester_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     requester_user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)  # pending, approved, rejected
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -116,8 +109,6 @@ class DeleteRequest(Base):
 
     post: Mapped[Post] = relationship(back_populates="delete_requests")
     
-    # 明確指定外鍵關係
     reviewed_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[reviewed_by], back_populates="reviewed_delete_requests")
 
-# 方便依建立時間查詢
 Index("idx_posts_created_desc", Post.created_at.desc())

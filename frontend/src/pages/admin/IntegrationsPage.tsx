@@ -58,6 +58,9 @@ interface IntegrationStatus {
   }
 }
 
+/**
+ *
+ */
 export default function AdminIntegrationsPage() {
   const { role, isLoggedIn } = useAuth()
   const [data, setData] = useState<IntegrationStatus | null>(null)
@@ -98,7 +101,6 @@ export default function AdminIntegrationsPage() {
 
   useEffect(() => {
     load()
-    // 每30秒自動重新載入
     const interval = setInterval(load, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -166,7 +168,7 @@ export default function AdminIntegrationsPage() {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -201,7 +203,7 @@ export default function AdminIntegrationsPage() {
               </button>
         </div>
 
-        {/* 整合服務管理：移除，改為 NAS 監控 */}
+        
       </div>
         </div>
 
@@ -215,7 +217,7 @@ export default function AdminIntegrationsPage() {
           </div>
         )}
 
-        {/* 整體狀態指示 */}
+        
         {data && (
           <div className="bg-surface border border-border rounded-2xl p-4 mb-6 shadow-soft">
             <div className="flex items-center justify-center gap-3">
@@ -247,11 +249,11 @@ export default function AdminIntegrationsPage() {
           </div>
         ) : data ? (
           <>
-            {/* 快捷管理入口：移除，改為 NAS 監控 */}
+            
 
-            {/* 服務狀態卡片 */}
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              {/* Discord Webhook 狀態 */}
+              
               <StatusCard
                 title="Discord Webhook"
                 status={data.admin_webhook?.configured ? 'success' : 'disabled'}
@@ -280,7 +282,7 @@ export default function AdminIntegrationsPage() {
                 error={data.admin_webhook?.error}
               />
 
-              {/* 佇列系統狀態 */}
+              
               <StatusCard
                 title="佇列系統"
                 status={data.queue?.enabled ? 'success' : 'disabled'}
@@ -307,7 +309,7 @@ export default function AdminIntegrationsPage() {
               />
             </div>
 
-            {/* 最近管理員事件 */}
+            
             <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
@@ -363,7 +365,7 @@ export default function AdminIntegrationsPage() {
               </div>
             </div>
 
-            {/* 主機運行狀況 */}
+            
             <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
@@ -375,7 +377,7 @@ export default function AdminIntegrationsPage() {
               <div className="p-4">
                 {data.system ? (
                   <div className="space-y-6">
-                    {/* 系統基本資訊 - 手機端隱藏 */}
+                    
                     <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                       {data.system.hostname && (
                         <div className="bg-surface-hover rounded-lg p-3">
@@ -405,9 +407,9 @@ export default function AdminIntegrationsPage() {
                       )}
                     </div>
 
-                    {/* 資源使用狀況 */}
+                    
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* CPU 使用率 */}
+                      
                       {data.system.cpu_percent != null && (
                         <div className="bg-surface-hover rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
@@ -430,7 +432,7 @@ export default function AdminIntegrationsPage() {
                         </div>
                       )}
 
-                      {/* 記憶體使用率 */}
+                      
                       {data.system.memory && (
                         <div className="bg-surface-hover rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
@@ -454,9 +456,9 @@ export default function AdminIntegrationsPage() {
                       )}
                     </div>
 
-                    {/* 指標卡片 - 手機端簡化為2列 */}
+                    
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                      {/* 使用者總數 */}
+                      
                       <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <div className="w-3 h-3 rounded-full bg-primary"></div>
@@ -468,7 +470,7 @@ export default function AdminIntegrationsPage() {
                         <div className="text-xs text-muted">註冊用戶</div>
                       </div>
 
-                      {/* 佇列任務 */}
+                      
                       <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <div className="w-3 h-3 rounded-full bg-blue-500"></div>
@@ -480,7 +482,7 @@ export default function AdminIntegrationsPage() {
                         <div className="text-xs text-muted">待處理</div>
                       </div>
 
-                      {/* 資料庫服務狀態 */}
+                      
                       <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <div className={`w-3 h-3 rounded-full ${
@@ -498,7 +500,7 @@ export default function AdminIntegrationsPage() {
                         <div className="text-xs text-muted">服務狀態</div>
                       </div>
 
-                      {/* CDN 服務狀態 */}
+                      
                       <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <div className={`w-3 h-3 rounded-full ${
@@ -530,7 +532,7 @@ export default function AdminIntegrationsPage() {
               </div>
             </div>
 
-            {/* 原始 JSON 數據（開發用） - 手機端隱藏 */}
+            
             <details className="hidden lg:block mt-6">
               <summary className="cursor-pointer text-sm text-muted hover:text-fg transition-colors">
                 🔧 查看原始 JSON 數據（開發用）

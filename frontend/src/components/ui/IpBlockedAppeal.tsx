@@ -13,6 +13,9 @@ interface UnlockResponse {
   message?: string
 }
 
+/**
+ *
+ */
 export default function IpBlockedAppeal() {
   const [contact, setContact] = useState('')
   const [reason, setReason] = useState('')

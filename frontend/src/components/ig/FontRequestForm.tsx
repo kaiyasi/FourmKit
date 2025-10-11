@@ -25,7 +25,6 @@ const FontRequestForm: React.FC<FontRequestFormProps> = ({ onSuccess, onCancel }
     setLoading(true);
     setError(null);
 
-    // 驗證
     if (!formData.font_name.trim()) {
       setError('請輸入字體名稱');
       setLoading(false);
@@ -69,7 +68,7 @@ const FontRequestForm: React.FC<FontRequestFormProps> = ({ onSuccess, onCancel }
         </div>
       )}
 
-      {/* 字體名稱 */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">
           字體名稱 <span className="text-danger">*</span>
@@ -84,7 +83,7 @@ const FontRequestForm: React.FC<FontRequestFormProps> = ({ onSuccess, onCancel }
         />
       </div>
 
-      {/* 字體來源 URL */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">
           字體來源 URL（可選）
@@ -99,7 +98,7 @@ const FontRequestForm: React.FC<FontRequestFormProps> = ({ onSuccess, onCancel }
         <p className="text-xs text-muted mt-1">提供字體下載或資訊頁面的連結</p>
       </div>
 
-      {/* 描述 */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">
           字體描述（可選）
@@ -113,7 +112,7 @@ const FontRequestForm: React.FC<FontRequestFormProps> = ({ onSuccess, onCancel }
         />
       </div>
 
-      {/* 申請理由 */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">
           申請理由 <span className="text-danger">*</span>
@@ -128,7 +127,7 @@ const FontRequestForm: React.FC<FontRequestFormProps> = ({ onSuccess, onCancel }
         />
       </div>
 
-      {/* 按鈕 */}
+      
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button
           type="button"

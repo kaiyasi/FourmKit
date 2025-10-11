@@ -3,6 +3,9 @@
  * 符合新的安全要求：至少10碼、包含英數、不可連續序列
  */
 
+/**
+ *
+ */
 export interface PasswordValidationResult {
   isValid: boolean
   checks: {
@@ -29,7 +32,6 @@ function hasConsecutiveSequence(password: string): boolean {
   const letters = 'abcdefghijklmnopqrstuvwxyz'
   
   const checkSequence = (str: string, sequence: string): boolean => {
-    // 檢查遞增序列
     for (let i = 0; i <= sequence.length - 4; i++) {
       const substr = sequence.substring(i, i + 4)
       if (str.includes(substr)) {
@@ -37,7 +39,6 @@ function hasConsecutiveSequence(password: string): boolean {
       }
     }
     
-    // 檢查遞減序列
     const reversedSequence = sequence.split('').reverse().join('')
     for (let i = 0; i <= reversedSequence.length - 4; i++) {
       const substr = reversedSequence.substring(i, i + 4)
@@ -51,12 +52,10 @@ function hasConsecutiveSequence(password: string): boolean {
   
   const lowerPassword = password.toLowerCase()
   
-  // 檢查數字序列
   if (checkSequence(lowerPassword, digits)) {
     return true
   }
   
-  // 檢查字母序列
   if (checkSequence(lowerPassword, letters)) {
     return true
   }

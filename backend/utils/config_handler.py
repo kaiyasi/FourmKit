@@ -1,24 +1,22 @@
+"""
+Module: backend/utils/config_handler.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import json, os
 from pathlib import Path
 from typing import Any, Dict
 
-# 依 Day1~Day4 設計：設定寫入容器可持久化目錄（或經 CONFIG_DIR 覆寫）
-# 優先使用環境變數，其次使用當前目錄下的 data 資料夾，最後才使用 /data
 DEFAULT_CONFIG_DIR = os.getenv("CONFIG_DIR") or os.getenv("DATA_DIR") or os.getenv("FORUMKIT_DATA_DIR")
 
 if DEFAULT_CONFIG_DIR:
-    # 如果環境變數有設定，直接使用
     DATA_DIR = Path(DEFAULT_CONFIG_DIR)
 else:
-    # 否則使用當前目錄下的 data 資料夾
-    current_dir = Path(__file__).parent.parent  # 回到 backend 目錄
+    current_dir = Path(__file__).parent.parent
     DATA_DIR = current_dir / "data"
 
-# 確保目錄存在，但不要強制創建（避免權限問題）
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 except PermissionError:
-    # 如果沒有權限創建目錄，使用臨時目錄
     import tempfile
     DATA_DIR = Path(tempfile.gettempdir()) / "forumkit_data"
     DATA_DIR.mkdir(exist_ok=True)
@@ -27,16 +25,12 @@ except PermissionError:
 CONFIG_PATH = DATA_DIR / "config.json"
 
 DEFAULT_DATA: Dict[str, Any] = {
-    # 允許以 APP_MODE 指定預設（normal | maintenance | development | test）
     "mode": os.getenv("APP_MODE", "normal"),
     "maintenance_message": "",
     "maintenance_until": "",
-    # 登入模式設定（single | admin_only | open）
     "login_mode": "admin_only",
-    # 內容字數審核（最小字數與開關）
     "enforce_min_post_chars": True,
     "min_post_chars": int(os.getenv("MIN_POST_CHARS", "15")),
-    # 使用者註銷/黑名單
     "email_blacklist": [],
     "suspended_users": [],
 }
@@ -44,7 +38,6 @@ DEFAULT_DATA: Dict[str, Any] = {
 
 def load_config() -> Dict[str, Any]:
     if not CONFIG_PATH.exists():
-        # 初始建立檔案，同步執行舊值修正
         data = DEFAULT_DATA.copy()
         try:
             if str(data.get("mode", "normal") or "normal") == "dev":
@@ -57,9 +50,7 @@ def load_config() -> Dict[str, Any]:
         data: Dict[str, Any] = json.loads(CONFIG_PATH.read_text("utf-8"))
     except Exception:
         data = DEFAULT_DATA.copy()
-    # 修正舊值並確保鍵存在
     changed = False
-    # 移除舊模式值 'dev'（一律轉成 'test' 並保存回檔案）
     try:
         raw_mode = str(data.get("mode", "normal") or "normal")
         if raw_mode == "dev":
@@ -84,26 +75,20 @@ def set_mode(mode: str, maintenance_message: str | None = None, maintenance_unti
     data = load_config()
     data["mode"] = mode
     
-    # 處理維護訊息，確保不會是空白字串
     if maintenance_message is not None:
-        # 確保 maintenance_message 是字串類型
         if isinstance(maintenance_message, str):
             data["maintenance_message"] = maintenance_message.strip() if maintenance_message.strip() else ""
         else:
             data["maintenance_message"] = ""
     elif mode == "maintenance" and not data.get("maintenance_message"):
-        # 如果切換到維護模式但沒有訊息，設定空字串避免顯示 None
         data["maintenance_message"] = ""
     
-    # 處理維護時間
     if maintenance_until is not None:
-        # 確保 maintenance_until 是字串類型
         if isinstance(maintenance_until, str):
             data["maintenance_until"] = maintenance_until.strip() if maintenance_until.strip() else ""
         else:
             data["maintenance_until"] = ""
     elif mode == "maintenance" and not data.get("maintenance_until"):
-        # 如果切換到維護模式但沒有時間，設定空字串避免顯示 None
         data["maintenance_until"] = ""
     
     save_config(data)

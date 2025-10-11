@@ -25,16 +25,13 @@ def main():
         for m in rows:
             total += 1
             rel = (m.path or '').lstrip('/')
-            # 已核准優先檢查公開檔
             if (m.status or '').lower() == 'approved':
                 cand = find_public_media_rel(int(m.id))
                 if cand:
-                    # 可選：修正 DB path 為標準 public 路徑
                     if args.fix and m.path != cand:
                         m.path = cand
                         fixed += 1
                     continue
-                # 沒找到 → 看是否能發布
                 if args.fix:
                     new_rel = publish_media_by_id(rel, int(m.id), getattr(m,'mime_type',None))
                     if new_rel.startswith('public/'):
@@ -43,7 +40,6 @@ def main():
                         continue
                 miss += 1
             else:
-                # pending：檔案是否存在
                 p = upload_root / rel
                 if not p.exists():
                     miss += 1

@@ -6,6 +6,9 @@
 import { NotificationPlugin } from '@/types/notifications'
 import { Settings } from 'lucide-react'
 
+/**
+ *
+ */
 export interface SystemNotificationData {
   event: 'maintenance' | 'update' | 'error' | 'info'
   title: string

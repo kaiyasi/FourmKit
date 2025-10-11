@@ -12,6 +12,9 @@ interface DesktopOnlyFeaturesProps {
   className?: string
 }
 
+/**
+ *
+ */
 export function DesktopOnlyFeatures({ userRole = '', className = "" }: DesktopOnlyFeaturesProps) {
   const baseFeatures: DesktopFeature[] = [
     {
@@ -52,8 +55,7 @@ export function DesktopOnlyFeatures({ userRole = '', className = "" }: DesktopOn
     }
   ]
 
-  // 根據角色決定顯示的功能
-  let features: DesktopFeature[] = [...baseFeatures]
+  const features: DesktopFeature[] = [...baseFeatures]
 
   if (userRole === 'dev_admin') {
     features.push(...devAdminFeatures)
@@ -66,7 +68,7 @@ export function DesktopOnlyFeatures({ userRole = '', className = "" }: DesktopOn
   return (
     <div className={`p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-800 ${className}`}>
       <div className="space-y-4">
-        {/* 頭部提示 */}
+        
         <div className="text-center space-y-3">
           <div className="flex justify-center items-center gap-4 mb-4">
             <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900/50">
@@ -91,7 +93,7 @@ export function DesktopOnlyFeatures({ userRole = '', className = "" }: DesktopOn
           </div>
         </div>
 
-        {/* 功能列表 */}
+        
         <div className="space-y-3">
           {features.map((feature, index) => {
             const IconComponent = feature.icon

@@ -1,12 +1,13 @@
-# backend/socket_events.py
+"""
+Module: backend/socket_events.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from typing import Any, Dict
 from datetime import datetime, timezone
 
 from flask import g, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
-# Chat功能已移除
-# from services.socket_chat_service import SocketChatService
 
 MAX_TITLE = 120
 MAX_CONTENT = 5000
@@ -24,17 +25,11 @@ def init_socket_events(socketio: SocketIO) -> None:
     @socketio.on("connect")
     def on_connect():
         client_id = request.sid
-        # Chat功能已移除
-        # # 嘗試從查詢參數獲取token
-        # token = request.args.get('token')
-        # SocketChatService.handle_connect(client_id, token)
         pass
 
     @socketio.on("disconnect")
     def on_disconnect():
         client_id = request.sid
-        # Chat功能已移除
-        # SocketChatService.handle_disconnect(client_id)
         pass
 
     @socketio.on("join_room")
@@ -72,7 +67,6 @@ def init_socket_events(socketio: SocketIO) -> None:
             "author": author,
             "ts": _now_iso(),
         }
-        # 廣播到全域與 posts 群組
         socketio.emit("post.created", payload, to="global")
         socketio.emit("post.created", payload, to="posts")
 
@@ -93,13 +87,11 @@ def init_socket_events(socketio: SocketIO) -> None:
             "author": author,
             "ts": _now_iso(),
         }
-        # 廣播到該貼文專屬 room 與全域
         socketio.emit("comment.created", payload, to=f"post:{post_id}")
         socketio.emit("comment.created", payload, to="global")
 
     @socketio.on("announce")
     def on_announce(data: Dict[str, Any] | None):
-        # 簡易示範：admin 欄位為 "admin" 時才允許（正式版請用 JWT/Session）
         data = data or {}
         role = (data.get("role") or "").strip().lower()
         msg = _trim(data.get("message"), 2000)
@@ -108,30 +100,12 @@ def init_socket_events(socketio: SocketIO) -> None:
             return
         socketio.emit("announce", {"message": msg, "ts": _now_iso()}, to="global")
 
-    # ============ 聊天系統 Socket 事件（已禁用）============
-    # Chat功能已移除，以下事件已禁用
 
-    # @socketio.on("chat:join_room")
-    # def on_chat_join_room(data: Dict[str, Any] | None):
-    #     pass
 
-    # @socketio.on("chat:leave_room")
-    # def on_chat_leave_room(data: Dict[str, Any] | None):
-    #     pass
 
-    # @socketio.on("chat:send_message")
-    # def on_chat_send_message(data: Dict[str, Any] | None):
-    #     pass
 
-    # @socketio.on("status:change")
-    # def on_status_change(data: Dict[str, Any] | None):
-    #     pass
 
-    # @socketio.on("notifications:mark_read")
-    # def on_mark_notification_read(data: Dict[str, Any] | None):
-    #     pass
 
-    # ============ 支援工單系統 Socket 事件 ============
 
     @socketio.on("support:join_ticket")
     def on_support_join_ticket(data: Dict[str, Any] | None):
@@ -143,7 +117,6 @@ def init_socket_events(socketio: SocketIO) -> None:
             emit("error", {"code": "WS-SUPPORT-001", "message": "public_id 無效"})
             return
         
-        # 驗證用戶是否有權限存取此工單（簡化版，實際應檢查JWT或簽章）
         ticket_room = f"support:ticket:{public_id}"
         join_room(ticket_room)
         emit("support:ticket_joined", {
@@ -183,7 +156,6 @@ def init_socket_events(socketio: SocketIO) -> None:
             return
         
         ticket_room = f"support:ticket:{public_id}"
-        # 廣播給房間內其他用戶（不包含發送者）
         emit("support:user_typing", {
             "ticket_id": public_id,
             "user_name": user_name,
@@ -195,7 +167,6 @@ def init_socket_events(socketio: SocketIO) -> None:
         """廣播支援系統事件到相關房間"""
         ticket_room = f"support:ticket:{ticket_public_id}"
 
-        # 根據事件類型決定廣播範圍
         event_data = {
             "event_type": event_type,
             "ticket_id": ticket_public_id,
@@ -203,19 +174,15 @@ def init_socket_events(socketio: SocketIO) -> None:
             "ts": _now_iso()
         }
 
-        # 廣播到工單房間
         socketio.emit("support:event", event_data, room=ticket_room)
 
-        # 特定事件也廣播到管理員房間
         if event_type in ["ticket_created", "message_sent", "status_changed"]:
             socketio.emit("support:admin_event", event_data, room="support:admins")
 
-        # 發送 Discord webhook 通知
         if event_type == "ticket_created":
             try:
                 from utils.notify import send_admin_event
 
-                # 準備 Discord 通知內容
                 title = f"🎫 新客服單：{payload.get('subject', '無主題')}"
                 description = f"用戶 **{payload.get('submitter', '匿名')}** 建立了新的客服單"
 
@@ -245,7 +212,6 @@ def init_socket_events(socketio: SocketIO) -> None:
     def broadcast_announcement(payload: Dict[str, Any]):
         """廣播公告事件到所有在線用戶"""
         try:
-            # 廣播到全域房間
             socketio.emit("announcement", payload, to="global")
             print(f"[INFO] Announcement broadcasted to global room: {payload.get('type', 'unknown')}")
         except Exception as e:

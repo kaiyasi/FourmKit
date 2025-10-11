@@ -1,8 +1,12 @@
-// 輕量版學校網域偵測（免依賴 tldts）
-// 參考需求：辨識 .edu.tw（K-12 與大學）與 .edu（大學），清除常見無用子網域前綴
 
+/**
+ *
+ */
 export type SchoolLevel = 'university' | 'senior_high' | 'junior_high' | 'elementary' | 'unknown'
 
+/**
+ *
+ */
 export interface DetectResult {
   ok: boolean
   confidence: 'high' | 'medium' | 'low'
@@ -65,17 +69,18 @@ function safeDomainFromEmail(email: string): string | null {
   return host
 }
 
+/**
+ *
+ */
 export function detectSchoolFromEmail(email: string): DetectResult {
   const host = safeDomainFromEmail(email)
   if (!host) return { ok: false, confidence: 'low', reason: '不是合法 email（無法解析網域）' }
 
-  // 只處理 edu 與 edu.tw；其餘標記為不支援
   if (!(host.endsWith('.edu') || host.endsWith('.edu.tw'))) {
     const suf = host.split('.').slice(-2).join('.')
     return { ok: false, confidence: 'low', reason: `非教育網域（.${suf}）` }
   }
 
-  // Taiwan K-12 or TW universities
   if (host.endsWith('.edu.tw')) {
     const parts = host.split('.') // e.g. nhsh.tp.edu.tw | ncku.edu.tw
     if (parts.length < 3) {
@@ -84,7 +89,6 @@ export function detectSchoolFromEmail(email: string): DetectResult {
     const last = parts.slice(-2).join('.') // 'edu.tw'
     const rest = parts.slice(0, -2)        // ['nhsh','tp'] or ['ncku']
     if (rest.length === 1) {
-      // 大學樣式: ncku.edu.tw
       const uniSlug = rest[0]
       return {
         ok: true,
@@ -96,10 +100,8 @@ export function detectSchoolFromEmail(email: string): DetectResult {
         candidates: { canonicalGuess: `${uniSlug}.edu.tw`, slugGuess: uniSlug },
       }
     }
-    // K-12: <school>.<city>.edu.tw，或帶無用前綴
     const sub = rest.join('.') // e.g. 'nhsh.tp' | 'mail.nhsh.tp'
     const cleaned = stripUselessPrefixes(sub)
-    // cleaned 可能是 ['nhsh','tp'] 或 ['dept','nhsh','tp']
     const city = cleaned.slice(-1)[0]
     const schoolSlug = cleaned[0]
     if (!city || !schoolSlug) {
@@ -122,7 +124,6 @@ export function detectSchoolFromEmail(email: string): DetectResult {
     }
   }
 
-  // .edu 國際大學：<slug>.edu 或 dept.<slug>.edu
   if (host.endsWith('.edu')) {
     const parts = host.split('.') // e.g. nthu.edu | mail.stanford.edu
     const rest = parts.slice(0, -1) // remove 'edu'

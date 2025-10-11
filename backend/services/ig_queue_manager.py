@@ -45,7 +45,6 @@ class IGQueueManager:
             int: InstagramPost ID，失敗返回 None
         """
         try:
-            # 檢查是否已存在
             existing = self.db.query(InstagramPost).filter_by(
                 forum_post_id=forum_post_id,
                 ig_account_id=account_id
@@ -55,7 +54,6 @@ class IGQueueManager:
                 logger.warning(f"論壇貼文 {forum_post_id} 已在佇列中")
                 return existing.id
 
-            # 獲取帳號和論壇貼文
             account = self.db.query(InstagramAccount).filter_by(id=account_id).first()
             forum_post = self.db.query(Post).filter_by(id=forum_post_id).first()
 
@@ -63,16 +61,13 @@ class IGQueueManager:
                 logger.error(f"找不到帳號或貼文")
                 return None
 
-            # 選擇模板
             template_id = self._select_template(forum_post, account)
             if not template_id:
                 logger.error(f"無可用模板")
                 return None
 
-            # 生成 public_id
             public_id = self._generate_public_id()
 
-            # 創建 InstagramPost
             ig_post = InstagramPost(
                 public_id=public_id,
                 forum_post_id=forum_post_id,
@@ -110,23 +105,18 @@ class IGQueueManager:
             return False
 
         try:
-            # 更新狀態為渲染中
             post.status = PostStatus.RENDERING
             self.db.commit()
 
-            # 獲取資料
             forum_post = post.forum_post
             template = post.template
             account = post.account
 
-            # 獲取媒體列表
             media_list = self._get_forum_post_media(forum_post)
 
-            # 渲染圖片
             logger.info(f"渲染貼文圖片: {post.public_id}")
             cdn_path = self.renderer.render_post(forum_post, template, media_list, account=account)
 
-            # 生成 Caption
             logger.info(f"生成貼文 Caption: {post.public_id}")
             caption = self.caption_generator.generate_single_caption(
                 forum_post,
@@ -134,7 +124,6 @@ class IGQueueManager:
                 account
             )
 
-            # 更新貼文
             post.rendered_image_cdn_path = cdn_path
             post.rendered_caption = caption
             post.status = PostStatus.READY
@@ -162,7 +151,6 @@ class IGQueueManager:
             str: carousel_group_id，失敗返回 None
         """
         try:
-            # 查找 READY 狀態的貼文
             ready_posts = self.db.query(InstagramPost).filter(
                 InstagramPost.ig_account_id == account_id,
                 InstagramPost.status == PostStatus.READY,
@@ -174,10 +162,8 @@ class IGQueueManager:
                 logger.info(f"貼文數量不足 ({len(ready_posts)}/{batch_count})，無法創建輪播")
                 return None
 
-            # 生成 carousel_group_id
             carousel_group_id = f"CG_{uuid.uuid4().hex[:12]}"
 
-            # 更新貼文
             for i, post in enumerate(ready_posts, 1):
                 post.carousel_group_id = carousel_group_id
                 post.carousel_position = i
@@ -260,7 +246,6 @@ class IGQueueManager:
         Returns:
             list: carousel_group_id 列表
         """
-        # 查找所有 READY 狀態且有 carousel_group_id 的貼文
         groups = self.db.query(InstagramPost.carousel_group_id).filter(
             InstagramPost.ig_account_id == account_id,
             InstagramPost.status == PostStatus.READY,
@@ -315,14 +300,11 @@ class IGQueueManager:
         Returns:
             int: 模板 ID
         """
-        # 判斷貼文類型
         is_announcement = hasattr(forum_post, 'announcement_type') and forum_post.announcement_type
 
         if is_announcement:
-            # 使用公告模板
             return account.announcement_template_id
         else:
-            # 使用一般模板
             return account.general_template_id
 
     def _get_forum_post_media(self, forum_post: Post) -> List[str]:
@@ -338,12 +320,10 @@ class IGQueueManager:
         if not hasattr(forum_post, 'media') or not forum_post.media:
             return []
 
-        # 假設 forum_post.media 是 Media 對象列表
         media_paths = []
         image_exts = {"jpg","jpeg","png","webp","gif"}
         for media in forum_post.media:
             if hasattr(media, 'path'):
-                # media.path 格式為 "public/media/xxx.png"，需轉換為 CDN URL
                 cdn_base_url = os.getenv("CDN_PUBLIC_BASE_URL", "https://cdn.serelix.xyz").rstrip("/")
                 path = str(media.path)
                 ext = (path.rsplit('.', 1)[-1].split('?')[0] if '.' in path else '').lower()
@@ -380,7 +360,6 @@ class IGQueueManager:
             InstagramPost.status == PostStatus.PUBLISHING
         ).count()
 
-        # 按帳號分組統計
         accounts = self.db.query(InstagramAccount).filter_by(is_active=True).all()
 
         account_stats = []

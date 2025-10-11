@@ -42,6 +42,9 @@ import {
 } from 'lucide-react'
 import { canSetMode, getRole, getRoleDisplayName, canAccessAnnouncements } from '@/utils/auth'
 
+/**
+ *
+ */
 export default function AdminDashboardRedesigned() {
   const navigate = useNavigate()
   const role = getRole()
@@ -61,7 +64,6 @@ export default function AdminDashboardRedesigned() {
     return () => html.classList.remove('theme-ready')
   }, [])
 
-  // 管理功能卡片組件
   const AdminCard = ({ 
     to, 
     title, 
@@ -98,7 +100,7 @@ export default function AdminDashboardRedesigned() {
           disabled ? 'opacity-60 pointer-events-none' : 'hover:scale-105 active:scale-95'
         }`}
       >
-        {/* 背景漸層 */}
+        
         <div className={`absolute inset-0 bg-gradient-to-br ${colorClasses[color]} opacity-5 group-hover:opacity-10 transition-opacity`}></div>
         
         {urgent && (
@@ -133,7 +135,6 @@ export default function AdminDashboardRedesigned() {
     )
   }
 
-  // 統計卡片組件
   const StatCard = ({ title, value, change, icon: Icon, color = "blue" }) => {
     const isPositive = change && parseFloat(change.replace('%', '')) > 0
     const colorClasses = {
@@ -172,7 +173,7 @@ export default function AdminDashboardRedesigned() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50/50 to-blue-50/30 dark:from-gray-900 dark:to-slate-800">
-      {/* 頂部導航 */}
+      
       <div className="sticky top-0 z-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-border">
         <div className="px-4 py-4 pt-safe-top">
           <div className="flex items-center justify-between mb-4">
@@ -195,7 +196,7 @@ export default function AdminDashboardRedesigned() {
             </div>
           </div>
           
-          {/* 頭部資訊 */}
+          
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-2xl font-bold text-fg mb-1">後台主控台</h1>
@@ -210,7 +211,7 @@ export default function AdminDashboardRedesigned() {
       </div>
 
       <div className="px-4 py-6 space-y-6">
-        {/* 快速統計 */}
+        
         <div className="grid grid-cols-2 gap-4">
           <StatCard 
             title="總用戶數" 
@@ -242,7 +243,7 @@ export default function AdminDashboardRedesigned() {
           />
         </div>
 
-        {/* 緊急事項 */}
+        
         {(stats.pendingReports > 0 || stats.newTickets > 0) && (
           <div className="bg-gradient-to-r from-red-500/10 to-pink-500/10 border border-red-200 dark:border-red-800 rounded-2xl p-4">
             <div className="flex items-center gap-3 mb-3">
@@ -275,7 +276,7 @@ export default function AdminDashboardRedesigned() {
           </div>
         )}
 
-        {/* 主要功能區 */}
+        
         <div>
           <h2 className="text-lg font-bold text-fg mb-4 flex items-center gap-2">
             <Zap className="w-5 h-5" />
@@ -308,7 +309,7 @@ export default function AdminDashboardRedesigned() {
               color="purple"
             />
             
-            {/* 客服管理卡片 - 三個 _admin 可操作，其他管理角色唯讀 */}
+            
             {['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '') ? (
               <AdminCard 
                 to="/admin/support" 
@@ -332,7 +333,7 @@ export default function AdminDashboardRedesigned() {
           </div>
         </div>
 
-        {/* 系統管理功能 */}
+        
         <div>
           <h2 className="text-lg font-bold text-fg mb-4 flex items-center gap-2">
             <Settings className="w-5 h-5" />
@@ -390,7 +391,7 @@ export default function AdminDashboardRedesigned() {
           </div>
         </div>
 
-        {/* 用戶與內容管理 */}
+        
         <div>
           <h2 className="text-lg font-bold text-fg mb-4 flex items-center gap-2">
             <Users className="w-5 h-5" />
@@ -435,7 +436,7 @@ export default function AdminDashboardRedesigned() {
           </div>
         </div>
 
-        {/* 快速操作區域 */}
+        
         <div className="bg-surface border border-border rounded-3xl p-6 shadow-soft">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
@@ -471,7 +472,7 @@ export default function AdminDashboardRedesigned() {
           </div>
         </div>
 
-        {/* 系統狀態概覽 */}
+        
         <div className="bg-surface border border-border rounded-3xl p-6 shadow-soft">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -525,7 +526,7 @@ export default function AdminDashboardRedesigned() {
           </div>
         </div>
 
-        {/* 底部間距 */}
+        
         <div className="h-20"></div>
       </div>
     </div>

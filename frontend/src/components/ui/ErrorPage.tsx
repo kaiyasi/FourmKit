@@ -17,6 +17,9 @@ type Props = {
   actions?: IpBlockedError['actions'];
 }
 
+/**
+ *
+ */
 export default function ErrorPage({ 
   status, 
   title, 
@@ -101,7 +104,7 @@ export default function ErrorPage({
           </div>
         )}
 
-        {/* Render actions form if available */}
+        
         {actions ? (
           <div className="mt-6 text-left">
             <div className="border-b border-border mb-4">

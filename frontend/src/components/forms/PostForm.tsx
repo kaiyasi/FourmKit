@@ -1,4 +1,3 @@
-// frontend/src/components/PostForm.tsx
 import { useEffect, useState } from 'react'
 import UploadArea from '../UploadArea'
 import { postJSON, postFormData, HttpError } from '../../lib/http'
@@ -11,6 +10,9 @@ import { textToHtml } from '@/utils/safeHtml'
 
 type School = { id: number; slug: string; name: string }
 
+/**
+ *
+ */
 export default function PostForm({ onCreated }: { onCreated: (post: any) => void }) {
   const [content, setContent] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -50,23 +52,19 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
   }, [])
 
   const doSubmit = async (finalSlug: string | '') => {
-    // 根據 publishType 決定是否為公告
     const isAnnouncement = publishType === 'announcement'
     const body = content.trim()
-    // 最小字數交由後端依設定檢查（前端不硬卡）
     setBusy(true); setErr(null)
     
     const clientId = getClientId()
     const txId = newTxId()
     const now = new Date().toISOString()
 
-    // 不再插入本地「送審中」占位卡
     
     try {
       let result
       let replyToId: number | null = null
       let textBody = body
-      // 特殊語法：以 #<id> 開頭 → 發文，但標記 reply_to_id
       if (files.length === 0) {
         const m = body.match(/^#(\d+)\s*(.*)$/s)
         if (m) {
@@ -76,7 +74,6 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
       }
       
       if (files.length > 0) {
-        // 有檔案時使用 FormData
         const fd = new FormData()
         fd.set('content', body)
         fd.set('client_tx_id', txId)
@@ -93,7 +90,6 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         }
         result = await postFormData('/api/posts/with-media', fd, { headers })
       } else {
-        // 沒有檔案時使用 JSON
         const headers = { 
           'Content-Type': 'application/json',
           'X-Client-Id': clientId, 
@@ -109,7 +105,6 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         result = await postJSON('/api/posts', payload, { headers })
       }
       
-      // 後端已建立為 pending，前端不插入公開清單（保留私有占位即可），僅提示成功送審
       validatePost(result) // 校驗結構（一般貼文）
       setContent('')
       setFiles([])
@@ -134,7 +129,6 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
       setErr('請先輸入內容')
       return
     }
-    // 桌面：按下送出先跳出選擇框
     setConfirmOpen(true)
   }
 
@@ -148,7 +142,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
             <h4 className="font-semibold dual-text mb-2">選擇發佈範圍</h4>
             <p className="text-sm text-muted mb-3">請選擇要把這則貼文送到哪裡：</p>
             <div className="space-y-2 max-h-[40vh] overflow-auto pr-1">
-              {/* 一般學校選項 */}
+              
               {schools.map(s => (
                 <label key={s.id} className="flex items-center gap-2 hover:bg-surface-hover rounded-lg p-2">
                   <input 
@@ -164,7 +158,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
                 </label>
               ))}
               
-              {/* 跨校選項 */}
+              
               <label className="flex items-center gap-2 hover:bg-surface-hover rounded-lg p-2">
                 <input 
                   type="radio" 
@@ -178,10 +172,10 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
                 <span className="text-sm">跨校（全部）</span>
               </label>
 
-              {/* 公告選項 - 依管理員角色顯示 */}
+              
               {canAnnounce && (
                 <>
-                  {/* 全平台公告 - 只有 dev_admin 可見 */}
+                  
                   {role === 'dev_admin' && (
                     <label className="flex items-center gap-2 hover:bg-surface-hover rounded-lg p-2">
                       <input 
@@ -199,7 +193,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
                     </label>
                   )}
 
-                  {/* 跨校公告 - dev_admin 和 cross_admin 可見 */}
+                  
                   {(role === 'dev_admin' || role === 'cross_admin') && (
                     <label className="flex items-center gap-2 hover:bg-surface-hover rounded-lg p-2">
                       <input 
@@ -217,7 +211,7 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
                     </label>
                   )}
 
-                  {/* 學校公告 - 根據管理員身份顯示對應學校 */}
+                  
                   {(role === 'dev_admin' || role === 'campus_admin') && schools
                     .filter(s => role === 'dev_admin' || s.slug === defaultSlug)
                     .map(s => (
@@ -254,12 +248,12 @@ export default function PostForm({ onCreated }: { onCreated: (post: any) => void
         onChange={e=> setContent(e.target.value)}
       />
       
-      {/* 媒體上傳區域 */}
+      
       <div className="mt-3">
         <UploadArea value={files} onChange={setFiles} maxCount={6} />
       </div>
 
-      {/* 輕量預覽：回覆語法優先，否則 Markdown 預覽 */}
+      
       {content.trim() && (
         (() => {
           const m = content.trim().match(/^#(\d+)\s*(.*)$/s)

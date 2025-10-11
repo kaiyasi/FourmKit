@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_settings.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
@@ -33,7 +37,6 @@ def set_content_rules():
     return jsonify({"ok": True, "config": cfg})
 
 
-# --------- Site/Home settings ---------
 @bp.get("/site")
 def get_site_settings():
     """公開讀取站台設定（目前提供首頁標題）。"""

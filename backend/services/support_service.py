@@ -32,27 +32,24 @@ class SupportService:
         user_id: Optional[int] = None,
         guest_email: Optional[str] = None,
         school_id: Optional[int] = None,
-        attachments: Optional[Dict] = None
+        attachments: Optional[Dict] = None,
+        client_ip: Optional[str] = None
     ) -> SupportTicket:
         """創建新工單"""
         
-        # 驗證必要參數
         if not subject.strip() or not body.strip():
             raise ValueError("主題和內容不能為空")
         
-        # 登入用戶或訪客必須二選一
         if not user_id and not guest_email:
             raise ValueError("必須提供用戶ID或訪客Email")
         
-        # 創建工單
-        # 依身分產生公開編號
         if user_id:
             public_id = SupportService._gen_user_ticket_id(session, int(user_id), category)
         else:
             public_id = SupportService._gen_guest_ticket_id(session, category)
 
         ticket = SupportTicket(
-            subject=subject.strip()[:500],  # 限制長度
+            subject=subject.strip()[:500],
             category=category,
             user_id=user_id,
             guest_email=guest_email.strip().lower() if guest_email else None,
@@ -62,9 +59,8 @@ class SupportService:
         )
         
         session.add(ticket)
-        session.flush()  # 獲取 ticket.id
+        session.flush()
         
-        # 創建初始訊息
         initial_message = SupportMessage(
             ticket_id=ticket.id,
             author_type=AuthorType.USER if user_id else AuthorType.GUEST,
@@ -74,7 +70,6 @@ class SupportService:
         )
         session.add(initial_message)
         
-        # 記錄創建事件
         event = SupportEvent(
             ticket_id=ticket.id,
             event_type=EventType.TICKET_CREATED,
@@ -83,18 +78,17 @@ class SupportService:
                 'subject': subject,
                 'category': category,
                 'is_guest': user_id is None,
-                'guest_email': guest_email
+                'guest_email': guest_email,
+                'client_ip': client_ip
             }
         )
         session.add(event)
         
-        # 更新統計
         ticket.message_count = 1
         ticket.last_activity_at = datetime.now(timezone.utc)
         
         session.commit()
         
-        # 發送 Socket.IO 事件
         try:
             from socket_events import broadcast_support_event
             broadcast_support_event("ticket_created", ticket.public_id, {
@@ -107,7 +101,6 @@ class SupportService:
             try:
                 current_app.logger.warning(f"Failed to broadcast ticket_created event: {e}")
             except RuntimeError:
-                # 在測試環境中可能沒有應用上下文
                 print(f"Failed to broadcast ticket_created event: {e}")
         
         return ticket
@@ -127,16 +120,13 @@ class SupportService:
         if not body.strip():
             raise ValueError("訊息內容不能為空")
         
-        # 檢查工單是否存在
         ticket = session.get(SupportTicket, ticket_id)
         if not ticket:
             raise ValueError("工單不存在")
         
-        # 檢查工單狀態
         if ticket.status == TicketStatus.CLOSED:
             raise ValueError("已關閉的工單無法回覆")
         
-        # 創建訊息
         message = SupportMessage(
             ticket_id=ticket_id,
             author_type=author_type,
@@ -147,7 +137,6 @@ class SupportService:
         )
         session.add(message)
         
-        # 記錄事件
         event = SupportEvent(
             ticket_id=ticket_id,
             event_type=EventType.MESSAGE_SENT,
@@ -156,16 +145,15 @@ class SupportService:
                 'author_type': author_type,
                 'is_internal': is_internal,
                 'message_length': len(body),
-                'has_attachments': bool(attachments)
+                'has_attachments': bool(attachments),
+                'client_ip': None
             }
         )
         session.add(event)
         
-        # 更新工單統計和狀態
         ticket.message_count += 1
         ticket.last_activity_at = datetime.now(timezone.utc)
         
-        # 自動狀態轉換
         if author_type == AuthorType.ADMIN:
             if ticket.status in [TicketStatus.OPEN, TicketStatus.AWAITING_ADMIN]:
                 ticket.status = TicketStatus.AWAITING_USER
@@ -175,7 +163,6 @@ class SupportService:
         
         session.commit()
         
-        # 發送 Socket.IO 事件
         try:
             from socket_events import broadcast_support_event
             broadcast_support_event("message_sent", ticket.public_id, {
@@ -212,10 +199,8 @@ class SupportService:
         
         old_status = ticket.status
         if old_status == new_status:
-            return False  # 狀態無變化
+            return False
         
-        # 狀態轉換驗證
-        # 狀態機調整：不再使用 REOPENED，改以回到 OPEN 表示重新開啟。
         valid_transitions = {
             TicketStatus.OPEN: [
                 TicketStatus.AWAITING_USER,
@@ -227,32 +212,29 @@ class SupportService:
                 TicketStatus.AWAITING_ADMIN,
                 TicketStatus.RESOLVED,
                 TicketStatus.CLOSED,
-                TicketStatus.OPEN,   # 允許回到 OPEN（重新開啟）
+                TicketStatus.OPEN,
             ],
             TicketStatus.AWAITING_ADMIN: [
                 TicketStatus.AWAITING_USER,
                 TicketStatus.RESOLVED,
                 TicketStatus.CLOSED,
-                TicketStatus.OPEN,   # 允許回到 OPEN（重新開啟）
+                TicketStatus.OPEN,
             ],
             TicketStatus.RESOLVED: [
                 TicketStatus.CLOSED,
-                TicketStatus.OPEN,   # 允許回到 OPEN（重新開啟）
+                TicketStatus.OPEN,
             ],
             TicketStatus.CLOSED: [
-                TicketStatus.OPEN,   # 允許回到 OPEN（重新開啟）
+                TicketStatus.OPEN,
             ],
-            # TicketStatus.REOPENED: 不再使用
         }
         
         if new_status not in valid_transitions.get(old_status, []):
             raise ValueError(f"無法從 {old_status} 轉換到 {new_status}")
         
-        # 更新狀態
         ticket.status = new_status
         ticket.last_activity_at = datetime.now(timezone.utc)
         
-        # 記錄狀態變更事件
         event = SupportEvent(
             ticket_id=ticket_id,
             event_type=EventType.STATUS_CHANGED,
@@ -267,7 +249,6 @@ class SupportService:
         
         session.commit()
         
-        # 發送 Socket.IO 事件
         try:
             from socket_events import broadcast_support_event
             broadcast_support_event("status_changed", ticket.public_id, {
@@ -301,17 +282,14 @@ class SupportService:
         if old_assignee == assignee_user_id:
             return False  # 指派對象無變化
         
-        # 檢查被指派者是否為管理員
         if assignee_user_id:
             assignee = session.get(User, assignee_user_id)
             if not assignee or assignee.role not in ['dev_admin', 'campus_admin', 'cross_admin']:
                 raise ValueError("只能指派給管理員")
         
-        # 更新指派
         ticket.assigned_to = assignee_user_id
         ticket.last_activity_at = datetime.now(timezone.utc)
         
-        # 記錄指派事件
         event_type = EventType.ASSIGNED if assignee_user_id else EventType.UNASSIGNED
         event = SupportEvent(
             ticket_id=ticket_id,
@@ -324,12 +302,10 @@ class SupportService:
         )
         session.add(event)
         
-        # 添加前端通知事件
         try:
             from utils.notify import send_admin_event
             
             if assignee_user_id:
-                # 指派通知
                 send_admin_event(
                     kind="support_ticket_assigned",
                     title=f"工單已指派：{ticket.subject}",
@@ -343,7 +319,6 @@ class SupportService:
                     actor=f"管理員 #{actor_user_id}" if actor_user_id else "系統"
                 )
             else:
-                # 移除指派通知
                 send_admin_event(
                     kind="support_ticket_unassigned",
                     title=f"工單指派已移除：{ticket.subject}",
@@ -357,7 +332,6 @@ class SupportService:
                     actor=f"管理員 #{actor_user_id}" if actor_user_id else "系統"
                 )
         except Exception as e:
-            # 通知失敗不影響主要功能
             print(f"Failed to send assignment notification: {e}")
         
         session.commit()
@@ -373,11 +347,9 @@ class SupportService:
     ) -> List[SupportTicket]:
         """取得用戶的工單列表（包含之前以訪客身份建立的）"""
         
-        # 獲取用戶的 email
         user = session.get(User, user_id)
         user_email = user.email.lower() if user and user.email else None
         
-        # 查詢條件：user_id 匹配 或 guest_email 匹配
         if user_email:
             query = session.query(SupportTicket).filter(
                 or_(
@@ -411,11 +383,9 @@ class SupportService:
         
         query = session.query(SupportTicket)
         
-        # 權限控制：非 dev_admin 只能看到已分配的工單
         if user_role and user_role != 'dev_admin':
             query = query.filter(SupportTicket.assigned_to.isnot(None))
         
-        # 應用篩選條件
         if status:
             query = query.filter(SupportTicket.status == status)
         if school_id:
@@ -425,7 +395,6 @@ class SupportService:
         if category:
             query = query.filter(SupportTicket.category == category)
         
-        # 搜尋功能
         if search_query:
             search_term = f"%{search_query}%"
             query = query.filter(
@@ -435,10 +404,8 @@ class SupportService:
                 )
             )
         
-        # 計算總數
         total_count = query.count()
         
-        # 取得分頁結果
         tickets = query.order_by(desc(SupportTicket.last_activity_at)).offset(offset).limit(limit).all()
         
         return tickets, total_count
@@ -447,11 +414,9 @@ class SupportService:
     def generate_guest_token(ticket_id: int, guest_email: str, secret_key: str) -> str:
         """為訪客生成簽章 token"""
         
-        # 創建簽章載荷
-        expires_at = datetime.now(timezone.utc) + timedelta(days=30)  # 30天有效
+        expires_at = datetime.now(timezone.utc) + timedelta(days=30)
         payload = f"{ticket_id}:{guest_email}:{int(expires_at.timestamp())}"
         
-        # 使用 HMAC 簽章
         signature = hmac.new(
             secret_key.encode('utf-8'),
             payload.encode('utf-8'),
@@ -471,12 +436,10 @@ class SupportService:
             
             ticket_id, guest_email, expires_str, signature = parts
             
-            # 檢查是否過期
             expires_at = datetime.fromtimestamp(int(expires_str), tz=timezone.utc)
             if datetime.now(timezone.utc) > expires_at:
                 return None
             
-            # 驗證簽章
             payload = f"{ticket_id}:{guest_email}:{expires_str}"
             expected_signature = hmac.new(
                 secret_key.encode('utf-8'),
@@ -500,7 +463,6 @@ class SupportService:
         if school_id:
             base_query = base_query.filter(SupportTicket.school_id == school_id)
         
-        # 基本統計
         total_tickets = base_query.count()
         open_tickets = base_query.filter(SupportTicket.status.in_([
             TicketStatus.OPEN, TicketStatus.AWAITING_ADMIN, TicketStatus.AWAITING_USER
@@ -508,13 +470,15 @@ class SupportService:
         resolved_tickets = base_query.filter(SupportTicket.status == TicketStatus.RESOLVED).count()
         closed_tickets = base_query.filter(SupportTicket.status == TicketStatus.CLOSED).count()
         
+<<<<<<< Updated upstream
         # 分類統計
+=======
+>>>>>>> Stashed changes
         category_stats = session.query(
             SupportTicket.category,
             func.count(SupportTicket.id)
         ).group_by(SupportTicket.category).all()
         
-        # 今日統計
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         today_tickets = base_query.filter(SupportTicket.created_at >= today_start).count()
         
@@ -534,7 +498,6 @@ class SupportService:
         00X0 = 4位隨機混合字元（數字+大寫英文）
         確保在 support_tickets.public_id 上唯一。
         """
-        # 類型前綴映射
         category_prefix = {
             "technical": "TEC",
             "billing": "BIL",
@@ -548,7 +511,6 @@ class SupportService:
         prefix = category_prefix.get(category, "SUP")
         charset = string.digits + string.ascii_uppercase
 
-        # 第一輪：基本格式 XXX-U<uid>-00X0
         for _ in range(50):
             rand_code = ''.join(secrets.choice(charset) for _ in range(4))
             pid = f"{prefix}-U{user_id}-{rand_code}"
@@ -556,7 +518,6 @@ class SupportService:
             if not exists:
                 return pid
 
-        # 第二輪：追加後綴 XXX-U<uid>-00X0-00X0
         for _ in range(50):
             rand_code1 = ''.join(secrets.choice(charset) for _ in range(4))
             rand_code2 = ''.join(secrets.choice(charset) for _ in range(4))
@@ -565,7 +526,6 @@ class SupportService:
             if not exists:
                 return pid
 
-        # 最後退守：使用時間戳
         timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) % 100000
         rand_suffix = ''.join(secrets.choice(charset) for _ in range(4))
         return f"{prefix}-U{user_id}-{timestamp:05d}-{rand_suffix}"
@@ -578,23 +538,20 @@ class SupportService:
         如果嘗試多次仍重複，則追加後綴 -00X0
         確保在 support_tickets.public_id 上唯一。
         """
-        # 類型前綴映射
         category_prefix = {
-            "technical": "TEC",      # 技術問題
-            "billing": "BIL",        # 帳務問題
-            "account": "ACC",        # 帳戶問題
-            "feature": "FEA",        # 功能建議
-            "bug": "BUG",           # 錯誤回報
-            "general": "GEN",        # 一般查詢
-            "other": "OTH"          # 其他
+            "technical": "TEC",
+            "billing": "BIL",
+            "account": "ACC",
+            "feature": "FEA",
+            "bug": "BUG",
+            "general": "GEN",
+            "other": "OTH"
         }
 
         prefix = category_prefix.get(category, "SUP")
 
-        # 混合字元池：數字 + 大寫英文
-        charset = string.digits + string.ascii_uppercase  # 0-9 + A-Z = 36個字元
+        charset = string.digits + string.ascii_uppercase
 
-        # 第一輪：嘗試生成基本格式 XXX-00X0
         for _ in range(50):
             rand_code = ''.join(secrets.choice(charset) for _ in range(4))
             pid = f"{prefix}-{rand_code}"
@@ -602,7 +559,6 @@ class SupportService:
             if not exists:
                 return pid
 
-        # 第二輪：追加一組後綴 XXX-00X0-00X0
         for _ in range(50):
             rand_code1 = ''.join(secrets.choice(charset) for _ in range(4))
             rand_code2 = ''.join(secrets.choice(charset) for _ in range(4))
@@ -611,7 +567,6 @@ class SupportService:
             if not exists:
                 return pid
 
-        # 第三輪：追加兩組後綴 XXX-00X0-00X0-00X0
         for _ in range(50):
             rand_code1 = ''.join(secrets.choice(charset) for _ in range(4))
             rand_code2 = ''.join(secrets.choice(charset) for _ in range(4))
@@ -621,7 +576,6 @@ class SupportService:
             if not exists:
                 return pid
 
-        # 最後退守：使用時間戳確保唯一性
         timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) % 100000
         rand_suffix = ''.join(secrets.choice(charset) for _ in range(4))
         return f"{prefix}-{timestamp:05d}-{rand_suffix}"

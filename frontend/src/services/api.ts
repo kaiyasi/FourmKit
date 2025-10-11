@@ -39,6 +39,9 @@ function getSelectedSchoolSlug(): string | null {
   }
 }
 
+/**
+ *
+ */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const doFetch = async (accessToken?: string) =>
     fetch(j(path), {
@@ -100,7 +103,6 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         }
       }
     } catch {
-      // Ignore refresh errors, fall through to the generic error handler
     }
   }
 
@@ -110,17 +112,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       errorJson = bodyText ? JSON.parse(bodyText) : {};
     } catch {
-      // Not a JSON response
     }
 
     if (res.status === 451 && errorJson?.error?.code === 'IP_BLOCKED') {
       const event = new CustomEvent('ip-blocked', { detail: errorJson.error });
       window.dispatchEvent(event);
-      // Throw a specific error to reject the promise, but the UI is handled by the overlay
       throw new Error('IP address is blocked.');
     }
 
-    // Generic error handling
     const msg = messageFrom(res.status, errorJson, bodyText || `HTTP ${res.status}`);
     if (res.status === 401) {
       const code = errorJson?.error?.code || errorJson?.code;
@@ -207,11 +206,16 @@ export const AccountAPI = {
     return r.json() as Promise<{ ok: boolean; path: string }>
   }
   ,
+  uploadProfileCard: (image_data: string) =>
+    api<{ ok: boolean; path: string }>(j('/api/account/profile-card'), { method: 'POST', body: JSON.stringify({ image_data }) }),
   webhookGet: () => api<{ ok:boolean; config?: { url?: string; enabled?: boolean; school_slug?: string|null }; last_post_id?: number|null }>(j('/api/account/webhook')),
   webhookSet: (payload: { url?: string; enabled?: boolean; school_slug?: string|null }) => api<{ ok:boolean; config:any }>(j('/api/account/webhook'), { method:'POST', body: JSON.stringify(payload) }),
   webhookTest: (url?: string) => api<{ ok:boolean; status?: number; error?: string }>(j('/api/account/webhook/test'), { method:'POST', body: JSON.stringify({ url }) })
 };
 
+/**
+ *
+ */
 export async function createPost(token: string, payload: {title: string; content: string; files: File[]}) {
   const fd = new FormData();
   fd.set("title", payload.title);

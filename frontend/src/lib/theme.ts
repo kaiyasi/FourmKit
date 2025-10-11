@@ -1,3 +1,6 @@
+/**
+ *
+ */
 export type ThemeName = 'auto' | 'beige' | 'ocean' | 'forest' | 'mist' | 'dark'
 
 const THEME_KEY = 'fk.theme'
@@ -9,6 +12,9 @@ function systemPrefersDark(): boolean {
   } catch { return false }
 }
 
+/**
+ *
+ */
 export function applyTheme(theme: ThemeName, isDark?: boolean){
   const html = document.documentElement
   if (theme === 'auto') {
@@ -18,11 +24,13 @@ export function applyTheme(theme: ThemeName, isDark?: boolean){
     return
   }
   html.setAttribute('data-theme', theme)
-  // 只有 dark 主題才被視為暗色模式
   const shouldBeDark = !!isDark || theme === 'dark'
   html.classList.toggle('dark', shouldBeDark)
 }
 
+/**
+ *
+ */
 export function saveTheme(theme: ThemeName, isDark: boolean){
   try {
     localStorage.setItem(THEME_KEY, theme)
@@ -30,6 +38,9 @@ export function saveTheme(theme: ThemeName, isDark: boolean){
   } catch(_) { /* ignore */ }
 }
 
+/**
+ *
+ */
 export function loadTheme(): { theme: ThemeName; isDark: boolean }{
   let theme = 'beige' as ThemeName
   try {
@@ -41,11 +52,9 @@ export function loadTheme(): { theme: ThemeName; isDark: boolean }{
     if (theme === 'auto') {
       isDark = systemPrefersDark()
     } else if (theme === 'dark') {
-      // 只有 dark 主題才設定為暗色模式
       const d = localStorage.getItem(DARK_KEY)
       isDark = d ? d === '1' : true
     } else {
-      // 其他主題（包括 mist）都是淺色模式
       isDark = false
     }
   } catch(_) { isDark = false }
@@ -54,7 +63,6 @@ export function loadTheme(): { theme: ThemeName; isDark: boolean }{
 
 export const THEME_ORDER: ThemeName[] = ['auto','beige','ocean','forest','mist','dark']
 
-// 在自動模式下，監聽系統主題變化
 function startSystemThemeSync(){
   try {
     const mql = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -66,16 +74,12 @@ function startSystemThemeSync(){
       } catch { /* ignore */ }
     }
     mql.addEventListener?.('change', handler)
-    // 一些舊瀏覽器
-    // @ts-ignore
     mql.addListener?.(handler)
   } catch { /* ignore */ }
 }
 
-// Immediate apply to reduce flash
 try {
   const { theme, isDark } = loadTheme()
-  // 確保只有 dark 主題才被設定為暗色模式
   const shouldBeDark = theme === 'dark' && isDark
   applyTheme(theme, shouldBeDark)
   startSystemThemeSync()

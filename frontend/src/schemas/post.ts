@@ -1,4 +1,6 @@
-// 暫時使用簡單的類型檢查，稍後可以替換為 zod
+/**
+ *
+ */
 export interface Post {
   id: number;
   content: string;
@@ -7,14 +9,10 @@ export interface Post {
   media_count?: number;
   comment_count?: number;
   cover_path?: string | null;
-  // 回覆的目標貼文 ID（若為回覆則存在）
   reply_to_id?: number | null;
-  // 用於對應樂觀更新的暫時貼文（非後端主鍵）
   client_tx_id?: string;
-  // 學校資訊（改為顯示學校名稱用）
   school_id?: number | null;
   school?: { id: number; slug: string; name: string } | null;
-  // 公告和廣告相關欄位
   is_announcement?: boolean;
   is_advertisement?: boolean;
   announcement_type?: string | null;
@@ -22,6 +20,9 @@ export interface Post {
   pinned_at?: string | null;
 }
 
+/**
+ *
+ */
 export interface PostList {
   items: Post[];
   page: number;
@@ -29,7 +30,9 @@ export interface PostList {
   total: number;
 }
 
-// 簡單的運行時類型檢查
+/**
+ *
+ */
 export function validatePost(obj: any): Post {
   if (typeof obj !== 'object' || obj === null) {
     throw new Error('Post must be an object');
@@ -63,7 +66,6 @@ export function validatePost(obj: any): Post {
           logo_url: obj.school.logo_url,
         }
       : (obj.school === null ? null : undefined),
-    // 公告和廣告相關欄位
     is_announcement: typeof obj.is_announcement === 'boolean' ? obj.is_announcement : undefined,
     is_advertisement: typeof obj.is_advertisement === 'boolean' ? obj.is_advertisement : undefined,
     announcement_type: typeof obj.announcement_type === 'string' ? obj.announcement_type : (obj.announcement_type === null ? null : undefined),
@@ -72,6 +74,9 @@ export function validatePost(obj: any): Post {
   };
 }
 
+/**
+ *
+ */
 export function validatePostList(obj: any): PostList {
   if (typeof obj !== 'object' || obj === null) {
     throw new Error('PostList must be an object');

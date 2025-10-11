@@ -4,6 +4,9 @@ import { PageLayout } from '@/components/layout/PageLayout'
 import MobileHeader from '@/components/MobileHeader'
 
 
+/**
+ *
+ */
 export default function CreatePostPage() {
   const [isMobile, setIsMobile] = useState(false)
 
@@ -23,11 +26,10 @@ export default function CreatePostPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // 手機版仍使用同一佈局，但卡片與排版調整為接近電腦版首頁的發文樣式
 
   return (
     <PageLayout pathname="/create" maxWidth="max-w-2xl">
-      {/* 手機版：純文字標頭；桌面版：卡片式標頭 */}
+      
       {isMobile ? (
         <div className="sm:hidden text-center mb-4">
           <h1 className="text-2xl font-extrabold dual-text tracking-wide">ForumKit</h1>
@@ -40,7 +42,7 @@ export default function CreatePostPage() {
         </div>
       )}
       
-      {/* Composer Card（沿用桌面卡片樣式，行動版保留貼底操作欄） */}
+      
       <div className="bg-surface border border-border rounded-2xl shadow-soft mb-20 md:mb-4 p-4 sm:p-6 overflow-hidden">
         <PostComposer token={token} hideFormattingToolbar={true} />
         {!token && (

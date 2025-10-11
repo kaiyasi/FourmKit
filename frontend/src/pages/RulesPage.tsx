@@ -3,9 +3,11 @@ import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import MobileHeader from '@/components/MobileHeader'
 
+/**
+ *
+ */
 export default function RulesPage() {
   const { pathname } = useLocation()
-  // 主題初始化已由 theme.ts 統一處理，無需重複初始化
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [html, setHtml] = useState('')

@@ -47,6 +47,9 @@ interface FilterOptions {
   ipAddress: string
 }
 
+/**
+ *
+ */
 export default function AuthAuditLogPanel() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,7 +68,6 @@ export default function AuthAuditLogPanel() {
 
   const pageSize = 20
 
-  // 載入審計日誌
   const loadAuditLogs = async (page = 1) => {
     setLoading(true)
     try {
@@ -90,7 +92,6 @@ export default function AuthAuditLogPanel() {
     loadAuditLogs(1)
   }, [filters.eventType])
 
-  // 格式化時間
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleString('zh-TW', {
       year: 'numeric',
@@ -102,7 +103,6 @@ export default function AuthAuditLogPanel() {
     })
   }
 
-  // 取得事件圖示
   const getEventIcon = (eventType: string) => {
     if (eventType.includes('success')) {
       return <CheckCircle className="w-4 h-4 text-green-600" />
@@ -115,7 +115,6 @@ export default function AuthAuditLogPanel() {
     }
   }
 
-  // 渲染事件詳情
   const renderEventDetails = (log: AuditLogEntry) => {
     const details = log.details || {}
     
@@ -148,7 +147,7 @@ export default function AuthAuditLogPanel() {
           </div>
         </div>
 
-        {/* 詳細資訊 */}
+        
         {Object.keys(details).length > 0 && (
           <div>
             <label className="text-xs font-medium text-muted">詳細資訊</label>
@@ -160,7 +159,7 @@ export default function AuthAuditLogPanel() {
           </div>
         )}
 
-        {/* 特殊處理失敗事件 */}
+        
         {log.event_type.includes('failed') && details.error_code && (
           <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
             <p className="text-sm font-medium text-red-800 dark:text-red-200">
@@ -174,7 +173,7 @@ export default function AuthAuditLogPanel() {
           </div>
         )}
 
-        {/* 特殊處理 Google 相關事件 */}
+        
         {log.event_type.includes('google') && details.google_sub && (
           <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
             <p className="text-sm">
@@ -201,7 +200,7 @@ export default function AuthAuditLogPanel() {
 
   return (
     <div className="space-y-4">
-      {/* 標題與控制項 */}
+      
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">認證審計日誌</h2>
         <div className="flex gap-2">
@@ -221,7 +220,7 @@ export default function AuthAuditLogPanel() {
         </div>
       </div>
 
-      {/* 篩選器 */}
+      
       {showFilters && (
         <div className="p-4 bg-surface/50 border border-border rounded-lg space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -270,14 +269,14 @@ export default function AuthAuditLogPanel() {
         </div>
       )}
 
-      {/* 錯誤提示 */}
+      
       {error && (
         <div className="p-4 bg-danger-bg border border-danger-border rounded-lg">
           <p className="text-danger-text">{error}</p>
         </div>
       )}
 
-      {/* 日誌列表 */}
+      
       <div className="space-y-2">
         {logs.length === 0 ? (
           <div className="text-center py-8 text-muted">
@@ -344,7 +343,7 @@ export default function AuthAuditLogPanel() {
         )}
       </div>
 
-      {/* 分頁控制 */}
+      
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 mt-6">
           <button
@@ -369,7 +368,7 @@ export default function AuthAuditLogPanel() {
         </div>
       )}
 
-      {/* 詳情模態框 */}
+      
       {selectedLog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-surface border border-border rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">

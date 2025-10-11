@@ -15,10 +15,8 @@ from utils.db import get_session
 class IGTokenManager:
     """Instagram Token 管理器"""
 
-    # Instagram Graph API 基礎 URL
     GRAPH_API_BASE = "https://graph.facebook.com/v23.0"
 
-    # Token 刷新提前時間（7天內過期就刷新）
     REFRESH_BUFFER_DAYS = 7
 
     def __init__(self, db: Optional[Session] = None):
@@ -34,7 +32,6 @@ class IGTokenManager:
 
     def __enter__(self):
         if self._should_close_db:
-            # 如果沒有提供 db，創建一個 session context manager
             self._session_cm = get_session()
             self.db = self._session_cm.__enter__()
         return self
@@ -60,10 +57,8 @@ class IGTokenManager:
             return False, f"Account with ID {account_id} not found"
 
         try:
-            # 解密 Token
             access_token = decrypt_token(account.access_token_encrypted)
 
-            # 測試 Token：獲取用戶基本資訊
             response = requests.get(
                 f"{self.GRAPH_API_BASE}/{account.ig_user_id}",
                 params={
@@ -75,7 +70,6 @@ class IGTokenManager:
 
             if response.status_code == 200:
                 data = response.json()
-                # 驗證返回的 ID 是否匹配
                 if data.get('id') == account.ig_user_id:
                     return True, None
                 else:
@@ -104,10 +98,8 @@ class IGTokenManager:
             }
         """
         try:
-            # 解密當前 Token
             current_token = decrypt_token(account.access_token_encrypted)
 
-            # 呼叫 Token 刷新 API
             response = requests.get(
                 f"{self.GRAPH_API_BASE}/oauth/access_token",
                 params={
@@ -125,7 +117,6 @@ class IGTokenManager:
                 if not new_token:
                     return {'success': False, 'error': 'No new token returned from API'}
 
-                # 加密並更新 Token
                 encrypted_token = encrypt_token(new_token)
                 new_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
 
@@ -143,7 +134,6 @@ class IGTokenManager:
                 error_data = response.json()
                 error_message = error_data.get('error', {}).get('message', 'Unknown error')
 
-                # 記錄錯誤
                 account.last_error = f"Token refresh failed: {error_message}"
                 account.last_error_at = datetime.utcnow()
                 db.commit()
@@ -151,7 +141,6 @@ class IGTokenManager:
                 return {'success': False, 'error': f"API Error: {error_message}"}
 
         except Exception as e:
-            # 記錄錯誤
             account.last_error = f"Token refresh exception: {str(e)}"
             account.last_error_at = datetime.utcnow()
             db.commit()
@@ -224,7 +213,6 @@ class IGTokenManager:
         if not account:
             return False, f"Account with ID {account_id} not found"
 
-        # 檢查是否有 App 認證資訊
         if not account.app_id or not account.app_secret_encrypted:
             error_msg = "此帳號未設定 App ID/Secret，無法刷新 Token。請更新帳號設定或重新創建帳號。"
             account.last_error = error_msg
@@ -233,17 +221,14 @@ class IGTokenManager:
             return False, error_msg
 
         try:
-            # 解密當前 Token 和 App Secret
             current_token = decrypt_token(account.access_token_encrypted)
             app_secret = decrypt_token(account.app_secret_encrypted)
 
-            # 使用 fb_exchange_token 進行 Token 刷新
             success, error, token_data = self.exchange_short_lived_token(
                 current_token, account.app_id, app_secret
             )
 
             if success and token_data:
-                # 加密並更新 Token
                 encrypted_token = encrypt_token(token_data['access_token'])
                 new_expires_at = datetime.utcnow() + timedelta(seconds=token_data['expires_in'])
 
@@ -257,7 +242,6 @@ class IGTokenManager:
 
                 return True, f"Token refreshed successfully, expires at {new_expires_at.strftime('%Y-%m-%d %H:%M:%S')}"
             else:
-                # 記錄錯誤
                 account.last_error = error
                 account.last_error_at = datetime.utcnow()
                 self.db.commit()
@@ -265,7 +249,6 @@ class IGTokenManager:
                 return False, error
 
         except Exception as e:
-            # 記錄錯誤
             error_msg = f"Token refresh exception: {str(e)}"
             account.last_error = error_msg
             account.last_error_at = datetime.utcnow()
@@ -282,11 +265,11 @@ class IGTokenManager:
 
         Returns:
             {
-                'is_expired': bool,          # 是否已過期
-                'needs_refresh': bool,       # 是否需要刷新（7天內過期）
-                'expires_at': datetime,      # 過期時間
-                'days_remaining': int,       # 剩餘天數
-                'last_refresh': datetime     # 最後刷新時間
+                'is_expired': bool,
+                'needs_refresh': bool,
+                'expires_at': datetime,
+                'days_remaining': int,
+                'last_refresh': datetime
             }
         """
         account = self.db.query(InstagramAccount).filter_by(id=account_id).first()
@@ -326,10 +309,10 @@ class IGTokenManager:
 
         Returns:
             {
-                'total': int,         # 總共檢查的帳號數
-                'refreshed': int,     # 成功刷新的數量
-                'failed': int,        # 失敗的數量
-                'skipped': int        # 跳過的數量
+                'total': int,
+                'refreshed': int,
+                'failed': int,
+                'skipped': int
             }
         """
         accounts = self.get_accounts_needing_refresh()
@@ -342,14 +325,12 @@ class IGTokenManager:
         }
 
         for account in accounts:
-            # 檢查是否真的需要刷新
             expiry_info = self.check_token_expiry(account.id)
 
             if not expiry_info.get('needs_refresh'):
                 stats['skipped'] += 1
                 continue
 
-            # 執行刷新
             success, message = self.refresh_token_by_id(account.id)
 
             if success:
@@ -405,9 +386,7 @@ def check_account_expiry(account_id: int) -> Dict:
 
 
 if __name__ == "__main__":
-    # 測試用例
     print("=== Instagram Token Manager Test ===\n")
 
-    # 需要先有資料庫連線和測試帳號才能運行
     print("Note: This test requires a database connection and test account.")
     print("Run with: PYTHONPATH=/path/to/backend python services/ig_token_manager.py")

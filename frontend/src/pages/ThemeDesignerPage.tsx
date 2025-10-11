@@ -84,6 +84,9 @@ const defaultTheme: ThemeConfig = {
   }
 }
 
+/**
+ *
+ */
 export default function ThemeDesignerPage() {
   const { isLoggedIn, username } = useAuth()
   const navigate = useNavigate()
@@ -93,7 +96,6 @@ export default function ThemeDesignerPage() {
   const [savedThemes, setSavedThemes] = useState<ThemeConfig[]>([])
 
   useEffect(() => {
-    // 載入已儲存的主題
     try {
       const saved = localStorage.getItem('forumkit_custom_themes')
       if (saved) {
@@ -119,7 +121,6 @@ export default function ThemeDesignerPage() {
 
   const applyTheme = () => {
     const root = document.documentElement
-    // 對齊現有主題系統（theme.css）的 CSS 變數
     try {
       root.style.setProperty('--primary', theme.colors.primary)
       root.style.setProperty('--bg', theme.colors.background)
@@ -127,22 +128,18 @@ export default function ThemeDesignerPage() {
       root.style.setProperty('--border', theme.colors.border)
       root.style.setProperty('--fg', theme.colors.text)
       root.style.setProperty('--muted', theme.colors.textMuted)
-      // 輔助/訊息色彩（非必填）
       root.style.setProperty('--success', theme.colors.success)
       root.style.setProperty('--warning', theme.colors.warning)
       root.style.setProperty('--danger', theme.colors.error)
-      // 字體與圓角
       root.style.setProperty('--font-heading', theme.fonts.heading)
       root.style.setProperty('--font-body', theme.fonts.body)
       root.style.setProperty('--font-mono', theme.fonts.mono)
       root.style.setProperty('--border-radius', theme.borderRadius)
-      // 動畫
       root.style.setProperty('--animation-duration', theme.animations.duration)
       root.style.setProperty('--animation-easing', theme.animations.easing)
     } catch {}
   }
 
-  // 從目前主題變數讀取，作為初始值（避免硬編碼）
   useEffect(() => {
     try {
       const root = document.documentElement
@@ -178,7 +175,6 @@ export default function ThemeDesignerPage() {
 
   const submitToPlatform = async () => {
     try {
-      // 使用統一的平台 API 提交主題提案
       const payload = {
         name: theme.name,
         description: theme.description || "由主題設計工具創建的主題",
@@ -282,7 +278,7 @@ export default function ThemeDesignerPage() {
 
   return (
     <PageLayout pathname="/theme-designer" maxWidth="max-w-5xl">
-        {/* 頁首卡片 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -305,9 +301,9 @@ export default function ThemeDesignerPage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* 設計面板 */}
+          
           <div className="lg:col-span-2 space-y-6">
-            {/* 基本資訊 */}
+            
             <div className="bg-surface rounded-2xl border border-border p-6 shadow-soft">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-fg">
                 <Sparkles className="w-5 h-5 text-fg" />
@@ -337,7 +333,7 @@ export default function ThemeDesignerPage() {
               </div>
             </div>
 
-            {/* 設計選項 */}
+            
             <div className="bg-surface rounded-2xl border border-border shadow-soft">
               <div className="border-b border-border">
                 <nav className="flex">
@@ -459,9 +455,9 @@ export default function ThemeDesignerPage() {
             </div>
           </div>
 
-          {/* 操作面板 */}
+          
           <div className="space-y-6">
-            {/* 預覽區 */}
+            
             <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
               <h3 className="font-medium text-fg mb-3">主題預覽</h3>
               <div className="space-y-3 text-sm">
@@ -489,7 +485,7 @@ export default function ThemeDesignerPage() {
               </div>
             </div>
 
-            {/* 操作按鈕 */}
+            
             <div className="bg-surface rounded-2xl border border-border p-4 space-y-3 shadow-soft">
               <h3 className="font-medium text-fg">操作選項</h3>
               
@@ -531,7 +527,7 @@ export default function ThemeDesignerPage() {
               </div>
             </div>
 
-            {/* 已儲存的主題 */}
+            
             {savedThemes.length > 0 && (
               <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
                 <h3 className="font-medium text-fg mb-3">已儲存的主題</h3>
@@ -559,7 +555,7 @@ export default function ThemeDesignerPage() {
               </div>
             )}
 
-            {/* 使用說明 */}
+            
             <div className="bg-surface rounded-2xl border border-border p-4 shadow-soft">
               <h3 className="font-medium text-fg mb-2">使用說明</h3>
                              <ul className="text-sm text-muted space-y-1">

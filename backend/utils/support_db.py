@@ -17,7 +17,6 @@ from models.base import Base
 def _normalize_url(url: str) -> str:
     if not url:
         return url
-    # 與主 DB 對齊：自動換到 psycopg v3 driver
     return url.replace("postgresql://", "postgresql+psycopg://") if url.startswith("postgresql://") else url
 
 
@@ -34,10 +33,6 @@ class SupportDatabaseManager:
         if self._initialized:
             return
             
-        # 解析候選連線：
-        # 1) SUPPORT_DATABASE_URL
-        # 2) DATABASE_URL（與主庫共用）
-        # 3) SQLite fallback: /app/data/forumkit_support.db
         sup_url = os.getenv("SUPPORT_DATABASE_URL", "").strip()
         main_url = os.getenv("DATABASE_URL", "").strip()
         db_url = ""
@@ -55,13 +50,11 @@ class SupportDatabaseManager:
                 kw["connect_args"] = {"check_same_thread": False}
             self.engine = create_engine(db_url, **kw)
             
-            # 測試連線
             with self.engine.connect() as conn:
                 conn.exec_driver_sql("SELECT 1")
             
             self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
             
-            # 確保支援工單表格存在
             from models.support import SupportTicket, SupportMessage, SupportEvent
             Base.metadata.create_all(self.engine, tables=[
                 SupportTicket.__table__,
@@ -70,7 +63,6 @@ class SupportDatabaseManager:
             ])
             
             self._initialized = True
-            # 避免把密碼打出來
             def _mask(u: str) -> str:
                 try:
                     if '://' not in u or '@' not in u:
@@ -106,7 +98,6 @@ class SupportDatabaseManager:
         finally:
             session.close()
 
-# 全域支援資料庫管理器實例
 support_db_manager = SupportDatabaseManager()
 
 def get_support_session():

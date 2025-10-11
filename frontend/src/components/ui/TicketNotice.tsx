@@ -1,6 +1,8 @@
-// src/components/TicketNotice.tsx
 import { useState } from "react";
 
+/**
+ *
+ */
 export function TicketNotice({ ticket, tone, title, desc }:{
   ticket: string;
   tone: "success"|"warn"|"error";

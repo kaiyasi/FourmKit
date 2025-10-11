@@ -27,7 +27,6 @@ from typing import Dict, List
 
 
 def _default_template_config() -> Dict:
-    # A simple, readable template close to test fixtures
     return {
         "canvas_config": {
             "width": 1080,
@@ -73,8 +72,6 @@ def _default_template_config() -> Dict:
 
 
 def _seed_image_urls(pid: int, count: int = 1) -> List[str]:
-    # Deterministic placeholder images (no network fetch at generation time).
-    # These URLs are for demonstration; for real publish ensure public reachability.
     base = "https://picsum.photos/seed"
     return [f"{base}/forumkit_{pid}_{i}/1080/1080" for i in range(1, count + 1)]
 
@@ -84,12 +81,10 @@ def main(argv: List[str]) -> int:
         print("Usage: python backend/scripts/generate_post_images.py <post_id> [<post_id> ...]")
         return 2
 
-    # Prefer local tmp path when not in container
     os.environ.setdefault("IG_PREVIEW_PATH", os.environ.get("IG_PREVIEW_PATH", "/tmp/ig_previews"))
     os.makedirs(os.environ["IG_PREVIEW_PATH"], exist_ok=True)
 
     try:
-        # Ensure backend/ is importable when invoked from repo root
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if here not in sys.path:
             sys.path.insert(0, here)
@@ -109,8 +104,6 @@ def main(argv: List[str]) -> int:
             print(f"Skip invalid post id: {pid_str}")
             continue
 
-        # For demo, one attachment image each; content embeds the ID
-        # Use text-only preview to avoid network dependency in generation.
         test_content = {
             "title": "",
             "content": f"ForumKit 測試貼文 #{pid} — 用於 IG 模板生成驗證。",
@@ -119,7 +112,7 @@ def main(argv: List[str]) -> int:
 
         ok, url, err, sec = preview.render_preview(
             template_config=tpl,
-            post_id=None,  # avoid DB access; render with test content
+            post_id=None,
             test_content=test_content,
             options={"show_guides": False},
         )

@@ -36,9 +36,7 @@ def list_templates():
             print(f"[Template List] Starting list_templates", flush=True)
             query = db.query(IGTemplate)
 
-            # 權限過濾
             if g.user.role == 'campus_admin':
-                # campus_admin 只能看自己學校的和全域模板
                 include_global = request.args.get('include_global', 'true').lower() == 'true'
                 if include_global:
                     query = query.filter(
@@ -47,7 +45,6 @@ def list_templates():
                 else:
                     query = query.filter(IGTemplate.school_id == g.user.school_id)
             else:
-                # super_admin 可以透過 school_id 篩選
                 school_id = request.args.get('school_id')
                 if school_id is not None:
                     if school_id == 'global':
@@ -55,7 +52,6 @@ def list_templates():
                     else:
                         query = query.filter(IGTemplate.school_id == int(school_id))
 
-            # 其他篩選條件
             template_type = request.args.get('template_type')
             if template_type:
                 try:
@@ -69,7 +65,6 @@ def list_templates():
 
             templates = query.order_by(IGTemplate.created_at.desc()).all()
 
-            # 序列化
             result = []
             for tpl in templates:
                 result.append({
@@ -83,7 +78,6 @@ def list_templates():
                     'usage_count': tpl.usage_count,
                     'last_used_at': tpl.last_used_at.isoformat() if tpl.last_used_at else None,
                     'created_at': tpl.created_at.isoformat(),
-                    # 配置欄位
                     'canvas_config': tpl.canvas_config,
                     'text_with_attachment': tpl.text_with_attachment,
                     'text_without_attachment': tpl.text_without_attachment,
@@ -113,7 +107,6 @@ def get_template(id):
             if not template:
                 return jsonify({'error': 'Not found', 'message': '模板不存在'}), 404
 
-            # 構造 reply_format（便於前端 UI 顯示）
             def _reply_from(ct: dict) -> dict:
                 if not isinstance(ct, dict):
                     return {}
@@ -172,24 +165,20 @@ def create_template():
             data = request.get_json()
             print(f"[Template Create] Received data keys: {list(data.keys())}", flush=True)
 
-            # 驗證必填欄位
             required_fields = ['name', 'template_type', 'canvas_config']
             for field in required_fields:
                 if field not in data:
                     print(f"[Template Create] Missing required field: {field}", flush=True)
                     return jsonify({'error': 'Bad request', 'message': f'缺少必填欄位：{field}'}), 400
 
-            # caption_template 使用預設值
             if 'caption_template' not in data:
                 data['caption_template'] = {"template": "{title}\n\n{content}", "hashtags": []}
 
-            # 相容性處理：將 text_config 轉換為 text_with_attachment 和 text_without_attachment
             if 'text_config' in data and 'text_with_attachment' not in data:
                 data['text_with_attachment'] = data['text_config']
                 data['text_without_attachment'] = data['text_config']
                 print(f"[Template Create] Converted text_config to text_with/without_attachment", flush=True)
 
-            # 驗證模板類型
             try:
                 print(f"[Template Create] template_type value: {data['template_type']}", flush=True)
                 template_type = TemplateType(data['template_type'].lower())
@@ -198,15 +187,12 @@ def create_template():
                 print(f"[Template Create] Invalid template_type: {e}", flush=True)
                 return jsonify({'error': 'Bad request', 'message': '無效的模板類型'}), 400
 
-            # 權限檢查：campus_admin 只能為自己學校創建模板
             school_id = data.get('school_id')
             if g.user.role == 'campus_admin':
                 school_id = g.user.school_id
             elif school_id is None and g.user.role == 'super_admin':
-                # super_admin 可以創建全域模板（school_id = NULL）
                 pass
 
-            # 避免重複創建：同校同類型同名稱視為同一個模板
             duplicate_query = db.query(IGTemplate).filter(
                 IGTemplate.name == data['name'],
                 IGTemplate.template_type == template_type,
@@ -224,7 +210,6 @@ def create_template():
                     'template_id': existing_template.id,
                 }), 409
 
-            # 創建模板
             template = IGTemplate(
                 name=data['name'],
                 description=data.get('description'),
@@ -274,32 +259,27 @@ def update_template(id):
 
             data = request.get_json()
 
-            # 更新基本資訊
             if 'name' in data:
                 template.name = data['name']
             if 'description' in data:
                 template.description = data['description']
 
-            # 更新模板類型
             if 'template_type' in data:
                 try:
                     template.template_type = TemplateType(data['template_type'].lower())
                 except ValueError:
                     return jsonify({'error': 'Bad request', 'message': '無效的模板類型'}), 400
 
-            # 更新配置
             config_fields = [
                 'canvas_config', 'text_with_attachment', 'text_without_attachment',
                 'attachment_config', 'logo_config', 'watermark_config', 'caption_template'
             ]
             for field in config_fields:
                 if field in data:
-                    # 調試：記錄字體設定
                     if field in ['text_without_attachment', 'watermark_config']:
                         print(f"[Template Update] {field}: {data[field]}", flush=True)
                     setattr(template, field, data[field])
 
-            # 單獨處理 reply_format 快捷更新（讓前端好用）
             if 'reply_format' in data:
                 rf = data.get('reply_format') or {}
                 ct = template.caption_template or {}
@@ -308,7 +288,6 @@ def update_template(id):
                 ct['reply'] = rf
                 template.caption_template = ct
 
-            # 更新啟用狀態
             if 'is_active' in data:
                 template.is_active = data['is_active']
 
@@ -332,7 +311,6 @@ def delete_template(id):
             if not template:
                 return jsonify({'error': 'Not found', 'message': '模板不存在'}), 404
 
-            # 檢查是否有帳號正在使用此模板
             from models import InstagramAccount
             using_accounts = db.query(InstagramAccount).filter(
                 (InstagramAccount.announcement_template_id == id) |
@@ -345,7 +323,6 @@ def delete_template(id):
                     'message': f'無法刪除：有 {using_accounts} 個帳號正在使用此模板'
                 }), 409
 
-            # 硬刪除
             db.delete(template)
             db.commit()
 
@@ -384,7 +361,6 @@ def _duplicate_template(id):
             new_name = data.get('new_name', f"{original.name} (副本)")
             print(f"[Template Duplicate] New name: {new_name}", flush=True)
 
-            # 創建副本
             duplicate = IGTemplate(
                 name=new_name,
                 description=original.description,
@@ -428,23 +404,19 @@ def upload_logo():
         if file.filename == '':
             return jsonify({'error': 'Bad request', 'message': '未選擇檔案'}), 400
 
-        # 檔名處理
         filename = secure_filename(file.filename)
         name, ext = os.path.splitext(filename)
         if ext.lower() not in ['.png', '.jpg', '.jpeg', '.svg', '.webp']:
             return jsonify({'error': 'Bad request', 'message': '僅支援 PNG/JPG/SVG/WEBP'}), 400
 
-        # 目錄與檔名
         upload_dir = os.path.join('uploads', 'public', 'ig', 'logos')
         os.makedirs(upload_dir, exist_ok=True)
         ts = int(time.time() * 1000)
         final_name = f"logo_{ts}{ext.lower()}"
         file_path = os.path.join(upload_dir, final_name)
 
-        # 儲存
         file.save(file_path)
 
-        # 回傳相對路徑（供前端存於 config）
         public_path = f"/uploads/public/ig/logos/{final_name}"
         return jsonify({'message': '上傳成功', 'path': public_path}), 201
 
@@ -476,12 +448,8 @@ def preview_template(id):
             test_content = data.get('test_content', '這是測試內容')
             test_media = data.get('test_media', [])
 
-            # TODO: 調用渲染服務生成預覽圖
-            # from services.ig_renderer import IGRenderer
-            # renderer = IGRenderer()
-            # preview_url = renderer.render_preview(template, test_content, test_media)
 
-            preview_url = None  # 暫時返回 None
+            preview_url = None
 
             return jsonify({
                 'preview_url': preview_url,
@@ -513,7 +481,6 @@ def preview_template_config():
         if 'watermark_config' in template_config:
             print(f"[Preview API] watermark_config: {template_config['watermark_config']}")
 
-        # 建立臨時模板物件
         class TempTemplate:
             def __init__(self, config):
                 self.canvas_config = config.get('canvas_config')
@@ -526,7 +493,6 @@ def preview_template_config():
 
         template = TempTemplate(template_config)
 
-        # 建立臨時測試貼文物件
         class TempPost:
             def __init__(self):
                 self.id = 0
@@ -535,16 +501,13 @@ def preview_template_config():
                 self.announcement_type = None
                 self.created_at = datetime.utcnow()
 
-        # 獲取貼文數據
         real_post = None
         with get_session() as db:
             if post_id:
-                # 如果前端指定 post_id，則使用該貼文
                 real_post = db.query(Post).filter_by(id=post_id).first()
                 if not real_post:
                     return jsonify({'error': 'Bad request', 'message': f'找不到貼文 ID: {post_id}'}), 400
             else:
-                # 否則，自動選取最新的非廣告、非指定ID的貼文
                 excluded_ids = [1, 2, 3, 4]
                 real_post = db.query(Post).filter(
                     Post.is_advertisement == False,
@@ -553,11 +516,9 @@ def preview_template_config():
                 ).order_by(Post.created_at.desc()).first()
 
         if real_post:
-            # 複製貼文數據到臨時物件
             forum_post = TempPost()
             forum_post.id = real_post.id
 
-            # 移除 Markdown 語法
             import re
             content = real_post.content
             content = re.sub(r'\*\*(.+?)\*\*', r'\1', content)
@@ -574,15 +535,12 @@ def preview_template_config():
             forum_post.announcement_type = getattr(real_post, 'announcement_type', None)
             forum_post.created_at = real_post.created_at
 
-            # 如果 test_media 為空，自動從貼文讀取媒體
             if not test_media and hasattr(real_post, 'media') and real_post.media:
                 test_media = [media.path for media in real_post.media if hasattr(media, 'path')]
                 print(f"[Preview API] 從貼文讀取媒體: {test_media}")
         else:
-            # 如果找不到任何合適的貼文，則使用預設內容
             forum_post = TempPost()
 
-        # 轉換測試圖片路徑為 CDN URL
         media_list = []
         cdn_base_url = os.getenv("CDN_PUBLIC_BASE_URL", "https://cdn.serelix.xyz").rstrip("/")
         for media_path in test_media:
@@ -593,14 +551,11 @@ def preview_template_config():
             else:
                 media_list.append(media_path)
 
-        # 使用 IGRenderer 渲染
         start_time = datetime.utcnow()
         renderer = IGRenderer(cdn_base_path="/app/uploads/public/ig/previews")
         print(f"[Preview] 開始渲染, cdn_base_path={renderer.cdn_base_path}")
 
-        # 是否顯示導引線（XY 軸/網格），供前端切換
         show_guides = bool((data or {}).get('show_guides') or (data or {}).get('guides'))
-        # 在 renderer 實例上打開導引線覆蓋（不影響其他流程）
         try:
             setattr(renderer, 'show_guides', show_guides)
         except Exception:
@@ -610,18 +565,14 @@ def preview_template_config():
 
         print(f"[Preview] 渲染完成, cdn_path={cdn_path}")
 
-        # 檢查檔案是否真的存在（只有相對路徑時才做本機檢查）
         if cdn_path and not (str(cdn_path).startswith('http://') or str(cdn_path).startswith('https://')):
             full_path = os.path.join("/app/uploads", cdn_path)
             exists = os.path.exists(full_path)
             print(f"[Preview] 檔案檢查: {full_path} exists={exists}")
 
-        # 生成預覽 URL
-        # 若渲染器已回傳完整 URL（例如設置了 IG_RENDER_PUBLIC_PREFIX=完整 URL），就直接用
         if isinstance(cdn_path, str) and (cdn_path.startswith('http://') or cdn_path.startswith('https://')):
             preview_url = cdn_path
         else:
-            # cdn_path 是相對於 /uploads/ 的路徑，例如 "public/ig/previews/xxx.jpg"
             preview_url = f"{cdn_base_url}/{str(cdn_path).lstrip('/')}"
         duration = (datetime.utcnow() - start_time).total_seconds()
 
@@ -642,17 +593,15 @@ def preview_caption():
     data = request.get_json() or {}
     template_config = data.get('template_config') or {}
     post_id = data.get('post_id')
-    post_ids = data.get('post_ids')  # 輪播模式：多個貼文 ID
+    post_ids = data.get('post_ids')
     is_carousel = data.get('carousel', False)
 
-    # 獲取貼文數據
     from utils.db import get_session
     from models import Post
     import logging
 
     logger = logging.getLogger(__name__)
 
-    # 輪播模式：多篇貼文
     if is_carousel and post_ids:
         try:
             with get_session() as db:
@@ -660,14 +609,12 @@ def preview_caption():
                 if not posts:
                     return jsonify({'error': 'Not found', 'message': '找不到指定的貼文'}), 404
 
-                # 生成輪播 Caption
                 from services.ig_caption_generator import IGCaptionGenerator
                 caption_template = template_config.get('caption_template', {})
 
                 if not caption_template:
                     return jsonify({'caption': ''}), 200
 
-                # 創建簡單的模板和帳號對象
                 class SimpleTemplate:
                     def __init__(self, caption_template):
                         self.caption_template = caption_template
@@ -680,7 +627,6 @@ def preview_caption():
                 template = SimpleTemplate(caption_template)
                 account = SimpleAccount()
 
-                # 使用輪播 Caption 生成方法
                 caption = generator.generate_carousel_caption(posts, template, account)
 
                 return jsonify({'caption': caption}), 200
@@ -689,7 +635,6 @@ def preview_caption():
             logger.error(f"輪播 Caption 生成失敗: {e}", exc_info=True)
             return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
 
-    # 單篇模式
     if not post_id:
         return jsonify({'error': 'Bad request', 'message': '缺少 post_id 或 post_ids'}), 400
 
@@ -699,19 +644,16 @@ def preview_caption():
             if not post:
                 return jsonify({'error': 'Not found', 'message': f'找不到貼文 ID: {post_id}'}), 404
 
-            # 生成 Caption
             from services.ig_caption_generator import IGCaptionGenerator
             caption_template = template_config.get('caption_template', {})
 
             if not caption_template:
                 return jsonify({'caption': ''}), 200
 
-            # 創建一個簡單的模板對象（只需要 caption_template 屬性）
             class SimpleTemplate:
                 def __init__(self, caption_template):
                     self.caption_template = caption_template
 
-            # 創建一個簡單的帳號對象（預覽不需要真實帳號）
             class SimpleAccount:
                 def __init__(self):
                     self.username = 'preview_account'
@@ -752,7 +694,6 @@ def update_reply_format(id):
         ct = tpl.caption_template or {}
         if not isinstance(ct, dict):
             ct = {}
-        # 輕量驗證
         if not isinstance(rf, dict):
             return jsonify({'error': 'Bad request', 'message': 'reply_format 必須是物件'}), 400
         ct['reply'] = rf

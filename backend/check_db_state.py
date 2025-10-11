@@ -17,12 +17,10 @@ def check_database_state():
         with engine.connect() as conn:
             print("🔍 檢查資料庫狀態...")
             
-            # 檢查 alembic_version
             result = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
             version = result.scalar()
             print(f"📋 當前 Alembic 版本: {version}")
             
-            # 檢查資料庫表狀態
             result = conn.execute(text("""
                 SELECT table_name 
                 FROM information_schema.tables 
@@ -35,7 +33,6 @@ def check_database_state():
             for table in tables:
                 print(f"  - {table}")
                 
-            # 檢查遷移歷史
             result = conn.execute(text("""
                 SELECT version_num 
                 FROM alembic_version 

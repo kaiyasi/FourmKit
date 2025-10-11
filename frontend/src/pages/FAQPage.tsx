@@ -87,6 +87,9 @@ const faqData: FAQItem[] = [
 
 const categories = Array.from(new Set(faqData.map(item => item.category)))
 
+/**
+ *
+ */
 export default function FAQPage() {
   const { pathname } = useLocation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
@@ -118,12 +121,19 @@ export default function FAQPage() {
   }
 
   return (
+<<<<<<< Updated upstream
     <PageLayout pathname={pathname} maxWidth="max-w-4xl">
       {/* 移除主副標（MobileHeader 與內部標題） */}
       <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
         {/* 移除主副標 */}
+=======
+    <PageLayout pathname={pathname} maxWidth="max-w-4xl">
+      
+      <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
+        
+>>>>>>> Stashed changes
 
-        {/* Category Filter */}
+        
         <div className="p-6 border-b border-border bg-surface/50">
           <div className="flex flex-wrap gap-2">
             <button
@@ -154,7 +164,7 @@ export default function FAQPage() {
           </div>
         </div>
 
-        {/* FAQ List */}
+        
         <div className="divide-y divide-border">
           {filteredFAQs.map((faq) => (
             <div key={faq.id} className="group">
@@ -201,7 +211,7 @@ export default function FAQPage() {
           ))}
         </div>
 
-        {/* Footer */}
+        
         <div className="p-6 border-t border-border bg-surface/50 text-center">
           <p className="text-muted mb-4">
             找不到您需要的答案？

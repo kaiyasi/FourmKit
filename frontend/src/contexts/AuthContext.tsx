@@ -19,12 +19,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+/**
+ *
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authState, setAuthState] = useState({
     isLoggedIn: isLoggedIn(),
     role: getRole(),
     schoolId: getSchoolId(),
-    // 優先讀取 localStorage（使用者有勾選記住），否則退回 sessionStorage（僅本分頁／本次瀏覽）
     username: localStorage.getItem('username') || sessionStorage.getItem('username')
   })
 
@@ -37,7 +39,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     rememberUsername?: boolean
   ) => {
     saveSession(token, role, schoolId, refreshToken)
-    // 僅在使用者勾選「記住我的帳號」時，才寫入 localStorage；否則寫入 sessionStorage
     if (username) {
       try {
         if (rememberUsername) {
@@ -59,7 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearSession()
-    // 清除兩邊的暱稱儲存，避免殘留
     try { localStorage.removeItem('username') } catch {}
     try { sessionStorage.removeItem('username') } catch {}
     setAuthState({
@@ -70,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  // 監聽 localStorage 變化（跨標籤頁同步）
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'token' || e.key === 'role' || e.key === 'school_id' || e.key === 'username') {
@@ -78,7 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isLoggedIn: isLoggedIn(),
           role: getRole(),
           schoolId: getSchoolId(),
-          // 優先 localStorage，其次 sessionStorage
           username: localStorage.getItem('username') || sessionStorage.getItem('username')
         })
       }
@@ -102,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ *
+ */
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

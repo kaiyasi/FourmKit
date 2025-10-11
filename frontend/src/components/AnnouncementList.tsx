@@ -28,6 +28,9 @@ interface AnnouncementListProps {
   limit?: number
 }
 
+/**
+ *
+ */
 export function AnnouncementList({ className = "", showRead = false, limit = 20 }: AnnouncementListProps) {
   const { isLoggedIn } = useAuth()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -95,14 +98,12 @@ export function AnnouncementList({ className = "", showRead = false, limit = 20 
       })
 
       if (response.ok) {
-        // 更新本地狀態
         setAnnouncements(prev => prev.map(announcement => 
           announcement.id === announcementId 
             ? { ...announcement, is_read: true, read_at: new Date().toISOString() }
             : announcement
         ))
         
-        // 重新載入未讀數量
         loadUnreadCount()
       }
     } catch (error) {
@@ -139,7 +140,7 @@ export function AnnouncementList({ className = "", showRead = false, limit = 20 
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* 標題和未讀數量 */}
+      
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">公告通知</h3>
         {unreadCount > 0 && (
@@ -149,14 +150,14 @@ export function AnnouncementList({ className = "", showRead = false, limit = 20 
         )}
       </div>
 
-      {/* 載入中 */}
+      
       {loading && (
         <div className="text-center py-8">
           <div className="text-muted">載入中...</div>
         </div>
       )}
 
-      {/* 公告列表 */}
+      
       {!loading && announcements.length === 0 && (
         <div className="text-center py-8">
           <div className="text-muted">暫無公告</div>
@@ -174,7 +175,7 @@ export function AnnouncementList({ className = "", showRead = false, limit = 20 
                   : 'bg-white border-blue-200 shadow-sm'
               } ${announcement.is_pinned ? 'ring-2 ring-yellow-300' : ''}`}
             >
-              {/* 標題行 */}
+              
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center space-x-2 flex-1">
                   <h4 className="font-medium text-gray-900 flex-1">
@@ -196,12 +197,12 @@ export function AnnouncementList({ className = "", showRead = false, limit = 20 
                 </div>
               </div>
 
-              {/* 內容（避免過長撐版，預覽截斷） */}
+              
               <div className="text-gray-700 text-sm mb-3 break-words line-clamp-6 md-line-clamp-12">
                 {announcement.content}
               </div>
 
-              {/* 底部信息 */}
+              
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <div className="flex items-center space-x-4">
                   <span>發布時間：{formatTime(announcement.created_at)}</span>

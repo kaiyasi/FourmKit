@@ -32,6 +32,9 @@ interface NavItem {
   action?: () => void
 }
 
+/**
+ *
+ */
 export function MobileNavigation() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { isLoggedIn, logout, role } = useAuth()
@@ -46,7 +49,6 @@ export function MobileNavigation() {
 
   const isActive = (path: string) => location.pathname === path
 
-  // 主要底部導航（統一規格）：貼文 / 版規(或後台) / 發文 / 設定(未登入為登入)
   const isAdmin = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(currentRole)
   const primaryNav: NavItem[] = [
     { to: '/boards', label: '貼文', icon: MessageSquare, primary: true },
@@ -54,7 +56,6 @@ export function MobileNavigation() {
       ? { to: '/admin', label: '後台', icon: Shield, primary: true }
       : { to: '/rules', label: '版規', icon: ScrollText, primary: true },
     { to: '/create', label: '發文', icon: PlusCircle, primary: true },
-    // dev_admin 顯示事件，其他管理員顯示支援
     currentRole === 'dev_admin'
       ? { to: '/admin/events', label: '事件', icon: Activity, primary: true }
       : isAdmin
@@ -63,7 +64,6 @@ export function MobileNavigation() {
     { to: isLoggedIn ? '/settings/profile' : '/auth', label: isLoggedIn ? '設定' : '登入', icon: Settings, primary: true },
   ]
 
-  // 次要功能菜單
   const secondaryNav: NavItem[] = [
     { to: '/about', label: '關於我們', icon: Info },
     { to: '/rules', label: '版規', icon: ScrollText },
@@ -73,15 +73,12 @@ export function MobileNavigation() {
     { to: '/settings', label: '應用設定', icon: Settings, require: r => r !== 'guest' },
   ].filter(item => !item.require || item.require(currentRole))
 
-  // 認證操作
   const authAction: NavItem = isLoggedIn
     ? { to: '#', label: '登出', icon: LogOut, action: () => { haptic(12); logout(); setMenuOpen(false) } }
     : { to: '/auth', label: '登入', icon: LogIn }
 
-  // 確保主導航不超過5個項目
   const visiblePrimaryNav = primaryNav.slice(0, 5)
 
-  // 設定底部導航高度到CSS變數
   const writeBottomOffset = () => {
     try {
       const el = document.getElementById('fk-mobile-bottom-nav')
@@ -97,7 +94,6 @@ export function MobileNavigation() {
     }
   }
 
-  // 設定CSS變數
   useEffect(() => {
     writeBottomOffset()
     const timeoutId = setTimeout(() => writeBottomOffset(), 100)
@@ -110,7 +106,6 @@ export function MobileNavigation() {
     }
   }, [])
 
-  // 關閉菜單當路由變化
   useEffect(() => {
     setMenuOpen(false)
     const timeoutId = setTimeout(() => writeBottomOffset(), 50)
@@ -119,7 +114,7 @@ export function MobileNavigation() {
 
   return (
     <>
-      {/* 底部主導航 */}
+      
       <nav id="fk-mobile-bottom-nav" className="fixed bottom-0 left-0 right-0 z-40 md:hidden">
         <div className="bg-surface/95 backdrop-blur-md border-t border-border">
           <div className="flex items-center justify-around px-2 py-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
@@ -150,7 +145,7 @@ export function MobileNavigation() {
               )
             })}
             
-            {/* 更多菜單按鈕 */}
+            
             <button
               onClick={() => { haptic(12); setMenuOpen(true) }}
               className="flex flex-col items-center gap-1 p-2 rounded-xl min-w-0 flex-1 mobile-touch-target transition-all duration-200 text-muted hover:text-fg hover:bg-surface-hover"
@@ -163,7 +158,7 @@ export function MobileNavigation() {
         </div>
       </nav>
 
-      {/* 全屏菜單遮罩 */}
+      
       {menuOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm md:hidden"
@@ -171,14 +166,14 @@ export function MobileNavigation() {
         />
       )}
 
-      {/* 滑出式菜單 */}
+      
       <div className={`
         fixed inset-x-0 bottom-0 z-50 md:hidden
         transform transition-transform duration-300 ease-out
         ${menuOpen ? 'translate-y-0' : 'translate-y-full'}
       `}>
         <div className="bg-surface border-t border-border rounded-t-2xl shadow-2xl">
-          {/* 菜單頭部 */}
+          
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="font-semibold dual-text">更多選項</h3>
             <div className="flex items-center gap-3">
@@ -193,7 +188,7 @@ export function MobileNavigation() {
             </div>
           </div>
 
-          {/* 次要功能網格 */}
+          
           <div className="p-4 grid grid-cols-3 gap-3">
             {secondaryNav.map((item) => {
               const Icon = item.icon
@@ -212,7 +207,7 @@ export function MobileNavigation() {
               )
             })}
 
-            {/* 認證操作 */}
+            
             {authAction.action ? (
               <button
                 onClick={authAction.action}
@@ -237,7 +232,7 @@ export function MobileNavigation() {
             )}
           </div>
 
-          {/* 安全區域 */}
+          
           <div className="h-[env(safe-area-inset-bottom)]" />
         </div>
       </div>

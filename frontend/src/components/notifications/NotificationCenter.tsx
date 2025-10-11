@@ -21,6 +21,9 @@ const ICON_MAP = {
   info: Info
 }
 
+/**
+ *
+ */
 export default function NotificationCenter({ isOpen, onClose, anchorRef }: NotificationCenterProps) {
   const {
     notifications,
@@ -31,14 +34,12 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
     clearAll
   } = useNotifications()
 
-  // 動態獲取所有已註冊的通知類型
   const typeOptions = notificationManager.getTypeOptions()
 
   const [filter, setFilter] = useState<'all' | 'unread' | string>('all')
   const [isConfirmingClear, setIsConfirmingClear] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // 點擊通知項目時標記為已讀並跳轉
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.read) {
       markAsRead(notification.id)
@@ -50,7 +51,6 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
     }
   }
 
-  // 點擊外部關閉
   useEffect(() => {
     if (!isOpen) return
 
@@ -68,7 +68,6 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen, onClose, anchorRef])
 
-  // 篩選通知
   const filteredNotifications = notifications.filter((notification) => {
     if (filter === 'all') return true
     if (filter === 'unread') return !notification.read
@@ -108,7 +107,6 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
     }
   }
 
-  // 手機版不顯示詳細面板
   const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 767px)').matches
   if (!isOpen || isMobile) return null
 
@@ -117,7 +115,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
       ref={panelRef}
       className="fixed top-20 md:top-16 right-2 md:right-4 w-[calc(100vw-1rem)] md:w-96 max-w-[calc(100vw-1rem)] bg-surface border border-border rounded-2xl shadow-2xl z-[60] max-h-[calc(100vh-8rem)] md:max-h-[85vh] flex flex-col overflow-hidden backdrop-blur-xl bg-opacity-95"
     >
-      {/* 標題欄 */}
+      
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-lg">
@@ -141,7 +139,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
         </button>
       </div>
 
-      {/* 篩選與操作欄 */}
+      
       <div className="px-4 py-3 border-b border-border bg-muted/10">
         <div className="flex items-center justify-between gap-3">
           <select
@@ -187,7 +185,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
         </div>
       </div>
 
-      {/* 通知列表 */}
+      
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {filteredNotifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted">
@@ -219,7 +217,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                   onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start gap-3">
-                    {/* 圖標區 */}
+                    
                     <div className="flex-shrink-0 mt-0.5 relative">
                       <div className={`p-2 rounded-lg ${
                         notification.icon === 'success' ? 'bg-green-50 text-green-600' :
@@ -229,7 +227,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                       }`}>
                         {PluginIcon ? <PluginIcon className="w-4 h-4" /> : <IconComponent className="w-4 h-4" />}
                       </div>
-                      {/* 緊急標記 */}
+                      
                       {notification.urgent && (
                         <div className="absolute -top-1 -right-1">
                           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-md" />
@@ -238,7 +236,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      {/* 標題與時間 */}
+                      
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${typeColor}`}>
                           {plugin?.label || notification.type}
@@ -246,7 +244,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                         <span className="text-xs text-muted/70">
                           {formatTime(notification.timestamp)}
                         </span>
-                        {/* 學校來源標籤 */}
+                        
                         {(() => {
                           const data: any = notification.data || {}
                           const schoolObj = typeof data.school === 'object' && data.school ? data.school : null
@@ -263,17 +261,17 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                         })()}
                       </div>
 
-                      {/* 通知標題 */}
+                      
                       <h4 className="text-sm font-semibold text-fg mb-1 leading-snug">
                         {notification.title}
                       </h4>
 
-                      {/* 通知內容 */}
+                      
                       <p className="text-sm text-muted/90 leading-relaxed line-clamp-2 mb-2">
                         {notification.message}
                       </p>
 
-                      {/* 操作連結 */}
+                      
                       {notification.actionText && (
                         <div className="flex items-center gap-1.5 text-xs text-primary font-medium group-hover:underline">
                           <ExternalLink className="w-3.5 h-3.5" />
@@ -282,7 +280,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                       )}
                     </div>
 
-                    {/* 操作按鈕 */}
+                    
                     <div className="flex-shrink-0 flex items-start gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       {!notification.read && (
                         <button
@@ -309,7 +307,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
                     </div>
                   </div>
 
-                  {/* 未讀指示點 */}
+                  
                   {!notification.read && (
                     <div className="absolute left-2 top-1/2 -translate-y-1/2">
                       <div className="w-1.5 h-1.5 bg-primary rounded-full shadow-sm" />
@@ -322,7 +320,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
         )}
       </div>
 
-      {/* 底部統計 */}
+      
       {notifications.length > 0 && (
         <div className="px-4 py-3 border-t border-border bg-gradient-to-t from-muted/10 to-transparent">
           <p className="text-xs text-muted text-center">
@@ -339,7 +337,7 @@ export default function NotificationCenter({ isOpen, onClose, anchorRef }: Notif
   )
 }
 
-/* 自訂滾動條樣式 */
+/** 自訂滾動條樣式 */
 <style jsx>{`
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;

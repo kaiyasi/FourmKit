@@ -45,7 +45,6 @@ class DiscordService:
         """獲取加密密鑰"""
         key = os.getenv("DISCORD_ENCRYPTION_KEY", "")
         if not key:
-            # 生成預設密鑰 (生產環境應使用環境變數)
             key = Fernet.generate_key().decode()
         if isinstance(key, str):
             key = key.encode()
@@ -54,7 +53,7 @@ class DiscordService:
     def _encrypt_token(self, token: str) -> str:
         """加密 Bot Token"""
         if not self.cipher_suite:
-            return token  # 如果沒有加密密鑰，直接返回
+            return token
         return self.cipher_suite.encrypt(token.encode()).decode()
     
     def _decrypt_token(self, encrypted_token: str) -> str:
@@ -66,7 +65,6 @@ class DiscordService:
         except Exception:
             return encrypted_token  # 解密失敗，可能是明文
     
-    # ===================== 伺服器配置管理 =====================
     
     def get_server_config(self, session: Session, server_id: str) -> Optional[DiscordServerConfig]:
         """獲取伺服器配置"""
@@ -81,12 +79,10 @@ class DiscordService:
     ) -> DiscordServerConfig:
         """創建伺服器配置"""
         
-        # 檢查是否已存在
         existing = self.get_server_config(session, server_id)
         if existing:
             raise DiscordConfigError(f"Server {server_id} already configured")
         
-        # 加密 Bot Token
         if 'bot_token' in config_data and config_data['bot_token']:
             config_data['bot_token'] = self._encrypt_token(config_data['bot_token'])
         
@@ -111,7 +107,6 @@ class DiscordService:
         if not config:
             return None
         
-        # 加密 Bot Token
         if 'bot_token' in updates and updates['bot_token']:
             updates['bot_token'] = self._encrypt_token(updates['bot_token'])
         
@@ -127,7 +122,6 @@ class DiscordService:
         """獲取所有啟用的伺服器配置"""
         return session.query(DiscordServerConfig).filter_by(is_active=True).all()
     
-    # ===================== 指令管理 =====================
     
     def create_command(
         self, 
@@ -139,7 +133,6 @@ class DiscordService:
     ) -> DiscordCommand:
         """創建指令"""
         
-        # 檢查指令名稱是否已存在
         existing = session.query(DiscordCommand).filter_by(
             server_id=server_id,
             command_name=command_name
@@ -217,7 +210,6 @@ class DiscordService:
         session.commit()
         return True
     
-    # ===================== 權限管理 =====================
     
     def check_user_permission(
         self, 
@@ -229,7 +221,6 @@ class DiscordService:
     ) -> Tuple[bool, str]:
         """檢查用戶權限"""
         
-        # 獲取用戶權限配置
         user_perm = session.query(DiscordUserPermission).filter_by(
             server_id=server_id,
             discord_user_id=discord_user_id,
@@ -237,24 +228,20 @@ class DiscordService:
         ).first()
         
         if not user_perm:
-            # 未配置的用戶默認為 USER 權限
             user_level = DiscordPermissionLevel.USER
         else:
-            # 檢查是否被封鎖
             if user_perm.is_banned:
                 if user_perm.ban_expires_at and user_perm.ban_expires_at > datetime.now(timezone.utc):
                     return False, f"用戶被封鎖至 {user_perm.ban_expires_at}"
                 elif not user_perm.ban_expires_at:
                     return False, "用戶被永久封鎖"
                 else:
-                    # 封鎖已過期，自動解除
                     user_perm.is_banned = False
                     user_perm.ban_expires_at = None
                     session.commit()
             
             user_level = DiscordPermissionLevel(user_perm.permission_level)
         
-        # 權限等級檢查
         permission_hierarchy = {
             DiscordPermissionLevel.GUEST: 0,
             DiscordPermissionLevel.USER: 1,
@@ -270,16 +257,13 @@ class DiscordService:
         if user_level_value < required_level_value:
             return False, f"權限不足：需要 {required_permission.value}，當前為 {user_level.value}"
         
-        # 特定指令權限檢查
         if command_name and user_perm:
             command = self.get_command(session, server_id, command_name)
             if command:
-                # 檢查拒絕列表
                 denied_users = command.denied_users or []
                 if discord_user_id in denied_users:
                     return False, "用戶在指令拒絕列表中"
                 
-                # 檢查允許列表（如果設定了允許列表，則只有列表中的用戶可以使用）
                 allowed_users = command.allowed_users or []
                 if allowed_users and discord_user_id not in allowed_users:
                     return False, "用戶不在指令允許列表中"
@@ -304,7 +288,6 @@ class DiscordService:
         ).first()
         
         if user_perm:
-            # 更新現有權限
             user_perm.permission_level = permission_level.value
             user_perm.discord_username = discord_username or user_perm.discord_username
             if forumkit_user_id:
@@ -313,7 +296,6 @@ class DiscordService:
                 user_perm.forumkit_role = forumkit_role
             user_perm.updated_at = datetime.now(timezone.utc)
         else:
-            # 創建新權限記錄
             user_perm = DiscordUserPermission(
                 server_id=server_id,
                 discord_user_id=discord_user_id,
@@ -343,7 +325,6 @@ class DiscordService:
         ).first()
         
         if not user_perm:
-            # 創建封鎖記錄
             user_perm = DiscordUserPermission(
                 server_id=server_id,
                 discord_user_id=discord_user_id,
@@ -384,7 +365,6 @@ class DiscordService:
         session.commit()
         return True
     
-    # ===================== 活動記錄 =====================
     
     def log_activity(
         self, 
@@ -444,7 +424,6 @@ class DiscordService:
         
         return query.order_by(desc(DiscordActivityLog.created_at)).limit(limit).offset(offset).all()
     
-    # ===================== 統計功能 =====================
     
     def get_server_stats(
         self, 
@@ -460,7 +439,6 @@ class DiscordService:
         if not end_date:
             end_date = datetime.now(timezone.utc)
         
-        # 基本統計
         stats = {
             "period": {
                 "start": start_date.isoformat(),
@@ -483,7 +461,6 @@ class DiscordService:
             }
         }
         
-        # 指令統計
         commands = self.get_server_commands(session, server_id, enabled_only=False)
         for cmd in commands:
             category = cmd.category or 'other'
@@ -492,12 +469,10 @@ class DiscordService:
             stats["commands"]["by_category"][category] += cmd.usage_count or 0
             stats["commands"]["total"] += cmd.usage_count or 0
         
-        # 用戶統計
         users = session.query(DiscordUserPermission).filter_by(server_id=server_id).all()
         stats["users"]["total"] = len(users)
         stats["users"]["banned"] = len([u for u in users if u.is_banned])
         
-        # 活動統計
         activities = session.query(DiscordActivityLog).filter(
             and_(
                 DiscordActivityLog.server_id == server_id,
@@ -510,7 +485,6 @@ class DiscordService:
         stats["commands"]["successful"] = len([a for a in activities if a.is_success is True])
         stats["commands"]["failed"] = len([a for a in activities if a.is_success is False])
         
-        # 按活動類型統計
         for activity in activities:
             activity_type = activity.activity_type
             if activity_type not in stats["activities"]["by_type"]:
@@ -519,13 +493,11 @@ class DiscordService:
         
         return stats
     
-    # ===================== 預設指令和配置 =====================
     
     def setup_default_commands(self, session: Session, server_id: int) -> List[DiscordCommand]:
         """設置預設指令"""
         
         default_commands = [
-            # 系統指令
             {
                 "command_name": "status",
                 "description": "查看系統狀態",
@@ -542,7 +514,6 @@ class DiscordService:
                 "command_action": "server_info"
             },
             
-            # 審核指令
             {
                 "command_name": "pending",
                 "description": "查看待審核內容",
@@ -565,7 +536,6 @@ class DiscordService:
                 "command_action": "reject_content"
             },
             
-            # 用戶管理指令
             {
                 "command_name": "users",
                 "description": "列出用戶",
@@ -588,7 +558,6 @@ class DiscordService:
                 "command_action": "unban_user"
             },
             
-            # 統計指令
             {
                 "command_name": "stats",
                 "description": "查看統計資料",
@@ -597,7 +566,6 @@ class DiscordService:
                 "command_action": "show_stats"
             },
             
-            # 工具指令
             {
                 "command_name": "help",
                 "description": "顯示幫助資訊",
@@ -618,17 +586,14 @@ class DiscordService:
         created_commands = []
         for cmd_data in default_commands:
             try:
-                # 檢查是否已存在
                 existing = self.get_command(session, server_id, cmd_data["command_name"])
                 if not existing:
                     command = self.create_command(session, server_id, **cmd_data)
                     created_commands.append(command)
             except DiscordCommandError:
-                # 指令已存在，跳過
                 continue
         
         return created_commands
 
 
-# ===================== 全域服務實例 =====================
 discord_service = DiscordService()

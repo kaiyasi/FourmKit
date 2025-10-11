@@ -1,3 +1,7 @@
+"""
+Module: backend/heartbeat.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import socket, threading
 
 def handle(conn: socket.socket):

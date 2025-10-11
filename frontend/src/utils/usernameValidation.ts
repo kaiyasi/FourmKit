@@ -2,6 +2,9 @@
  * 暱稱/使用者名稱驗證工具函數
  */
 
+/**
+ *
+ */
 export interface UsernameValidationResult {
   isValid: boolean
   errors: string[]
@@ -23,7 +26,6 @@ export const USERNAME_ALLOWED_CHARS_REGEX = /^[\u4e00-\u9fff\u3400-\u4dbf\u3000-
  * 檢查是否全為空白或標點符號
  */
 function isOnlyWhitespaceOrPunctuation(username: string): boolean {
-  // 移除允許的字母數字字元，看看剩下什麼
   const withoutAlphaNumeric = username.replace(/[\u4e00-\u9fff\u3400-\u4dbf\a-zA-Z0-9]/g, '')
   return withoutAlphaNumeric.length === username.length && username.length > 0
 }
@@ -41,7 +43,6 @@ export function validateUsername(username: string): UsernameValidationResult {
   
   const trimmedUsername = username.trim()
   
-  // 長度檢查
   if (trimmedUsername.length < USERNAME_MIN_LENGTH) {
     errors.push(`暱稱至少需要 ${USERNAME_MIN_LENGTH} 個字元`)
   }
@@ -50,17 +51,14 @@ export function validateUsername(username: string): UsernameValidationResult {
     errors.push(`暱稱不能超過 ${USERNAME_MAX_LENGTH} 個字元`)
   }
   
-  // 字元檢查
   if (!USERNAME_ALLOWED_CHARS_REGEX.test(trimmedUsername)) {
     errors.push('暱稱只能包含中英文、數字、底線和句點')
   }
   
-  // 檢查是否全為空白或標點
   if (isOnlyWhitespaceOrPunctuation(trimmedUsername)) {
     errors.push('暱稱不可全為空白或標點符號')
   }
   
-  // 檢查是否以特殊字元開頭或結尾
   if (trimmedUsername.startsWith('.') || trimmedUsername.startsWith('_')) {
     errors.push('暱稱不能以句點或底線開頭')
   }
@@ -69,7 +67,6 @@ export function validateUsername(username: string): UsernameValidationResult {
     errors.push('暱稱不能以句點或底線結尾')
   }
   
-  // 檢查是否包含連續的特殊字元
   if (/[._]{2,}/.test(trimmedUsername)) {
     errors.push('暱稱不能包含連續的句點或底線')
   }
@@ -89,7 +86,6 @@ export function validateUsername(username: string): UsernameValidationResult {
 export function looksLikeRealName(username: string): boolean {
   const trimmedUsername = username.trim()
   
-  // 檢查常見的真名模式
   const realNamePatterns = [
     /^[\u4e00-\u9fff]{2,4}$/, // 2-4個中文字（可能是中文姓名）
     /^[a-zA-Z]+\s[a-zA-Z]+$/, // 英文名字 空格 英文姓氏
@@ -110,7 +106,6 @@ export function generateUsernameSuggestions(baseName: string): string[] {
     suggestions.push(normalized)
   }
   
-  // 加上數字後綴
   for (let i = 1; i <= 5; i++) {
     const withNumber = normalized + i
     if (withNumber.length <= USERNAME_MAX_LENGTH) {
@@ -118,7 +113,6 @@ export function generateUsernameSuggestions(baseName: string): string[] {
     }
   }
   
-  // 加上隨機後綴
   const randomSuffix = Math.floor(Math.random() * 9999).toString().padStart(4, '0')
   const withRandom = normalized + randomSuffix
   if (withRandom.length <= USERNAME_MAX_LENGTH) {
@@ -138,7 +132,6 @@ export function getUsernameErrorMessage(username: string): string {
     return ''
   }
   
-  // 返回第一個錯誤訊息
   return validation.errors[0] || '暱稱格式不正確'
 }
 

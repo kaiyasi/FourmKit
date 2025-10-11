@@ -32,7 +32,6 @@ class DeleteService:
             包含操作結果的字典
         """
         try:
-            # 檢查貼文是否存在且未被刪除
             post = s.query(Post).filter(
                 and_(
                     Post.id == post_id,
@@ -43,11 +42,9 @@ class DeleteService:
             if not post:
                 return {"success": False, "error": "貼文不存在或已被刪除"}
             
-            # 檢查是否為廣告貼文，廣告貼文不可申請刪除
             if post.is_advertisement:
                 return {"success": False, "error": "廣告貼文不可申請刪除"}
             
-            # 檢查是否已有待審核的刪文請求
             existing_request = s.query(DeleteRequest).filter(
                 and_(
                     DeleteRequest.post_id == post_id,
@@ -58,7 +55,6 @@ class DeleteService:
             if existing_request:
                 return {"success": False, "error": "該貼文已有待審核的刪文請求"}
             
-            # 創建刪文請求
             delete_request = DeleteRequest(
                 post_id=post_id,
                 reason=reason,
@@ -69,7 +65,6 @@ class DeleteService:
             
             s.add(delete_request)
             
-            # 更新貼文的刪文請求計數
             post.delete_request_count += 1
             
             s.commit()
@@ -99,7 +94,6 @@ class DeleteService:
             包含操作結果的字典
         """
         try:
-            # 查找刪文請求
             delete_request = s.query(DeleteRequest).filter(
                 and_(
                     DeleteRequest.id == request_id,
@@ -110,7 +104,6 @@ class DeleteService:
             if not delete_request:
                 return {"success": False, "error": "刪文請求不存在或已被處理"}
             
-            # 查找貼文
             post = s.query(Post).filter(
                 and_(
                     Post.id == delete_request.post_id,
@@ -121,32 +114,26 @@ class DeleteService:
             if not post:
                 return {"success": False, "error": "貼文不存在或已被刪除"}
             
-            # 檢查權限：公告只能由 dev_admin 審理
             moderator = s.query(User).filter(User.id == moderator_id).first()
             if post.is_announcement and moderator and moderator.role != 'dev_admin':
                 return {"success": False, "error": "公告只能由系統管理員審理"}
             
-            # 開始事務處理
-            # 1. 更新刪文請求狀態
             delete_request.status = "approved"
             delete_request.reviewed_by = moderator_id
             delete_request.reviewed_at = datetime.now(timezone.utc)
             delete_request.review_note = note
             
-            # 2. 標記貼文為已刪除
             post.is_deleted = True
             post.deleted_at = datetime.now(timezone.utc)
             post.deleted_by = moderator_id
             post.delete_reason = delete_request.reason
             
-            # 3. 軟刪除相關媒體
             media_list = s.query(Media).filter(Media.post_id == post.id).all()
             for media in media_list:
                 media.is_deleted = True
                 media.deleted_at = datetime.now(timezone.utc)
                 media.deleted_by = moderator_id
                 
-                # 嘗試刪除實體檔案
                 try:
                     if media.path and media.path.startswith('public/'):
                         abs_path = (Path(UPLOAD_ROOT) / media.path).resolve()
@@ -155,14 +142,12 @@ class DeleteService:
                 except Exception:
                     pass  # 檔案刪除失敗不影響主流程
             
-            # 4. 軟刪除相關留言
             comments = s.query(Comment).filter(Comment.post_id == post.id).all()
             for comment in comments:
                 comment.is_deleted = True
                 comment.deleted_at = datetime.now(timezone.utc)
                 comment.deleted_by = moderator_id
             
-            # 5. 寫入審核日誌
             try:
                 s.execute(
                     "INSERT INTO moderation_logs (target_type, target_id, action, old_status, new_status, reason, moderator_id) VALUES (:tt, :ti, :ac, :os, :ns, :rs, :mi)",
@@ -208,7 +193,6 @@ class DeleteService:
             包含操作結果的字典
         """
         try:
-            # 查找刪文請求
             delete_request = s.query(DeleteRequest).filter(
                 and_(
                     DeleteRequest.id == request_id,
@@ -219,21 +203,17 @@ class DeleteService:
             if not delete_request:
                 return {"success": False, "error": "刪文請求不存在或已被處理"}
             
-            # 查找貼文以檢查權限
             post = s.query(Post).filter(Post.id == delete_request.post_id).first()
             if post:
-                # 檢查權限：公告只能由 dev_admin 審理
                 moderator = s.query(User).filter(User.id == moderator_id).first()
                 if post.is_announcement and moderator and moderator.role != 'dev_admin':
                     return {"success": False, "error": "公告只能由系統管理員審理"}
             
-            # 更新刪文請求狀態
             delete_request.status = "rejected"
             delete_request.reviewed_by = moderator_id
             delete_request.reviewed_at = datetime.now(timezone.utc)
             delete_request.review_note = note
             
-            # 寫入審核日誌
             try:
                 s.execute(
                     "INSERT INTO moderation_logs (target_type, target_id, action, old_status, new_status, reason, moderator_id) VALUES (:tt, :ti, :ac, :os, :ns, :rs, :mi)",
@@ -285,7 +265,6 @@ class DeleteService:
         result = []
         for req in requests:
             post = req.post
-            # 獲取貼文的媒體檔案
             media_files = []
             if post:
                 media_files = s.query(Media).filter(Media.post_id == post.id).all()
@@ -309,7 +288,6 @@ class DeleteService:
                         'file_name': media.file_name,
                         'file_type': media.file_type,
                         'path': media.path,
-                        # 若已發布(public/)，直接給靜態路徑；否則留空交由前端授權端點抓取
                         'preview_url': (f"/uploads/{media.path}" if (media.path or '').startswith('public/') else None),
                     }
                     for media in media_files
@@ -335,7 +313,6 @@ class DeleteService:
         if not post:
             return {"exists": False}
         
-        # 獲取相關的刪文請求
         delete_requests = s.query(DeleteRequest).filter(
             DeleteRequest.post_id == post_id
         ).order_by(DeleteRequest.created_at.desc()).all()

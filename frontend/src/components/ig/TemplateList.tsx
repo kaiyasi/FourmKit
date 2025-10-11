@@ -159,7 +159,7 @@ const TemplateList: React.FC<TemplateListProps> = ({ onEdit, onRefresh, refreshT
 
   return (
     <div className="space-y-4">
-      {/* 過濾器 */}
+      
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setTypeFilter('all')}
@@ -193,7 +193,7 @@ const TemplateList: React.FC<TemplateListProps> = ({ onEdit, onRefresh, refreshT
         </button>
       </div>
 
-      {/* 模板列表 */}
+      
       {templates.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
           尚未建立任何模板
@@ -250,7 +250,7 @@ const TemplateList: React.FC<TemplateListProps> = ({ onEdit, onRefresh, refreshT
                 </div>
               </div>
 
-              {/* 操作按鈕 */}
+              
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onEdit(template)}

@@ -6,12 +6,16 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import os
 
 from utils.db import get_session
 from models.base import User
+<<<<<<< Updated upstream
 from models.admin_chat import MessageType, ChatRoomType, AdminChatRoom
+=======
+from models.admin_chat import MessageType, ChatRoomType, AdminChatRoom, AdminChatMessage, AdminChatMember, AdminChatVote, VoteStatus
+>>>>>>> Stashed changes
 from services.admin_chat_service import AdminChatService
 from utils.ratelimit import rate_limit as ratelimit
 from sqlalchemy import or_
@@ -21,7 +25,7 @@ bp = Blueprint("admin_chat", __name__, url_prefix="/api/admin/chat")
 
 @bp.route("/rooms", methods=["GET"])
 @jwt_required()
-@ratelimit(calls=60, per_seconds=60)  # 增加聊天室列表的請求限制
+@ratelimit(calls=60, per_seconds=60)
 def get_rooms():
     """獲取用戶可訪問的聊天室列表"""
     user_id = get_jwt_identity()
@@ -55,7 +59,6 @@ def create_room():
     is_private = data.get("is_private", False)
     max_members = data.get("max_members", 100)
     
-    # 驗證輸入
     if not name:
         return jsonify({"error": "聊天室名稱不能為空"}), 400
     
@@ -65,7 +68,6 @@ def create_room():
     if len(description) > 500:
         return jsonify({"error": "描述過長"}), 400
     
-    # 轉換類型
     try:
         chat_room_type = ChatRoomType(room_type)
     except ValueError:
@@ -144,12 +146,11 @@ def room_members(room_id: int):
 
 @bp.route("/rooms/<int:room_id>/messages", methods=["GET"])
 @jwt_required()
-@ratelimit(calls=120, per_seconds=60)  # 增加到每分鐘120次請求
+@ratelimit(calls=120, per_seconds=60)
 def get_messages(room_id: int):
     """獲取聊天室訊息"""
     user_id = get_jwt_identity()
     
-    # 分頁參數
     limit = min(int(request.args.get("limit", 50)), 100)
     before = request.args.get("before", type=int)
     
@@ -179,7 +180,6 @@ def search_messages(room_id: int):
     date_to = request.args.get("to")
     limit = min(int(request.args.get("limit", 50)), 100)
     
-    # 解析日期
     date_from_obj = None
     date_to_obj = None
     
@@ -226,7 +226,6 @@ def send_message(room_id: int):
     if len(content) > 2000:
         return jsonify({"error": "訊息內容過長"}), 400
     
-    # 檢查系統通知頻道的特殊權限
     with get_session() as db:
         room = db.get(AdminChatRoom, room_id)
         if room and room.type.value == "system":
@@ -237,7 +236,6 @@ def send_message(room_id: int):
     message_type = MessageType.TEXT
     post_id = data.get("post_id")
     
-    # 如果包含貼文ID，設為貼文審核訊息
     if post_id:
         message_type = MessageType.POST_REVIEW
     
@@ -269,22 +267,19 @@ def upload_file(room_id: int):
     if file.filename == '':
         return jsonify({"error": "檔案名稱為空"}), 400
     
-    # 檔案大小檢查 (10MB)
-    file.seek(0, 2)  # 移動到檔案末尾
+    file.seek(0, 2)
     file_size = file.tell()
-    file.seek(0)     # 重置到開頭
+    file.seek(0)
     
     if file_size > 10 * 1024 * 1024:
         return jsonify({"error": "檔案大小不能超過 10MB"}), 400
     
-    # 檔案類型檢查
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', '.txt', '.zip'}
     file_ext = os.path.splitext(file.filename)[1].lower()
     
     if file_ext not in allowed_extensions:
         return jsonify({"error": "不支援的檔案類型"}), 400
     
-    # 讀取檔案數據
     file_data = file.read()
     
     result = AdminChatService.upload_file(
@@ -337,7 +332,6 @@ def create_vote(room_id: int):
     post_id = data.get("post_id")
     expires_hours = data.get("expires_hours", 24)
     
-    # 驗證輸入
     if not title:
         return jsonify({"error": "投票標題不能為空"}), 400
     
@@ -347,7 +341,6 @@ def create_vote(room_id: int):
     if len(options) > 10:
         return jsonify({"error": "選項數量不能超過10個"}), 400
     
-    # 過濾空選項
     options = [opt.strip() for opt in options if opt.strip()]
     if len(options) < 2:
         return jsonify({"error": "有效選項至少需要兩個"}), 400
@@ -359,7 +352,8 @@ def create_vote(room_id: int):
         description=description,
         options=options,
         post_id=post_id,
-        expires_hours=min(max(expires_hours, 1), 168)  # 1小時到7天
+        expires_hours=min(max(expires_hours, 1), 168),
+        allow_multiple=bool(data.get("allow_multiple", False))
     )
     
     if not vote:
@@ -389,7 +383,6 @@ def cast_vote(vote_id: int):
     if not success:
         return jsonify({"error": message}), 400
     
-    # 返回更新後的投票詳情
     vote_details = AdminChatService.get_vote_details(vote_id, user_id)
     return jsonify({"message": message, "vote": vote_details})
 
@@ -406,6 +399,37 @@ def get_vote(vote_id: int):
         return jsonify({"error": "投票不存在或無權限"}), 404
     
     return jsonify({"vote": vote})
+
+
+@bp.route("/stats", methods=["GET"])
+@jwt_required()
+@ratelimit(calls=30, per_seconds=60)
+def get_stats():
+    """管理員聊天室即時統計
+    - active_members: 最近5分鐘有活動的成員數
+    - total_messages_today: 今日訊息數
+    - pending_votes: 進行中投票數
+    - urgent_announcements: 暫無資料來源，回 0
+    """
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    active_threshold = now - timedelta(minutes=5)
+
+    with get_session() as db:
+        total_rooms = db.query(AdminChatRoom).count()
+        active_rooms = db.query(AdminChatRoom).filter(AdminChatRoom.is_active == True).count()
+        active_members = db.query(AdminChatMember).filter(AdminChatMember.last_active_at >= active_threshold).count()
+        total_messages_today = db.query(AdminChatMessage).filter(AdminChatMessage.created_at >= today_start).count()
+        pending_votes = db.query(AdminChatVote).filter(AdminChatVote.status == VoteStatus.ACTIVE).count()
+
+    return jsonify({
+        "total_rooms": total_rooms,
+        "active_rooms": active_rooms,
+        "active_members": active_members,
+        "total_messages_today": total_messages_today,
+        "pending_votes": pending_votes,
+        "urgent_announcements": 0,
+    })
 
 
 @bp.route("/initialize", methods=["POST"])

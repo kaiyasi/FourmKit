@@ -6,6 +6,9 @@
 import { NotificationPlugin } from '@/types/notifications'
 import { ShieldCheck } from 'lucide-react'
 
+/**
+ *
+ */
 export interface AuthNotificationData {
   event: 'register_success' | 'login_success' | 'password_changed' | 'google_linked'
   message?: string

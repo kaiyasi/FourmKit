@@ -1,7 +1,13 @@
 import React from 'react'
+<<<<<<< Updated upstream
 import { ArrowLeft, RefreshCw, Send } from 'lucide-react'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { Button } from '@/components/support/SupportComponents'
+=======
+import { ArrowLeft, RefreshCw, Send, Tag, User, Clock } from 'lucide-react'
+import { PageLayout } from '@/components/layout/PageLayout'
+import { Button, StatusBadge, CategoryBadge } from '@/components/support/SupportComponents'
+>>>>>>> Stashed changes
 
 interface Message {
   id: number | string
@@ -22,7 +28,15 @@ interface TicketDetailLite {
   messages: Message[]
 }
 
+<<<<<<< Updated upstream
 export default function MobileSupportDetailPage({
+=======
+/**
+ *
+ */
+export default function MobileSupportDetailPage({
+  
+>>>>>>> Stashed changes
   ticket,
   newMessage,
   setNewMessage,
@@ -55,6 +69,7 @@ export default function MobileSupportDetailPage({
           <Button variant="ghost" size="sm" icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />} onClick={onReload} disabled={refreshing} />
         </div>
 
+<<<<<<< Updated upstream
         <div className="px-4 py-4">
           <div className="rounded-2xl bg-surface/70 border border-border p-3 mb-3 mobile-card w-full">
             <div className="grid grid-cols-2 gap-3 text-xs text-muted">
@@ -82,6 +97,29 @@ export default function MobileSupportDetailPage({
               <div key={message.id} className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className="max-w-[85%]">
                   <div className={`px-3 py-2 rounded-2xl ${message.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border'}`}>
+=======
+        <div className="p-3">
+          <div className="rounded-2xl bg-surface/70 border border-border p-3 mb-3 mobile-card w-full">
+            {(() => {
+              const openedAt = new Date(ticket.created_at).toLocaleString('zh-TW')
+              const userMsg = (ticket.messages || []).find(m => m.author_type === 'user')
+              const submitter = userMsg?.author_display_name || '—'
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted">
+                  <div className="flex items-center gap-2"><Tag className="w-4 h-4" /><span>分類：{ticket.category}</span></div>
+                  <div className="flex items-center gap-2"><User className="w-4 h-4" /><span>提交者：{submitter}</span></div>
+                  <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>建立時間：{openedAt}</span></div>
+                </div>
+              )
+            })()}
+          </div>
+
+          <div className="space-y-2">
+            {(ticket.messages || []).map((message) => (
+              <div key={message.id} className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className="max-w-[80%]">
+                  <div className={`px-3 py-2 rounded-2xl ${message.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border'}`} style={{maxWidth:'100%'}}>
+>>>>>>> Stashed changes
                     {message.body.split('\n').map((line, idx) => (
                       <p key={idx} className={`text-sm ${message.author_type === 'user' ? 'text-primary-foreground' : 'text-fg'}`}>{line}</p>
                     ))}
@@ -98,9 +136,26 @@ export default function MobileSupportDetailPage({
 
         {ticket.status !== 'closed' && (
           <div className="fixed left-0 right-0 border-t border-border bg-surface/95 backdrop-blur p-2 z-40" style={{ bottom: 'var(--fk-bottomnav-offset, 64px)' }}>
+<<<<<<< Updated upstream
             <div className="max-w-4xl mx-auto flex items-center gap-2 px-2">
               <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="輸入您的回應..." rows={1} className="flex-1 form-control form-control--compact resize-none" />
               <Button onClick={onSend} loading={sending} disabled={!newMessage.trim()} icon={<Send className="w-4 h-4" />}>發送</Button>
+=======
+            <div className="max-w-4xl mx-auto flex items-end gap-2 px-2">
+              <textarea
+                value={newMessage}
+                onChange={(e) => {
+                  const el = e.target as HTMLTextAreaElement
+                  setNewMessage(el.value)
+                  el.style.height = 'auto'
+                  el.style.height = Math.min(el.scrollHeight, 240) + 'px'
+                }}
+                placeholder="輸入您的回應..."
+                rows={1}
+                className="flex-1 form-control form-control--compact resize-none overflow-hidden leading-snug"
+              />
+              <Button onClick={onSend} loading={sending} disabled={!newMessage.trim()} size="sm" icon={<Send className="w-4 h-4" />}>發送</Button>
+>>>>>>> Stashed changes
             </div>
           </div>
         )}

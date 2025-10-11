@@ -5,6 +5,9 @@ import AnonymousAccountDisplay from '@/components/AnonymousAccountDisplay'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateAnonymousCode, isSystemDemo } from '@/utils/client'
 
+/**
+ *
+ */
 export default function AnonymousTestPage() {
   const { isLoggedIn, username } = useAuth()
   const [demoMode, setDemoMode] = useState(false)
@@ -30,7 +33,7 @@ export default function AnonymousTestPage() {
         </div>
         
         <div className="space-y-4">
-          {/* 當前狀態 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <h2 className="text-lg font-semibold dual-text mb-4">當前狀態</h2>
             <div className="space-y-2">
@@ -59,7 +62,7 @@ export default function AnonymousTestPage() {
             </div>
           </div>
 
-          {/* 顯示測試 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <h2 className="text-lg font-semibold dual-text mb-4">顯示測試</h2>
             <div className="space-y-4">
@@ -78,7 +81,7 @@ export default function AnonymousTestPage() {
             </div>
           </div>
 
-          {/* 控制面板 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <h2 className="text-lg font-semibold dual-text mb-4">控制面板</h2>
             <div className="space-y-3">
@@ -99,7 +102,7 @@ export default function AnonymousTestPage() {
             </div>
           </div>
 
-          {/* 說明 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <h2 className="text-lg font-semibold dual-text mb-4">功能說明</h2>
             <div className="space-y-2 text-sm text-muted">

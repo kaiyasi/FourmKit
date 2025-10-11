@@ -60,8 +60,10 @@ const REACTION_LABELS = {
   angry: '怒'
 }
 
-// 簡化配色：僅使用主題色/中性色，不使用五彩顏色
 
+/**
+ *
+ */
 export default function CommentSection({ 
   postId, 
   initialReactionStats = {}, 
@@ -81,7 +83,6 @@ export default function CommentSection({
 
 
   
-  // 貼文反應狀態
   const [reactionStats, setReactionStats] = useState<PostReactionStats>(initialReactionStats)
   const [userReactions, setUserReactions] = useState<string[]>(userPostReaction ? [userPostReaction] : [])
   const [reactLoading, setReactLoading] = useState<string | null>(null)
@@ -99,13 +100,11 @@ export default function CommentSection({
     }
   })() : null
 
-  // 載入留言
   const loadComments = async (pageNum: number = 1, append: boolean = false) => {
     try {
       setLoading(true)
       setError(null)
       
-      // 僅在有 token 時才附上 Authorization，避免空 Bearer 造成干擾
       const token = localStorage.getItem('token') || ''
       const headers: Record<string, string> = {}
       if (token.trim()) headers['Authorization'] = `Bearer ${token}`
@@ -121,7 +120,6 @@ export default function CommentSection({
       
       const data = await response.json().catch(()=>({ ok: false, comments: [], pagination: { total: 0, has_next: false } }))
       
-      // 檢查 API 響應是否成功
       if (!data.ok) {
         throw new Error(data.error || '載入留言失敗')
       }
@@ -143,7 +141,6 @@ export default function CommentSection({
     }
   }
 
-  // 載入貼文反應
   const loadPostReactions = async () => {
     try {
       const response = await fetch(`/api/posts/${postId}/reactions`)
@@ -158,7 +155,6 @@ export default function CommentSection({
     }
   }
 
-  // 發布留言
   const submitComment = async () => {
     if (!newComment.trim() || !isLoggedIn) return
     
@@ -185,7 +181,6 @@ export default function CommentSection({
       setNewComment('')
       setTotal(prev => prev + 1)
       
-      // 自動調整 textarea 高度
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
@@ -197,7 +192,6 @@ export default function CommentSection({
     }
   }
 
-  // 切換貼文反應
   const togglePostReaction = async (reactionType: string) => {
     if (!isLoggedIn) {
       setError('請先登入')
@@ -221,7 +215,6 @@ export default function CommentSection({
         const errorData = await response.json().catch(() => ({}))
         if (errorData.error?.code === 'JWT_EXPIRED') {
           setError('登入已過期，請重新登入')
-          // 清除過期的 session
           localStorage.removeItem('token')
           localStorage.removeItem('role')
           localStorage.removeItem('school_id')
@@ -241,7 +234,6 @@ export default function CommentSection({
     }
   }
 
-  // 切換留言反應
   const toggleCommentReaction = async (commentId: number, reactionType: 'like' | 'dislike') => {
     if (!isLoggedIn) {
       setError('請先登入')
@@ -264,7 +256,6 @@ export default function CommentSection({
         const errorData = await response.json().catch(() => ({}))
         if (errorData.error?.code === 'JWT_EXPIRED') {
           setError('登入已過期，請重新登入')
-          // 清除過期的 session
           localStorage.removeItem('token')
           localStorage.removeItem('role')
           localStorage.removeItem('school_id')
@@ -275,7 +266,6 @@ export default function CommentSection({
       
       const data = await response.json()
       
-      // 更新留言的反應狀態
       setComments(prev => prev.map(comment => 
         comment.id === commentId 
           ? { ...comment, stats: data.stats, user_reaction: data.user_reaction }
@@ -314,7 +304,6 @@ export default function CommentSection({
   }
 
 
-  // 自動調整 textarea 高度
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNewComment(e.target.value)
     const textarea = e.target
@@ -328,7 +317,6 @@ export default function CommentSection({
     loadComments(1)
   }, [postId])
 
-  // 守門員：若長時間仍在載入，顯示逾時提示避免卡在 spinner
   useEffect(() => {
     if (!loading) return
     const t = setTimeout(() => {
@@ -338,12 +326,10 @@ export default function CommentSection({
     return () => clearTimeout(t)
   }, [loading])
 
-  // 初始載入貼文反應統計
   useEffect(() => {
     loadPostReactions()
   }, [postId])
 
-  // Scroll-based auto-loading for comments
   useEffect(() => {
     const container = commentsContainerRef.current
     if (!container) return
@@ -351,7 +337,6 @@ export default function CommentSection({
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container
       
-      // Load more when user is near bottom (200px threshold)
       if (scrollHeight - scrollTop - clientHeight < 200 && hasMore && !loading) {
         loadComments(page + 1, true)
       }
@@ -361,7 +346,6 @@ export default function CommentSection({
     return () => container.removeEventListener('scroll', handleScroll)
   }, [page, hasMore, loading])
 
-  // 清除錯誤訊息
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => setError(null), 5000)
@@ -371,7 +355,7 @@ export default function CommentSection({
 
   return (
     <div className="border-t border-border pt-4">
-      {/* 錯誤訊息 */}
+      
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center gap-2 text-red-700">
@@ -381,9 +365,9 @@ export default function CommentSection({
         </div>
       )}
 
-      {/* 貼文反應區 */}
+      
       <div className="flex items-center justify-between gap-3 mb-4">
-        {/* 反應按鈕群 */}
+        
         <div className="flex items-center gap-1 sm:gap-2 flex-wrap flex-1">
           {Object.entries(REACTION_ICONS).map(([type, Icon]) => {
             const count = reactionStats[type as keyof PostReactionStats] || 0
@@ -413,15 +397,15 @@ export default function CommentSection({
           })}
         </div>
 
-        {/* 右側按鈕群 */}
+        
         <div className="flex items-center gap-2 flex-shrink-0">
           {extraActions}
         </div>
       </div>
-      {/* 留言區 */}
+      
       {(
         <div className="space-y-4">
-          {/* 發布留言 */}
+          
           {isLoggedIn ? (
             <div className="bg-surface border border-border rounded-xl p-4">
               <div className="flex gap-3">
@@ -465,7 +449,7 @@ export default function CommentSection({
             </div>
           )}
 
-          {/* 留言列表 */}
+          
           {loading && comments.length === 0 ? (
             <div className="text-center py-8">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
@@ -508,7 +492,7 @@ export default function CommentSection({
                       </span>
                     </div>
                     
-                    {/* 刪除按鈕 - 作者本人或管理員可刪除 */}
+                    
                     {(currentUserId === comment.author_id || 
                       (role && ['dev_admin', 'campus_admin', 'cross_admin'].includes(role))) && (
                       <button
@@ -560,7 +544,7 @@ export default function CommentSection({
                 </div>
               )})}
               
-              {/* Auto-loading indicator */}
+              
               {loading && hasMore && (
                 <div className="text-center py-4">
                   <Loader2 className="w-4 h-4 animate-spin mx-auto text-primary" />
@@ -568,7 +552,7 @@ export default function CommentSection({
                 </div>
               )}
               
-              {/* End indicator */}
+              
               {!hasMore && comments.length > 5 && (
                 <div className="text-center py-4">
                   <p className="text-muted text-xs">已顯示所有留言</p>

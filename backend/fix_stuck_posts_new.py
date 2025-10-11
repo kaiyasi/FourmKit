@@ -20,7 +20,6 @@ def fix_stuck_posts():
     print("🔧 開始修復卡住的 Instagram 貼文...")
     
     with get_session() as db:
-        # 找出長時間卡在 processing 的貼文 (超過 1 小時)
         one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
         
         stuck_posts = db.query(SocialPost).filter(
@@ -41,12 +40,10 @@ def fix_stuck_posts():
             print(f"     最後更新: {post.updated_at}")
             print(f"     錯誤訊息: {post.error_message or '無'}")
             
-            # 檢查是否有錯誤訊息，有的話標記為失敗
             if post.error_message:
                 post.status = PostStatus.FAILED
                 print(f"     -> 標記為失敗")
             else:
-                # 沒有錯誤訊息的話重置為 pending，給它重新嘗試的機會
                 post.status = PostStatus.PENDING
                 post.retry_count = (post.retry_count or 0)  # 保持重試次數
                 post.error_message = None
@@ -55,7 +52,6 @@ def fix_stuck_posts():
             post.updated_at = datetime.now(timezone.utc)
             fixed_count += 1
         
-        # 提交變更
         db.commit()
         print(f"✅ 已修復 {fixed_count} 個卡住的貼文")
 

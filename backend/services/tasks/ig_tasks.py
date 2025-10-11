@@ -30,10 +30,9 @@ def render_pending_posts():
     try:
         queue_manager = IGQueueManager(db)
 
-        # 查找所有 PENDING 狀態的貼文
         pending_posts = db.query(InstagramPost).filter_by(
             status=PostStatus.PENDING
-        ).limit(50).all()  # 一次最多處理 50 篇
+        ).limit(50).all()
 
         if not pending_posts:
             logger.debug("沒有待渲染的貼文")
@@ -77,7 +76,6 @@ def check_batch_publish():
         queue_manager = IGQueueManager(db)
         publisher = IGPublisher(db)
 
-        # 查找所有批次發布模式的帳號
         batch_accounts = db.query(InstagramAccount).filter_by(
             is_active=True,
             publish_mode=PublishMode.BATCH
@@ -88,9 +86,7 @@ def check_batch_publish():
 
         for account in batch_accounts:
             try:
-                # 檢查是否達到批次數量
                 if queue_manager.check_batch_ready(account.id):
-                    # 創建輪播批次
                     carousel_group_id = queue_manager.create_carousel_batch(
                         account.id,
                         account.batch_count
@@ -100,7 +96,6 @@ def check_batch_publish():
                         created_batches += 1
                         logger.info(f"為帳號 {account.username} 創建輪播批次: {carousel_group_id}")
 
-                        # 立即發布
                         posts = queue_manager.get_carousel_batch_by_group_id(carousel_group_id)
                         post_ids = [p.id for p in posts]
 
@@ -138,7 +133,6 @@ def check_scheduled_publish():
         queue_manager = IGQueueManager(db)
         publisher = IGPublisher(db)
 
-        # 獲取應該發布的排程貼文
         scheduled_posts = queue_manager.get_next_scheduled_posts(limit=50)
 
         if not scheduled_posts:
@@ -150,9 +144,7 @@ def check_scheduled_publish():
 
         for post in scheduled_posts:
             try:
-                # 檢查是否為輪播
                 if post.carousel_group_id:
-                    # 輪播發布：只處理第一個位置的貼文
                     if post.carousel_position == 1:
                         posts = queue_manager.get_carousel_batch_by_group_id(
                             post.carousel_group_id
@@ -160,9 +152,8 @@ def check_scheduled_publish():
                         post_ids = [p.id for p in posts]
                         success = publisher.publish_carousel(post.ig_account_id, post_ids)
                     else:
-                        continue  # 跳過非第一個位置的貼文
+                        continue
                 else:
-                    # 單篇發布
                     success = publisher.publish_single_post(post.id)
 
                 if success:
@@ -198,7 +189,6 @@ def process_publish_queue():
         queue_manager = IGQueueManager(db)
         publisher = IGPublisher(db)
 
-        # 查找所有批次模式的帳號
         batch_accounts = db.query(InstagramAccount).filter_by(
             is_active=True,
             publish_mode=PublishMode.BATCH
@@ -208,11 +198,9 @@ def process_publish_queue():
 
         for account in batch_accounts:
             try:
-                # 獲取已準備好的輪播組
                 carousel_groups = queue_manager.get_ready_carousel_groups(account.id)
 
                 if carousel_groups:
-                    # 取第一個輪播組發布
                     carousel_group_id = carousel_groups[0]
                     posts = queue_manager.get_carousel_batch_by_group_id(carousel_group_id)
                     post_ids = [p.id for p in posts]
@@ -247,7 +235,6 @@ def auto_refresh_tokens():
     try:
         token_manager = IGTokenManager(db)
 
-        # 查找即將過期的 Token（7 天內）
         expiring_soon = datetime.now(timezone.utc) + timedelta(days=7)
         accounts = db.query(InstagramAccount).filter(
             InstagramAccount.is_active == True,
@@ -303,13 +290,11 @@ def cleanup_preview_images():
         if not os.path.exists(preview_dir):
             return {'deleted': 0}
 
-        cutoff_time = datetime.now().timestamp() - 3600  # 1 小時前
+        cutoff_time = datetime.now().timestamp() - 3600
         deleted_count = 0
 
-        # 查找所有預覽圖片
         for filepath in glob.glob(f"{preview_dir}/preview_*.jpg"):
             try:
-                # 檢查檔案修改時間
                 if os.path.getmtime(filepath) < cutoff_time:
                     os.remove(filepath)
                     deleted_count += 1
@@ -357,18 +342,16 @@ def retry_failed_posts():
     try:
         publisher = IGPublisher(db)
 
-        # 查找失敗且未超過最大重試次數的貼文
         failed_posts = db.query(InstagramPost).filter(
             and_(
                 InstagramPost.status == PostStatus.FAILED,
                 InstagramPost.retry_count < InstagramPost.max_retries,
-                # 最後重試時間超過 1 小時（避免頻繁重試）
                 or_(
                     InstagramPost.last_retry_at.is_(None),
                     InstagramPost.last_retry_at < datetime.now(timezone.utc) - timedelta(hours=1)
                 )
             )
-        ).limit(10).all()  # 一次最多重試 10 篇
+        ).limit(10).all()
 
         if not failed_posts:
             logger.debug("沒有需要重試的失敗貼文")
@@ -413,13 +396,11 @@ def instant_publish_announcement(forum_post_id: int):
     try:
         from models import Post
 
-        # 獲取論壇貼文
         forum_post = db.query(Post).filter_by(id=forum_post_id).first()
         if not forum_post:
             logger.error(f"找不到論壇貼文: {forum_post_id}")
             return {'error': 'Post not found'}
 
-        # 檢查是否為公告
         is_announcement = hasattr(forum_post, 'announcement_type') and forum_post.announcement_type
 
         if not is_announcement:
@@ -429,9 +410,6 @@ def instant_publish_announcement(forum_post_id: int):
         queue_manager = IGQueueManager(db)
         publisher = IGPublisher(db)
 
-        # 查找相關的 IG 帳號
-        # 全平台公告：所有帳號
-        # 學校公告：該學校的帳號
         if forum_post.school_id:
             accounts = db.query(InstagramAccount).filter_by(
                 school_id=forum_post.school_id,
@@ -439,7 +417,6 @@ def instant_publish_announcement(forum_post_id: int):
                 publish_mode=PublishMode.INSTANT
             ).all()
         else:
-            # 全平台公告
             accounts = db.query(InstagramAccount).filter_by(
                 is_active=True,
                 publish_mode=PublishMode.INSTANT
@@ -453,7 +430,6 @@ def instant_publish_announcement(forum_post_id: int):
 
         for account in accounts:
             try:
-                # 加入佇列
                 post_id = queue_manager.add_to_queue(
                     forum_post_id,
                     account.id,
@@ -463,13 +439,11 @@ def instant_publish_announcement(forum_post_id: int):
                 if not post_id:
                     continue
 
-                # 渲染
                 success = queue_manager.render_post(post_id)
                 if not success:
                     logger.error(f"渲染失敗: {post_id}")
                     continue
 
-                # 立即發布
                 success = publisher.publish_single_post(post_id)
                 if success:
                     published_count += 1
@@ -491,7 +465,6 @@ def instant_publish_announcement(forum_post_id: int):
         db.close()
 
 
-# ========== 任務排程配置 ==========
 
 def get_celery_beat_schedule():
     """
@@ -501,51 +474,43 @@ def get_celery_beat_schedule():
     app.conf.beat_schedule = get_celery_beat_schedule()
     """
     return {
-        # 每 5 分鐘渲染待處理貼文
         'render-pending-posts': {
             'task': 'ig.render_pending_posts',
-            'schedule': 300.0,  # 5 分鐘
+            'schedule': 300.0,
         },
 
-        # 每 5 分鐘檢查批次發布條件
         'check-batch-publish': {
             'task': 'ig.check_batch_publish',
-            'schedule': 300.0,  # 5 分鐘
+            'schedule': 300.0,
         },
 
-        # 每分鐘檢查排程發布
         'check-scheduled-publish': {
             'task': 'ig.check_scheduled_publish',
-            'schedule': 60.0,  # 1 分鐘
+            'schedule': 60.0,
         },
 
-        # 每 30 分鐘處理發布佇列
         'process-publish-queue': {
             'task': 'ig.process_publish_queue',
-            'schedule': 1800.0,  # 30 分鐘
+            'schedule': 1800.0,
         },
 
-        # 每天刷新 Token
         'auto-refresh-tokens': {
             'task': 'ig.auto_refresh_tokens',
-            'schedule': 86400.0,  # 24 小時
+            'schedule': 86400.0,
         },
 
-        # 每小時清理預覽圖片
         'cleanup-preview-images': {
             'task': 'ig.cleanup_preview_images',
-            'schedule': 3600.0,  # 1 小時
+            'schedule': 3600.0,
         },
 
-        # 每週清理舊記錄
         'cleanup-old-posts': {
             'task': 'ig.cleanup_old_posts',
-            'schedule': 604800.0,  # 7 天
+            'schedule': 604800.0,
         },
 
-        # 每 30 分鐘重試失敗貼文
         'retry-failed-posts': {
             'task': 'ig.retry_failed_posts',
-            'schedule': 1800.0,  # 30 分鐘
+            'schedule': 1800.0,
         },
     }

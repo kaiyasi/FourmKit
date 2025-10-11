@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 
+/**
+ *
+ */
 export default function DesktopOnly({ children, minWidth = 1024, title = '此功能僅支援電腦桌面', desc = '為確保操作體驗與資料可讀性，請使用電腦或大尺寸平板開啟。' }: { children: any; minWidth?: number; title?: string; desc?: string }) {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {

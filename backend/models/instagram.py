@@ -13,7 +13,6 @@ from .base import Base
 from enum import Enum
 
 
-# ========== Enums ==========
 
 class PublishMode(str, Enum):
     """發布模式"""
@@ -24,12 +23,12 @@ class PublishMode(str, Enum):
 
 class TemplateType(str, Enum):
     """模板類型"""
-    ANNOUNCEMENT = "announcement"  # 公告模板（即時發布）
-    GENERAL = "general"            # 一般模板（批次/排程發布）
+    ANNOUNCEMENT = "announcement"
+    GENERAL = "general"
 
 
 class PostStatus(str, Enum):
-    """Instagram 貼文狀態"""
+    """Instagram 貼文狀態（資料庫以小寫字串存）"""
     PENDING = "pending"          # 等待渲染
     RENDERING = "rendering"      # 渲染中
     READY = "ready"              # 渲染完成，等待發布
@@ -39,7 +38,6 @@ class PostStatus(str, Enum):
     CANCELLED = "cancelled"      # 已取消
 
 
-# ========== Models ==========
 
 class InstagramAccount(Base):
     """Instagram 帳號管理"""
@@ -47,46 +45,37 @@ class InstagramAccount(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # 基本資訊
     school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=True, index=True)
     ig_user_id = Column(String(100), nullable=False, unique=True, comment="Instagram User ID")
     username = Column(String(100), nullable=False, comment="Instagram 用戶名")
 
-    # Token 管理（加密存儲）
     access_token_encrypted = Column(Text, nullable=False, comment="加密的 Access Token")
     token_expires_at = Column(DateTime, nullable=False, comment="Token 過期時間")
     last_token_refresh = Column(DateTime, comment="最後刷新時間")
 
-    # Facebook App 認證資訊（用於 Token 轉換和刷新）
     app_id = Column(String(100), comment="Facebook App ID")
     app_secret_encrypted = Column(Text, comment="加密的 App Secret")
 
-    # 發布模式配置
     publish_mode = Column(SQLEnum(PublishMode), nullable=False, default=PublishMode.BATCH, comment="發布模式")
     batch_count = Column(Integer, default=10, comment="批次發布數量（batch 模式）")
     scheduled_times = Column(JSON, comment="排程時間列表（scheduled 模式），格式：['09:00', '15:00', '21:00']")
 
-    # 模板綁定
     announcement_template_id = Column(Integer, ForeignKey("ig_templates.id", ondelete="SET NULL"), comment="公告模板 ID")
     general_template_id = Column(Integer, ForeignKey("ig_templates.id", ondelete="SET NULL"), comment="一般模板 ID")
 
-    # 狀態欄位
     is_active = Column(Boolean, default=True, nullable=False, comment="是否啟用")
     last_publish_at = Column(DateTime, comment="最後發布時間")
     last_error = Column(Text, comment="最後錯誤訊息")
     last_error_at = Column(DateTime, comment="最後錯誤時間")
 
-    # 時間戳記
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # 關聯
     school = relationship("School", foreign_keys=[school_id], backref="instagram_accounts")
     announcement_template = relationship("IGTemplate", foreign_keys=[announcement_template_id], backref="announcement_accounts")
     general_template = relationship("IGTemplate", foreign_keys=[general_template_id], backref="general_accounts")
     posts = relationship("InstagramPost", back_populates="account", cascade="all, delete-orphan")
 
-    # 約束
     __table_args__ = (
         CheckConstraint('batch_count >= 1 AND batch_count <= 10', name='valid_batch_count'),
         Index('idx_ig_account_school_active', 'school_id', 'is_active'),
@@ -103,13 +92,11 @@ class IGTemplate(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # 基本資訊
     name = Column(String(100), nullable=False, comment="模板名稱")
     description = Column(Text, comment="模板描述")
     school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=True, index=True, comment="學校 ID（NULL 表示全域模板）")
     template_type = Column(SQLEnum(TemplateType, values_callable=lambda x: [e.value for e in x]), nullable=False, comment="模板類型")
 
-    # Canvas 配置
     canvas_config = Column(JSON, nullable=False, comment="""
     Canvas 配置，格式：
     {
@@ -121,7 +108,6 @@ class IGTemplate(Base):
     }
     """)
 
-    # 文字配置（分為帶圖/不帶圖兩種）
     text_with_attachment = Column(JSON, comment="""
     有附件時的文字配置，格式：
     {
@@ -141,7 +127,6 @@ class IGTemplate(Base):
     無附件時的文字配置，格式同上
     """)
 
-    # 附件圖片配置
     attachment_config = Column(JSON, comment="""
     附件圖片配置，格式：
     {
@@ -155,7 +140,6 @@ class IGTemplate(Base):
     }
     """)
 
-    # Logo 配置
     logo_config = Column(JSON, comment="""
     Logo 配置，格式：
     {
@@ -171,7 +155,6 @@ class IGTemplate(Base):
     }
     """)
 
-    # 浮水印配置
     watermark_config = Column(JSON, comment="""
     浮水印配置，格式：
     {
@@ -187,7 +170,6 @@ class IGTemplate(Base):
     }
     """)
 
-    # Caption 配置
     caption_template = Column(JSON, nullable=False, comment="""
     Caption 模板配置，格式：
     {
@@ -216,20 +198,16 @@ class IGTemplate(Base):
     }
     """)
 
-    # 狀態欄位
     is_active = Column(Boolean, default=True, nullable=False, comment="是否啟用")
     usage_count = Column(Integer, default=0, nullable=False, comment="使用次數")
     last_used_at = Column(DateTime, comment="最後使用時間")
 
-    # 時間戳記
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # 關聯
     school = relationship("School", foreign_keys=[school_id], backref="ig_templates")
     posts = relationship("InstagramPost", back_populates="template")
 
-    # 索引
     __table_args__ = (
         Index('idx_ig_template_school_type', 'school_id', 'template_type', 'is_active'),
     )
@@ -244,49 +222,40 @@ class InstagramPost(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # 基本資訊
     public_id = Column(String(50), unique=True, nullable=False, index=True, comment="公開 ID（用於外部查詢）")
     forum_post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True, comment="論壇貼文 ID")
     ig_account_id = Column(Integer, ForeignKey("instagram_accounts.id", ondelete="CASCADE"), nullable=False, index=True, comment="IG 帳號 ID")
     template_id = Column(Integer, ForeignKey("ig_templates.id", ondelete="SET NULL"), comment="使用的模板 ID")
 
-    # 渲染結果
     rendered_image_cdn_path = Column(String(500), comment="渲染後圖片的 CDN 路徑")
     rendered_caption = Column(Text, comment="渲染後的 Caption（最終發布內容）")
 
-    # 輪播資訊
     carousel_group_id = Column(String(50), index=True, comment="輪播組 ID（10 篇一組）")
     carousel_position = Column(Integer, comment="在輪播中的位置（1-10）")
     carousel_total = Column(Integer, comment="輪播總數")
 
-    # Instagram 資訊
     ig_media_id = Column(String(100), unique=True, comment="Instagram Media ID")
     ig_container_id = Column(String(100), comment="Instagram Container ID")
     ig_permalink = Column(String(500), comment="Instagram 連結")
 
-    # 狀態管理
-    status = Column(SQLEnum(PostStatus), nullable=False, default=PostStatus.PENDING, index=True, comment="發布狀態")
-    publish_mode = Column(SQLEnum(PublishMode), nullable=False, comment="發布模式")
+    status = Column(String(20), nullable=False, default=PostStatus.PENDING.value, index=True, comment="發布狀態（小寫字串）")
+    publish_mode = Column(SQLEnum(PublishMode, values_callable=lambda x: [e.value for e in x]), nullable=False, comment="發布模式")
     scheduled_at = Column(DateTime, index=True, comment="排程發布時間")
     published_at = Column(DateTime, comment="實際發布時間")
 
-    # 錯誤處理
     error_message = Column(Text, comment="錯誤訊息")
     error_code = Column(String(50), comment="錯誤代碼")
     retry_count = Column(Integer, default=0, nullable=False, comment="重試次數")
     last_retry_at = Column(DateTime, comment="最後重試時間")
     max_retries = Column(Integer, default=3, nullable=False, comment="最大重試次數")
 
-    # 時間戳記
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # 關聯
     forum_post = relationship("Post", backref="instagram_posts")
     account = relationship("InstagramAccount", back_populates="posts")
     template = relationship("IGTemplate", back_populates="posts")
 
-    # 索引
     __table_args__ = (
         Index('idx_ig_post_status_mode', 'status', 'publish_mode'),
         Index('idx_ig_post_carousel', 'carousel_group_id', 'carousel_position'),

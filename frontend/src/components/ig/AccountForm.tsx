@@ -65,7 +65,6 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
     fetchTemplates();
 
     if (account) {
-      // Debug: 檢查後端返回的資料
       console.log('[AccountForm] Received account data:', {
         id: account.id,
         has_access_token: account.has_access_token,
@@ -75,7 +74,6 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
         app_id: account.app_id
       });
 
-      // 安全檢查：如果後端錯誤地返回了敏感資料，發出警告
       if (account.access_token || account.app_secret) {
         console.error('[AccountForm] SECURITY WARNING: Backend returned sensitive data!', {
           has_access_token_value: !!account.access_token,
@@ -140,7 +138,6 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 驗證
     if (!formData.school_id) {
       alert('請選擇學校');
       return;
@@ -171,10 +168,8 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
 
       const payload = {
         ...formData,
-        // 修剪空格
         ig_user_id: formData.ig_user_id.trim(),
         username: formData.username.trim(),
-        // 只在有輸入新 token/app_id/app_secret 時才傳送
         ...(formData.access_token ? { access_token: formData.access_token } : {}),
         ...(formData.app_id ? { app_id: formData.app_id.trim() } : {}),
         ...(formData.app_secret ? { app_secret: formData.app_secret } : {})
@@ -205,7 +200,6 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
       onSave();
     } catch (err: any) {
       console.error('Account save error:', err);
-      // 顯示更詳細的錯誤訊息
       const errorMessage = err.message || err.toString() || '儲存失敗';
       alert(`儲存失敗：${errorMessage}`);
     } finally {
@@ -216,7 +210,6 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
   const handleAddScheduledTime = () => {
     if (!timeInput) return;
 
-    // 驗證時間格式 HH:MM
     if (!/^\d{2}:\d{2}$/.test(timeInput)) {
       alert('時間格式錯誤，請使用 HH:MM 格式（例如：09:00）');
       return;
@@ -250,7 +243,7 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
         {account ? '編輯 Instagram 帳號' : '新增 Instagram 帳號'}
       </h2>
 
-      {/* 基本資訊 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">基本資訊</h3>
 
@@ -387,7 +380,7 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
         </div>
       </div>
 
-      {/* 發布模式 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">發布模式</h3>
 
@@ -454,7 +447,7 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
         )}
       </div>
 
-      {/* 模板綁定 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">模板綁定</h3>
 
@@ -491,7 +484,7 @@ const AccountForm: React.FC<AccountFormProps> = ({ account, onSave, onCancel }) 
         </div>
       </div>
 
-      {/* 按鈕 */}
+      
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button
           type="button"

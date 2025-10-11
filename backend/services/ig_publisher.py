@@ -42,28 +42,22 @@ class IGPublisher:
             return False
 
         try:
-            # 更新狀態為發布中
             post.status = PostStatus.PUBLISHING
             self.db.commit()
 
-            # 獲取帳號和 Token
             account = post.account
             if not account or not account.is_active:
                 raise Exception("IG 帳號未啟用或不存在")
 
             access_token = decrypt_token(account.access_token_encrypted)
 
-            # 檢查是否已渲染
             if not post.rendered_image_cdn_path or not post.rendered_caption:
                 raise Exception("貼文尚未渲染，無法發布")
 
-            # 獲取並驗證 CDN URL
             image_url = self._get_public_cdn_url(post.rendered_image_cdn_path)
             self._validate_media_url(image_url)
 
-            # 創建 API 客戶端
             with IGAPIClient(access_token, account.ig_user_id) as api_client:
-                # 創建 Media Container
                 logger.info(f"為貼文 {post.public_id} 創建 Media Container")
                 container_id = api_client.create_single_media_container(
                     image_url=image_url,
@@ -73,7 +67,6 @@ class IGPublisher:
                 post.ig_container_id = container_id
                 self.db.commit()
 
-                # 等待 Container 完成
                 try:
                     import os
                     wait_timeout = int(os.getenv('IG_MAX_WAIT', '600'))
@@ -82,11 +75,9 @@ class IGPublisher:
                     wait_timeout, wait_interval = 600, 2
                 api_client.wait_until_finished(container_id, timeout=wait_timeout, interval=wait_interval)
 
-                # 發布 Media
                 logger.info(f"發布貼文 {post.public_id}")
                 result = api_client.publish_media(container_id)
 
-                # 更新貼文資訊
                 post.ig_media_id = result['id']
                 post.ig_permalink = result['permalink']
                 post.status = PostStatus.PUBLISHED
@@ -94,7 +85,6 @@ class IGPublisher:
                 post.error_message = None
                 post.error_code = None
 
-                # 更新帳號最後發布時間
                 account.last_publish_at = datetime.now(timezone.utc)
                 account.last_error = None
 
@@ -133,7 +123,6 @@ class IGPublisher:
             logger.error(f"IG 帳號 {account_id} 未啟用或不存在")
             return False
 
-        # 獲取所有貼文
         posts = self.db.query(InstagramPost).filter(
             InstagramPost.id.in_(post_ids),
             InstagramPost.status == PostStatus.READY
@@ -144,16 +133,13 @@ class IGPublisher:
             return False
 
         try:
-            # 更新所有貼文狀態為發布中
             for post in posts:
                 post.status = PostStatus.PUBLISHING
             self.db.commit()
 
             access_token = decrypt_token(account.access_token_encrypted)
 
-            # 創建 API 客戶端
             with IGAPIClient(access_token, account.ig_user_id) as api_client:
-                # 步驟 1: 為每張圖片創建 Carousel Item Container
                 children_ids = []
                 for i, post in enumerate(posts, 1):
                     logger.info(f"創建輪播項目 {i}/{len(posts)}: {post.public_id}")
@@ -171,7 +157,6 @@ class IGPublisher:
 
                 self.db.commit()
 
-                # 步驟 2: 生成輪播 Caption
                 logger.info("生成輪播 Caption")
                 forum_posts = [post.forum_post for post in posts]
                 template = posts[0].template  # 使用第一篇的模板
@@ -182,14 +167,12 @@ class IGPublisher:
                     account
                 )
 
-                # 步驟 3: 創建 Carousel Container
                 logger.info(f"創建輪播 Container，包含 {len(children_ids)} 個項目")
                 carousel_container_id = api_client.create_carousel_container(
                     children_ids,
                     carousel_caption
                 )
 
-                # 在發布前等待父容器完成
                 try:
                     import os
                     wait_timeout = int(os.getenv('IG_MAX_WAIT', '600'))
@@ -198,15 +181,9 @@ class IGPublisher:
                     wait_timeout, wait_interval = 600, 2
                 api_client.wait_until_finished(carousel_container_id, timeout=wait_timeout, interval=wait_interval)
 
-                # 步驟 4: 發布輪播
                 logger.info("發布輪播貼文")
                 result = api_client.publish_media(carousel_container_id)
 
-                # 更新所有貼文資訊
-                # 注意：ig_media_id 在資料庫上為唯一鍵（unique）。
-                # 輪播情況下多筆記錄對應同一個 IG Media（父容器），
-                # 為避免違反唯一約束，僅在第一筆記錄上寫入 ig_media_id，
-                # 其餘記錄保留 NULL（允許多個 NULL），但同樣寫入 permalink 以便前台顯示。
                 for i, post in enumerate(posts, 1):
                     if i == 1:
                         post.ig_media_id = result['id']
@@ -221,7 +198,6 @@ class IGPublisher:
                     post.error_message = None
                     post.error_code = None
 
-                # 更新帳號
                 account.last_publish_at = datetime.now(timezone.utc)
                 account.last_error = None
 
@@ -265,7 +241,6 @@ class IGPublisher:
             logger.error(f"貼文 {post.public_id} 已達最大重試次數")
             return False
 
-        # 增加重試次數
         post.retry_count += 1
         post.last_retry_at = datetime.now(timezone.utc)
         post.status = PostStatus.READY  # 重置為 READY
@@ -273,26 +248,21 @@ class IGPublisher:
 
         logger.info(f"重試貼文 {post.public_id} (第 {post.retry_count} 次)")
 
-        # 根據發布模式重新發布
         if post.carousel_group_id:
-            # 輪播貼文：需要整組重試
             carousel_posts = self.db.query(InstagramPost).filter_by(
                 carousel_group_id=post.carousel_group_id,
                 status=PostStatus.FAILED
             ).all()
 
-            # 重置所有失敗的輪播貼文
             for p in carousel_posts:
                 p.status = PostStatus.READY
                 p.retry_count += 1
 
             self.db.commit()
 
-            # 重新發布輪播
             post_ids = [p.id for p in carousel_posts]
             return self.publish_carousel(post.ig_account_id, post_ids)
         else:
-            # 單篇貼文
             return self.publish_single_post(post_id)
 
     def _handle_publish_error(self, post: InstagramPost, error: Exception):
@@ -309,19 +279,16 @@ class IGPublisher:
         if isinstance(error, IGAPIError):
             error_code = error.error_code
 
-            # 使用 API 客戶端分類錯誤
             with IGAPIClient('dummy', 'dummy') as api_client:
                 error_type = api_client.classify_error(error)
 
             logger.error(f"錯誤類型: {error_type}, 錯誤碼: {error_code}, 訊息: {error_message}")
 
-            # 特殊處理 Token 錯誤
             if error_type == 'token':
                 account = post.account
                 account.last_error = f"Token 錯誤: {error_message}"
                 account.last_error_at = datetime.now(timezone.utc)
 
-        # 更新貼文錯誤資訊
         post.status = PostStatus.FAILED
         post.error_message = error_message[:1000]  # 限制長度
         post.error_code = error_code
@@ -341,7 +308,6 @@ class IGPublisher:
         """
         try:
             logger.info(f"正在驗證媒體 URL: {image_url}")
-            # 使用 stream=True 和 timeout 來避免下載大文件和長時間等待
             with requests.head(image_url, stream=True, timeout=10, allow_redirects=True) as response:
                 response.raise_for_status()  # 確保狀態碼是 2xx
 
@@ -369,13 +335,11 @@ class IGPublisher:
         if not cdn_path:
             raise ValueError("cdn_path 不可為空")
 
-        # 如果渲染階段已經回傳完整 URL，就直接使用
         if cdn_path.startswith(('http://', 'https://')):
             return cdn_path
 
         import os
 
-        # 優先使用 IG_CDN_BASE_URL，其次退回全域 CDN 設定
         cdn_base_url = (
             os.getenv('IG_CDN_BASE_URL')
             or os.getenv('CDN_PUBLIC_BASE_URL')
@@ -386,7 +350,6 @@ class IGPublisher:
         if not cdn_base_url:
             raise ValueError("未設定 IG_CDN_BASE_URL/CDN_PUBLIC_BASE_URL/PUBLIC_CDN_URL")
 
-        # 確保路徑格式正確
         if not cdn_base_url.endswith('/'):
             cdn_base_url += '/'
         if cdn_path.startswith('/'):

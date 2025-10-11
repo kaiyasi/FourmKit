@@ -59,6 +59,9 @@ interface Post {
   like_count: number
 }
 
+/**
+ *
+ */
 export default function MemberManagementPage() {
   const { isLoggedIn, role, username } = useAuth()
   const [users, setUsers] = useState<User[]>([])
@@ -72,13 +75,11 @@ export default function MemberManagementPage() {
   const [filterPremium, setFilterPremium] = useState('all')
   const [selectedItem, setSelectedItem] = useState<User | Post | null>(null)
   
-  // 廣告貼文表單狀態
   const [showAdForm, setShowAdForm] = useState(false)
   const [adContent, setAdContent] = useState('')
   const [adFiles, setAdFiles] = useState<File[]>([])
   const [adSubmitting, setAdSubmitting] = useState(false)
 
-  // 載入會員列表
   const loadMembers = useCallback(async () => {
     try {
       setLoading(true)
@@ -101,7 +102,6 @@ export default function MemberManagementPage() {
     }
   }, [])
 
-  // 載入廣告貼文列表
   const loadPosts = useCallback(async () => {
     try {
       setLoading(true)
@@ -124,7 +124,6 @@ export default function MemberManagementPage() {
     }
   }, [])
 
-  // 切換會員狀態
   const togglePremiumStatus = async (userId: number, isPremium: boolean) => {
     try {
       setSaving(true)
@@ -150,7 +149,6 @@ export default function MemberManagementPage() {
     }
   }
 
-  // 貼文操作
   const togglePostStatus = async (postId: number, currentStatus: string) => {
     try {
       setSaving(true)
@@ -177,7 +175,6 @@ export default function MemberManagementPage() {
     }
   }
 
-  // 刪除貼文
   const deletePost = async (postId: number) => {
     if (!confirm('確定要刪除這篇貼文嗎？此操作不可逆轉。')) {
       return
@@ -206,7 +203,6 @@ export default function MemberManagementPage() {
     }
   }
 
-  // 發布廣告貼文
   const submitAdvertisement = async () => {
     if (!adContent.trim()) {
       setMessage('請輸入廣告內容')
@@ -217,7 +213,6 @@ export default function MemberManagementPage() {
       setAdSubmitting(true)
       
       if (adFiles.length > 0) {
-        // 有檔案時使用 FormData
         const fd = new FormData()
         fd.set('content', adContent.trim())
         fd.set('is_advertisement', 'true')
@@ -225,7 +220,6 @@ export default function MemberManagementPage() {
         
         await postFormData('/api/posts/with-media', fd)
       } else {
-        // 沒有檔案時使用 JSON
         await postJSON('/api/posts', {
           content: adContent.trim(),
           is_advertisement: true
@@ -244,7 +238,6 @@ export default function MemberManagementPage() {
     }
   }
 
-  // 過濾用戶
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -258,7 +251,6 @@ export default function MemberManagementPage() {
     return matchesSearch && matchesRole && matchesPremium
   })
 
-  // 過濾貼文
   const filteredPosts = posts.filter(post => {
     const matchesSearch = post.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          post.author.username.toLowerCase().includes(searchTerm.toLowerCase())
@@ -316,7 +308,7 @@ export default function MemberManagementPage() {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -333,7 +325,7 @@ export default function MemberManagementPage() {
           </div>
         </div>
 
-        {/* 訊息提示 */}
+        
         {message && (
           <div className="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
             <p className="text-primary">{message}</p>
@@ -341,7 +333,7 @@ export default function MemberManagementPage() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 主要內容區 */}
+          
           <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -378,7 +370,7 @@ export default function MemberManagementPage() {
               </div>
             </div>
 
-            {/* 標籤切換 */}
+            
             <div className="mb-4">
               <div className="flex space-x-1 bg-surface-hover rounded-lg p-1">
                 <button
@@ -412,7 +404,7 @@ export default function MemberManagementPage() {
               </div>
             </div>
 
-            {/* 搜尋與篩選 */}
+            
             <div className="mb-4 p-3 bg-surface-hover rounded-lg">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1" />
@@ -446,12 +438,11 @@ export default function MemberManagementPage() {
               </div>
             </div>
 
-            {/* 內容列表 */}
+            
             <div className="space-y-3">
               {loading ? (
                 <div className="text-center py-8 text-muted">載入中...</div>
               ) : activeTab === 'users' ? (
-                // 會員列表
                 filteredUsers.length === 0 ? (
                   <div className="text-center py-8 text-muted">沒有找到符合條件的用戶</div>
                 ) : (
@@ -500,7 +491,6 @@ export default function MemberManagementPage() {
                   })
                 )
               ) : (
-                // 貼文列表
                 filteredPosts.length === 0 ? (
                   <div className="text-center py-8 text-muted">沒有找到符合條件的貼文</div>
                 ) : (
@@ -561,9 +551,9 @@ export default function MemberManagementPage() {
             </div>
           </div>
 
-          {/* 右側邊欄 */}
+          
           <div className="space-y-6">
-            {/* 選中項目詳情 */}
+            
             {selectedItem && (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">
@@ -593,7 +583,7 @@ export default function MemberManagementPage() {
                       <div className="text-sm text-muted">{formatLocalMinute(selectedItem.created_at)}</div>
                     </div>
                     
-                    {/* 操作按鈕 */}
+                    
                     {selectedItem.role !== 'dev_admin' && selectedItem.role !== 'campus_admin' && selectedItem.role !== 'cross_admin' && (
                       <div className="mt-4 pt-4 border-t">
                         <button
@@ -651,7 +641,7 @@ export default function MemberManagementPage() {
                       <div className="text-sm text-muted">{formatLocalMinute(selectedItem.created_at)}</div>
                     </div>
                     
-                    {/* 操作按鈕 */}
+                    
                     <div className="mt-4 pt-4 border-t space-y-2">
                       <button
                         onClick={() => togglePostStatus(selectedItem.id, selectedItem.status)}
@@ -688,7 +678,7 @@ export default function MemberManagementPage() {
               </div>
             )}
 
-            {/* 統計信息 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
               <h3 className="text-lg font-semibold text-fg mb-4">統計信息</h3>
               <div className="space-y-3">
@@ -732,7 +722,7 @@ export default function MemberManagementPage() {
           </div>
         </div>
 
-        {/* 廣告貼文發布表單 */}
+        
         {showAdForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">

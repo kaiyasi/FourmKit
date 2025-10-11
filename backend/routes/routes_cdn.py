@@ -10,10 +10,8 @@ import os
 import mimetypes
 
 bp = Blueprint("cdn", __name__, url_prefix="/cdn")
-# 為了與既有連結（/uploads/...）相容，提供同樣功能的無前綴版本
 public_bp = Blueprint("public_uploads", __name__, url_prefix="/uploads")
 
-# CDN 根目錄
 CDN_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "cdn-data")
 
 
@@ -22,19 +20,15 @@ CDN_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "cdn-d
 def _serve_upload_file(filepath: str):
     """獲取上傳檔案（包括模板圖片等）"""
     try:
-        # 安全檢查：防止路徑遍歷攻擊
         if ".." in filepath or filepath.startswith('/'):
             abort(404)
         
-        # 構建檔案路徑
         upload_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "uploads")
         file_path = os.path.join(upload_root, filepath)
         
-        # 檢查檔案是否存在
         if not os.path.exists(file_path) or not os.path.isfile(file_path):
             abort(404)
         
-        # 檢查檔案是否在 uploads 目錄內
         try:
             file_path = os.path.abspath(file_path)
             upload_root = os.path.abspath(upload_root)
@@ -43,12 +37,10 @@ def _serve_upload_file(filepath: str):
         except Exception:
             abort(404)
         
-        # 獲取 MIME 類型
         mime_type, _ = mimetypes.guess_type(filepath)
         if not mime_type:
             mime_type = 'application/octet-stream'
         
-        # 發送檔案（附帶 CORS 與快取）
         resp = send_file(
             file_path,
             mimetype=mime_type,

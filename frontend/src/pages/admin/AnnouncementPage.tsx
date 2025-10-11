@@ -27,6 +27,9 @@ interface School {
   name: string
 }
 
+/**
+ *
+ */
 export function AnnouncementPage() {
   const { isLoggedIn, role, schoolId } = useAuth()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -36,7 +39,6 @@ export function AnnouncementPage() {
   const [schools, setSchools] = useState<School[]>([])
   const [schoolsLoading, setSchoolsLoading] = useState(true)
 
-  // 表單狀態
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -46,7 +48,6 @@ export function AnnouncementPage() {
     end_at: ''
   })
 
-  // 載入學校清單
   const loadSchools = async () => {
     try {
       setSchoolsLoading(true)
@@ -69,30 +70,25 @@ export function AnnouncementPage() {
     }
   }
 
-  // 根據角色獲取可選擇的學校選項
   const getAvailableSchoolOptions = () => {
     if (role === 'dev_admin') {
-      // dev_admin 可以選擇任何學校或全域公告
       return [
         { id: null, name: '全域公告（所有學校）', slug: 'global' },
         ...schools.map(school => ({ id: school.id, name: school.name, slug: school.slug }))
       ]
     } else if (role === 'campus_admin') {
-      // campus_admin 只能選擇自己的學校
       const userSchool = schools.find(s => s.id === schoolId)
       if (userSchool) {
         return [{ id: userSchool.id, name: userSchool.name, slug: userSchool.slug }]
       }
       return []
     } else if (role === 'cross_admin') {
-      // cross_admin 只能發布全域公告
       return [{ id: null, name: '全域公告（所有學校）', slug: 'global' }]
     }
     
     return []
   }
 
-  // 根據角色獲取預設學校ID
   const getDefaultSchoolId = () => {
     if (role === 'campus_admin') {
       return schoolId || null
@@ -136,7 +132,6 @@ export function AnnouncementPage() {
     }
   }, [isLoggedIn])
 
-  // 當學校清單載入完成後，設定預設學校ID
   useEffect(() => {
     if (!schoolsLoading && schools.length > 0) {
       const defaultSchoolId = getDefaultSchoolId()
@@ -281,7 +276,7 @@ export function AnnouncementPage() {
         </button>
       </div>
 
-      {/* 創建/編輯表單 */}
+      
       {showCreateForm && (
         <div className="bg-white border rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">
@@ -391,7 +386,7 @@ export function AnnouncementPage() {
         </div>
       )}
 
-      {/* 公告列表 */}
+      
       <div className="bg-white border rounded-lg">
         <div className="p-4 border-b">
           <h2 className="text-lg font-semibold">公告列表</h2>

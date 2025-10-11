@@ -34,11 +34,9 @@ def list_posts():
         try:
             query = db.query(InstagramPost).join(InstagramAccount)
 
-            # 權限過濾：只能查看自己學校的貼文
             if g.user.role == 'campus_admin':
                 query = query.filter(InstagramAccount.school_id == g.user.school_id)
 
-            # 篩選條件
             account_id = request.args.get('account_id', type=int)
             if account_id:
                 query = query.filter(InstagramPost.ig_account_id == account_id)
@@ -61,7 +59,6 @@ def list_posts():
             if carousel_group_id:
                 query = query.filter(InstagramPost.carousel_group_id == carousel_group_id)
 
-            # 日期範圍篩選
             start_date = request.args.get('start_date')
             if start_date:
                 try:
@@ -78,17 +75,14 @@ def list_posts():
                 except ValueError:
                     return jsonify({'error': 'Bad request', 'message': '無效的結束日期格式'}), 400
 
-            # 分頁
             page = request.args.get('page', 1, type=int)
             per_page = request.args.get('per_page', 20, type=int)
 
             total = query.count()
             posts = query.order_by(InstagramPost.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
-            # 序列化
             result = []
             for post in posts:
-                # 為沒有時區的 datetime 加上 UTC 標記
                 def add_tz(dt):
                     return dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
 
@@ -98,7 +92,7 @@ def list_posts():
                     'forum_post_id': post.forum_post_id,
                     'account_id': post.ig_account_id,
                     'account_username': post.account.username,
-                    'username': post.account.username,  # 前端相容字段
+                    'username': post.account.username,
                     'template_id': post.template_id,
                     'template_name': post.template.name if post.template else None,
                     'status': post.status.value,
@@ -141,7 +135,6 @@ def get_post(id):
             if not post:
                 return jsonify({'error': 'Not found', 'message': '發布記錄不存在'}), 404
 
-            # 為沒有時區的 datetime 加上 UTC 標記
             def add_tz(dt):
                 return dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
 
@@ -209,7 +202,6 @@ def retry_post(id):
             data = request.get_json() or {}
             reset_retry_count = data.get('reset_retry_count', False)
 
-            # 重置狀態
             post.status = PostStatus.PENDING
             post.error_message = None
             post.error_code = None
@@ -241,42 +233,34 @@ def get_stats():
             days = request.args.get('days', 7, type=int)
             start_date = datetime.utcnow() - timedelta(days=days)
 
-            # 基礎查詢
             query = db.query(InstagramPost).join(InstagramAccount)
 
-            # 權限過濾
             if g.user.role == 'campus_admin':
                 query = query.filter(InstagramAccount.school_id == g.user.school_id)
 
-            # 帳號篩選
             account_id = request.args.get('account_id', type=int)
             if account_id:
                 query = query.filter(InstagramPost.ig_account_id == account_id)
 
-            # 日期篩選
             query = query.filter(InstagramPost.created_at >= start_date)
 
-            # 統計各狀態數量
             status_stats = {}
             for status in PostStatus:
                 count = query.filter(InstagramPost.status == status).count()
                 status_stats[status.value] = count
 
-            # 今日發布數量
             today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             today_published = query.filter(
                 InstagramPost.status == PostStatus.PUBLISHED,
                 InstagramPost.published_at >= today_start
             ).count()
 
-            # 成功率
             total_attempts = query.filter(
                 InstagramPost.status.in_([PostStatus.PUBLISHED, PostStatus.FAILED])
             ).count()
             success_count = status_stats.get(PostStatus.PUBLISHED.value, 0)
             success_rate = (success_count / total_attempts * 100) if total_attempts > 0 else 0
 
-            # 狀態分類統計（提供給前端儀表）
             total_ready = status_stats.get(PostStatus.READY.value, 0)
             total_pending = (
                 status_stats.get(PostStatus.PENDING.value, 0)
@@ -285,7 +269,6 @@ def get_stats():
             )
             total_failed = status_stats.get(PostStatus.FAILED.value, 0)
 
-            # 保留舊欄位以向下相容
             pending_count = total_pending + total_ready
             failed_count = total_failed
 
@@ -314,9 +297,9 @@ def publish_carousel():
 
     Request Body:
         {
-          "forum_post_ids": [104,105],       # 必填，2-10 筆
-          "account_id": int (可選),          # 不提供時，若平台僅有一個啟用帳號則自動選用
-          "render": true/false (可選, 預設 true)  # 是否先渲染
+          "forum_post_ids": [104,105],
+          "account_id": int (可選),
+          "render": true/false (可選, 預設 true)
         }
 
     Returns:
@@ -345,7 +328,6 @@ def publish_carousel():
 
     with get_session() as db:
         try:
-            # 自動選帳號：若未指定，且僅有一個啟用帳號則選之
             if not account_id:
                 accounts = db.query(InstagramAccount).filter_by(is_active=True).all()
                 if len(accounts) == 0:
@@ -358,7 +340,6 @@ def publish_carousel():
             if not account:
                 return jsonify({'error': 'Bad request', 'message': f'IG 帳號 {account_id} 不存在或未啟用'}), 400
 
-            # 檢查論壇貼文存在
             posts = db.query(Post).filter(Post.id.in_(forum_post_ids)).all()
             if len(posts) != len(set(forum_post_ids)):
                 return jsonify({'error': 'Bad request', 'message': '部分論壇貼文不存在'}), 400
@@ -367,21 +348,18 @@ def publish_carousel():
             publisher = IGPublisher(db)
 
             ig_post_ids = []
-            # 先確保每篇加入佇列（BATCH）
             for pid in forum_post_ids:
                 ig_id = queue.add_to_queue(pid, account_id, publish_mode=PublishMode.BATCH)
                 if not ig_id:
                     return jsonify({'error': 'Internal error', 'message': f'加入佇列失敗: forum_post_id={pid}'}), 500
                 ig_post_ids.append(ig_id)
 
-            # 渲染
             if render:
                 for ig_id in ig_post_ids:
                     ok = queue.render_post(ig_id)
                     if not ok:
                         return jsonify({'error': 'Internal error', 'message': f'渲染失敗: ig_post_id={ig_id}'}), 500
 
-            # 發布輪播
             ok = publisher.publish_carousel(account_id, ig_post_ids)
             return jsonify({
                 'ok': bool(ok),

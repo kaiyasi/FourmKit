@@ -28,15 +28,13 @@ class UserStatus(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_activity: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # 通知設置
-    chat_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # 聊天通知
-    mention_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # 提及通知
-    system_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # 系統通知
+    chat_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    mention_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    system_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # 關聯
     user: Mapped["User"] = relationship("User", backref="status")
 
 
@@ -50,18 +48,15 @@ class UserNotification(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(String(1000), nullable=True)
 
-    # 相關數據
     room_id: Mapped[str] = mapped_column(String(64), nullable=True)  # 聊天室ID
     message_id: Mapped[int] = mapped_column(Integer, nullable=True)  # 消息ID
     from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)  # 發送者ID
 
-    # 狀態
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # 關聯
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     from_user: Mapped["User"] = relationship("User", foreign_keys=[from_user_id])

@@ -66,7 +66,6 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
     }
   };
 
-  // 莫蘭迪色系狀態標籤
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       pending: { text: '等待中', color: 'text-[#8B9CAA]' },      // 莫蘭迪灰藍
@@ -101,7 +100,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
 
   return (
     <div className="space-y-4">
-      {/* 過濾器 - 移除雙層渲染 */}
+      
       <div className="flex gap-2 flex-wrap">
         {[
           { value: 'all', label: '全部' },
@@ -125,7 +124,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
         ))}
       </div>
 
-      {/* 記錄列表 */}
+      
       {records.length === 0 ? (
         <div className="text-center py-8 text-muted">無發布記錄</div>
       ) : (
@@ -135,7 +134,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
               key={record.id}
               className="bg-surface border border-border rounded-xl shadow-soft hover:shadow-md transition"
             >
-              {/* 主要資訊 */}
+              
               <div
                 className="p-4 cursor-pointer"
                 onClick={() => toggleExpand(record.id)}
@@ -164,10 +163,10 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
                 </div>
               </div>
 
-              {/* 展開詳情 */}
+              
               {expandedId === record.id && (
                 <div className="border-t border-border px-4 py-4 bg-surface-hover space-y-4">
-                  {/* 基本資訊（總是顯示） */}
+                  
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <div className="text-muted mb-1">貼文 ID</div>
@@ -197,7 +196,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
                     )}
                   </div>
 
-                  {/* 圖片預覽 */}
+                  
                   {record.rendered_image_cdn_path && (
                     <div>
                       <div className="text-sm font-medium text-fg mb-2">渲染圖片：</div>
@@ -209,7 +208,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
                     </div>
                   )}
 
-                  {/* Caption 預覽 */}
+                  
                   {record.rendered_caption && (
                     <div>
                       <div className="text-sm font-medium text-fg mb-2">Caption：</div>
@@ -219,7 +218,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
                     </div>
                   )}
 
-                  {/* Instagram 連結 */}
+                  
                   {record.ig_permalink && (
                     <div>
                       <div className="text-sm font-medium text-fg mb-2">Instagram 連結：</div>
@@ -234,7 +233,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
                     </div>
                   )}
 
-                  {/* 錯誤訊息 */}
+                  
                   {record.error_message && (
                     <div>
                       <div className="text-sm font-medium text-[#B87C8B] mb-2">錯誤訊息：</div>
@@ -248,7 +247,7 @@ const PublishRecordList: React.FC<PublishRecordListProps> = ({ onRetry }) => {
                     </div>
                   )}
 
-                  {/* 操作按鈕 */}
+                  
                   {record.status === 'failed' && record.retry_count < record.max_retries && (
                     <div className="flex justify-end">
                       <button

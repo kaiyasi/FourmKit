@@ -17,7 +17,6 @@ from utils.notify import send_admin_event
 
 discord_bp = Blueprint('discord', __name__, url_prefix='/api/discord')
 
-# ===================== 權限檢查裝飾器 =====================
 
 def discord_admin_required(f):
     """要求 Discord 管理員權限"""
@@ -34,7 +33,6 @@ def discord_admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ===================== 伺服器配置 API =====================
 
 @discord_bp.route('/servers', methods=['GET'])
 @require_auth
@@ -84,23 +82,19 @@ def create_server():
         data = request.get_json()
         required_fields = ['server_id', 'server_name']
         
-        # 驗證必填欄位
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'success': False, 'error': f'缺少必填欄位: {field}'}), 400
         
-        # 驗證整合類型
         integration_type = data.get('integration_type', 'webhook_only')
         if integration_type not in [e.value for e in DiscordIntegrationType]:
             return jsonify({'success': False, 'error': '無效的整合類型'}), 400
         
         with get_session() as session:
-            # 檢查伺服器 ID 是否已存在
             existing = discord_service.get_server_config(session, data['server_id'])
             if existing:
                 return jsonify({'success': False, 'error': '該 Discord 伺服器已配置'}), 409
             
-            # 創建配置
             config_data = {
                 'bot_token': data.get('bot_token'),
                 'bot_nickname': data.get('bot_nickname'),
@@ -125,10 +119,8 @@ def create_server():
                 **config_data
             )
             
-            # 設置預設指令
             default_commands = discord_service.setup_default_commands(session, server_config.id)
             
-            # 記錄活動
             user_info = get_user_info()
             discord_service.log_activity(
                 session, server_config.id, "server_created",
@@ -137,7 +129,6 @@ def create_server():
                 metadata={'integration_type': integration_type, 'default_commands': len(default_commands)}
             )
             
-            # 發送通知
             send_admin_event(
                 "discord.server_created",
                 f"Discord 伺服器配置已創建",
@@ -170,7 +161,6 @@ def update_server(server_id: int):
             if not server:
                 return jsonify({'success': False, 'error': '伺服器配置不存在'}), 404
             
-            # 更新欄位
             updatable_fields = [
                 'server_name', 'bot_token', 'bot_nickname', 'webhook_url', 'webhook_name',
                 'integration_type', 'is_active', 'auto_sync', 'default_channel_id',
@@ -188,7 +178,6 @@ def update_server(server_id: int):
             )
             
             if updated_server:
-                # 記錄活動
                 user_info = get_user_info()
                 discord_service.log_activity(
                     session, server.id, "server_updated",
@@ -219,7 +208,6 @@ def delete_server(server_id: int):
             session.delete(server)
             session.commit()
             
-            # 記錄活動
             user_info = get_user_info()
             send_admin_event(
                 "discord.server_deleted",
@@ -234,7 +222,6 @@ def delete_server(server_id: int):
     except Exception as e:
         return jsonify({'success': False, 'error': f'刪除伺服器配置失敗: {str(e)}'}), 500
 
-# ===================== 指令管理 API =====================
 
 @discord_bp.route('/commands', methods=['GET'])
 @require_auth
@@ -248,12 +235,10 @@ def get_commands():
         
         with get_session() as session:
             if server_id:
-                # 獲取特定伺服器的指令
                 commands = discord_service.get_server_commands(
                     session, server_id, category=category, enabled_only=enabled_only
                 )
             else:
-                # 獲取所有指令
                 query = session.query(DiscordCommand)
                 if category:
                     query = query.filter_by(category=category)
@@ -299,7 +284,6 @@ def create_command():
         data = request.get_json()
         required_fields = ['server_id', 'command_name', 'description']
         
-        # 驗證必填欄位
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'success': False, 'error': f'缺少必填欄位: {field}'}), 400
@@ -329,7 +313,6 @@ def create_command():
                 **command_data
             )
             
-            # 記錄活動
             user_info = get_user_info()
             discord_service.log_activity(
                 session, data['server_id'], "command_created",
@@ -360,7 +343,6 @@ def update_command(command_id: int):
             updated_command = discord_service.update_command(session, command_id, **data)
             
             if updated_command:
-                # 記錄活動
                 user_info = get_user_info()
                 discord_service.log_activity(
                     session, command.server_id, "command_updated",
@@ -394,7 +376,6 @@ def delete_command(command_id: int):
             success = discord_service.delete_command(session, command_id)
             
             if success:
-                # 記錄活動
                 user_info = get_user_info()
                 discord_service.log_activity(
                     session, server_id, "command_deleted",
@@ -410,7 +391,6 @@ def delete_command(command_id: int):
     except Exception as e:
         return jsonify({'success': False, 'error': f'刪除指令失敗: {str(e)}'}), 500
 
-# ===================== 用戶權限管理 API =====================
 
 @discord_bp.route('/users', methods=['GET'])
 @require_auth
@@ -469,12 +449,10 @@ def set_user_permission():
         data = request.get_json()
         required_fields = ['server_id', 'discord_user_id', 'permission_level']
         
-        # 驗證必填欄位
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'success': False, 'error': f'缺少必填欄位: {field}'}), 400
         
-        # 驗證權限等級
         try:
             permission_level = DiscordPermissionLevel(data['permission_level'])
         except ValueError:
@@ -491,7 +469,6 @@ def set_user_permission():
                 forumkit_role=data.get('forumkit_role')
             )
             
-            # 記錄活動
             user_info = get_user_info()
             discord_service.log_activity(
                 session, data['server_id'], "user_permission_set",
@@ -515,7 +492,7 @@ def ban_user(user_id: int):
     try:
         data = request.get_json()
         ban_reason = data.get('ban_reason', '違反使用規定')
-        ban_duration_hours = data.get('ban_duration_hours')  # None = 永久封鎖
+        ban_duration_hours = data.get('ban_duration_hours')
         
         with get_session() as session:
             user_perm = session.query(DiscordUserPermission).filter_by(id=user_id).first()
@@ -531,7 +508,6 @@ def ban_user(user_id: int):
             )
             
             if success:
-                # 記錄活動
                 user_info = get_user_info()
                 discord_service.log_activity(
                     session, user_perm.server_id, "user_banned",
@@ -567,7 +543,6 @@ def unban_user(user_id: int):
             )
             
             if success:
-                # 記錄活動
                 user_info = get_user_info()
                 discord_service.log_activity(
                     session, user_perm.server_id, "user_unbanned",
@@ -584,7 +559,6 @@ def unban_user(user_id: int):
     except Exception as e:
         return jsonify({'success': False, 'error': f'解除封鎖失敗: {str(e)}'}), 500
 
-# ===================== 統計和日誌 API =====================
 
 @discord_bp.route('/stats', methods=['GET'])
 @require_auth
@@ -602,7 +576,6 @@ def get_stats():
             if server_id:
                 stats = discord_service.get_server_stats(session, server_id, start_date, end_date)
             else:
-                # 獲取所有伺服器的統計
                 servers = session.query(DiscordServerConfig).all()
                 combined_stats = {
                     "period": {
@@ -617,7 +590,6 @@ def get_stats():
                 for server in servers:
                     server_stats = discord_service.get_server_stats(session, server.id, start_date, end_date)
                     
-                    # 合併統計
                     combined_stats["commands"]["total"] += server_stats["commands"]["total"]
                     combined_stats["commands"]["successful"] += server_stats["commands"]["successful"]
                     combined_stats["commands"]["failed"] += server_stats["commands"]["failed"]
@@ -625,7 +597,6 @@ def get_stats():
                     combined_stats["users"]["banned"] += server_stats["users"]["banned"]
                     combined_stats["activities"]["total"] += server_stats["activities"]["total"]
                     
-                    # 合併分類統計
                     for category, count in server_stats["commands"]["by_category"].items():
                         combined_stats["commands"]["by_category"][category] = \
                             combined_stats["commands"]["by_category"].get(category, 0) + count
@@ -654,7 +625,6 @@ def get_activity_logs():
         limit = request.args.get('limit', 100, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        # 限制查詢數量
         limit = min(limit, 500)
         
         with get_session() as session:
@@ -663,7 +633,6 @@ def get_activity_logs():
                     session, server_id, activity_type, discord_user_id, command_name, limit, offset
                 )
             else:
-                # 查詢所有伺服器的日誌
                 query = session.query(DiscordActivityLog)
                 
                 if activity_type:
@@ -702,7 +671,6 @@ def get_activity_logs():
     except Exception as e:
         return jsonify({'success': False, 'error': f'獲取活動記錄失敗: {str(e)}'}), 500
 
-# ===================== 系統狀態 API =====================
 
 @discord_bp.route('/status', methods=['GET'])
 @require_auth
@@ -711,7 +679,6 @@ def get_system_status():
     """獲取 Discord 系統狀態"""
     try:
         with get_session() as session:
-            # 統計基本信息
             total_servers = session.query(DiscordServerConfig).count()
             active_servers = session.query(DiscordServerConfig).filter_by(is_active=True).count()
             total_commands = session.query(DiscordCommand).count()
@@ -719,7 +686,6 @@ def get_system_status():
             total_users = session.query(DiscordUserPermission).count()
             banned_users = session.query(DiscordUserPermission).filter_by(is_banned=True).count()
             
-            # 最近活動
             recent_logs = session.query(DiscordActivityLog).order_by(
                 DiscordActivityLog.created_at.desc()
             ).limit(10).all()

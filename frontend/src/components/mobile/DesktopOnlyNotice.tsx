@@ -7,6 +7,9 @@ interface DesktopOnlyNoticeProps {
   className?: string
 }
 
+/**
+ *
+ */
 export function DesktopOnlyNotice({
   title,
   description,

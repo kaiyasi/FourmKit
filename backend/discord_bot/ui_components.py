@@ -77,7 +77,6 @@ class CommandSelectMenu(discord.ui.Select):
         self.category = category
         self.commands_data = commands_data
         
-        # 根據分類設置選項
         options = []
         for cmd_name, cmd_info in commands_data.items():
             emoji = self._get_command_emoji(cmd_name)
@@ -122,7 +121,6 @@ class CommandSelectMenu(discord.ui.Select):
             color='info'
         )
         
-        # 如果有使用範例，創建按鈕
         view = None
         if cmd_info.get('usage_example'):
             view = CommandExampleView(selected_cmd, cmd_info)
@@ -149,7 +147,6 @@ class CommandExampleView(discord.ui.View):
     
     @discord.ui.button(label="執行指令", style=discord.ButtonStyle.primary, emoji="▶️")
     async def execute_command(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 這裡會觸發實際的指令執行
         await interaction.response.send_message(
             f"執行指令: `/{self.command}`", 
             ephemeral=True
@@ -197,7 +194,6 @@ class ModerationActionSelect(discord.ui.Select):
         action = self.values[0]
         
         if action == "reject":
-            # 打開拒絕原因的 Modal
             modal = RejectReasonModal()
             await interaction.response.send_modal(modal)
         elif action == "approve":
@@ -337,7 +333,6 @@ class ConfigurationSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         config_type = self.values[0]
         
-        # 根據選擇的配置類型顯示不同內容
         if config_type == "bot_config":
             embed = TerminalEmbed.create(
                 title="Bot 配置",

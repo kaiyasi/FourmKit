@@ -43,6 +43,9 @@ interface SupportStats {
   closed: number
 }
 
+/**
+ *
+ */
 export function MobileAdminSupport() {
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [stats, setStats] = useState<SupportStats>({
@@ -70,7 +73,10 @@ export function MobileAdminSupport() {
       setLoading(true)
       await new Promise(resolve => setTimeout(resolve, 1000))
       
+<<<<<<< Updated upstream
       // 模擬數據
+=======
+>>>>>>> Stashed changes
       const mockTickets: SupportTicket[] = [
         {
           id: 1,
@@ -143,7 +149,10 @@ export function MobileAdminSupport() {
           : ticket
       ))
   
+<<<<<<< Updated upstream
       // 更新統計
+=======
+>>>>>>> Stashed changes
       loadSupportData()
     }
   
@@ -291,7 +300,11 @@ export function MobileAdminSupport() {
           </div>
         ) : undefined}
       >
+<<<<<<< Updated upstream
         {/* 統計概覽 */}
+=======
+        
+>>>>>>> Stashed changes
         <div className="grid grid-cols-2 gap-3 mb-6">
           <MobileAdminStatCard
             title="等待回覆"
@@ -307,7 +320,11 @@ export function MobileAdminSupport() {
           />
         </div>
   
+<<<<<<< Updated upstream
         {/* 緊急工單提醒 */}
+=======
+        
+>>>>>>> Stashed changes
         {urgentTickets.length > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 dark:bg-red-900/10 dark:border-red-800/30">
             <div className="flex items-start gap-3">
@@ -330,7 +347,11 @@ export function MobileAdminSupport() {
           </div>
         )}
   
+<<<<<<< Updated upstream
         {/* 篩選器 */}
+=======
+        
+>>>>>>> Stashed changes
         <div className="bg-surface border border-border rounded-2xl p-4 mb-4">
           <div className="flex items-center gap-3 mb-3">
             <Filter className="w-4 h-4 text-muted" />
@@ -376,7 +397,11 @@ export function MobileAdminSupport() {
           </div>
         </div>
   
+<<<<<<< Updated upstream
         {/* 支援工單列表 */}
+=======
+        
+>>>>>>> Stashed changes
         <div className="space-y-3">
           {loading ? (
             Array(3).fill(0).map((_, i) => (

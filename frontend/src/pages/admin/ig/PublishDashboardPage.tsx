@@ -91,7 +91,7 @@ const PublishDashboardPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -113,7 +113,7 @@ const PublishDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 快捷功能入口 */}
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {quickLinks.map((link) => {
             const Icon = link.icon;
@@ -139,12 +139,12 @@ const PublishDashboardPage: React.FC = () => {
           })}
         </div>
 
-        {/* 統計概覽 */}
+        
         <div className="mb-6">
           <PublishStats />
         </div>
 
-        {/* 發布記錄 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-fg">發布記錄</h2>

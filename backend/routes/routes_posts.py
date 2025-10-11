@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_posts.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import Blueprint, request, jsonify, abort
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy.orm import Session
@@ -37,15 +41,12 @@ def _get_author_display_name(user: User, client_id: str = None) -> str:
     try:
         username = (getattr(user, 'username', '') or '').strip()
 
-        # 系統訊息
         if username.startswith('demo_') or username.startswith('system_') or username == 'system':
             return '系統訊息'
 
-        # 正常登入帳號（非匿名）
         if username and not username.startswith('anon_'):
             return username
 
-        # 匿名/未登入 → 由 client_id 轉 6 碼
         base = (client_id or '').strip()
         if base:
             h = hashlib.md5(base.encode('utf-8')).hexdigest().upper()
@@ -69,17 +70,13 @@ def _markdown_to_html(md: str) -> str:
     if not md:
         return ""
 
-    # 檢測是否已經是HTML格式（包含HTML標籤）
     if re.search(r'<[^>]+>', md):
-        # 如果已經是HTML，直接返回，但進行安全清理
         from utils.sanitize import clean_html
         return clean_html(md)
     
-    # 先轉義HTML特殊字符
     def escape_html(s: str) -> str:
         return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
-    # 處理程式碼區塊（先保存）
     code_blocks = []
     def save_code_block(match):
         code_blocks.append(match.group(1))
@@ -87,14 +84,11 @@ def _markdown_to_html(md: str) -> str:
     
     md = re.sub(r'```([\s\S]*?)```', save_code_block, md)
     
-    # 轉義HTML
     md = escape_html(md)
 
-    # 保護被反斜線轉義的 Markdown 符號（目前支援 *）
     ESCAPED_ASTERISK_TOKEN = '__ESCAPED_ASTERISK__'
     md = re.sub(r'\\\*', ESCAPED_ASTERISK_TOKEN, md)
     
-    # 處理標題（在段落處理之前）
     md = re.sub(r'^#{6}\s*(.+)$', r'<h6>\1</h6>', md, flags=re.MULTILINE)
     md = re.sub(r'^#{5}\s*(.+)$', r'<h5>\1</h5>', md, flags=re.MULTILINE)
     md = re.sub(r'^#{4}\s*(.+)$', r'<h4>\1</h4>', md, flags=re.MULTILINE)
@@ -102,17 +96,13 @@ def _markdown_to_html(md: str) -> str:
     md = re.sub(r'^#{2}\s*(.+)$', r'<h2>\1</h2>', md, flags=re.MULTILINE)
     md = re.sub(r'^#{1}\s*(.+)$', r'<h1>\1</h1>', md, flags=re.MULTILINE)
     
-    # 處理粗體和斜體
     md = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', md)
     md = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', md)
     
-    # 處理行內程式碼
     md = re.sub(r'`([^`]+)`', r'<code>\1</code>', md)
     
-    # 處理連結
     md = re.sub(r'\[([^\]]+)\]\((https?://[^)\s]+)\)', r'<a href="\2" target="_blank" rel="noreferrer">\1</a>', md)
     
-    # 處理清單和段落
     lines = md.split('\n')
     result_lines = []
     in_list = False
@@ -129,19 +119,17 @@ def _markdown_to_html(md: str) -> str:
                 in_quote = False
             continue
             
-        # 處理引用區段 (> 開頭)
         if line.startswith('> '):
             if not in_quote:
                 result_lines.append('<blockquote>')
                 in_quote = True
-            content = line[2:]  # 移除 '> '
+            content = line[2:]
             result_lines.append(f'<p>{content}</p>')
             continue
         elif in_quote:
             result_lines.append('</blockquote>')
             in_quote = False
             
-        # 處理橫隔線 (---)
         if line == '---':
             if in_list:
                 result_lines.append('</ul>')
@@ -153,14 +141,12 @@ def _markdown_to_html(md: str) -> str:
             if not in_list:
                 result_lines.append('<ul>')
                 in_list = True
-            # 移除列表標記並包裝內容
             content = re.sub(r'^[-*]\s+', '', line)
             result_lines.append(f'<li>{content}</li>')
         else:
             if in_list:
                 result_lines.append('</ul>')
                 in_list = False
-            # 檢查是否已經是標題
             if line.startswith('<h'):
                 result_lines.append(line)
             else:
@@ -173,7 +159,6 @@ def _markdown_to_html(md: str) -> str:
     
     html = '\n'.join(result_lines)
     
-    # 恢復程式碼區塊
     def restore_code_block(match):
         idx = int(match.group(1))
         code = code_blocks[idx]
@@ -181,7 +166,6 @@ def _markdown_to_html(md: str) -> str:
     
     html = re.sub(r'__CODE_BLOCK_(\d+)__', restore_code_block, html)
 
-    # 還原被保護的符號
     html = html.replace(ESCAPED_ASTERISK_TOKEN, '*')
 
     return html
@@ -236,7 +220,6 @@ def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bo
     except Exception:
         min_chars = 15
     if not school_slug:
-        # 跨校內容：優先 cross 學校設定，其次全域 cross 設定，再退回全域
         try:
             cross = db.query(School).filter(School.slug == 'cross').first()
             if cross:
@@ -257,7 +240,6 @@ def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bo
                     return enforce, min_chars
         except Exception:
             pass
-        # 全域 cross 設定（config）
         try:
             cr = cfg.get('cross_content_rules') if isinstance(cfg, dict) else None
             if isinstance(cr, dict):
@@ -278,7 +260,6 @@ def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bo
             return enforce, min_chars
         row = db.query(SchoolSetting).filter(SchoolSetting.school_id == sch.id).first()
         if not row or not (row.data or '').strip():
-            # 該校無設定 → 嘗試 cross 學校設定與全域 cross 設定
             try:
                 cross = db.query(School).filter(School.slug == 'cross').first()
                 if cross:
@@ -316,7 +297,6 @@ def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bo
             return enforce, min_chars
         import json
         data = json.loads(row.data)
-        # 允許兩種路徑：直掛或內層 content_rules
         cr = data
         if isinstance(data, dict) and isinstance(data.get('content_rules'), dict):
             cr = data.get('content_rules')
@@ -335,26 +315,23 @@ def _load_school_content_rules(db: Session, school_slug: str | None) -> tuple[bo
 
 @bp.get("/list")
 def list_posts():
-    limit = max(min(int(request.args.get("limit", 20)), 1000), 1)  # 增加最大值到 1000
+    limit = max(min(int(request.args.get("limit", 20)), 1000), 1)
     school_slug = (request.args.get("school") or "").strip() or None
     cross_only = (request.args.get("cross_only") or "").strip().lower() in {"1","true","yes"}
     show_all_schools = request.args.get("all_schools", "").strip().lower() in {'1', 'true', 'yes'}
     
     with get_session() as s:
-        # 基礎查詢
         q = s.query(Post).filter(
             and_(
                 Post.status=="approved",
-                Post.is_deleted==False  # 排除已刪除的貼文
+                Post.is_deleted==False
             )
         )
         
-        # 若要求僅跨校，優先忽略學校參數
         if cross_only:
             q = q.filter(
                 sa.or_(
                     Post.school_id.is_(None),
-                    # 回覆跨校貼文的回覆也算跨校
                     sa.and_(
                         Post.reply_to_post_id.isnot(None),
                         Post.reply_to_post_id.in_(
@@ -364,17 +341,14 @@ def list_posts():
                 )
             )
 
-        # 其餘情況：若指定了學校則用學校條件
         elif school_slug:
             school = s.query(School).filter(School.slug==school_slug).first()
             if school:
-                # 顯示本校貼文 + 全域內容（廣告、跨校/平台公告）+ 回覆本校貼文的回覆
                 q = q.filter(
                     sa.or_(
                         Post.school_id==school.id,
                         Post.is_advertisement==True,
                         sa.and_(Post.is_announcement==True, Post.school_id.is_(None)),
-                        # 回覆貼文：如果回覆的原貼文屬於本校，則顯示回覆
                         sa.and_(
                             Post.reply_to_post_id.isnot(None),
                             Post.reply_to_post_id.in_(
@@ -384,9 +358,8 @@ def list_posts():
                     )
                 )
             else:
-                q = q.filter(sa.text("1=0"))  # no results for unknown school
+                q = q.filter(sa.text("1=0"))
         
-        # 如果沒有指定學校且不是顯示所有學校，則根據用戶權限決定
         elif not show_all_schools:
             if not cross_only:
                 try:
@@ -395,32 +368,24 @@ def list_posts():
                     if uid:
                         user = s.query(User).get(uid)
                         if user:
-                            # 已登入用戶：根據權限過濾貼文
                             q = filter_posts_by_permissions(s, user, q)
                         else:
-                            # 用戶不存在：只顯示跨校貼文
                             q = q.filter(Post.school_id.is_(None))
                     else:
-                        # 未登入用戶：只顯示跨校貼文
                         q = q.filter(Post.school_id.is_(None))
                 except Exception:
-                    # 如果權限檢查失敗，只顯示跨校貼文（保守處理）
                     q = q.filter(Post.school_id.is_(None))
         
-        # 檢查用戶是否為會員，會員不顯示廣告貼文
         try:
             from utils.auth import get_effective_user_id
             uid = get_effective_user_id()
             if uid:
                 user = s.query(User).get(uid)
                 if user and user.is_premium:
-                    # 會員用戶：過濾掉廣告貼文
                     q = q.filter(Post.is_advertisement == False)
         except Exception:
-            # 如果檢查失敗，不過濾（保守處理）
             pass
         
-        # 置頂貼文排在最前，然後按創建時間倒序
         q = q.order_by(Post.is_pinned.desc(), Post.id.desc()).limit(limit)
         rows = q.all()
         items = []
@@ -435,14 +400,13 @@ def list_posts():
                          and_(
                              Media.post_id.in_(post_ids), 
                              Media.status=="approved",
-                             Media.is_deleted==False  # 排除已刪除的媒體
+                             Media.is_deleted==False
                          )
                      )
                      .group_by(Media.post_id)
                      .all()
                 )
                 count_map = {pid: int(c) for pid, c in counts}
-                # 留言數量
                 c_counts = (
                     s.query(Comment.post_id, func.count(Comment.id))
                      .filter(
@@ -461,7 +425,7 @@ def list_posts():
                          and_(
                              Media.post_id.in_(post_ids), 
                              Media.status=="approved",
-                             Media.is_deleted==False  # 排除已刪除的媒體
+                             Media.is_deleted==False
                          )
                      )
                      .order_by(Media.post_id.asc(), Media.id.asc())
@@ -479,17 +443,12 @@ def list_posts():
             except Exception:
                 pass
         for p in rows:
-            # 顯示作者名稱：
-            # - 系統帳號 → 「系統訊息」
-            # - 登入用戶 → username
-            # - 匿名/未登入 → 依貼文的 client_id 產生 6 碼代號（與查看者無關）
             try:
                 u = s.query(User).get(p.author_id)
                 label = _get_author_display_name(u, getattr(p, 'client_id', None))
             except Exception:
                 label = "未知"
             
-            # 獲取學校資訊
             school_info = None
             school_name = None
             if p.school_id:
@@ -505,33 +464,25 @@ def list_posts():
                     }
                     school_name = school.name
             
-            # 特別指定：覆寫顯示用學校（依需求）
             if int(p.id) == 3:
-                # ID3 視為跨校
                 school_info = None
                 school_name = None
                 try:
-                    p.school_id = None  # 僅影響回傳 payload，不改資料庫
+                    p.school_id = None
                 except Exception:
                     pass
             elif int(p.id) == 4:
-                # ID4 視為成功大學（若資料庫無對應，至少提供名稱）
                 if not school_info:
                     school_info = None
                 school_name = '成功大學'
 
-            # 封面 URL/路徑處理
-            # resolve_or_publish_public_media 現在可能回傳完整 URL 或本地相對 URL
             cover_url = cover_map.get(p.id)
             cover_path = None
             if cover_url:
-                # 如果是本地 URL，移除 /uploads/ 前綴以得到相對路徑
                 if cover_url.startswith("/uploads/"):
                     cover_path = cover_url[len("/uploads/"):]
-                # 如果是 CDN URL，試著解析出相對路徑
                 elif cdn_base_url := (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/"):
                     if cover_url.startswith(cdn_base_url):
-                        # 組合出 public/media/... 的路徑
                         relative_part = cover_url[len(cdn_base_url):].lstrip('/')
                         if '/' in relative_part:
                             cover_path = f"public/{relative_part}"
@@ -543,9 +494,9 @@ def list_posts():
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
                 "media_count": media_count,
-                "has_media": media_count > 0,  # 新增：是否包含圖片附件
-                "cover_path": cover_path, # 前端可能需要相對路徑
-                "cover_url": cover_url,   # 完整的、可直接使用的 URL
+                "has_media": media_count > 0,
+                "cover_path": cover_path,
+                "cover_url": cover_url,
                 "school_id": p.school_id,
                 "school": school_info,
                 "school_name": school_name,
@@ -578,19 +529,17 @@ def list_posts_compat():
     - 追加日期篩選 start/end（ISO 或 YYYY-MM-DD）
     """
     page = max(int(request.args.get("page", 1) or 1), 1)
-    per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 1000)  # 增加最大值到 1000
+    per_page = min(max(int(request.args.get("per_page", 10) or 10), 1), 1000)
     school_slug = (request.args.get("school") or "").strip() or None
     show_all_schools = (request.args.get("all_schools") or "").strip().lower() in {"1", "true", "yes"}
     keyword = (request.args.get("q") or "").strip()
 
-    # 日期篩選（可選）
     start_raw = (request.args.get("start") or request.args.get("from") or "").strip()
     end_raw = (request.args.get("end") or request.args.get("to") or "").strip()
     start_dt = None
     end_dt = None
     if start_raw:
         try:
-            # 允許 YYYY-MM-DD 或 ISO8601
             start_dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
         except Exception:
             try:
@@ -610,26 +559,22 @@ def list_posts_compat():
         base = s.query(Post).filter(
             and_(
                 Post.status == "approved",
-                Post.is_deleted == False  # 排除已刪除的貼文
+                Post.is_deleted == False
             )
         )
 
-        # 日期條件
         if start_dt is not None:
             base = base.filter(Post.created_at >= start_dt)
         if end_dt is not None:
             base = base.filter(Post.created_at <= end_dt)
 
-        # 關鍵字搜尋（內容）
         if keyword:
             try:
-                # 避免過長/惡意字串
                 kw = keyword[:100]
                 base = base.filter(Post.content.ilike(f"%{kw}%"))
             except Exception:
                 pass
 
-        # 學校與權限條件
         if school_slug:
             school = s.query(School).filter(School.slug == school_slug).first()
             if school:
@@ -637,7 +582,6 @@ def list_posts_compat():
             else:
                 base = base.filter(sa.text("1=0"))
         else:
-            # 無指定學校時，是否允許查看所有學校？預設僅 dev_admin 可用 all_schools
             try:
                 uid = get_effective_user_id()
             except Exception:
@@ -649,10 +593,8 @@ def list_posts_compat():
                 user = None
 
             if show_all_schools:
-                # 全部：開放查看所有學校的公開貼文
                 pass
             else:
-                # 依權限：未登入/無權 → 僅跨校；有權 → 允許其校與跨校
                 try:
                     if user is not None:
                         base = filter_posts_by_permissions(s, user, base)
@@ -661,16 +603,13 @@ def list_posts_compat():
                 except Exception:
                     base = base.filter(Post.school_id.is_(None))
 
-        # 檢查用戶是否為會員，會員不顯示廣告貼文
         try:
             uid = get_effective_user_id()
             if uid:
                 user = s.query(User).get(uid)
                 if user and user.is_premium:
-                    # 會員用戶：過濾掉廣告貼文
                     base = base.filter(Post.is_advertisement == False)
         except Exception:
-            # 如果檢查失敗，不過濾（保守處理）
             pass
 
         total = base.count()
@@ -681,28 +620,25 @@ def list_posts_compat():
                 .all()
         )
         items = []
-        # 依貼文批次查詢已核准媒體數與封面（以最早核准的媒體作為封面）
         post_ids = [p.id for p in rows]
         cover_map: dict[int, str] = {}
         count_map: dict[int, int] = {}
         comment_map: dict[int, int] = {}
         if post_ids:
             try:
-                # 計數
                 counts = (
                     s.query(Media.post_id, func.count(Media.id))
                      .filter(
                          and_(
                              Media.post_id.in_(post_ids), 
                              Media.status=="approved",
-                             Media.is_deleted==False  # 排除已刪除的媒體
+                             Media.is_deleted==False
                          )
                      )
                      .group_by(Media.post_id)
                      .all()
                 )
                 count_map = {pid: int(c) for pid, c in counts}
-                # 留言數量
                 c_counts = (
                     s.query(Comment.post_id, func.count(Comment.id))
                      .filter(
@@ -715,14 +651,13 @@ def list_posts_compat():
                      .all()
                 )
                 comment_map = {pid: int(c) for pid, c in c_counts}
-                # 封面：取每個 post_id 最小 id 的已核准媒體
                 medias = (
                     s.query(Media)
                      .filter(
                          and_(
                              Media.post_id.in_(post_ids), 
                              Media.status=="approved",
-                             Media.is_deleted==False  # 排除已刪除的媒體
+                             Media.is_deleted==False
                          )
                      )
                      .order_by(Media.post_id.asc(), Media.id.asc())
@@ -740,13 +675,11 @@ def list_posts_compat():
             except Exception:
                 pass
         for p in rows:
-            # 舊相容路由也改為一致顯示規則
             try:
                 u = s.query(User).get(p.author_id)
                 label = _get_author_display_name(u, getattr(p, 'client_id', None))
             except Exception:
                 label = "未知"
-            # 學校資訊
             school_info = None
             school_name = None
             try:
@@ -764,25 +697,19 @@ def list_posts_compat():
                         school_name = sch.name
             except Exception:
                 pass
-            # 封面 URL/路徑處理
-            # resolve_or_publish_public_media 現在可能回傳完整 URL 或本地相對 URL
             cover_url = cover_map.get(p.id)
             cover_path = None
             if cover_url:
-                # 如果是本地 URL，移除 /uploads/ 前綴以得到相對路徑
                 if cover_url.startswith("/uploads/"):
                     cover_path = cover_url[len("/uploads/"):]
-                # 如果是 CDN URL，試著解析出相對路徑
                 elif cdn_base_url := (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/"):
                     if cover_url.startswith(cdn_base_url):
-                        # 組合出 public/media/... 的路徑
                         relative_part = cover_url[len(cdn_base_url):].lstrip('/')
                         if '/' in relative_part:
                             cover_path = f"public/{relative_part}"
 
             media_count = int(count_map.get(p.id, 0))
 
-            # 獲取完整的媒體列表（用於 IG 模板預覽）
             media_list = []
             try:
                 post_medias = s.query(Media).filter(
@@ -793,7 +720,6 @@ def list_posts_compat():
                     )
                 ).order_by(Media.id.asc()).all()
 
-                # 直接使用資料庫中的相對路徑，不轉換為 CDN URL
                 for m in post_medias:
                     if m.path:
                         media_list.append(m.path)
@@ -806,10 +732,10 @@ def list_posts_compat():
                 "created_at": (p.created_at.isoformat() if getattr(p, "created_at", None) else None),
                 "author_hash": label,
                 "media_count": media_count,
-                "has_media": media_count > 0,  # 新增：是否包含圖片附件
-                "media": media_list,  # 完整的媒體列表（URL 陣列）
-                "cover_path": cover_path, # 前端可能需要相對路徑
-                "cover_url": cover_url,   # 完整的、可直接使用的 URL
+                "has_media": media_count > 0,
+                "media": media_list,
+                "cover_path": cover_path,
+                "cover_url": cover_url,
                 "school_id": (p.school_id or None),
                 "school": school_info,
                 "school_name": school_name,
@@ -818,7 +744,7 @@ def list_posts_compat():
                 "is_pinned": bool(getattr(p, "is_pinned", False)),
                 "is_advertisement": bool(getattr(p, "is_advertisement", False)),
                 "is_announcement": bool(getattr(p, "is_announcement", False)),
-                "announcement_type": getattr(p, "announcement_type", None),  # 添加 announcement_type 欄位
+                "announcement_type": getattr(p, "announcement_type", None),
                 "pinned_at": (p.pinned_at.isoformat() if getattr(p, "pinned_at", None) else None),
                 "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
             })
@@ -847,7 +773,6 @@ def get_post(pid: int):
             label = _get_author_display_name(u, getattr(p, 'client_id', None))
         except Exception:
             label = "未知"
-        # 取已核准媒體（僅 public 路徑）
         media_items = []
         try:
             medias = (
@@ -869,17 +794,14 @@ def get_post(pid: int):
                 if not url:
                     continue
 
-                # 推測類型（前端可再判斷）
                 ext = (url.rsplit(".",1)[-1].split("?")[0] or "").lower()
                 kind = "image" if ext in {"jpg","jpeg","png","webp","gif"} else ("video" if ext in {"mp4","webm","mov"} else "other")
                 
-                # 解析相對路徑 for 'path' field
                 path = None
                 if url.startswith("/uploads/"):
                     path = url[len("/uploads/"):]
                 elif cdn_base_url and url.startswith(cdn_base_url):
                     relative_part = url[len(cdn_base_url):].lstrip('/')
-                    # 假設 CDN URL 結構為 .../media/123.jpg -> public/media/123.jpg
                     if '/' in relative_part:
                         path = f"public/{relative_part}"
 
@@ -891,7 +813,6 @@ def get_post(pid: int):
                 })
         except Exception:
             media_items = []
-        # 構造學校資訊（與列表一致）
         school_info = None
         try:
             if getattr(p, 'school_id', None):
@@ -937,7 +858,6 @@ def create_post():
     uid = get_effective_user_id()
     if uid is None:
         abort(401)
-    # CAPTCHA Gate（若此 IP 被標記需要驗證；管理員豁免在取得 user 後處理）
     ip_for_gate = get_client_ip()
     
     data = request.get_json() or {}
@@ -947,8 +867,6 @@ def create_post():
     announcement_type = data.get("announcement_type", "school") if is_announcement else None
     want_advertisement = bool(data.get("is_advertisement", False))
     
-    # 內容最小字數審核
-    # 依學校（若有）載入內容規則覆寫
     from utils.db import get_session as _gs
     with _gs() as _s:
         enforce_min, min_chars = _load_school_content_rules(_s, school_slug)
@@ -963,7 +881,6 @@ def create_post():
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
     
-    # 解析回覆目標（可選）
     reply_to_id = None
     try:
         rid_raw = data.get("reply_to_id")
@@ -975,11 +892,9 @@ def create_post():
         reply_to_id = None
 
     with get_session() as s:
-        # 獲取用戶信息
         user = s.query(User).get(uid)
         if not user:
             return _wrap_err("USER_NOT_FOUND", "用戶不存在", 404)
-        # 若需要 CAPTCHA 且非管理員，要求驗證
         try:
             from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
             if user.role not in ['dev_admin','admin'] and is_captcha_required(ip_for_gate):
@@ -991,7 +906,6 @@ def create_post():
         except Exception:
             pass
         
-        # 確定目標學校ID
         target_school_id = None
         if school_slug:
             sch = s.query(School).filter(School.slug==school_slug).first()
@@ -1000,30 +914,24 @@ def create_post():
             else:
                 return _wrap_err("SCHOOL_NOT_FOUND", "指定的學校不存在", 404)
         
-        # 檢查用戶是否有權限在該學校發文
         if not can_post_to_school(user, target_school_id):
             return _wrap_err("PERMISSION_DENIED", "您沒有權限在該學校發文", 403)
         
-        # 廣告權限與旗標（僅 dev_admin / commercial 可選）
         is_advertisement = False
         if user and user.role in ['dev_admin', 'commercial'] and want_advertisement:
             is_advertisement = True
             target_school_id = None  # 廣告貼文一律跨校
         
-        # 檢查公告權限
         if is_announcement:
             if user.role == 'dev_admin':
-                # dev_admin 可以發全平台、跨校、學校公告
                 if announcement_type not in ['platform', 'cross', 'school']:
                     return _wrap_err("INVALID_ANNOUNCEMENT_TYPE", "無效的公告類型", 400)
             elif user.role == 'campus_admin':
-                # campus_admin 只能發學校公告
                 if announcement_type != 'school':
                     return _wrap_err("PERMISSION_DENIED", "campus_admin 只能發學校公告", 403)
                 if not target_school_id or (user.school_id and target_school_id != user.school_id):
                     return _wrap_err("PERMISSION_DENIED", "campus_admin 只能在自己的學校發公告", 403)
             elif user.role == 'cross_admin':
-                # cross_admin 只能發跨校公告
                 if announcement_type != 'cross':
                     return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
                 if target_school_id is not None:
@@ -1031,7 +939,6 @@ def create_post():
             else:
                 return _wrap_err("PERMISSION_DENIED", "您沒有權限發布公告", 403)
         
-        # 公告需要 dev_admin 審核，廣告直接核准發布，其餘仍走送審
         initial_status = "approved" if is_advertisement else "pending"
         p = Post(
             author_id=uid, 
@@ -1047,14 +954,12 @@ def create_post():
             if not ref:
                 return _wrap_err("REPLY_TARGET_NOT_FOUND", "無法回覆：目標貼文不存在", 404)
             p.reply_to_post_id = reply_to_id
-            # 回覆貼文自動繼承被回覆貼文的學校設定
             target_school_id = ref.school_id
         try:
             p.client_id = (request.headers.get('X-Client-Id') or '').strip() or None
             p.ip = get_client_ip()
         except Exception:
             pass
-        # 風控：同一使用者 24 小時不同 IP 數量限制（管理員豁免）
         try:
             if user.role not in ['dev_admin', 'admin']:
                 allowed, cnt, th = track_and_check_user_ip(int(uid), p.ip)
@@ -1068,12 +973,10 @@ def create_post():
         s.refresh(p)
         s.commit()
         
-        # 記錄貼文發布事件
         try:
             from services.event_service import EventService
             u = s.query(User).filter(User.id == uid).first()
             if u:
-                # 根據是否為公告選擇不同的事件類型
                 event_type = "content.announcement.created" if is_announcement else "content.post.created"
                 title = "公告發布" if is_announcement else "貼文發布"
                 description = f"用戶 {u.username} 發布了{'公告' if is_announcement else '貼文'} #{p.id}"
@@ -1111,12 +1014,10 @@ def upload_media():
     uid = get_effective_user_id()
     if uid is None:
         abort(401)
-    # 接 multipart/form-data: file, post_id
     f = request.files.get("file")
     post_id = int(request.form.get("post_id", "0"))
     school_slug = _extract_school_slug((request.form.get("school_slug") or "").strip())
     if not f or not is_allowed(f.filename): abort(422)
-    # 大小與嗅探
     max_size_mb = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
     _ = max_size_mb * 1024 * 1024
     try:
@@ -1171,7 +1072,6 @@ def create_post_compat():
     school_slug = _extract_school_slug((data.get("school_slug") or "").strip())
     is_announcement = bool(data.get("is_announcement", False))
     announcement_type = data.get("announcement_type", "school") if is_announcement else None
-    # 內容最小字數審核（僅限純文字發文；附檔案另一路由）
     from utils.db import get_session as _gs
     with _gs() as _s:
         enforce_min, min_chars = _load_school_content_rules(_s, school_slug)
@@ -1184,7 +1084,6 @@ def create_post_compat():
     max_len = int(os.getenv("POST_MAX_CHARS", "5000"))
     if len(content) > max_len:
         return _wrap_err("CONTENT_TOO_LONG", f"內容過長（最多 {max_len} 字）", 422)
-    # 解析回覆目標（可選）
     reply_to_id = None
     try:
         rid_raw = data.get("reply_to_id")
@@ -1197,9 +1096,7 @@ def create_post_compat():
 
     ip_for_gate = get_client_ip()
     with get_session() as s:
-        # 獲取用戶信息檢查是否為廣告帳號
         user = s.query(User).get(uid)
-        # CAPTCHA Gate for non-admin
         try:
             from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
             if user and user.role not in ['dev_admin','admin'] and is_captcha_required(ip_for_gate):
@@ -1213,27 +1110,22 @@ def create_post_compat():
         want_ad = bool(data.get("is_advertisement", False))
         is_advertisement = bool(user and user.role in ['dev_admin','commercial'] and want_ad)
         
-        # 確定學校ID
         target_school_id = None
         if school_slug and not is_advertisement:
             sch = s.query(School).filter(School.slug==school_slug).first()
             if sch:
                 target_school_id = sch.id
         
-        # 檢查公告權限
         if is_announcement and user:
             if user.role == 'dev_admin':
-                # dev_admin 可以發全平台、跨校、學校公告
                 if announcement_type not in ['platform', 'cross', 'school']:
                     return _wrap_err("INVALID_ANNOUNCEMENT_TYPE", "無效的公告類型", 400)
             elif user.role == 'campus_admin':
-                # campus_admin 只能發學校公告
                 if announcement_type != 'school':
                     return _wrap_err("PERMISSION_DENIED", "campus_admin 只能發學校公告", 403)
                 if not target_school_id or (user.school_id and target_school_id != user.school_id):
                     return _wrap_err("PERMISSION_DENIED", "campus_admin 只能在自己的學校發公告", 403)
             elif user.role == 'cross_admin':
-                # cross_admin 只能發跨校公告
                 if announcement_type != 'cross':
                     return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
                 if target_school_id is not None:
@@ -1252,7 +1144,6 @@ def create_post_compat():
             announcement_type=announcement_type
         )
         if reply_to_id:
-            # 驗證目標貼文存在且未刪除
             ref = s.query(Post).filter(Post.id == reply_to_id, Post.is_deleted == False).first()
             if not ref:
                 return _wrap_err("REPLY_TARGET_NOT_FOUND", "無法回覆：目標貼文不存在", 404)
@@ -1262,7 +1153,6 @@ def create_post_compat():
             p.ip = get_client_ip()
         except Exception:
             pass
-        # 風控：同一使用者 24 小時不同 IP 數量限制
         try:
             if user and user.role not in ['dev_admin', 'admin']:
                 allowed, cnt, th = track_and_check_user_ip(int(uid), p.ip)
@@ -1272,12 +1162,10 @@ def create_post_compat():
             pass
         s.add(p); s.flush(); s.refresh(p)
         s.commit()
-        # 記錄事件
         try:
             u = s.query(User).get(uid)
             if u:
                 from services.event_service import EventService
-                # 根據是否為公告選擇不同的事件類型
                 event_type = "content.announcement.created" if is_announcement else "content.post.created"
                 title = "公告發布" if is_announcement else "貼文發布"
                 description = f"用戶 {u.username} 發布了{'公告' if is_announcement else '貼文'} #{p.id}"
@@ -1306,13 +1194,10 @@ def create_post_compat():
                 )
         except Exception:
             pass
-        # 偵測 @提及 並寫入通知中心（最佳努力，不影響主流程）
         try:
             from services.notification_service import NotificationService
-            # 從內容中抓取被提及的使用者
             mentioned_user_ids = NotificationService._extract_mentions(p.content or '', s)  # type: ignore[attr-defined]
             if mentioned_user_ids:
-                # 準備作者顯示名（與前端一致的匿名/代號邏輯）
                 client_id = request.headers.get("X-Client-Id", "").strip()
                 author_user = s.query(User).get(uid)
                 author_label = _get_author_display_name(author_user, client_id)
@@ -1331,7 +1216,6 @@ def create_post_compat():
                             from_user_id=int(uid),
                             session=s,
                         )
-                        # 若該用戶在線，嘗試即時推播
                         try:
                             from services.socket_chat_service import SocketChatService
                             SocketChatService.notify_user(int(target_uid), 'mention', {
@@ -1344,7 +1228,6 @@ def create_post_compat():
                             pass
                     except Exception:
                         continue
-                # 同步寫一筆事件，方便管理端與 Discord Hook 觀察
                 try:
                     from services.event_service import EventService
                     fields = [
@@ -1371,7 +1254,6 @@ def create_post_compat():
                     pass
         except Exception:
             pass
-        # 使用新的匿名帳號顯示邏輯
         client_id = request.headers.get("X-Client-Id", "").strip()
         try:
             u = s.query(User).get(p.author_id)
@@ -1385,7 +1267,6 @@ def create_post_compat():
             "author_hash": author_label,
             "reply_to_id": (getattr(p, "reply_to_post_id", None) or None),
         }
-    # best-effort broadcast (optional)
     try:
         from app import socketio
         origin = None
@@ -1399,7 +1280,6 @@ def create_post_compat():
             origin = f"client:{(request.headers.get('X-Client-Id') or '-').strip()}"
         socketio.emit("post_created", {"post": payload, "origin": origin, "client_tx_id": data.get("client_tx_id")})
         
-        # 發送送審事件
         socketio.emit("post.pending", {
             "post_id": p.id,
             "content": p.content[:100] + "..." if len(p.content) > 100 else p.content,
@@ -1426,7 +1306,6 @@ def request_delete(pid: int):
     if not reason:
         return _wrap_err("REASON_REQUIRED", "請提供刪文理由", 400)
     
-    # 獲取請求者ID（如果已登入）
     requester_id = None
     try:
         requester_id = get_jwt_identity()
@@ -1439,7 +1318,6 @@ def request_delete(pid: int):
         result = DeleteService.create_delete_request(s, pid, reason, requester_id)
         
         if result["success"]:
-            # 廣播送審事件給管理端
             try:
                 from app import socketio
                 socketio.emit("delete_request.created", {
@@ -1465,7 +1343,6 @@ def create_post_with_media_compat():
     uid = get_effective_user_id()
     if uid is None:
         return _wrap_err("UNAUTHORIZED", "缺少授權資訊", 401)
-    # Must be multipart/form-data
     if not request.content_type or not request.content_type.startswith("multipart/form-data"):
         return _wrap_err("INVALID_CONTENT_TYPE", "請使用 multipart/form-data", 400)
 
@@ -1474,20 +1351,16 @@ def create_post_with_media_compat():
     is_announcement = bool(request.form.get("is_announcement", False))
     announcement_type = request.form.get("announcement_type", "school") if is_announcement else None
     want_advertisement = (str(request.form.get("is_advertisement", "")).lower() in {"1","true","yes","on"})
-    # 若有附件上傳，允許空內容（略過最小字數審核）
 
     files = request.files.getlist("files")
     if not files:
         return _wrap_err("NO_FILES", "未上傳任何檔案", 422)
-    # 若沒有內容且有附件，直接允許；若有內容仍可沿用（不再做最小字數檢查）
 
-    # 與 /api/posts/upload 對齊：預設使用專案內 uploads 目錄，避免容器外 /data 權限問題
     upload_root = os.getenv("UPLOAD_ROOT", "uploads")
 
     saved_any = False
     media_records = []  # 暫存媒體記錄
     
-    # 先處理所有檔案，確保都有效
     for fs in files:
             fname = (fs.filename or "").strip()
             if not fname:
@@ -1495,19 +1368,15 @@ def create_post_with_media_compat():
             if not is_allowed(fname):
                 return _wrap_err("UNSUPPORTED_FILE", f"不支援的檔案格式: {fname}", 400)
             
-            # 先處理檔案，不創建資料庫記錄
             try:
                 from utils.upload_utils import save_media_simple
-                # 先計算檔案大小，避免在 save_media_simple 中消耗檔案流
                 fs.seek(0, os.SEEK_END)
                 file_size = fs.tell()
                 fs.seek(0)
                 
-                # 使用臨時 ID 保存檔案
                 temp_id = len(media_records) + 1
                 upload_result = save_media_simple(fs, temp_id, upload_root)
                 
-                # 暫存媒體資訊
                 media_records.append({
                     "file_name": fname,
                     "path": upload_result["path"],
@@ -1523,7 +1392,6 @@ def create_post_with_media_compat():
     if not saved_any:
         return _wrap_err("NO_VALID_FILES", "沒有有效的檔案", 422)
 
-    # 所有檔案處理成功後，創建貼文和媒體記錄
     post_id = None
     post_content = content or ""
     post_author_id = uid
@@ -1531,7 +1399,6 @@ def create_post_with_media_compat():
     post_ip = get_client_ip()
     post_school_id = None
     
-    # 廣告權限與旗標（僅 dev_admin / commercial 可選）
     is_advertisement = False
     try:
         with get_session() as s:
@@ -1543,7 +1410,6 @@ def create_post_with_media_compat():
                 if sch:
                     post_school_id = sch.id
                     
-            # CAPTCHA Gate for non-admin
             try:
                 from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
                 if user and user.role not in ['dev_admin','admin'] and is_captcha_required(post_ip):
@@ -1555,27 +1421,22 @@ def create_post_with_media_compat():
             except Exception:
                 pass
 
-            # 檢查公告權限
             if is_announcement and user:
                 if user.role == 'dev_admin':
-                    # dev_admin 可以發全平台、跨校、學校公告
                     if announcement_type not in ['platform', 'cross', 'school']:
                         return _wrap_err("INVALID_ANNOUNCEMENT_TYPE", "無效的公告類型", 400)
                 elif user.role == 'campus_admin':
-                    # campus_admin 只能發學校公告
                     if announcement_type != 'school':
                         return _wrap_err("PERMISSION_DENIED", "campus_admin 只能發學校公告", 403)
                     if not post_school_id or (user.school_id and post_school_id != user.school_id):
                         return _wrap_err("PERMISSION_DENIED", "campus_admin 只能在自己的學校發公告", 403)
                 elif user.role == 'cross_admin':
-                    # cross_admin 只能發跨校公告
                     if announcement_type != 'cross':
                         return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
                     if post_school_id is not None:
                         return _wrap_err("PERMISSION_DENIED", "cross_admin 只能發跨校公告", 403)
                 else:
                     return _wrap_err("PERMISSION_DENIED", "您沒有權限發布公告", 403)
-            # 風控：同一使用者 24 小時不同 IP 數量限制（管理員豁免）
             try:
                 if user and user.role not in ['dev_admin', 'admin']:
                     allowed, cnt, th = track_and_check_user_ip(int(uid), post_ip)
@@ -1606,7 +1467,6 @@ def create_post_with_media_compat():
             s.refresh(p)
             post_id = p.id
 
-            # 記錄事件
             try:
                 u = s.query(User).get(post_author_id)
                 if u:
@@ -1636,7 +1496,6 @@ def create_post_with_media_compat():
             except Exception:
                 pass
 
-            # 創建媒體記錄
             for i, media_info in enumerate(media_records):
                 m = Media(
                     post_id=p.id,
@@ -1654,16 +1513,13 @@ def create_post_with_media_compat():
                 s.add(m)
                 s.flush()  # 獲取媒體 ID
                 
-                # 移動檔案到正確的 ID
                 from utils.upload_utils import move_media_file
                 temp_id = i + 1
                 if move_media_file(temp_id, m.id, upload_root):
-                    # 更新路徑
                     m.path = f"media/{m.id}.{media_info['path'].split('.')[-1]}"
 
             s.commit()
     except Exception as e:
-        # 如果資料庫操作失敗，清理已保存的檔案
         try:
             from utils.upload_utils import cleanup_temp_files
             for i in range(len(media_records)):
@@ -1673,7 +1529,6 @@ def create_post_with_media_compat():
             pass
         return _wrap_err("DB_OPERATION_FAILED", f"資料庫操作失敗：{e}", 500)
 
-    # 使用新的匿名帳號顯示邏輯
     client_id = request.headers.get("X-Client-Id", "").strip()
     try:
         with get_session() as s:
@@ -1688,7 +1543,6 @@ def create_post_with_media_compat():
         "author_hash": author_label,
     }
 
-    # best-effort broadcast (optional)
     try:
         from app import socketio
         origin = None
@@ -1702,7 +1556,6 @@ def create_post_with_media_compat():
             origin = f"client:{(request.headers.get('X-Client-Id') or '-').strip()}"
         socketio.emit("post_created", {"post": payload, "origin": origin, "client_tx_id": request.form.get("client_tx_id")})
         
-        # 發送送審事件
         socketio.emit("post.pending", {
             "post_id": post_id,
             "content": post_content[:100] + "..." if len(post_content) > 100 else post_content,
@@ -1750,13 +1603,11 @@ def unpin_post(post_id: int):
                 return _wrap_err("NOT_FOUND", "貼文不存在", 404)
             
             if not post.is_pinned:
-                # 冪等處理：已非置頂，視為成功
                 return _wrap_ok({
                     "message": "已取消置頂",
                     "post_id": post_id
                 })
             
-            # 取消置頂
             post.is_pinned = False
             post.pinned_at = None
             post.pinned_by = None
@@ -1783,7 +1634,7 @@ def unpin_post(post_id: int):
 
 @bp.patch("/<int:post_id>/pin")
 @bp.patch("/<int:post_id>/pin/")
-@rate_limit(20, 60)  # 統一冪等端點
+@rate_limit(20, 60)
 def patch_pin(post_id: int):
     """
     統一入口：PATCH /api/posts/:id/pin
@@ -1817,7 +1668,6 @@ def patch_pin(post_id: int):
             if not post:
                 return _wrap_err("NOT_FOUND", "貼文不存在", 404)
 
-            # 冪等：狀態一致直接成功
             if bool(post.is_pinned) == desired:
                 return _wrap_ok({
                     "message": ("貼文已置頂" if desired else "已取消置頂"),
@@ -1826,7 +1676,6 @@ def patch_pin(post_id: int):
                     "pinned_at": (post.pinned_at.isoformat() if getattr(post, 'pinned_at', None) else None),
                 })
 
-            # 寫入新狀態
             post.is_pinned = desired
             if desired:
                 post.pinned_at = datetime.now(timezone.utc)

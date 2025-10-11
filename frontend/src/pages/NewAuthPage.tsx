@@ -34,21 +34,21 @@ interface GoogleCallbackData {
   requiresRegistration: boolean
 }
 
+/**
+ *
+ */
 export default function NewAuthPage() {
   const [flow, setFlow] = useState<AuthFlow>('initial')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   
-  // Google 相關狀態
   const [googleData, setGoogleData] = useState<GoogleCallbackData | null>(null)
   
-  // 表單狀態
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   
-  // 聯絡管理員狀態
   const [adminContactMessage, setAdminContactMessage] = useState('')
   
   const navigate = useNavigate()
@@ -56,10 +56,8 @@ export default function NewAuthPage() {
   const [searchParams] = useSearchParams()
   const { login } = useAuth()
 
-  // 處理 URL 參數和 Google 回調
   useEffect(() => {
     const handleUrlParams = async () => {
-      // 檢查是否是 Google OAuth 回調
       const code = searchParams.get('code')
       const state = searchParams.get('state')
       const error = searchParams.get('error')
@@ -82,7 +80,6 @@ export default function NewAuthPage() {
           }
           
           if (response.user && response.tokens) {
-            // 已存在用戶，直接登入
             login(
               response.tokens.access_token,
               response.user.role as any,
@@ -96,7 +93,6 @@ export default function NewAuthPage() {
           }
           
           if (response.requiresRegistration && response.googleData) {
-            // 檢查 email 網域
             if (!isValidEducationalEmail(response.googleData.email)) {
               setGoogleData({
                 ...response.googleData,
@@ -104,7 +100,6 @@ export default function NewAuthPage() {
               })
               setFlow('domain_restricted')
             } else {
-              // 進入快速註冊流程
               setGoogleData({
                 ...response.googleData,
                 requiresRegistration: true
@@ -119,7 +114,6 @@ export default function NewAuthPage() {
           setFlow('initial')
         } finally {
           setLoading(false)
-          // 清理 URL 參數
           window.history.replaceState({}, '', location.pathname)
         }
       }
@@ -128,7 +122,6 @@ export default function NewAuthPage() {
     handleUrlParams()
   }, [searchParams, login, navigate, location.pathname])
 
-  // 主題初始化
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
@@ -136,13 +129,11 @@ export default function NewAuthPage() {
     return () => html.classList.remove('theme-ready')
   }, [])
 
-  // Google OAuth 登入
   const handleGoogleAuth = () => {
     setError('')
     NewAuthAPI.redirectToGoogleAuth()
   }
 
-  // 傳統登入
   const handleTraditionalLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -174,7 +165,6 @@ export default function NewAuthPage() {
     }
   }
 
-  // 快速註冊提交
   const handleQuickRegistration = async (data: {
     email: string
     username: string
@@ -225,7 +215,6 @@ export default function NewAuthPage() {
     }
   }
 
-  // 聯絡管理員
   const handleContactAdmin = async (message: string) => {
     if (!googleData) return
     
@@ -234,7 +223,6 @@ export default function NewAuthPage() {
 
     try {
       const domain = googleData.email.split('@')[1]
-      // 嘗試推斷尾綴（與限制頁一致的規則）
       const suffix = ((): string => {
         const parts = domain.toLowerCase().split('.')
         if (domain.toLowerCase().endsWith('.edu')) return '.edu'
@@ -265,7 +253,6 @@ export default function NewAuthPage() {
     }
   }
 
-  // 渲染不同的流程頁面
   const renderFlow = () => {
     switch (flow) {
       case 'google_callback':
@@ -404,7 +391,7 @@ export default function NewAuthPage() {
               </div>
 
               <div className="space-y-4">
-                {/* Google 登入（主要入口） */}
+                
                 <button
                   onClick={handleGoogleAuth}
                   disabled={loading}
@@ -428,7 +415,7 @@ export default function NewAuthPage() {
                   </div>
                 </div>
 
-                {/* 傳統登入 */}
+                
                 <button
                   onClick={() => setFlow('traditional_login')}
                   className="w-full px-4 py-3 border border-border rounded-xl hover:bg-surface/80"
@@ -452,7 +439,7 @@ export default function NewAuthPage() {
       <NavBar pathname={location.pathname} />
 
       <div className="min-h-screen flex items-center justify-center p-4">
-        {/* 成功訊息 */}
+        
         {success && (
           <div className="fixed top-4 right-4 z-50 p-3 bg-success-bg border border-success-border text-success-text rounded-lg flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" />
@@ -460,7 +447,7 @@ export default function NewAuthPage() {
           </div>
         )}
 
-        {/* 錯誤訊息 */}
+        
         {error && flow !== 'domain_restricted' && (
           <div className="fixed top-4 right-4 z-50 max-w-md p-3 bg-danger-bg border border-danger-border text-danger-text rounded-lg">
             <div className="flex items-start gap-2">

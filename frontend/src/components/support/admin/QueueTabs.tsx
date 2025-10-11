@@ -2,6 +2,9 @@ import React from 'react'
 
 type QueueKey = 'inbox' | 'mine' | 'unassigned' | 'sla' | 'resolved' | 'closed'
 
+/**
+ *
+ */
 export interface QueueTabsProps {
   current: QueueKey
   counts?: Partial<Record<QueueKey, number>>

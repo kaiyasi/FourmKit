@@ -17,6 +17,9 @@ interface ViolationItem {
   }
 }
 
+/**
+ *
+ */
 export default function MyViolationsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +36,7 @@ export default function MyViolationsPage() {
       const response = await getJSON<{
         ok: boolean
         items: ViolationItem[]
-      }>('/api/admin/comments/my-violations')
+      }>('/api/comments/my-violations')
 
       if (response.ok) {
         setViolations(response.items || [])
@@ -101,7 +104,7 @@ export default function MyViolationsPage() {
       
       <div className="container mx-auto px-4 py-6 max-w-4xl pt-20 sm:pt-24 md:pt-28">
         <div className="flex flex-col gap-6">
-          {/* 標題 */}
+          
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-fg flex items-center gap-3">
               <AlertTriangle className="w-6 h-6 text-amber-500" />
@@ -120,7 +123,7 @@ export default function MyViolationsPage() {
             </button>
           </div>
 
-          {/* 說明 */}
+          
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -136,7 +139,7 @@ export default function MyViolationsPage() {
             </div>
           </div>
 
-          {/* 留言列表 */}
+          
           <div className="space-y-4">
             {loading ? (
               <div className="text-center py-8">

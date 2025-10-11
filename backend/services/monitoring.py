@@ -10,12 +10,12 @@ import json
 import os
 
 try:
-    import redis  # type: ignore
-except Exception:  # pragma: no cover
-    redis = None  # type: ignore
+    import redis
+except Exception:
+    redis = None
 
 
-def _r() -> Optional["redis.Redis"]:  # type: ignore[name-defined]
+def _r() -> Optional["redis.Redis"]:
     if not redis:
         return None
     try:
@@ -51,7 +51,6 @@ def record_event(kind: str, **fields: Any) -> None:
         payload.update(fields)
         key = "fk:mon:events"
         cli.zadd(key, {json.dumps(payload): ts})
-        # 以容量上限裁剪（保留最新 MAX_EVENTS 筆）
         try:
             count = cli.zcard(key)
             if count and count > MAX_EVENTS:
@@ -91,9 +90,7 @@ def get_queue_health() -> Dict[str, Any]:
             v = cli.get(key)
             if not v:
                 return None
-            # 轉秒差
             try:
-                # ISO8601 → datetime
                 from datetime import datetime as _dt
                 dt = _dt.fromisoformat(v.replace("Z", "+00:00"))
             except Exception:

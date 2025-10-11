@@ -3,6 +3,9 @@ import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import MobileHeader from '@/components/MobileHeader'
 
+/**
+ *
+ */
 export default function AboutPage() {
   const { pathname } = useLocation()
   useEffect(() => {

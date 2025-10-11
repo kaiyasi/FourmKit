@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/oauth_google.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import os
 import json
 import urllib.parse
@@ -18,13 +22,17 @@ def _normalize_url(u: str) -> str:
     u = (u or "").strip()
     if not u:
         return u
+<<<<<<< Updated upstream
     # 去除尾端多餘斜線
+=======
+>>>>>>> Stashed changes
     while len(u) > 1 and u.endswith('/'):
         u = u[:-1]
     return u
 
 
 def _resolve_redirect_uri() -> str:
+<<<<<<< Updated upstream
     # 優先使用明確設定的 OAUTH_REDIRECT_URL
     explicit = _normalize_url(os.getenv("OAUTH_REDIRECT_URL", ""))
     if explicit:
@@ -34,6 +42,14 @@ def _resolve_redirect_uri() -> str:
     if base:
         return f"{base}/api/auth/google/callback"
     # 仍無：回傳空字串（由呼叫方判斷）
+=======
+    explicit = _normalize_url(os.getenv("OAUTH_REDIRECT_URL", ""))
+    if explicit:
+        return explicit
+    base = _normalize_url(os.getenv("PUBLIC_BASE_URL", ""))
+    if base:
+        return f"{base}/api/auth/google/callback"
+>>>>>>> Stashed changes
     return ""
 
 
@@ -54,9 +70,6 @@ def build_auth_redirect(scope: str = "openid email profile") -> str:
         "response_type": "code",
         "scope": scope,
         "access_type": "online",
-        # 採用最小實作，未啟用 state 與 nonce；待 Day12 強化
-        # "state": state,
-        # "nonce": nonce,
         "prompt": "select_account",
     })
     return f"{GOOGLE_AUTH_URL}?{qs}"
@@ -98,13 +111,11 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
 
 
 def fetch_user_info(access_token: Optional[str] = None, id_token: Optional[str] = None) -> Dict[str, Any]:
-    # 優先嘗試 userinfo
     if access_token:
         try:
             return _get_json(f"{GOOGLE_USERINFO_URL}?alt=json", headers={"Authorization": f"Bearer {access_token}"})
         except Exception:
             pass
-    # 備援：tokeninfo 解析 id_token
     if id_token:
         try:
             return _get_json(f"{GOOGLE_TOKENINFO_URL}?id_token={urllib.parse.quote(id_token)}")
@@ -130,7 +141,6 @@ def _find_school_by_domain(domain: str) -> Optional[School]:
                     allowed = data.get('allowed_domains') or []
                 if not isinstance(allowed, list):
                     continue
-                # 綁定格式要求以 @ 開頭儲存
                 full = f"@{domain.lower()}"
                 if any(isinstance(x, str) and x.strip().lower() == full for x in allowed):
                     return sch
@@ -154,12 +164,10 @@ def check_school_domain(email: str) -> Tuple[bool, str]:
         
         print(f"[DEBUG] check_school_domain: email={email}, domain={domain}")
         
-        # 明確拒絕常見的個人信箱
         personal_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com']
         if domain in personal_domains:
             print(f"[DEBUG] check_school_domain: 拒絕個人信箱 {domain}")
             return False, domain
-        # 允許學校設定明列的綁定網域（SchoolSetting.allowed_domains）
         try:
             bound = _find_school_by_domain(domain)
             if bound is not None:
@@ -168,7 +176,6 @@ def check_school_domain(email: str) -> Tuple[bool, str]:
         except Exception:
             pass
 
-        # 額外允許的網域尾綴（以逗號分隔，例：.ac.uk,.edu.sg）
         extra: List[str] = []
         try:
             raw = (os.getenv('EXTRA_EMAIL_SUFFIXES') or os.getenv('ALLOWED_EMAIL_SUFFIXES') or '').strip()
@@ -181,12 +188,9 @@ def check_school_domain(email: str) -> Tuple[bool, str]:
                 print(f"[DEBUG] check_school_domain: 通過額外尾綴 {suf} for {domain}")
                 return True, domain
 
-        # 僅允許教育網域：.edu 或 .edu.xx（如 .edu.tw/.edu.hk/.edu.cn）
-        # 允許多層子網域：xxx.yyy.edu.tw 也算通過
         if domain.endswith('.edu'):
             print(f"[DEBUG] check_school_domain: 通過允許的教育網域 {domain}")
             return True, domain
-        # .edu.xx（ccTLD）
         try:
             import re
             if re.search(r"\.edu\.[a-z]{2,}$", domain):
@@ -194,7 +198,6 @@ def check_school_domain(email: str) -> Tuple[bool, str]:
                 return True, domain
         except Exception:
             pass
-        # 舊規保留（明確列出）
         if domain.endswith('.edu.tw'):
             print(f"[DEBUG] check_school_domain: 通過允許的教育網域 {domain}")
             return True, domain
@@ -215,21 +218,14 @@ def derive_school_slug_from_domain(domain: str) -> str:
     """
     parts = (domain or "").lower().split('.')
     
-    # 台灣學校格式：@nhsh.tp.edu.tw -> nhsh
     if len(parts) >= 4 and parts[-2] == 'edu' and parts[-1] == 'tw':
-        # 取第一個部分作為學校代碼
         return parts[0] if parts[0] else ''
     
-    # 國際學校格式：查找 edu 之前的部分
     if 'edu' in parts:
         idx = parts.index('edu')
         if idx >= 2:
-            # 如果有多個部分，取 edu 前面的部分
-            # 例如：dept.ncku.edu -> ncku
             return parts[idx-1]
         elif idx >= 1:
-            # 例如：schoolslug.edu -> schoolslug  
             return parts[idx-1]
     
-    # 兜底：取第一段
     return parts[0] if parts else ''

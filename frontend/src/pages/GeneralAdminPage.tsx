@@ -53,13 +53,15 @@ interface AuditLog {
   old_status?: string
   new_status?: string
   reason?: string
-  // 新後端欄位（相容舊版）
   action_display?: string
   old_status_display?: string
   new_status_display?: string
   source?: string | null
 }
 
+/**
+ *
+ */
 export default function GeneralAdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -71,22 +73,18 @@ export default function GeneralAdminPage() {
   const [showRejectModal, setShowRejectModal] = useState<{ type: 'post' | 'media', id: number } | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   
-  // 審核紀錄詳情狀態
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
   const [logDetail, setLogDetail] = useState<any>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   
-  // 貼文詳情狀態
   const [showPostDetailModal, setShowPostDetailModal] = useState<{ id: number, content: string } | null>(null)
   
-  // 刪文請求狀態
   const [deleteRequests, setDeleteRequests] = useState<any[]>([])
   const [deleteRequestFilter, setDeleteRequestFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
   const [selectedDeleteRequest, setSelectedDeleteRequest] = useState<any>(null)
   const [processingDeleteRequest, setProcessingDeleteRequest] = useState<number | null>(null)
   const [deleteRequestNote, setDeleteRequestNote] = useState('')
   
-  // 篩選狀態
   const [showFilters, setShowFilters] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [authorName, setAuthorName] = useState('')
@@ -101,7 +99,6 @@ export default function GeneralAdminPage() {
 
   const role = getRole()
 
-  // 角色階層（數字越大權限越高）
   const roleRank = (r?: string|null) => {
     switch (r) {
       case 'dev_admin': return 100
@@ -113,8 +110,6 @@ export default function GeneralAdminPage() {
     }
   }
   
-  // 僅桌面顯示主要內容
-  // 媒體預覽組件
   const MediaPreview = ({ id, path, kind, url: providedUrl }: { id: number; path: string; kind?: string; url?: string }) => {
     const [url, setUrl] = useState<string | null>(null);
     const [err, setErr] = useState<string | null>(null);
@@ -163,7 +158,6 @@ export default function GeneralAdminPage() {
           try {
             let rel = (path || '').replace(/^\/+/, '');
             if (rel.startsWith('public/')) {
-              // 對於已發布的媒體，直接使用 CDN URL
               rel = rel.replace(/^public\//, '');
               const direct = `https://cdn.serelix.xyz/${rel}?t=${Date.now()}`;
               console.log(`MediaPreview: Using direct CDN URL for media ${id}:`, direct);
@@ -171,7 +165,6 @@ export default function GeneralAdminPage() {
               setErr(null);
               return;
             } else if (!rel.startsWith('pending/')) {
-              // 對於其他媒體，嘗試 pending 路徑
               rel = `pending/${rel}`;
               const direct = `https://cdn.serelix.xyz/${rel}?t=${Date.now()}`;
               console.log(`MediaPreview: Using pending CDN URL for media ${id}:`, direct);
@@ -221,7 +214,6 @@ export default function GeneralAdminPage() {
     return <a href={url} download className="text-xs underline">下載附件</a>;
   };
   
-  // 建構查詢字串
   const buildQueryString = () => {
     const params = new URLSearchParams()
     if (keyword) params.append('q', keyword)
@@ -245,7 +237,6 @@ export default function GeneralAdminPage() {
         getJSON<{ items: School[] }>('/api/schools')
       ])
       
-      // 處理新的 API 格式：postsData 可能是 {items: [...]} 或 {posts: [...]}
       const posts = postsData.posts || postsData.items || []
       setPosts(posts)
       setSchools(schoolsData.items || [])
@@ -274,7 +265,6 @@ export default function GeneralAdminPage() {
   const loadAuditLogs = async () => {
     try {
       const response = await getJSON<{ logs?: AuditLog[], items?: AuditLog[] }>('/api/moderation/logs')
-      // 處理新的 API 格式：response 可能是 {logs: [...]} 或 {items: [...]} 
       const logs = response.logs || response.items || []
       setAuditLogs(logs)
     } catch (e) {
@@ -371,7 +361,6 @@ export default function GeneralAdminPage() {
         const response = await getJSON(`/api/moderation/post/${targetId}`)
         setLogDetail(response)
       } else if (targetType === 'media') {
-        // 將媒體紀錄映射回其所屬貼文，統一在貼文詳情中處理
         try {
           const mediaResp = await getJSON(`/api/moderation/media/${targetId}`)
           const postId = mediaResp.post_id
@@ -513,7 +502,7 @@ export default function GeneralAdminPage() {
 
       <div className="container mx-auto px-4 py-6 max-w-7xl pt-20 sm:pt-24 md:pt-28">
         <div className="flex flex-col gap-6">
-          {/* 標題與刷新 */}
+          
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h1 className="text-2xl font-bold text-fg">管理後台</h1>
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -529,7 +518,7 @@ export default function GeneralAdminPage() {
             </div>
           </div>
 
-          {/* 統計卡片 + 快捷連結 */}
+          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-surface border border-border rounded-xl p-6">
               <div className="flex items-center gap-3">
@@ -555,7 +544,7 @@ export default function GeneralAdminPage() {
               </div>
             </div>
 
-            {/* 聊天室快捷卡片 */}
+            
             <div className="bg-surface border border-border rounded-xl p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -569,7 +558,7 @@ export default function GeneralAdminPage() {
             </div>
           </div>
 
-          {/* 頁籤 */}
+          
           <div className="border-b border-border">
             <nav className="flex space-x-8" aria-label="頁籤">
               <button
@@ -612,11 +601,11 @@ export default function GeneralAdminPage() {
             </nav>
           </div>
 
-          {/* 內容區域 */}
+          
           <div className="space-y-4">
             {activeTab === 'posts' && (
               <>
-                {/* 篩選器 */}
+                
                 <div className="bg-surface border border-border rounded-xl p-4">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-medium text-fg">篩選條件</h3>
@@ -706,7 +695,7 @@ export default function GeneralAdminPage() {
                   )}
                 </div>
 
-                {/* 貼文列表 */}
+                
                 <div className="space-y-4">
                   {loading ? (
                     <div className="text-center py-8">
@@ -766,7 +755,7 @@ export default function GeneralAdminPage() {
                               )}
                             </div>
                             
-                            {/* 媒體附件 */}
+                            
                             {post.media && post.media.length > 0 && (
                               <div className="mt-3">
                                 <h4 className="text-sm font-medium mb-2">媒體附件 ({post.media.length})</h4>
@@ -836,7 +825,7 @@ export default function GeneralAdminPage() {
                   <div className="space-y-3">
                                          {auditLogs.map(log => (
                        <div key={log.id} className="border border-border rounded-xl p-4 bg-surface/50">
-                         {/* 主要資訊行 */}
+                         
                          <div className="flex items-start justify-between mb-3">
                            <div className="flex-1">
                              <div className="flex items-center gap-2 mb-2">
@@ -854,14 +843,14 @@ export default function GeneralAdminPage() {
                                </span>
                              </div>
                              
-                             {/* 狀態變更 */}
+                             
                              {(log.old_status_display || log.old_status) && (log.new_status_display || log.new_status) && (
                                <div className="text-xs text-muted mb-1">
                                  {(log.old_status_display || log.old_status)} → {(log.new_status_display || log.new_status)}
                                </div>
                              )}
                              
-                             {/* 來源學校 */}
+                             
                              {typeof log.source === 'string' && (
                                <div className="text-xs text-muted mb-1">
                                  來源：{log.source || '跨校'}
@@ -874,7 +863,7 @@ export default function GeneralAdminPage() {
                            </div>
                          </div>
                          
-                         {/* 審核者資訊 */}
+                         
                          <div className="flex items-center justify-between mb-3">
                            <div className="flex items-center gap-2 text-sm">
                              <User className="w-4 h-4 text-muted" />
@@ -900,7 +889,7 @@ export default function GeneralAdminPage() {
                            </button>
                          </div>
                          
-                         {/* 拒絕理由 */}
+                         
                          {log.reason && (
                            <div className="mb-2">
                              <div className="text-xs text-muted mb-1">原因:</div>
@@ -910,7 +899,7 @@ export default function GeneralAdminPage() {
                            </div>
                          )}
                          
-                         {/* 備註 */}
+                         
                          {log.details && (
                            <div className="mb-2">
                              <div className="text-xs text-muted mb-1">備註:</div>
@@ -920,7 +909,7 @@ export default function GeneralAdminPage() {
                            </div>
                          )}
                         
-                        {/* 詳情展開區域 */}
+                        
                         {selectedLog?.id === log.id && (
                           <div className="mt-3 p-3 bg-surface-hover rounded-lg border">
                             {loadingDetail ? (
@@ -985,10 +974,8 @@ export default function GeneralAdminPage() {
                                     </div>
                                   )}
 
-                                  {/* 否決操作（dev_admin / campus_admin / cross_admin 可見） */}
+                                  
                                   {(() => {
-                                    // 僅當前使用者權限高於原審核者才顯示「否決」操作；
-                                    // 若未知原審核者角色，僅 dev_admin 可複決。
                                     const myRank = roleRank(role)
                                     const moderatorRole = (selectedLog as any)?.moderator_role as (string|undefined)
                                     const hasModRole = typeof moderatorRole === 'string' && moderatorRole.length > 0
@@ -1136,7 +1123,6 @@ export default function GeneralAdminPage() {
                                 />
                                 <button
                                   onClick={() => {
-                                    // 創建一個更好的詳情查看對話框
                                     const modal = document.createElement('div')
                                     modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4'
                                     modal.innerHTML = `
@@ -1226,7 +1212,7 @@ export default function GeneralAdminPage() {
         </div>
       </div>
 
-      {/* 拒絕確認對話框 */}
+      
       {showRejectModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
@@ -1274,7 +1260,7 @@ export default function GeneralAdminPage() {
         </div>
       )}
 
-      {/* 刪文請求處理對話框 */}
+      
       {selectedDeleteRequest && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
@@ -1322,7 +1308,7 @@ export default function GeneralAdminPage() {
         </div>
       )}
 
-      {/* 貼文詳情對話框 */}
+      
       {showPostDetailModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">

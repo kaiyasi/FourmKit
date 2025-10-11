@@ -36,6 +36,9 @@ interface NewUser {
   school_slug?: string
 }
 
+/**
+ *
+ */
 export default function AdminUsersPage() {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState<User[]>([])
@@ -84,7 +87,6 @@ export default function AdminUsersPage() {
     { value: 'ntu', label: '國立台灣大學' },
   ])
 
-  // 載入學校列表
   const loadSchools = async () => {
     try {
       const response = await fetch('/api/schools')
@@ -115,7 +117,6 @@ export default function AdminUsersPage() {
       if (r.ok) {
         const j = await r.json().catch(()=>({}))
         setItems(Array.isArray(j?.items) ? j.items : [])
-        // 預取前幾位使用者的 IP 封鎖狀態（避免每張卡片都各打一次）
         try {
           const first = (Array.isArray(j?.items) ? j.items : []).slice(0, 12) as User[]
           first.forEach(async (u) => {
@@ -258,7 +259,6 @@ export default function AdminUsersPage() {
     }
 
     try {
-      // 先嘗試普通刪除
       let response = await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {
@@ -269,7 +269,6 @@ export default function AdminUsersPage() {
       if (!response.ok) {
         const error = await response.json().catch(() => ({ msg: '刪除失敗' }))
 
-        // 如果有關聯資料，詢問是否強制刪除
         if (error.msg && error.msg.includes('存在關聯資料')) {
           const forceDelete = confirm(
             '該用戶有相關的貼文或留言。是否強制刪除？\n這將同時刪除該用戶的所有內容。'
@@ -409,10 +408,8 @@ export default function AdminUsersPage() {
     return roles.find(r => r.value === role) || roles[0]
   }
 
-  // 解析用戶代理字串，提取重要資訊
   const parseUserAgent = (userAgent: string) => {
     try {
-      // 基本資訊提取
       const browser = userAgent.includes('Chrome') ? 'Chrome' :
                      userAgent.includes('Firefox') ? 'Firefox' :
                      userAgent.includes('Safari') ? 'Safari' :
@@ -425,10 +422,8 @@ export default function AdminUsersPage() {
                  userAgent.includes('Android') ? 'Android' :
                  userAgent.includes('iOS') ? 'iOS' : 'Unknown'
       
-      // 提取版本號
       const browserVersion = userAgent.match(/(Chrome|Firefox|Safari|Edge|Opera)\/(\d+)/)?.[2] || 'Unknown'
       
-      // 提取系統版本
       const osVersion = userAgent.match(/(Windows NT|Mac OS X|Linux|Android|iPhone OS)\s*([\d._]+)/)?.[2] || 'Unknown'
       
       return {
@@ -477,7 +472,7 @@ export default function AdminUsersPage() {
         className={`mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8 ${showActivityModal ? 'pointer-events-none' : ''}`}
         aria-hidden={showActivityModal ? true : false}
       >
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -515,10 +510,10 @@ export default function AdminUsersPage() {
           )}
         </div>
 
-        {/* 搜尋和篩選區 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft mb-6">
           <div className="flex flex-col lg:flex-row gap-4">
-            {/* 搜尋框 */}
+            
             <div className="relative flex-1">
               <input
                 value={query}
@@ -528,7 +523,7 @@ export default function AdminUsersPage() {
               />
             </div>
             
-            {/* 操作按鈕 */}
+            
             <div className="flex gap-2">
               <button
                 onClick={load}
@@ -548,7 +543,7 @@ export default function AdminUsersPage() {
           )}
         </div>
 
-        {/* 用戶清單 */}
+        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {loading && (
             <div className="col-span-full p-8 text-center text-muted">
@@ -570,7 +565,7 @@ export default function AdminUsersPage() {
 
             return (
               <div key={user.id} className="bg-surface border border-border rounded-2xl p-4 shadow-soft hover:shadow-medium transition-all duration-200 hover:scale-[1.02] flex flex-col h-full">
-                {/* 用戶頭像和基本資訊 */}
+                
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
                     <span className="text-primary font-semibold text-lg">
@@ -596,7 +591,7 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
 
-                {/* 角色標籤 */}
+                
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium border ${roleInfo.color}`}>
                     <RoleIcon className="w-3 h-3 inline mr-1" />
@@ -604,13 +599,13 @@ export default function AdminUsersPage() {
                   </span>
                 </div>
 
-                {/* 學校資訊 */}
+                
                 <div className="flex items-center gap-2 text-sm text-muted mb-3">
                   <Building2 className="w-3 h-3" />
                   {user.school?.name || '無'}
                 </div>
 
-                {/* 用戶統計資訊 */}
+                
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div className="flex items-center gap-1 text-xs text-muted">
                     <FileText className="w-3 h-3" />
@@ -622,19 +617,19 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
 
-                {/* 最近活動 */}
+                
                 <div className="flex items-center gap-1 text-xs text-muted mb-3">
                   <Activity className="w-3 h-3" />
                   最後活動 {user.last_activity ? formatLocalMinute(user.last_activity) : '無記錄'}
                 </div>
 
-                {/* 註冊時間 */}
+                
                 <div className="flex items-center gap-2 text-sm text-muted mb-4">
                   <Calendar className="w-3 h-3" />
                   註冊於 {formatLocalMinute(user.created_at)}
                 </div>
 
-                {/* IP地址資訊 */}
+                
                 <div className="mb-3">
                   <div className="flex items-center gap-1 text-xs text-muted mb-1">
                     <Globe className="w-3 h-3" />
@@ -648,9 +643,9 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
 
-                {/* 操作按鈕 - 使用 flex-1 確保按鈕等寬並對齊底部 */}
+                
                 <div className="space-y-2 mt-auto">
-                  {/* 角色調整 */}
+                  
                   <select
                     value={user.role}
                     onChange={(e) =>updateUserRole(user.id, e.target.value)}
@@ -664,7 +659,7 @@ export default function AdminUsersPage() {
                     ))}
                   </select>
 
-                  {/* 學校綁定 */}
+                  
                   <select
                     value={user.school?.slug || ''}
                     onChange={(e) =>updateUserSchool(user.id, e.target.value)}
@@ -678,7 +673,7 @@ export default function AdminUsersPage() {
                     ))}
                   </select>
 
-                  {/* 快速操作按鈕 */}
+                  
                   <div className="grid grid-cols-2 gap-1 pt-2">
                     <button
                       onClick={() => loadUserActivity(user)}
@@ -771,7 +766,7 @@ export default function AdminUsersPage() {
         </div>
       </main>
 
-      {/* 新增用戶對話框 */}
+      
       {showCreateForm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-dramatic">
@@ -884,7 +879,7 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* 詳細資訊模態框 */}
+      
       {showActivityModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-6xl max-h-[90vh] shadow-dramatic overflow-hidden">
@@ -906,7 +901,7 @@ export default function AdminUsersPage() {
               </button>
             </div>
             
-            {/* 用戶基本資訊卡片 */}
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-surface-hover rounded-xl p-4 border border-border">
                 <h3 className="font-semibold text-fg mb-3 flex items-center gap-2">
@@ -983,7 +978,7 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
                 
-                {/* IP地址列表 */}
+                
                 <div className="mt-4">
                   <h4 className="font-medium text-fg mb-2 flex items-center gap-1">
                     <Globe className="w-3 h-3" />
@@ -1004,7 +999,7 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
                 
-                {/* Client_ID 列表 */}
+                
                 <div className="mt-4">
                   <h4 className="font-medium text-fg mb-2 flex items-center gap-1">
                     <Activity className="w-3 h-3" />
@@ -1062,7 +1057,7 @@ export default function AdminUsersPage() {
                       </div>
                     </div>
                     
-                    {/* 用戶代理詳細資訊 */}
+                    
                     {activity.user_agent && (
                       <div className="mt-2 p-2 bg-surface rounded border border-border/50">
                         <div className="text-xs font-medium text-muted mb-1">用戶代理：</div>

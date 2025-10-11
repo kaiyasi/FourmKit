@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+Module: backend/scripts/inspect_users.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from datetime import datetime
 from utils.db import init_engine_session, get_session

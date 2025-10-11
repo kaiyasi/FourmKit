@@ -1,3 +1,6 @@
+/**
+ *
+ */
 export type FkNotification = {
   id: string
   type: string
@@ -31,7 +34,6 @@ function writeAll(items: FkNotification[]) {
   } catch {}
 }
 
-// Mirror to NotificationCenter store for unified UX
 const CENTER_KEY = 'forumkit_notifications'
 const CENTER_CAP = 50
 
@@ -102,6 +104,9 @@ function _mirrorToCenter(n: Omit<FkNotification, 'id'|'ts'> & { ts?: number }) {
   _centerWriteAll([entry, ...cur])
 }
 
+/**
+ *
+ */
 export function addNotification(n: Omit<FkNotification, 'id'|'ts'> & { ts?: number }) {
   const it: FkNotification = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
@@ -115,10 +120,12 @@ export function addNotification(n: Omit<FkNotification, 'id'|'ts'> & { ts?: numb
   const cur = readAll()
   cur.push(it)
   writeAll(cur)
-  // Mirror into center store to keep NotificationCenter in sync
   try { _mirrorToCenter(n) } catch {}
 }
 
+/**
+ *
+ */
 export function listNotifications(filter?: { school?: string | null; type?: string; read?: boolean; user_id?: string | null }) {
   const items = readAll().slice().reverse() // 最新在前
   if (!filter) return items
@@ -130,7 +137,6 @@ export function listNotifications(filter?: { school?: string | null; type?: stri
     }
     if (filter.read !== undefined && Boolean(it.read) !== filter.read) return false
     if (filter.user_id !== undefined) {
-      // 檢查通知是否與當前用戶相關
       const target = (filter.user_id || null)
       if ((it.user_id || null) !== target) return false
     }
@@ -138,6 +144,9 @@ export function listNotifications(filter?: { school?: string | null; type?: stri
   })
 }
 
+/**
+ *
+ */
 export function clearNotifications(filter?: { school?: string | null; type?: string }) {
   if (!filter) {
     writeAll([])
@@ -154,12 +163,18 @@ export function clearNotifications(filter?: { school?: string | null; type?: str
   writeAll(next)
 }
 
+/**
+ *
+ */
 export function markNotificationRead(id: string) {
   const cur = readAll()
   const next = cur.map(it => it.id === id ? { ...it, read: true } : it)
   writeAll(next)
 }
 
+/**
+ *
+ */
 export function markAllNotificationsRead(filter?: { school?: string | null; type?: string }) {
   const cur = readAll()
   const next = cur.map(it => {
