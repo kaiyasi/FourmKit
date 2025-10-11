@@ -1,6 +1,6 @@
 # ForumKit - 校園匿名討論平台
 
-> **由 Serelix Studio 開發的校園匿名論壇系統，具備完整內容審核功能**
+> **由 Serelix Studio 開發的校園匿名論壇系統，具備完整內容審核功能** \n
 > ** Version 4.0.0 開始平台內開始加入隱私資料與程式碼 故將不針對 V4.0.0 後發佈更新檔 **
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -93,4 +93,5 @@ MIT License - 詳見 [LICENSE](LICENSE) 檔案
 ---
 
 *ForumKit by Serelix Studio - 安全可靠的校園匿名討論平台* 🛡️
+
 
