@@ -91,7 +91,6 @@ def poll_permalinks(base: str, jwt: str, ig_post_ids: list[int], timeout_sec: in
     if len(got) < len(ig_post_ids):
         missing = [pid for pid in ig_post_ids if pid not in got]
         raise TimeoutError(f"timeout waiting permalinks for: {missing}")
-    # keep order per ig_post_ids
     return [got[pid] for pid in ig_post_ids]
 
 
@@ -114,7 +113,6 @@ def main(argv: list[str]) -> int:
         jwt = login(args.base, args.user, args.password)
         ig_ids = publish_carousel(args.base, jwt, args.posts)
         links = poll_permalinks(args.base, jwt, ig_ids)
-        # Only permalinks, one per line
         for link in links:
             print(link)
         return 0

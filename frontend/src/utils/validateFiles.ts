@@ -1,12 +1,21 @@
+/**
+ *
+ */
 export type FileKind = "image";
 const IMAGE_EXT = [".jpg", ".jpeg", ".png", ".webp"];
 
+/**
+ *
+ */
 export function guessKindByName(name: string): FileKind | null {
   const n = name.toLowerCase();
   if (IMAGE_EXT.some(e => n.endsWith(e))) return "image";
   return null;
 }
 
+/**
+ *
+ */
 export function validateBeforeAdd(
   files: File[],
   existingCount: number,

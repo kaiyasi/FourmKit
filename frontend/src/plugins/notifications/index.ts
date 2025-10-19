@@ -13,6 +13,7 @@ import {
 } from './social'
 import { announcementNotificationPlugin } from './announcement'
 import { systemNotificationPlugin } from './system'
+import { violationNotificationPlugin } from './violation'
 import { adminChatMentionNotificationPlugin } from './admin_chat'
 
 /**
@@ -28,9 +29,9 @@ export function registerDefaultNotificationPlugins() {
   notificationManager.register(announcementNotificationPlugin)
   notificationManager.register(systemNotificationPlugin)
   notificationManager.register(adminChatMentionNotificationPlugin)
+  notificationManager.register(violationNotificationPlugin)
 }
 
-// 導出所有插件供外部使用
 export {
   authNotificationPlugin,
   moderationNotificationPlugin,
@@ -39,10 +40,10 @@ export {
   mentionNotificationPlugin,
   announcementNotificationPlugin,
   systemNotificationPlugin,
-  adminChatMentionNotificationPlugin
+  adminChatMentionNotificationPlugin,
+  violationNotificationPlugin
 }
 
-// 導出資料類型
 export type { AuthNotificationData } from './auth'
 export type { ModerationNotificationData } from './moderation'
 export type {

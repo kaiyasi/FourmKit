@@ -1,5 +1,6 @@
 # ===== Node.js =====
 node_modules/
+**/node_modules/
 dist/
 frontend/dist/
 backend/node_modules/
@@ -297,3 +298,5 @@ backups/
 # ===== Migration Backups =====
 # Database migration backups
 migrations/versions_backup_*/
+# Project-specific env files
+.env.token_management

@@ -19,6 +19,9 @@ interface ScreenDimensions {
   actionHeight: number
 }
 
+/**
+ *
+ */
 export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonymous = false }: MobilePostComposerProps & { allowAnonymous?: boolean }) {
   const { isLoggedIn } = useAuth()
   const [content, setContent] = useState('')
@@ -39,7 +42,6 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 計算螢幕尺寸和空間分配
   const calculateDimensions = () => {
     const screenHeight = window.innerHeight
     const safeAreaTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0')
@@ -61,7 +63,6 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
     })
   }
 
-  // 監聽螢幕尺寸變化
   useEffect(() => {
     if (!isOpen) return
 
@@ -81,7 +82,6 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
     }
   }, [isOpen])
 
-  // 載入學校清單
   useEffect(() => {
     if (!isOpen) return
 
@@ -190,7 +190,7 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
           paddingTop: `${dimensions.safeAreaTop}px`
         }}
       >
-        {/* 標題區域 */}
+        
         <div
           className="flex items-center justify-between px-4 border-b border-border"
           style={{ height: `${dimensions.headerHeight}px` }}
@@ -205,12 +205,12 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
           </button>
         </div>
 
-        {/* 主輸入區域 */}
+        
         <div
           className="flex flex-col px-4"
           style={{ height: `${dimensions.inputHeight}px` }}
         >
-          {/* 文字輸入區 */}
+          
           <div className="flex-1 py-4">
             <textarea
               ref={textareaRef}
@@ -224,7 +224,7 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
             />
           </div>
 
-          {/* 檔案預覽區 */}
+          
           {files.length > 0 && (
             <div className="pb-4">
               <div className="grid grid-cols-2 gap-2">
@@ -259,7 +259,7 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
             </div>
           )}
 
-          {/* 錯誤提示 */}
+          
           {error && (
             <div className="pb-4">
               <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg">
@@ -269,7 +269,7 @@ export function MobilePostComposer({ isOpen, onClose, onPostCreated, allowAnonym
           )}
         </div>
 
-        {/* 底部操作區域 */}
+        
         <div
           className="border-t border-border px-4 flex items-center justify-between"
           style={{ height: `${dimensions.actionHeight}px` }}

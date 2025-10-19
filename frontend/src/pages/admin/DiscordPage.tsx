@@ -112,7 +112,6 @@ const DiscordPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // 配置編輯狀態
   const [showAddServer, setShowAddServer] = useState(false);
   const [editingServer, setEditingServer] = useState<DiscordServerConfig | null>(null);
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
@@ -268,7 +267,6 @@ const DiscordPage: React.FC = () => {
     return categories[category as keyof typeof categories] || category;
   };
 
-  // 權限檢查
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -281,7 +279,6 @@ const DiscordPage: React.FC = () => {
     );
   }
 
-  // 錯誤顯示
   if (error) {
     return (
       <div className="min-h-screen bg-background">
@@ -312,7 +309,7 @@ const DiscordPage: React.FC = () => {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -336,7 +333,7 @@ const DiscordPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 頁籤導航 */}
+        
         <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
           <div className="border-b border-border">
             <nav className="flex space-x-8 p-4" aria-label="頁籤">
@@ -364,7 +361,7 @@ const DiscordPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 內容區域 */}
+        
         <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
           {loading ? (
             <div className="flex justify-center items-center py-12">
@@ -394,7 +391,7 @@ const DiscordPage: React.FC = () => {
 
     return (
       <div className="space-y-6">
-        {/* 快速統計 */}
+        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-surface-hover rounded-lg border border-border p-6">
             <div className="flex items-center">
@@ -453,7 +450,7 @@ const DiscordPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 伺服器狀態 */}
+        
         <div className="bg-surface-hover rounded-lg border border-border p-6">
           <h3 className="text-lg font-semibold text-fg mb-4">伺服器狀態</h3>
           {servers.length === 0 ? (
@@ -768,7 +765,7 @@ const DiscordPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 指令統計 */}
+        
         <div className="bg-surface-hover border border-border rounded-lg p-6">
           <h3 className="text-lg font-semibold text-fg mb-4">指令執行統計</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -797,7 +794,7 @@ const DiscordPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 用戶統計 */}
+        
         <div className="bg-surface-hover border border-border rounded-lg p-6">
           <h3 className="text-lg font-semibold text-fg mb-4">用戶統計</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -816,7 +813,7 @@ const DiscordPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 活動統計 */}
+        
         <div className="bg-surface-hover border border-border rounded-lg p-6">
           <h3 className="text-lg font-semibold text-fg mb-4">活動統計</h3>
           <div className="mb-4">

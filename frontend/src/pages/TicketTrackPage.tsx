@@ -15,6 +15,7 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { api } from '@/services/api'
+import MobileSupportDetailPage from './MobileSupportDetailPage'
 
 interface TicketDetail {
   id: number
@@ -37,6 +38,9 @@ interface TicketDetail {
   }>
 }
 
+/**
+ *
+ */
 export default function TicketTrackPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -47,8 +51,11 @@ export default function TicketTrackPage() {
   const [error, setError] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
   const [replyLoading, setReplyLoading] = useState(false)
+<<<<<<< Updated upstream
   // 登入者列表模式（無 token/無單號時顯示）
-  const [myTickets, setMyTickets] = useState<Array<{ id:string; subject:string; status:string; priority:string; last_activity_at:string }>>([])
+=======
+>>>>>>> Stashed changes
+  const [myTickets, setMyTickets] = useState<Array<{ id:string; subject:string; status:string; last_activity_at:string }>>([])
   const [myLoading, setMyLoading] = useState(false)
   const reloadMyTickets = async () => {
     try {
@@ -64,17 +71,14 @@ export default function TicketTrackPage() {
     }
   }
   
-  // 追蹤表單狀態
   const [trackForm, setTrackForm] = useState({
     ticket_id: '',
     email: ''
   })
 
-  // 從 URL 參數獲取 token 和 ticket ID
   const token = searchParams.get('token') || searchParams.get('sig')
   const ticketId = ticketIdParam || searchParams.get('ticket') || searchParams.get('ticket_id')
 
-  // 僅有 token（沒有 ticketId）時，先向後端驗證以取得正確的 redirect_url
   useEffect(() => {
     if (token && !ticketId) {
       (async () => {
@@ -104,15 +108,12 @@ export default function TicketTrackPage() {
   useEffect(() => {
     if (ticketId) {
       if (token) {
-        // 訪客模式：使用 token 訪問
         fetchTicketByToken(ticketId, token)
       } else if (isLoggedIn) {
-        // 登入用戶模式：直接訪問
         fetchTicketByAuth(ticketId)
       }
     } else if (!token && isLoggedIn) {
-      // 無 token/單號：載入我的工單列表（就地顯示，不跳頁）
-      ;(async () => {
+      (async () => {
         try {
           setMyLoading(true)
           setError(null)
@@ -128,12 +129,10 @@ export default function TicketTrackPage() {
     }
   }, [token, ticketId, isLoggedIn])
 
-  // 剛建立的工單提示（若列表暫時還沒刷新）
   useEffect(() => {
     if (!isLoggedIn || myTickets.length > 0) return
     const lastId = localStorage.getItem('fk_last_ticket_id')
     if (lastId) {
-      // 嘗試直接帶使用者進該單
       try {
         navigate(`/support/ticket/${lastId}`, { replace: false })
       } catch {}
@@ -208,9 +207,7 @@ export default function TicketTrackPage() {
       const data = await response.json()
 
       if (response.ok) {
-        // 檢查是否返回多個工單
         if (data.multiple && data.tickets) {
-          // 顯示工單列表讓用戶選擇
           const ticketList = data.tickets.map((t: any) =>
             `${t.ticket_id} - ${t.subject} (${t.status})`
           ).join('\n')
@@ -218,7 +215,6 @@ export default function TicketTrackPage() {
           alert(`找到 ${data.tickets.length} 個工單，請選擇一個：\n\n${ticketList}\n\n請在工單編號欄位輸入完整的工單編號後重試。`)
           setError(null)
         } else if (data.tracking_url) {
-          // 單一工單，直接跳轉
           window.location.href = data.tracking_url
         }
       } else {
@@ -242,7 +238,6 @@ export default function TicketTrackPage() {
     try {
       let response
       if (token) {
-        // 訪客模式
         response = await fetch(`/api/support/tickets/${ticket.id}/messages?sig=${token}`, {
           method: 'POST',
           headers: {
@@ -254,7 +249,6 @@ export default function TicketTrackPage() {
           })
         })
       } else if (isLoggedIn) {
-        // 登入用戶模式
         const authToken = localStorage.getItem('token')
         response = await fetch(`/api/support/tickets/${ticket.id}/messages`, {
           method: 'POST',
@@ -271,7 +265,6 @@ export default function TicketTrackPage() {
       }
 
       if (response.ok) {
-        // 重新載入工單以顯示新回覆
         if (token) {
           fetchTicketByToken(ticket.id, token)
         } else {
@@ -300,15 +293,6 @@ export default function TicketTrackPage() {
     return colors[status] || 'bg-surface text-fg border border-border'
   }
 
-  const getPriorityColor = (priority: string) => {
-    const colors: { [key: string]: string } = {
-      'low': 'text-success',
-      'medium': 'text-warning',
-      'high': 'text-warning hover:text-warning-hover',
-      'urgent': 'text-danger'
-    }
-    return colors[priority] || 'text-muted'
-  }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -321,8 +305,6 @@ export default function TicketTrackPage() {
     })
   }
 
-  // 顯示追蹤提示頁的條件：
-  // 1) token 與 ticketId 皆缺；或 2) 僅有 ticketId 但未登入（需要憑證）
   if (!token && (!ticketId || !isLoggedIn)) {
     return (
       <PageLayout pathname="/support/track" maxWidth="max-w-3xl">
@@ -435,7 +417,6 @@ export default function TicketTrackPage() {
     )
   }
 
-  // 僅 token（無 ticketId）階段：顯示驗證狀態或錯誤
   if (token && !ticketId) {
     return (
       <PageLayout pathname="/support/track" maxWidth="max-w-3xl">
@@ -464,7 +445,6 @@ export default function TicketTrackPage() {
     )
   }
 
-  // 載入中
   if (loading) {
     return (
       <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">
@@ -475,7 +455,6 @@ export default function TicketTrackPage() {
     )
   }
 
-  // 錯誤狀態
   if (error && !ticket) {
     return (
       <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">
@@ -497,14 +476,42 @@ export default function TicketTrackPage() {
     )
   }
 
-  // 顯示工單詳情
   if (!ticket) {
     return null
   }
+<<<<<<< Updated upstream
+  // 行動裝置：使用專屬詳情介面（混合式）
+=======
+>>>>>>> Stashed changes
+  if (ticket && window.innerWidth <= 768) {
+    return (
+      <MobileSupportDetailPage
+        ticket={{
+          ticket_id: ticket.ticket_id,
+          subject: ticket.subject,
+          status: ticket.status,
+          category: ticket.category,
+          created_at: ticket.created_at,
+          messages: ticket.messages as any,
+        }}
+        newMessage={replyText}
+        setNewMessage={setReplyText}
+        sending={replyLoading}
+        onSend={handleReply}
+        onBack={() => navigate('/support')}
+        refreshing={loading}
+        onReload={() => {
+          if (token) fetchTicketByToken(ticket.ticket_id, token)
+          else if (isLoggedIn) fetchTicketByAuth(ticket.ticket_id)
+        }}
+      />
+    )
+  }
+
 
   return (
     <PageLayout pathname={`/support/ticket/${ticketId || ''}`} maxWidth="max-w-4xl">
-      {/* 返回鍵區塊 */}
+      
       <div className="pt-4 pb-2">
         <button
           onClick={() => {
@@ -524,7 +531,7 @@ export default function TicketTrackPage() {
       </div>
 
       <div className="max-w-4xl mx-auto p-0">
-      {/* 工單資訊標題 */}
+      
       <div className="bg-surface border border-border rounded-lg p-6 mb-6">
         <div className="flex items-start justify-between mb-4">
           <div>
@@ -538,14 +545,6 @@ export default function TicketTrackPage() {
               </span>
             </div>
             <h1 className="text-xl font-bold mb-2">{ticket.subject}</h1>
-          </div>
-          
-          <div className="text-right">
-            <div className={`text-sm ${getPriorityColor(ticket.priority)} font-medium`}>
-              {ticket.priority === 'low' ? '低' : 
-               ticket.priority === 'medium' ? '中' : 
-               ticket.priority === 'high' ? '高' : '緊急'}優先級
-            </div>
           </div>
         </div>
 
@@ -565,7 +564,7 @@ export default function TicketTrackPage() {
         </div>
       </div>
 
-      {/* 錯誤訊息 */}
+      
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center gap-2">
@@ -575,7 +574,7 @@ export default function TicketTrackPage() {
         </div>
       )}
 
-      {/* 對話記錄 */}
+      
       <div className="bg-surface border border-border rounded-lg">
         <div className="p-4 border-b border-border">
           <h2 className="font-semibold flex items-center gap-2">
@@ -584,35 +583,16 @@ export default function TicketTrackPage() {
           </h2>
         </div>
 
-        <div className="divide-y divide-border">
-          {ticket.messages.map((message, index) => (
-            <div key={message.id} className="p-6">
-              <div className="flex items-start gap-4">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                  message.author_type === 'admin' 
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                    : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
-                }`}>
-                  {message.author_display_name.charAt(0).toUpperCase()}
-                </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-medium">{message.author_display_name}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      message.author_type === 'admin' 
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                        : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'
-                    }`}>
-                      {message.author_type === 'admin' ? '管理員' : '用戶'}
-                    </span>
-                    <span className="text-xs text-muted">{formatDate(message.created_at)}</span>
-                  </div>
-                  
-                  <div className="prose prose-sm max-w-none text-fg">
-                    <div className="whitespace-pre-wrap break-words">
-                      {message.body}
-                    </div>
+        <div className="p-3 space-y-2">
+          {ticket.messages.map((message) => (
+            <div key={message.id} className={`flex ${message.author_type === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className="max-w-[80%]">
+                <div className={`${message.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border'} px-3 py-2 rounded-2xl`} style={{ maxWidth: '100%' }}>
+                  {message.body.split('\n').map((line, idx) => (
+                    <p key={idx} className={`text-sm ${message.author_type === 'user' ? 'text-primary-foreground' : 'text-fg'}`}>{line}</p>
+                  ))}
+                  <div className={`text-[11px] mt-1 leading-tight ${message.author_type === 'user' ? 'text-primary-foreground/80' : 'text-muted'}`}>
+                    <div className="font-medium">{message.author_display_name}</div>
                   </div>
                 </div>
               </div>
@@ -620,42 +600,38 @@ export default function TicketTrackPage() {
           ))}
         </div>
 
-        {/* 回覆表單 */}
+        
         {ticket.status !== 'closed' && (
-          <div className="p-6 border-t border-border bg-surface/50">
-            <div className="space-y-4">
-              <label className="block text-sm font-medium">新增回覆</label>
+          <div className="p-3 border-t border-border bg-surface/50">
+            <div className="flex items-end gap-2">
               <textarea
                 placeholder="輸入您的回覆..."
-                rows={4}
+                rows={1}
                 value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                className="w-full p-3 border border-border rounded-lg resize-none"
+                onChange={(e) => {
+                  const el = e.target as HTMLTextAreaElement
+                  setReplyText(el.value)
+                  el.style.height = 'auto'
+                  el.style.height = Math.min(el.scrollHeight, 240) + 'px'
+                }}
+                className="flex-1 px-3 py-2 bg-surface border border-border rounded-xl text-fg placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none overflow-hidden leading-snug"
                 maxLength={10000}
               />
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-muted">{replyText.length}/10000</span>
-                <button
-                  onClick={handleReply}
-                  disabled={!replyText.trim() || replyLoading}
-                  className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {replyLoading ? (
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      發送中...
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Send className="w-4 h-4" />
-                      發送回覆
-                    </div>
-                  )}
-                </button>
-              </div>
+              <button
+                onClick={handleReply}
+                disabled={!replyText.trim() || replyLoading}
+                className={`inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-colors px-3 py-2 ${replyLoading ? 'opacity-50 cursor-not-allowed' : ''} bg-primary text-primary-foreground hover:bg-primary-hover`}
+              >
+                {replyLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                <span className="text-sm">發送</span>
+              </button>
             </div>
           </div>
-                 )}
+        )}
       </div>
       </div>
     </PageLayout>

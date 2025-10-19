@@ -11,20 +11,20 @@ import { registerDefaultNotificationPlugins } from '@/plugins/notifications'
 import { on, off } from '@/socket'
 
 interface NotificationContextType extends ReturnType<typeof useNotifications> {
-  // 可以擴展額外方法
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
 
+/**
+ *
+ */
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const notificationMethods = useNotifications()
 
-  // 註冊所有通知插件（僅執行一次）
   useEffect(() => {
     registerDefaultNotificationPlugins()
   }, [])
 
-  // 自動註冊所有插件的 Socket 事件處理器
   useEffect(() => {
     const plugins = notificationManager.getPlugins()
     const handlers: Array<{ event: string; handler: (payload: any) => void }> = []
@@ -42,7 +42,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    // 清理
     return () => {
       handlers.forEach(({ event, handler }) => {
         off(event, handler)
@@ -53,7 +52,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   return (
     <NotificationContext.Provider value={notificationMethods}>
       {children}
-      {/* 電腦版右下角通知彈窗 */}
+      
       <div className="hidden sm:block">
         <NotificationToastContainer
           notifications={notificationMethods.notifications}
@@ -65,6 +64,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ *
+ */
 export function useNotificationContext() {
   const context = useContext(NotificationContext)
   if (context === undefined) {
@@ -87,7 +89,6 @@ export function useNotificationContext() {
 export function useRealtimeNotifications() {
   const { addModerationNotification } = useNotificationContext()
 
-  // 保留向後兼容的方法（現在直接使用插件系統）
   const handlePostApproved = (payload: { id: number }) => {
     addModerationNotification('post_approved', payload.id)
   }

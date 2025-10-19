@@ -4,6 +4,9 @@ import { NavBar } from '@/components/layout/NavBar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { useAuth } from '@/contexts/AuthContext'
 
+/**
+ *
+ */
 export default function RegisterConfirmPage() {
   const [sp] = useSearchParams()
   const nav = useNavigate()
@@ -83,7 +86,6 @@ export default function RegisterConfirmPage() {
         throw new Error(j?.msg || j?.error?.message || '註冊失敗')
       }
       const j = await r.json()
-      // 儲存 JWT 與角色學校資訊
       try {
         const at = j?.access_token
         const rt = j?.refresh_token
@@ -95,7 +97,6 @@ export default function RegisterConfirmPage() {
           return
         }
       } catch {}
-      // fallback：返回登入頁
       nav('/auth')
     } catch (e: any) {
       setErr(e?.message || '註冊失敗')

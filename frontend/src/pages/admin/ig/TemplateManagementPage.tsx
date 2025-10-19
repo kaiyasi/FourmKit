@@ -45,11 +45,8 @@ const TemplateManagementPage: React.FC = () => {
   };
 
   const handleFormSuccess = () => {
-    // 儲存成功後，刷新模板列表但保持在編輯頁面
     setRefreshKey(prev => prev + 1);
-    // 如果需要重新載入編輯中的模板，可以重新獲取
     if (editingTemplate?.id) {
-      // 重新載入模板資料以確保顯示最新內容
       fetch(`/api/admin/ig/templates/${editingTemplate.id}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
@@ -75,7 +72,7 @@ const TemplateManagementPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -103,7 +100,7 @@ const TemplateManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 表單或列表 */}
+        
         {showForm ? (
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <div className="flex items-center justify-between mb-4">

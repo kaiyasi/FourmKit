@@ -1,7 +1,13 @@
+/**
+ *
+ */
 export type School = { id: number; slug: string; name: string; logo_path?: string | null };
 
 const KEY = 'selected_school_slug';
 
+/**
+ *
+ */
 export function getSelectedSchoolSlug(): string | null {
   try {
     const v = localStorage.getItem(KEY);
@@ -11,6 +17,9 @@ export function getSelectedSchoolSlug(): string | null {
   }
 }
 
+/**
+ *
+ */
 export function setSelectedSchoolSlug(slug: string | null) {
   try {
     if (!slug) localStorage.removeItem(KEY);
@@ -18,6 +27,9 @@ export function setSelectedSchoolSlug(slug: string | null) {
   } catch {}
 }
 
+/**
+ *
+ */
 export function isCrossSchool(): boolean {
   return !getSelectedSchoolSlug();
 }

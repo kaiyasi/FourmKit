@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import MobileHeader from '@/components/MobileHeader'
@@ -16,8 +16,10 @@ interface UserSettings {
   language?: string
 }
 
+/**
+ *
+ */
 export default function SettingsPage() {
-  // 全部學校清單（供 dev_admin 切換）
   useEffect(() => {
     (async () => {
       try {
@@ -41,6 +43,7 @@ export default function SettingsPage() {
   const [schoolMeta, setSchoolMeta] = useState<{ id:number; slug:string; name:string }|null>(null)
   const [canEditSchool, setCanEditSchool] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const avatarCardRef = useRef<HTMLDivElement | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -57,6 +60,12 @@ export default function SettingsPage() {
   const [quietMode, setQuietMode] = useState<boolean>(()=>{ try { return localStorage.getItem('fk_quiet_toasts')==='1' } catch { return false } })
   const [showCount, setShowCount] = useState<number>(20)
 
+  const toCdnUrl = (p?: string | null): string | null => {
+    if (!p) return null
+    if (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('/')) return p
+    return `/uploads/${p}`
+  }
+
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
@@ -68,24 +77,19 @@ export default function SettingsPage() {
     loadSettings()
   }, [])
 
-  // 通知中心：訂閱變更
   useEffect(() => {
     const read = () => {
       const currentSlug = (localStorage.getItem('school_slug')||'') || null
       const currentUserId = profile?.personal_id || null
       const userRole = role
       
-      // 根據用戶角色決定過濾條件
-      let filter: any = {}
+      const filter: any = {}
       
       if (userRole === 'dev_admin') {
-        // dev_admin 可以看到所有通知，但根據學校過濾選項
         if (notifFilterSchoolOnly) {
           filter.school = currentSlug
         }
-        // dev_admin 不需要 user_id 過濾，可以看到所有通知
       } else {
-        // 其他用戶只能看到與自己相關的通知
         filter.user_id = currentUserId
         if (notifFilterSchoolOnly) {
           filter.school = currentSlug
@@ -105,7 +109,6 @@ export default function SettingsPage() {
     }
   }, [notifFilterSchoolOnly, profile])
 
-  // 監聽學校切換，重新載入該校設定
   useEffect(() => {
     const onChanged = () => loadSchoolSettings()
     window.addEventListener('fk_school_changed', onChanged as any)
@@ -124,7 +127,6 @@ export default function SettingsPage() {
         theme_preference: currentTheme,
         language: 'zh-TW'
       })
-      // 依角色自動選擇學校（校內管理員/校內版主不可自選）
       try {
         const r = role
         const userSchoolSlug = p?.school?.slug || ''
@@ -141,7 +143,6 @@ export default function SettingsPage() {
       try {
         const wh = await AccountAPI.webhookGet()
         const conf = wh?.config || {}
-        // 僅在尚未載入過時才覆寫，以免覆蓋使用者正在輸入的內容
         if (!webhookLoaded) {
           setWebhook({ 
             url: conf.url || '', 
@@ -164,7 +165,6 @@ export default function SettingsPage() {
   }
 
   const getCurrentSchoolSlug = () => {
-    // 角色強制：校內管理員/校內版主 → 永遠鎖定自己的學校
     try {
               const r = role
       const forced = profile?.school?.slug || ''
@@ -201,14 +201,10 @@ export default function SettingsPage() {
       } catch {
         setSchoolSettings({ announcement:'', allow_anonymous:true, min_post_chars:15 })
       }
-      // 權限：dev_admin 可編輯所有學校設定；campus_admin 可編輯自己學校設定
-              // role already available from useAuth
       const prof = overrideProfile || profile
-      // 檢查當前用戶是否有權限編輯此學校設定
       const editable = role === 'dev_admin' || (role === 'campus_admin' && prof?.school?.slug === slug)
       setCanEditSchool(Boolean(editable))
       
-      // 添加除錯資訊
       console.log('[DEBUG] 學校設定權限檢查:', {
         role,
         userSchoolSlug: profile?.school?.slug,
@@ -236,7 +232,6 @@ export default function SettingsPage() {
     try {
       setSaving(true)
       setMessage(null)
-      // 使用者一般設定（本地暫存即可）
       setMessage('設定已儲存')
     } catch (error) {
       setMessage('儲存失敗')
@@ -270,7 +265,6 @@ export default function SettingsPage() {
     }
   }
 
-  // 外觀與討論範圍已移除（由全站按鈕/SchoolSwitcher 控制）
 
   if (!isLoggedIn()) {
     return (
@@ -297,7 +291,7 @@ export default function SettingsPage() {
   return (
     <PageLayout pathname={pathname}>
       <MobileHeader subtitle="Settings" />
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -328,7 +322,12 @@ export default function SettingsPage() {
       </div>
 
         <div className="space-y-6">
-          {/* 通知 Webhook 綁定 */}
+<<<<<<< Updated upstream
+          {/* 通知 Webhook 綁定（暫時下線） */}
+=======
+          
+>>>>>>> Stashed changes
+          {false && (
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-4">
               <LinkIcon className="w-6 h-6 text-primary" />
@@ -382,7 +381,12 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          )}
+<<<<<<< Updated upstream
           {/* 學校設定（依 SchoolSwitcher 決定學校）- 僅管理員可見 */}
+=======
+          
+>>>>>>> Stashed changes
           {isAdmin && (
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-2">
@@ -393,7 +397,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* dev_admin 可選擇學校；校內管理員/校內版主不可自選，固定自己學校 */}
+            
             {role === 'dev_admin' && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-muted mb-1">選擇學校</label>
@@ -406,7 +410,7 @@ export default function SettingsPage() {
                   }}
                 >
                   <option value="" disabled>請選擇學校</option>
-                  {/* 取得全部學校清單 */}
+                  
                   {Array.isArray(window.__allSchools) && window.__allSchools.map(s => (
                     <option key={s.slug} value={s.slug}>{s.name}</option>
                   ))}
@@ -414,7 +418,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 校管理員只顯示自己學校（無下拉） */}
+            
             {role !== 'dev_admin' && schoolMeta && (
               <div className="mb-2 text-sm text-muted">（僅能管理自己學校：{schoolMeta.name}）</div>
             )}
@@ -462,19 +466,18 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-muted mb-1">最小發文字數</label>
-                <input
-                  type="number"
-                  disabled={!canEditSchool || !schoolMeta}
-                  value={Number(schoolSettings?.min_post_chars ?? 15)}
-                  onChange={(e)=> setSchoolSettings(prev=> ({ ...(prev||{}), min_post_chars: Number(e.target.value || 15) }))}
-                  className="w-40 p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  min={1}
-                />
-              </div>
-
-              <div className="flex justify-end">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <label className="block text-sm font-medium text-muted">最小發文字數</label>
+                  <input
+                    type="number"
+                    disabled={!canEditSchool || !schoolMeta}
+                    value={Number(schoolSettings?.min_post_chars ?? 15)}
+                    onChange={(e)=> setSchoolSettings(prev=> ({ ...(prev||{}), min_post_chars: Number(e.target.value || 15) }))}
+                    className="w-40 p-3 bg-surface-hover rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    min={1}
+                  />
+                </div>
                 <button
                   onClick={saveSchoolSettings}
                   disabled={!canEditSchool || !schoolMeta || saving}
@@ -488,7 +491,7 @@ export default function SettingsPage() {
           </div>
           )}
 
-          {/* 通知中心：顯示於學校設定下方 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
               <div className="flex items-center gap-3">
@@ -526,7 +529,7 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
-            {/* 未讀列表（預設顯示） */}
+            
             {notifs.filter((n:any)=>!n.read).length === 0 ? (
               <div className="text-sm text-muted">沒有未讀通知</div>
             ) : (
@@ -544,7 +547,6 @@ export default function SettingsPage() {
                     return slug
                   }
                   
-                  // 為 dev_admin 添加詳細信息
                   const isDevAdmin = role === 'dev_admin'
                   const showUserInfo = isDevAdmin && n.user_id
                   
@@ -572,7 +574,7 @@ export default function SettingsPage() {
                 })}
               </div>
             )}
-            {/* 已讀區（可展開） */}
+            
             <div className="flex items-center justify-between mb-2 mt-2">
               <button className="text-sm text-muted underline-offset-4 hover:underline" onClick={()=> setNotifOpen(v=>!v)}>
                 {notifOpen ? '收起歷史' : '展開歷史'}
@@ -603,7 +605,7 @@ export default function SettingsPage() {
               )
             )}
           </div>
-          {/* 帳號資訊卡片 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <div className="flex items-center gap-3 mb-6">
               <User className="w-6 h-6 text-primary" />
@@ -612,7 +614,7 @@ export default function SettingsPage() {
             
             {profile && (
               <>
-                {/* （已停用）手機合併卡，改為沿用分卡樣式在手機以單欄排列 */}
+                
                 <div className="hidden space-y-2">
                   <div className="p-4 bg-surface-hover rounded-xl border border-border">
                     <div className="text-base font-medium text-fg truncate" title={profile.username}>
@@ -637,7 +639,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* 分卡樣式：手機單欄、平板以上雙欄 */}
+                
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-muted">用戶名稱</label>
@@ -661,7 +663,6 @@ export default function SettingsPage() {
                           if (newName && newName.trim() && newName !== profile.username) {
                             const trimmedName = newName.trim()
                             
-                            // 基本驗證
                             if (trimmedName.length < 2) {
                               setMessage('用戶名稱至少需要 2 個字符')
                               return
@@ -676,7 +677,6 @@ export default function SettingsPage() {
                               setSaving(true)
                               await AccountAPI.updateProfile({ username: trimmedName })
                               setMessage('用戶名稱更新成功')
-                              // 重新載入個人資料
                               const updatedProfile = await AccountAPI.profile()
                               setProfile(updatedProfile)
                             } catch (error: any) {
@@ -695,7 +695,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
-                {/* 個人識別碼（亂碼） */}
+                
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-muted">個人識別碼</label>
                   <div className="p-4 bg-surface-hover rounded-xl border border-border">
@@ -764,9 +764,9 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* 設定選項 */}
+          
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 密碼設定 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
               <div className="flex items-center gap-3 mb-6">
                 <Key className="w-6 h-6 text-primary" />
@@ -833,82 +833,57 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* 通知設定 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
               <div className="flex items-center gap-3 mb-6">
-                <Bell className="w-6 h-6 text-primary" />
-                <h2 className="text-xl font-semibold dual-text">通知設定</h2>
+                <User className="w-6 h-6 text-primary" />
+                <h2 className="text-xl font-semibold dual-text">個人資料</h2>
               </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-surface-hover rounded-xl border border-border">
-                  <div>
-                    <div className="font-medium text-fg">瀏覽器通知</div>
-                    <div className="text-sm text-muted">允許系統發送桌面通知提醒</div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={settings.notification_enabled}
-                      onChange={(e) => setSettings(prev => ({ ...prev, notification_enabled: e.target.checked }))}
-                      className="sr-only peer"
+              <div className="grid grid-cols-1 gap-6">
+                
+                <div className="p-4 bg-surface-hover rounded-xl border border-border" ref={avatarCardRef}>
+                  <div className="text-sm font-medium text-fg mb-3">頭像設置</div>
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={avatarPreview || (profile?.avatar_path ? toCdnUrl(profile.avatar_path) : (()=>{
+                        const name = (profile?.username||'USER')
+                        const initials = name.slice(0,3)
+                        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'>\n<rect width='100%' height='100%' fill='#f3f4f6'/>\n<text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' font-size='48' font-family='sans-serif' fill='#374151'>${initials}</text>\n</svg>`
+                        return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+                      })())}
+                      alt="avatar"
+                      className="w-16 h-16 rounded-full object-cover border border-border"
                     />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-checked:border-primary"></div>
-                  </label>
+                    <div className="space-y-2 flex-1 min-w-0 pr-3">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="block w-full max-w-full truncate"
+                        onChange={async (e)=>{
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          try {
+                            setMessage('上傳中...')
+                            const r = await AccountAPI.uploadAvatar(f);
+                            setAvatarPreview(r.path || URL.createObjectURL(f))
+                            const updatedProfile = await AccountAPI.profile();
+                            setProfile(updatedProfile as any)
+                            setMessage('頭像已更新')
+                            setTimeout(()=> setMessage(null), 1200)
+                          } catch (err:any) {
+                            setMessage(err?.message || '上傳失敗')
+                          }
+                        }}
+                      />
+                      <div className="text-xs text-muted">建議尺寸 ≥ 256×256px，PNG/JPG</div>
+                    </div>
+                  </div>
                 </div>
                 
-                <div className="space-y-3">
-                  <h3 className="text-lg font-medium text-fg mb-3">帳號資訊</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center p-3 bg-surface-hover rounded-lg">
-                      <span className="text-muted">登入方式</span>
-                      <span className="font-medium">
-                        {profile?.auth_provider === 'google' ? 'Google 帳號' : 
-                         profile?.auth_provider === 'local' ? '帳號密碼' : 
-                         profile?.auth_provider || '帳號密碼'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-surface-hover rounded-lg">
-                      <span className="text-muted">密碼狀態</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">
-                          {profile?.has_password ? '已設定密碼' : '未設定密碼'}
-                        </span>
-                        {profile?.has_password ? (
-                          <BadgeCheck className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-surface-hover rounded-lg">
-                      <span className="text-muted">帳號安全</span>
-                      <span className="font-medium">
-                        {profile?.auth_provider === 'google' && profile?.has_password ? '雙重保護' :
-                         profile?.auth_provider === 'google' ? 'Google 驗證' :
-                         profile?.has_password ? '密碼保護' : '基礎保護'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {!profile?.has_password && profile?.auth_provider !== 'google' && (
-                    <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                        <div className="text-sm">
-                          <p className="text-amber-800 dark:text-amber-200 font-medium mb-1">建議設定密碼</p>
-                          <p className="text-amber-700 dark:text-amber-300 text-xs">
-                            設定密碼可提升帳號安全性，避免意外登出時無法重新登入
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
-            {/* 手機版登出區塊 */}
+            
             <div className="md:hidden bg-surface border border-border rounded-2xl p-6 shadow-soft">
               <div className="flex items-center gap-3 mb-6">
                 <AlertTriangle className="w-6 h-6 text-red-500" />
@@ -939,7 +914,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* 儲存按鈕 */}
+        
         <div className="flex justify-end mt-6">
           <button
             onClick={saveSettings}

@@ -19,7 +19,6 @@ def retry_failed_posts():
     print("=== 重新處理失敗的社交媒體貼文 ===")
     
     with get_session() as db:
-        # 取得所有失敗的貼文
         failed_posts = db.query(SocialPost).filter(
             SocialPost.status == PostStatus.FAILED
         ).all()
@@ -34,17 +33,14 @@ def retry_failed_posts():
             print(f"   原始錯誤: {post.error_message[:80]}...")
             
             try:
-                # 重設狀態
                 post.status = PostStatus.PENDING
                 post.error_message = None
                 post.retry_count = post.retry_count + 1
                 post.updated_at = datetime.now(timezone.utc)
                 
-                # 重新生成內容
                 print("   🔄 重新生成內容...")
                 content_generator = ContentGenerator()
                 
-                # 生成圖片和文案
                 generated_content = content_generator.generate_content(
                     forum_post=post.forum_post,
                     template=post.template or post.account.default_template
@@ -60,7 +56,6 @@ def retry_failed_posts():
                     print(f"      文案長度: {len(post.generated_caption) if post.generated_caption else 0}")
                     print(f"      標籤: {len(post.hashtags)}")
                     
-                    # 更新狀態為 QUEUED
                     post.status = PostStatus.QUEUED
                     db.commit()
                     
@@ -107,7 +102,6 @@ def check_post_status():
         for status, count in status_counts:
             print(f"   {status.upper()}: {count}")
             
-        # 檢查是否有可以發布的貼文
         ready_posts = db.query(SocialPost).filter(
             SocialPost.status == PostStatus.QUEUED,
             SocialPost.generated_image_url.isnot(None),
@@ -123,10 +117,8 @@ if __name__ == "__main__":
     print("=" * 50)
     
     try:
-        # 重新處理失敗貼文
         retry_success = retry_failed_posts()
         
-        # 檢查狀態
         has_ready_posts = check_post_status()
         
         print("\n" + "=" * 50)

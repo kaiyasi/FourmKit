@@ -1,5 +1,3 @@
-// CDN URL normalization utilities
-// Ensures idempotent prefixing and clean URLs for image src usage.
 
 const DEFAULT_CDN = 'https://cdn.serelix.xyz';
 
@@ -17,27 +15,22 @@ export function normalizeCdnUrl(input: string | null | undefined): string {
   if (!u) return '';
   if (/^(data:|https?:\/\/)/i.test(u)) return u; // already absolute
 
-  // Handle protocol-relative URLs (e.g., //cdn.example.com/...) by making https explicit
   if (/^\/\//.test(u)) return 'https:' + u;
 
-  // Backward-compat: old paths like "/ig_rendered/..." should live under "/uploads/ig_rendered/..."
   let pathOnly = u;
   if (u.startsWith('/ig_rendered/')) {
     pathOnly = '/uploads' + u; // -> /uploads/ig_rendered/...
   } else if (u.startsWith('ig_rendered/')) {
     pathOnly = '/uploads/' + u.replace(/^\/+/, '');
   } else if (/^\/?public\//.test(u)) {
-    // Ensure public assets are served from /uploads/public/...
     pathOnly = '/' + u.replace(/^\/+/, '');
     if (!pathOnly.startsWith('/uploads/')) {
       pathOnly = '/uploads' + pathOnly;
     }
   }
 
-  // Join with CDN base
   const base = CDN_BASE.replace(/\/$/, '');
   const path = pathOnly.startsWith('/') ? pathOnly : '/' + pathOnly;
-  // Collapse any accidental duplicate slashes after the domain
   const joined = base + path;
   return joined.replace(/([^:\/])\/+/g, (m, p1) => p1 + '/');
 }

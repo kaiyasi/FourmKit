@@ -17,7 +17,6 @@ def main():
         qm = IGQueueManager(db)
         pub = IGPublisher(db)
 
-        # 渲染所有 PENDING（最多 50）
         pending = db.query(InstagramPost).filter(InstagramPost.status == PostStatus.PENDING).order_by(InstagramPost.id.asc()).limit(50).all()
         rendered = 0
         for p in pending:
@@ -28,12 +27,10 @@ def main():
                 pass
         print(f"[IG Manual] 渲染完成: {rendered}/{len(pending)}")
 
-        # 為每個批次帳號嘗試組批與發布（若達標）
         accounts = db.query(InstagramAccount).filter(InstagramAccount.is_active == True, InstagramAccount.publish_mode == PublishMode.BATCH).all()
         for acc in accounts:
             created = 0
             published = 0
-            # 迴圈直到不再達標或安全上限
             for _ in range(5):
                 ready_cnt = qm.get_account_pending_count(acc.id, PublishMode.BATCH)
                 if ready_cnt < (acc.batch_count or 0):
@@ -50,7 +47,6 @@ def main():
                         published += 1
             print(f"[IG Manual] 帳號 {acc.username}: 組批 {created}，發布 {published}")
 
-        # Report publishing-in-progress older than 30 minutes
         from datetime import datetime, timezone, timedelta
         stuck = db.query(InstagramPost).filter(InstagramPost.status == PostStatus.PUBLISHING).all()
         bad = []

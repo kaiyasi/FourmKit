@@ -6,18 +6,27 @@
 import { NotificationPlugin } from '@/types/notifications'
 import { MessageCircle, Heart, AtSign } from 'lucide-react'
 
+/**
+ *
+ */
 export interface CommentNotificationData {
   postId: number
   content: string
   username?: string
 }
 
+/**
+ *
+ */
 export interface ReactionNotificationData {
   postId: number
   type: 'like' | 'dislike'
   username?: string
 }
 
+/**
+ *
+ */
 export interface MentionNotificationData {
   postId: number
   commentId?: number
@@ -25,7 +34,6 @@ export interface MentionNotificationData {
   username: string
 }
 
-// 留言通知
 export const commentNotificationPlugin: NotificationPlugin<CommentNotificationData> = {
   type: 'comment',
   label: '留言回覆',
@@ -51,7 +59,6 @@ export const commentNotificationPlugin: NotificationPlugin<CommentNotificationDa
   }
 }
 
-// 互動通知（點讚/點踩）
 export const reactionNotificationPlugin: NotificationPlugin<ReactionNotificationData> = {
   type: 'reaction',
   label: '社交互動',
@@ -83,7 +90,6 @@ export const reactionNotificationPlugin: NotificationPlugin<ReactionNotification
   }
 }
 
-// @提及通知
 export const mentionNotificationPlugin: NotificationPlugin<MentionNotificationData> = {
   type: 'mention',
   label: '用戶提及',

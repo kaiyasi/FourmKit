@@ -1,6 +1,9 @@
 import { useEffect } from 'react'
 import { on, off } from '@/services/socket'
 
+/**
+ *
+ */
 export type AdminSupportEvent = {
   event_type: 'ticket_created' | 'message_sent' | 'status_changed'
   ticket_id: string
@@ -8,6 +11,9 @@ export type AdminSupportEvent = {
   ts: string
 }
 
+/**
+ *
+ */
 export function useAdminSupportSocket(handler: (ev: AdminSupportEvent)=>void) {
   useEffect(() => {
     const h = (payload: any) => {

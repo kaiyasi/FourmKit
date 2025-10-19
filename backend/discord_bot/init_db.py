@@ -14,16 +14,13 @@ from config import DATABASE_URL
 def init_discord_database():
     """初始化 Discord 相關資料表"""
     try:
-        # 建立資料庫引擎
         engine = create_engine(DATABASE_URL)
         
-        # 創建所有 Discord 相關的資料表
         print("正在創建 Discord 資料表...")
         Base.metadata.create_all(engine, checkfirst=True)
         
         print("✅ Discord 資料表初始化完成！")
         
-        # 創建 Session 來測試連接
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         session = SessionLocal()
         session.close()

@@ -53,7 +53,7 @@ const AnalyticsPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -73,7 +73,7 @@ const AnalyticsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 時間範圍選擇 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Calendar className="w-4 h-4 text-muted" />
@@ -96,11 +96,11 @@ const AnalyticsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 統計卡片 */}
+        
         {overview && (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              {/* 總貼文數 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm text-muted">總貼文數</div>
@@ -112,7 +112,7 @@ const AnalyticsPage: React.FC = () => {
                 <div className="text-xs text-muted mt-1">最近 {days} 天</div>
               </div>
 
-              {/* 已發布 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm text-muted">已發布</div>
@@ -124,7 +124,7 @@ const AnalyticsPage: React.FC = () => {
                 <div className="text-xs text-muted mt-1">成功發布</div>
               </div>
 
-              {/* 失敗 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm text-muted">失敗</div>
@@ -136,7 +136,7 @@ const AnalyticsPage: React.FC = () => {
                 <div className="text-xs text-muted mt-1">發布失敗</div>
               </div>
 
-              {/* 待處理 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm text-muted">待處理</div>
@@ -149,9 +149,9 @@ const AnalyticsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 成功率與今日發布 */}
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* 成功率 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">成功率</h3>
                 <div className="text-5xl font-bold text-primary mb-4">{overview.success_rate}%</div>
@@ -166,7 +166,7 @@ const AnalyticsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* 今日發布 */}
+              
               <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">今日發布</h3>
                 <div className="text-5xl font-bold text-purple-600 mb-4">{overview.today_published}</div>
@@ -179,7 +179,7 @@ const AnalyticsPage: React.FC = () => {
           </>
         )}
 
-        {/* 重新整理按鈕 */}
+        
         <div className="mt-6 flex justify-center">
           <button
             onClick={fetchOverview}

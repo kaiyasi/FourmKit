@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/authz.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import abort, request
 from flask_jwt_extended import get_jwt, verify_jwt_in_request
 from functools import wraps
@@ -6,12 +10,10 @@ def require_role(*roles: str):
     def wrap(fn):
         @wraps(fn)
         def inner(*a, **kw):
-            # 確保已驗證 JWT，否則 get_jwt 會拋錯
             verify_jwt_in_request()
             claims = get_jwt() or {}
             
             if claims.get("role") not in roles:
-                # 嘗試記錄未授權嘗試（避免硬闖 /XXX）
                 try:
                     from utils.admin_events import log_system_event
                     role = claims.get('role') or 'guest'

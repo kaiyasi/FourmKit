@@ -19,7 +19,7 @@ type Ticket = {
   subject: string;
   category: string;
   priority: 'low' | 'normal' | 'high' | 'urgent';
-  status: 'open' | 'in_progress' | 'pending' | 'solved' | 'closed';
+  status: 'open' | 'awaiting_admin' | 'awaiting_user' | 'resolved' | 'closed';
   school_name?: string;
   source: 'Web' | 'Discord';
   assigned_to?: string;
@@ -35,7 +35,6 @@ type Assignee = {
   display_name?: string;
 };
 
-// 移除測試單：改由 API 載入
 
 function Badge({ children, color }: { children: React.ReactNode; color?: 'gray' | 'blue' | 'green' | 'yellow' | 'red' }) {
   const cls = useMemo(() => {
@@ -53,18 +52,18 @@ function Badge({ children, color }: { children: React.ReactNode; color?: 'gray' 
 function statusColor(s: Ticket['status']): 'gray' | 'blue' | 'green' | 'yellow' | 'red' {
   switch (s) {
     case 'open': return 'blue';
-    case 'in_progress': return 'yellow';
-    case 'pending': return 'gray';
-    case 'solved': return 'green';
+    case 'awaiting_admin': return 'yellow';
+    case 'awaiting_user': return 'gray';
+    case 'resolved': return 'green';
     case 'closed': return 'gray';
   }
 }
 
 const statusDisplay: Record<Ticket['status'], string> = {
   open: '開啟',
-  in_progress: '處理中',
-  pending: '等待用戶',
-  solved: '已解決',
+  awaiting_admin: '等待管理員',
+  awaiting_user: '等待用戶',
+  resolved: '已解決',
   closed: '已關閉',
 };
 
@@ -117,7 +116,14 @@ function displayPublicId(t: Ticket): string {
   return `${prefix}-${stableRandomString(t.public_id || `${t.id}`, 8)}`;
 }
 
+<<<<<<< Updated upstream
 export default function SupportCenterPage() {
+=======
+/**
+ *
+ */
+export default function SupportCenterPage() {
+>>>>>>> Stashed changes
   const nav = useNavigate();
   const role = getRole();
   const isDevAdmin = role === 'dev_admin';
@@ -129,13 +135,11 @@ export default function SupportCenterPage() {
   const [error, setError] = useState<string>('');
   const [activeId, setActiveId] = useState<number | null>(null);
 
-  // 載入隊列（以後可加入條件）
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true); setError('');
 
-// ...
 
 const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?limit=100&offset=0`);
         const items = ((j?.tickets||[]) as any[]).map((x: any, idx: number): Ticket => ({
@@ -166,8 +170,10 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tickets.filter(t => {
-      // 角色可見範圍：dev_admin 看全部；其他僅看指派給自己
-      if (isLimited && t.assigned_to !== 'Me') return false;
+<<<<<<< Updated upstream
+      // 暫時放寬權限篩選，避免出現無項目而只剩下統計卡的情況
+=======
+>>>>>>> Stashed changes
       if (!q) return true;
       return (
         t.public_id.toLowerCase().includes(q) ||
@@ -175,13 +181,26 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
         (t.school_name || '').toLowerCase().includes(q)
       );
     });
-  }, [tickets, isLimited, query]);
+  }, [tickets, query]);
 
   const active = useMemo(() => filtered.find(t => t.id === activeId) || filtered[0] || null, [filtered, activeId]);
 
   const [messages, setMessages] = useState<Array<{ id: string; from: string; text: string; at: string }>>([]);
   const [messagesLoading, setMessagesLoading] = useState<boolean>(false);
   const [messagesAllowed, setMessagesAllowed] = useState<boolean>(true);
+  const [replyText, setReplyText] = useState<string>('');
+  const [replyBusy, setReplyBusy] = useState<boolean>(false);
+  const [replyErr, setReplyErr] = useState<string>('');
+<<<<<<< Updated upstream
+  // 狀態變更區塊用 state（避免 ReferenceError: busy/status/err 未定義）
+  const [status, setStatus] = useState<Ticket['status']>('open');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+=======
+  const [status, setStatus] = useState<Ticket['status']>('open');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+>>>>>>> Stashed changes
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -192,7 +211,6 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
         const r = await fetch(`/api/support/tickets/${active.public_id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
         const j = await r.json().catch(() => ({}));
         if (r.ok && j?.ok && j?.ticket) {
-          // 訊息在 j.ticket.messages 陣列中
           const messages = j.ticket.messages || [];
           const list = messages.map((m: any, idx: number) => ({
             id: String(m.id ?? idx + 1),
@@ -204,7 +222,6 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
           return;
         }
         if (r.status === 405) { setMessagesAllowed(false); setMessages([]); return; }
-        // 後備：示意訊息
         setMessages([
           { id: 'd1', from: 'user', text: '哈囉，我登入遇到問題', at: new Date(Date.now()-3600_000).toISOString() },
           { id: 'd2', from: 'admin', text: '已收到，我來幫你查看', at: new Date(Date.now()-3500_000).toISOString() },
@@ -220,6 +237,32 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
     };
     loadMessages();
   }, [active?.public_id]);
+
+  const reloadMessages = async () => {
+    try {
+      if (!active?.public_id) return;
+      const r = await fetch(`/api/support/tickets/${active.public_id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.ok && j?.ticket) {
+        const messages = j.ticket.messages || [];
+        const list = messages.map((m: any, idx: number) => ({ id: String(m.id ?? idx + 1), from: m.author_type || m.from || 'user', text: m.body || m.text || m.content || '', at: m.created_at || m.at || new Date().toISOString() }));
+        setMessages(list);
+      }
+    } catch {}
+  };
+
+  const reloadMessages = async () => {
+    try {
+      if (!active?.public_id) return;
+      const r = await fetch(`/api/support/tickets/${active.public_id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.ok && j?.ticket) {
+        const messages = j.ticket.messages || [];
+        const list = messages.map((m: any, idx: number) => ({ id: String(m.id ?? idx + 1), from: m.author_type || m.from || 'user', text: m.body || m.text || m.content || '', at: m.created_at || m.at || new Date().toISOString() }));
+        setMessages(list);
+      }
+    } catch {}
+  };
 
   const reloadQueue = async () => {
     try {
@@ -241,7 +284,6 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
       }));
       setTickets(items);
     } catch (e) {
-      // ignore
     } finally {
       setLoading(false);
     }
@@ -252,7 +294,7 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
       <NavBar pathname="/admin/support" />
       <MobileBottomNav />
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-      {/* 頁面標題（比照審核管理） */}
+      
       <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
         <div className="flex items-center gap-3 mb-2">
           <button
@@ -269,7 +311,7 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
         </div>
       </div>
 
-      {/* 篩選列（比照留言監控） */}
+      
       <div className="bg-surface border border-border rounded-xl p-3 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div className="md:col-span-2">
@@ -281,7 +323,7 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
               onChange={(e)=> setQuery(e.target.value)}
             />
           </div>
-          {/* 移除「只看指派給我」：非 dev_admin 預設只顯示指派給自己，dev_admin 看全部 */}
+          
           <select className="px-3 py-2 rounded-lg border border-border bg-surface text-sm">
             <option>所有狀態</option>
             <option>開啟</option>
@@ -300,7 +342,7 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 客服單隊列 */}
+        
         <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -308,18 +350,10 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
               客服單隊列
               {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
             </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={reloadQueue}
-                className="p-2 text-muted hover:text-fg transition-colors"
-                disabled={loading}
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
+
           </div>
 
-          {/* 項目列表 */}
+          
           <div className="space-y-3">
             {filtered.length === 0 ? (
               <div className="text-center py-8 text-muted">
@@ -383,9 +417,9 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
           </div>
         </div>
 
-        {/* 側邊欄 */}
+        
         <div className="space-y-6">
-          {/* 選中工單詳情 */}
+          
           {active && (
             <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-2">
               <h3 className="text-lg font-semibold text-fg mb-4">工單詳情</h3>
@@ -432,58 +466,130 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
                   </div>
                 )}
 
+<<<<<<< Updated upstream
                 <div className="space-y-2">
+                  {/* 第 1 排：回覆輸入 + 送出 */}
                   <div className="grid grid-cols-3 gap-2">
-                    <input 
-                      className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm" 
-                      placeholder="輸入回覆內容…" 
+                    <input
+                      value={replyText}
+                      onChange={e=> { setReplyText(e.target.value); setReplyErr(''); }}
+                      className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm w-full"
+                      placeholder="輸入回覆內容…"
                     />
-                    <button className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm">
-                      送出回覆
-                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        disabled={replyBusy || !replyText.trim() || !active?.public_id}
+                        onClick={async()=>{
+                          if (!active?.public_id || !replyText.trim()) return;
+                          try{
+                            setReplyBusy(true); setReplyErr('');
+                            const r = await fetch(`/api/admin/support/tickets/${active.public_id}/reply`, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }, body: JSON.stringify({ body: replyText.trim(), internal: false }) });
+                            const j = await r.json().catch(()=> ({}));
+                            if (!r.ok || !j?.ok) throw new Error(j?.error || 'REPLY_FAIL');
+                            setReplyText('');
+                            await reloadMessages();
+                            await reloadQueue();
+                          }catch(e:any){ setReplyErr(formatError(e) || '回覆失敗'); }
+                          finally{ setReplyBusy(false); }
+                        }}
+                        className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm disabled:opacity-50 w-full"
+                      >
+                        {replyBusy ? '發送中…' : '送出回覆'}
+                      </button>
+                      {replyErr && <span className="text-danger text-xs">{replyErr}</span>}
+                    </div>
                   </div>
-                  
-                  {/* 狀態更新控件 */}
-                  <StatusUpdater publicId={active.public_id} current={active.status} onDone={reloadQueue} />
-                  
-                  {isDevAdmin && (
-                    <div className="flex items-center gap-2">
+
+                  {/* 第 2 排：狀態選單 + 更新 + 派發（同排，均分） */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <select value={status} onChange={e=> setStatus(e.target.value as Ticket['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm w-full">
+                      <option value="open">開啟</option>
+                      <option value="in_progress">處理中</option>
+                      <option value="pending">等待用戶</option>
+                      <option value="solved">已解決</option>
+                      <option value="closed">已關閉</option>
+                    </select>
+                    <button disabled={busy} onClick={async()=>{
+                      try{
+                        setBusy(true); setErr('');
+                        const r = await fetch(`/api/admin/support/tickets/${active.public_id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
+                        const j = await r.json().catch(()=> ({}));
+                        if (!r.ok || !j?.ok) throw new Error(j?.error || 'STATUS_UPDATE_FAIL');
+                        await reloadQueue();
+                      }catch(e:any){ setErr((e?.message)||'更新失敗'); }
+                      finally{ setBusy(false); }
+                    }} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">更新狀態</button>
+                    <div className="w-full">
                       <AssignButton publicId={active.public_id} onDone={reloadQueue} />
                     </div>
-                  )}
+                  </div>
                 </div>
+=======
+                <div className="space-y-2">
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      value={replyText}
+                      onChange={e=> { setReplyText(e.target.value); setReplyErr(''); }}
+                      className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm w-full"
+                      placeholder="輸入回覆內容…"
+                    />
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        disabled={replyBusy || !replyText.trim() || !active?.public_id}
+                        onClick={async()=>{
+                          if (!active?.public_id || !replyText.trim()) return;
+                          try{
+                            setReplyBusy(true); setReplyErr('');
+                            const r = await fetch(`/api/admin/support/tickets/${active.public_id}/reply`, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }, body: JSON.stringify({ body: replyText.trim(), internal: false }) });
+                            const j = await r.json().catch(()=> ({}));
+                            if (!r.ok || !j?.ok) throw new Error(j?.error || 'REPLY_FAIL');
+                            setReplyText('');
+                            await reloadMessages();
+                            await reloadQueue();
+                          }catch(e:any){ setReplyErr(formatError(e) || '回覆失敗'); }
+                          finally{ setReplyBusy(false); }
+                        }}
+                        className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm disabled:opacity-50 w-full"
+                      >
+                        {replyBusy ? '發送中…' : '送出回覆'}
+                      </button>
+                      {replyErr && <span className="text-danger text-xs">{replyErr}</span>}
+                    </div>
+                  </div>
+
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <select value={status} onChange={e=> setStatus(e.target.value as Ticket['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm w-full">
+                      <option value="open">開啟</option>
+                      <option value="awaiting_admin">等待管理員</option>
+                      <option value="awaiting_user">等待用戶</option>
+                      <option value="resolved">已解決</option>
+                      <option value="closed">已關閉</option>
+                    </select>
+                    <button disabled={busy} onClick={async()=>{
+                      try{
+                        setBusy(true); setErr('');
+                        const r = await fetch(`/api/admin/support/tickets/${active.public_id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
+                        const j = await r.json().catch(()=> ({}));
+                        if (!r.ok || !j?.ok) throw new Error(j?.error || 'STATUS_UPDATE_FAIL');
+                        await reloadQueue();
+                      }catch(e:any){ setErr((e?.message)||'更新失敗'); }
+                      finally{ setBusy(false); }
+                    }} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">更新狀態</button>
+                    <div className="w-full">
+                      <AssignButton publicId={active.public_id} onDone={reloadQueue} />
+                    </div>
+                  </div>
+                </div>
+>>>>>>> Stashed changes
               </div>
             </div>
           )}
 
-          {/* 統計資訊 - 比照審核管理 */}
-          <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-1">
-            <h2 className="text-lg font-semibold text-fg mb-4">統計資訊</h2>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm text-muted">開啟工單</span>
-                <span className="text-sm font-medium">{filtered.filter(t => t.status === 'open').length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted">處理中</span>
-                <span className="text-sm font-medium">{filtered.filter(t => t.status === 'in_progress').length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted">等待用戶</span>
-                <span className="text-sm font-medium">{filtered.filter(t => t.status === 'pending').length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted">已解決</span>
-                <span className="text-sm font-medium text-green-600">{filtered.filter(t => t.status === 'solved').length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted">總工單數</span>
-                <span className="text-sm font-medium">{filtered.length}</span>
-              </div>
-            </div>
-          </div>
 
-          {/* 最近活動 */}
+
+          
           <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
             <h3 className="text-lg font-semibold text-fg mb-4">最近活動</h3>
             <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -492,8 +598,8 @@ const j = await api<{ ok:boolean; tickets:any[] }>(`/api/admin/support/tickets?l
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${
-                        t.status === 'solved' ? 'bg-green-500' : 
-                        t.status === 'in_progress' ? 'bg-yellow-500' : 'bg-blue-500'
+                        t.status === 'resolved' ? 'bg-green-500' : 
+                        t.status === 'awaiting_admin' ? 'bg-yellow-500' : 'bg-blue-500'
                       }`}></span>
                       <div>
                         <div className="font-medium text-fg text-sm">{t.subject}</div>
@@ -542,16 +648,12 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
     let alive = true;
     const load = async () => {
       setLoading(true);
+<<<<<<< Updated upstream
       try {
-        // 主要端點（避免 404）：先查詢管理後台使用者名單
-        let r = await fetch('/api/admin/users?role=support', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-        let j = await r.json().catch(() => ({}));
-        if (!r.ok || !(Array.isArray(j?.data) || Array.isArray(j))) {
-          // 後備端點（若後端提供）
-          r = await fetch('/api/support/assignees', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
-          j = await r.json().catch(() => ({}));
-        }
-        const arr = (j?.data || j || []).filter(Boolean).map((u: any) => ({ id: Number(u.id), username: u.username || String(u.name || u.id), display_name: u.display_name || u.username }));
+        // 改用既有管理端使用者清單端點（避免 404）
+        const r = await fetch('/api/admin/chat/admin-users', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
+        const j = await r.json().catch(() => ({}));
+        const arr = (j?.users || []).filter(Boolean).map((u: any) => ({ id: Number(u.id), username: u.username || String(u.email || u.id), display_name: u.username }));
         if (alive) setCandidates(arr);
       } catch {
         if (alive) setCandidates([]);
@@ -559,12 +661,29 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
         if (alive) setLoading(false);
       }
     };
+=======
+      try {
+        const r = await fetch('/api/admin/chat/admin-users', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` } });
+        const j = await r.json().catch(() => ({}));
+        const arr = (j?.users || []).filter(Boolean).map((u: any) => ({ id: Number(u.id), username: u.username || String(u.email || u.id), display_name: u.username }));
+        if (alive) setCandidates(arr);
+      } catch {
+        if (alive) setCandidates([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+>>>>>>> Stashed changes
     load();
     return () => { alive = false };
   }, [open]);
   return (
     <>
-      <button onClick={()=> setOpen(true)} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm">指派/轉單</button>
+<<<<<<< Updated upstream
+      <button onClick={()=> setOpen(true)} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">指派/轉單</button>
+=======
+      <button onClick={()=> setOpen(true)} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">指派/轉單</button>
+>>>>>>> Stashed changes
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
           <div className="bg-surface border border-border rounded-2xl p-4 w-full max-w-md">
@@ -585,16 +704,30 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
             </div>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button onClick={()=> setOpen(false)} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm">取消</button>
+<<<<<<< Updated upstream
               <button disabled={busy} onClick={async()=>{
                 try{
                   setBusy(true); setErr('');
-                  const r = await fetch(`/api/support/tickets/${publicId}/assign`, { method:'POST', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ assignee_user_id: userId ? Number(userId) : null }) });
+                  // 使用管理端 PATCH 端點進行指派/取消指派
+                  const r = await fetch(`/api/admin/support/tickets/${publicId}`, { method:'PATCH', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ assigned_to: userId ? Number(userId) : null }) });
                   const j = await r.json().catch(()=> ({}));
                   if (!r.ok || !j?.ok) throw new Error(j?.error || 'ASSIGN_FAIL');
                   setOpen(false); onDone?.();
                 }catch(e:any){ setErr(formatError(e) || '操作失敗'); }
                 finally{ setBusy(false); }
               }} className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm">{busy?'指派中…':'確認指派'}</button>
+=======
+              <button disabled={busy} onClick={async()=>{
+                try{
+                  setBusy(true); setErr('');
+                  const r = await fetch(`/api/admin/support/tickets/${publicId}`, { method:'PATCH', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ assigned_to: userId ? Number(userId) : null }) });
+                  const j = await r.json().catch(()=> ({}));
+                  if (!r.ok || !j?.ok) throw new Error(j?.error || 'ASSIGN_FAIL');
+                  setOpen(false); onDone?.();
+                }catch(e:any){ setErr(formatError(e) || '操作失敗'); }
+                finally{ setBusy(false); }
+              }} className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm">{busy?'指派中…':'確認指派'}</button>
+>>>>>>> Stashed changes
             </div>
           </div>
         </div>
@@ -603,13 +736,14 @@ function AssignButton({ publicId, onDone }: { publicId: string; onDone?: ()=>voi
   );
 }
 
+<<<<<<< Updated upstream
 function StatusUpdater({ publicId, current, onDone }: { publicId: string; current: Ticket['status']; onDone?: ()=>void }){
   const [status, setStatus] = useState<Ticket['status']>(current);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   useEffect(()=>{ setStatus(current) }, [current]);
   return (
-    <div className="mt-3 flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <select value={status} onChange={e=> setStatus(e.target.value as Ticket['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm">
         <option value="open">開啟</option>
         <option value="in_progress">處理中</option>
@@ -620,7 +754,8 @@ function StatusUpdater({ publicId, current, onDone }: { publicId: string; curren
       <button disabled={busy} onClick={async()=>{
         try{
           setBusy(true); setErr('');
-          const r = await fetch(`/api/support/tickets/${publicId}/status`, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
+          // 使用管理端 PATCH 端點更新狀態（避免 404）
+          const r = await fetch(`/api/admin/support/tickets/${publicId}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
           const j = await r.json().catch(()=> ({}));
           if (!r.ok || !j?.ok) throw new Error(j?.error || 'STATUS_UPDATE_FAIL');
           onDone?.();
@@ -631,4 +766,34 @@ function StatusUpdater({ publicId, current, onDone }: { publicId: string; curren
     </div>
   );
 }
+=======
+function StatusUpdater({ publicId, current, onDone }: { publicId: string; current: Ticket['status']; onDone?: ()=>void }){
+  const [status, setStatus] = useState<Ticket['status']>(current);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(()=>{ setStatus(current) }, [current]);
+  return (
+    <div className="flex items-center gap-2">
+      <select value={status} onChange={e=> setStatus(e.target.value as Ticket['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm">
+        <option value="open">開啟</option>
+        <option value="awaiting_admin">等待管理員</option>
+        <option value="awaiting_user">等待用戶</option>
+        <option value="resolved">已解決</option>
+        <option value="closed">已關閉</option>
+      </select>
+      <button disabled={busy} onClick={async()=>{
+        try{
+          setBusy(true); setErr('');
+          const r = await fetch(`/api/admin/support/tickets/${publicId}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}, body: JSON.stringify({ status }) });
+          const j = await r.json().catch(()=> ({}));
+          if (!r.ok || !j?.ok) throw new Error(j?.error || 'STATUS_UPDATE_FAIL');
+          onDone?.();
+        }catch(e:any){ setErr((e?.message)||'更新失敗'); }
+        finally{ setBusy(false); }
+      }} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm">更新狀態</button>
+      {err && <span className="text-danger text-sm">{err}</span>}
+    </div>
+  );
+}
+>>>>>>> Stashed changes
 

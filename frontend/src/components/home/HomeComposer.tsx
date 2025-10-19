@@ -6,6 +6,9 @@ import { canPublishAnnouncement, getRole } from '@/utils/auth'
 
 type School = { id: number; slug: string; name: string }
 
+/**
+ *
+ */
 export default function HomeComposer({ token }: { token: string }) {
   const role = getRole()
   const [schools, setSchools] = useState<School[]>([])
@@ -22,7 +25,6 @@ export default function HomeComposer({ token }: { token: string }) {
   const [lastSubmitTime, setLastSubmitTime] = useState(0)
   const maxChars = 800
 
-  // autosize textarea
   const taRef = useRef<HTMLTextAreaElement | null>(null)
   const autosize = () => {
     const el = taRef.current
@@ -35,7 +37,6 @@ export default function HomeComposer({ token }: { token: string }) {
   }
   useEffect(() => { autosize() }, [content])
 
-  // load schools
   useEffect(() => { (async() => { try { const r = await fetch('/api/schools', { cache: 'no-store' }); if (!r.ok) return; const j = await r.json(); if (Array.isArray(j?.items)) setSchools(j.items) } catch {} })() }, [])
   useEffect(() => {
     try {
@@ -53,25 +54,21 @@ export default function HomeComposer({ token }: { token: string }) {
   const isAnnouncement = mode === 'announcement'
   const isAd = mode === 'ad'
 
-  // Enforce role-based constraints when switching modes or changing scope
   useEffect(() => {
     if (!isAdmin) {
       if (mode !== 'post') setMode('post')
       return
     }
     if (role === 'campus_admin' && isAnnouncement) {
-      // lock to school
       const mySlug = mySchoolId ? (schools.find(s=>s.id===mySchoolId)?.slug || '') : ''
       if (mySlug && targetSlug !== mySlug) setTargetSlug(mySlug)
       if (announcementType !== 'school') setAnnouncementType('school')
     }
     if (role === 'cross_admin' && isAnnouncement) {
-      // lock to cross
       if (targetSlug !== '') setTargetSlug('')
       if (announcementType !== 'cross') setAnnouncementType('cross')
     }
     if (role === 'dev_admin' && isAnnouncement) {
-      // sync type with scope: '' => cross, else school (platform omitted per spec)
       const desired = targetSlug ? 'school' : 'cross'
       if (announcementType !== desired) setAnnouncementType(desired as any)
     }
@@ -82,7 +79,6 @@ export default function HomeComposer({ token }: { token: string }) {
     e.preventDefault()
     setMsg(null)
 
-    // 防止重複提交 - 檢查狀態和時間戳
     const now = Date.now();
     if (busy) {
       console.log('[HomeComposer] Already submitting, ignoring duplicate request');
@@ -108,7 +104,6 @@ export default function HomeComposer({ token }: { token: string }) {
         const result = await postFormData('/api/posts/with-media', fd)
         validatePost(result)
       } else {
-        // reply-as-post 語法處理
         let replyToId: number | null = null
         let textBody = content.trim()
         const m = textBody.match(/^#(\d+)\s*(.*)$/s)
@@ -130,7 +125,7 @@ export default function HomeComposer({ token }: { token: string }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
-      {/* Top controls: scope select + tabs (same row) */}
+      
       <div className="flex items-center gap-3 flex-wrap">
         <label className="sr-only">發佈範圍</label>
         <select
@@ -185,7 +180,7 @@ export default function HomeComposer({ token }: { token: string }) {
         </div>
       )}
 
-      {/* Textarea with autosize + counter */}
+      
       <div className="relative">
         <textarea
           ref={taRef}
@@ -197,13 +192,13 @@ export default function HomeComposer({ token }: { token: string }) {
         <div className="absolute right-2 bottom-2 text-xs text-muted">{content.length}/{maxChars}</div>
       </div>
 
-      {/* Attachments 2x2, max 4, hint bottom-right */}
+      
       <div className="relative">
         <UploadArea value={files} onChange={setFiles} maxCount={4} />
         <div className="text-xs text-muted text-right mt-1">{files.length}/4 張，單檔 ≤ 8MB</div>
       </div>
 
-      {/* Submit bar: desktop right-aligned inline; mobile fixed bottom */}
+      
       <div className="hidden sm:flex items-center justify-end">
         <button
           type="submit"

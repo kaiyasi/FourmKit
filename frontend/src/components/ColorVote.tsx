@@ -1,8 +1,10 @@
-// src/components/ColorVote.tsx
 import { useState } from "react";
 import { extractTicket, parseJsonSafe, pushRecentTicket, statusUI } from "../utils/tickets";
 import { TicketNotice } from "./ui/TicketNotice";
 
+/**
+ *
+ */
 export function ColorVote() {
   const [choice, setChoice] = useState("#3B82F6");
   const [ticket, setTicket] = useState("");

@@ -1,8 +1,10 @@
-// src/components/ReportForm.tsx
 import { useState } from "react";
 import { extractTicket, parseJsonSafe, pushRecentTicket, statusUI } from "../../utils/tickets";
 import { TicketNotice } from "../ui/TicketNotice";
 
+/**
+ *
+ */
 export default function ReportForm() {
   const [message, setMessage] = useState("");
   const [contact, setContact] = useState("");

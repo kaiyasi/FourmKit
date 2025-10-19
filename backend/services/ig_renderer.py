@@ -21,7 +21,6 @@ class IGRenderer:
 
     def __init__(self, cdn_base_path: str = None):
         import os as _os
-        # 允許以環境變數覆寫輸出目錄，以便與 CDN 共享（例如 /data/ig_rendered）
         default_path = "/app/uploads/ig_rendered"
         self.cdn_base_path = _os.getenv("IG_RENDER_BASE_PATH", cdn_base_path or default_path)
         self.font_cache = {}
@@ -39,32 +38,25 @@ class IGRenderer:
             str: 渲染後圖片的 CDN 路徑
         """
         try:
-            # 創建 Canvas
             canvas = self._create_canvas(template.canvas_config)
 
-            # 判斷是否有附件
             has_attachment = media_list and len(media_list) > 0
 
-            # 渲染附件圖片
             if has_attachment and template.attachment_config:
                 self._render_attachments(canvas, media_list, template.attachment_config)
 
-            # 渲染文字（先將 Markdown/HTML 轉為純文字，再渲染）
             text_config = template.text_with_attachment if has_attachment else template.text_without_attachment
             logger.info(f"選擇文字配置: {'with' if has_attachment else 'without'}_attachment, font_family={text_config.get('font_family') if text_config else None}")
             if text_config:
                 content_plain = self._to_plain_text(getattr(forum_post, 'content', '') or '')
-                # 若為「回覆貼文」，先顯示回覆行（支援模板回覆格式），再下一行為貼文正文
                 reply_line = self._format_reply_line(forum_post, template)
                 if reply_line:
                     content_plain = f"{reply_line}\n{content_plain}".strip()
                 self._render_text(canvas, content_plain, text_config)
 
-            # 渲染 Logo（圖層順序控制）
             if template.logo_config and template.logo_config.get('enabled'):
                 self._render_logo(canvas, template.logo_config, forum_post.school)
 
-            # 渲染浮水印（支援三子項：自訂文字/時間戳/格式化ID）
             if template.watermark_config:
                 logger.info(f"浮水印配置: {template.watermark_config}")
                 self._render_watermark(
@@ -76,7 +68,6 @@ class IGRenderer:
                     account,
                 )
 
-            # 若開啟導引線，就先覆蓋 XY 軸/網格（僅預覽使用，不影響正式發布）
             try:
                 show_guides_flag = bool(getattr(self, 'show_guides', False)) or (os.getenv('IG_PREVIEW_GUIDES') == '1')
             except Exception:
@@ -84,7 +75,6 @@ class IGRenderer:
             if show_guides_flag:
                 self._overlay_guides(canvas)
 
-            # 保存到 CDN
             cdn_path = self._save_to_cdn(canvas, forum_post.id)
 
             logger.info(f"成功渲染貼文 {forum_post.id}，CDN 路徑: {cdn_path}")
@@ -112,7 +102,6 @@ class IGRenderer:
             plain = html_to_plain_text(text) or ''
             return self._clean_markdown_escapes(plain).strip()
         except Exception:
-            # 簡易備援：去 HTML tag 與常見 Markdown 標記
             import re
             t = text or ''
             t = self._clean_markdown_escapes(t)
@@ -129,12 +118,11 @@ class IGRenderer:
 
     def _format_reply_line(self, forum_post, template) -> str:
         """如果是回覆貼文，回傳『回覆貼文 #<id>』格式的首行，否則空字串。
-        回覆格式可由 template.caption_template.reply 自訂；否則使用預設『回覆貼文 #<id>』。
+        回覆格式可由 template.caption_template.reply 自訂；否則使用預設『回覆貼文
         """
         try:
             rid = getattr(forum_post, 'reply_to_post_id', None)
             if rid:
-                # 嘗試讀取模板回覆格式
                 reply_cfg = None
                 try:
                     reply_root = getattr(template, 'caption_template', None) or {}
@@ -145,7 +133,6 @@ class IGRenderer:
                 label = '回覆貼文'
                 style = 'hashtag'
                 tpl = None
-                # 支援 reply.image 與 reply（全域）兩層：image 優先
                 preferred = None
                 if isinstance(reply_cfg, dict):
                     if isinstance(reply_cfg.get('image'), dict):
@@ -159,7 +146,6 @@ class IGRenderer:
                     style = (preferred.get('style') or style).strip()
                     tpl = (preferred.get('template') or '').strip() or None
 
-                # 構造臨時 post 只用於格式化 ID
                 class _P: pass
                 p = _P(); p.id = rid; p.school = getattr(forum_post, 'school', None); p.announcement_type = None
 
@@ -167,7 +153,6 @@ class IGRenderer:
                 if tpl:
                     formatted = self._format_post_id_for_image(p, tpl, style)
                 else:
-                    # 若 template.caption_template.post_id_format 有啟用則沿用；否則 fallback #<rid>
                     ct = getattr(template, 'caption_template', {}) or {}
                     pid_cfg = ct.get('post_id_format') if isinstance(ct, dict) else None
                     if isinstance(pid_cfg, dict) and pid_cfg.get('enabled'):
@@ -200,12 +185,10 @@ class IGRenderer:
         bg_type = canvas_config.get('background_type', 'color')
 
         if bg_type == 'image' and canvas_config.get('background_image'):
-            # 使用圖片背景
             bg_path = canvas_config['background_image']
             canvas = self._load_image(bg_path)
             canvas = canvas.resize((width, height), Image.Resampling.LANCZOS)
         else:
-            # 使用純色背景
             bg_color = canvas_config.get('background_color', '#FFFFFF')
             canvas = Image.new('RGB', (width, height), self._hex_to_rgb(bg_color))
 
@@ -216,7 +199,6 @@ class IGRenderer:
         if not config.get('enabled'):
             return
 
-        # 過濾出可用的圖片 URL（快速以副檔名判斷，降低未知格式）
         image_exts = {"jpg","jpeg","png","webp","gif"}
         safe_media = [m for m in (media_list or []) if isinstance(m, str) and (m.rsplit('.',1)[-1].split('?')[0].lower() in image_exts)]
         media_count = len(safe_media)
@@ -224,7 +206,6 @@ class IGRenderer:
             logger.warning("附件列表不含圖片或已被過濾，跳過圖片渲染")
             return
 
-        # 支援 width/height，同時向後兼容 base_width/base_height 和 base_size
         if 'width' in config and 'height' in config:
             base_width = config.get('width', 450)
             base_height = config.get('height', 450)
@@ -232,7 +213,6 @@ class IGRenderer:
             base_width = config.get('base_width', 450)
             base_height = config.get('base_height', 450)
         else:
-            # 向後兼容：使用 base_size
             base_size = config.get('base_size', 450)
             base_width = base_size
             base_height = base_size
@@ -242,12 +222,10 @@ class IGRenderer:
         pos_x = config.get('position_x', 70)
         pos_y = config.get('position_y', 70)
 
-        # 以 position_x/position_y 作為整個附件群組的中心點
         origin_x = int(pos_x - (base_width // 2))
         origin_y = int(pos_y - (base_height // 2))
 
         if media_count == 1:
-            # 單張圖片：使用 base_width x base_height
             try:
                 img = self._load_and_resize(safe_media[0], base_width, base_height)
                 img = self._add_rounded_corners(img, border_radius)
@@ -256,7 +234,6 @@ class IGRenderer:
                 logger.warning(f"跳過圖片 {safe_media[0]}: {e}")
 
         elif media_count == 2:
-            # 兩張圖片：左右分割
             img_width = (base_width - spacing) // 2
             for i, media_path in enumerate(safe_media):
                 try:
@@ -268,7 +245,6 @@ class IGRenderer:
                     logger.warning(f"跳過圖片 {media_path}: {e}")
 
         elif media_count == 3:
-            # 三張圖片：左兩右一
             left_height = (base_height - spacing) // 2
             left_width = base_width // 2
             for i in range(min(2, media_count)):
@@ -280,7 +256,6 @@ class IGRenderer:
                 except Exception as e:
                     logger.warning(f"跳過圖片 {safe_media[i]}: {e}")
 
-            # 右側大圖
             right_width = base_width - left_width - spacing
             try:
                 if media_count >= 3:
@@ -293,7 +268,6 @@ class IGRenderer:
                 logger.warning(f"跳過圖片 {safe_media[2 if media_count>=3 else -1]}: {e}")
 
         elif media_count >= 4:
-            # 四張圖片：2x2 網格
             grid_width = (base_width - spacing) // 2
             grid_height = (base_height - spacing) // 2
             for i in range(min(4, media_count)):
@@ -338,7 +312,6 @@ class IGRenderer:
 
         processed_content = self._apply_newline_mode(content, newline_mode)
 
-        # 支援新版：以正方形區塊控制文字範圍
         box_size = config.get('box_size')
         box_center_x = config.get('box_center_x')
         box_center_y = config.get('box_center_y')
@@ -382,13 +355,11 @@ class IGRenderer:
 
             draw = ImageDraw.Draw(canvas)
 
-            # 垂直對齊：預設 top；支援 center/middle/center_line（以行數為基準置中）
             v_align = str(config.get('vertical_align', 'top')).lower()
             if lines:
                 total_lines = len(lines)
                 content_height = (total_lines - 1) * effective_line_height + line_height
                 if v_align in {'center', 'middle', 'center_line', 'middle_line'}:
-                    # 以行數中心置中：第一行頂端 y 使整段中心對齊 box_center_y
                     desired_y = int(box_center_y - content_height / 2)
                     min_y = top
                     max_y = bottom - content_height
@@ -426,7 +397,6 @@ class IGRenderer:
 
             return
 
-        # 舊版相容：使用起始座標與字元換行
         max_chars = config.get('max_chars_per_line', 20)
         max_lines = config.get('max_lines', 8)
         start_x = int(config.get('start_x', 70))
@@ -607,7 +577,6 @@ class IGRenderer:
         height = config.get('height', 80)
         opacity = config.get('opacity', 1.0)
 
-        # 根據來源載入 Logo
         if source == 'school_logo' and school and hasattr(school, 'logo_path'):
             logo_path = school.logo_path
         elif source == 'custom' and config.get('custom_image'):
@@ -619,11 +588,9 @@ class IGRenderer:
             logo = self._load_image(logo_path)
             logo = logo.resize((width, height), Image.Resampling.LANCZOS)
 
-            # 處理透明度
             if opacity < 1.0:
                 logo = self._apply_opacity(logo, opacity)
 
-            # 以 position_x/position_y 為 Logo 中心
             paste_x = int(pos_x - width // 2)
             paste_y = int(pos_y - height // 2)
             canvas.paste(logo, (paste_x, paste_y), logo if logo.mode == 'RGBA' else None)
@@ -632,7 +599,6 @@ class IGRenderer:
 
     def _render_watermark(self, canvas: Image.Image, config: dict, post=None, caption_config: dict = None, template=None, account=None):
         """渲染浮水印（支援三子項：自訂文字/時間戳/格式化ID）"""
-        # 兼容舊版（單一 text）
         if 'items' not in (config or {}):
             raw_text = config.get('text', 'ForumKit')
             font_family = config.get('font_family', 'Arial')
@@ -647,7 +613,6 @@ class IGRenderer:
 
         items = config.get('items') or {}
 
-        # 自訂文字
         custom = items.get('custom_text') or {}
         if custom.get('enabled'):
             text = self._render_custom_text(custom, post, account=account, template=template)
@@ -662,7 +627,6 @@ class IGRenderer:
                 str(custom.get('align', 'center')),
             )
 
-        # 時間戳
         ts = items.get('timestamp') or {}
         if ts.get('enabled'):
             text = self._render_timestamp(ts, post, caption_config or {}, config)
@@ -677,7 +641,6 @@ class IGRenderer:
                 str(ts.get('align', 'center')),
             )
 
-        # 格式化 ID
         fid = items.get('formatted_id') or {}
         if fid.get('enabled'):
             text = self._render_formatted_id(fid, post)
@@ -701,7 +664,6 @@ class IGRenderer:
         font = self._load_font(font_family, font_size)
         alpha = int(max(0, min(1, opacity)) * 255)
         color_with_alpha = (*color, alpha)
-        # 文字邊界
         bbox = draw.textbbox((0, 0), text, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
@@ -720,7 +682,6 @@ class IGRenderer:
         text = str(custom.get('text', ''))
         campus = self._resolve_campus_name(post, account=account, template=template)
         text = text.replace('{campus}', campus)
-        # 移除作者資訊占位符，匿名貼文不會保留作者
         text = re.sub(r'\s*{auth}\s*', ' ', text)
         text = re.sub(r'\s+', ' ', text).strip()
         return text
@@ -798,14 +759,12 @@ class IGRenderer:
         return 'CAMPUS'
 
     def _render_timestamp(self, ts: dict, post, caption_config: dict, wm_config: dict) -> str:
-        # 取得時間與時區（優先使用 ts 的 timezone）
         base_dt = getattr(post, 'created_at', None) or datetime.utcnow()
         tz_name = (ts.get('timezone')
                    or (ts.get('time_format') or {}).get('timezone')
                    or (caption_config.get('time_format') or {}).get('timezone')
                    or 'UTC')
         fmt = ts.get('format') or '%Y-%m-%d %H:%M'
-        # 支援自訂 token：YYYY/MM/DD HH:mm, 以及 hh 與 aa
         py_fmt = self._convert_time_format(fmt)
         try:
             import pytz  # type: ignore
@@ -817,7 +776,6 @@ class IGRenderer:
         except Exception:
             pass
         out = base_dt.strftime(py_fmt)
-        # aa: am/pm 小寫
         if 'aa' in fmt:
             out = out.replace('%p', base_dt.strftime('%p').lower())
             out = out.replace('AM', 'am').replace('PM', 'pm')
@@ -842,24 +800,20 @@ class IGRenderer:
             minor = (0, 0, 0)
             center = (255, 82, 82)
 
-            # 次線（每 50px）
             for x in range(0, w, 50):
                 draw.line([(x, 0), (x, h)], fill=rgba(minor, 64), width=1)
             for y in range(0, h, 50):
                 draw.line([(0, y), (w, y)], fill=rgba(minor, 64), width=1)
 
-            # 主線（每 100px）
             for x in range(0, w, 100):
                 draw.line([(x, 0), (x, h)], fill=rgba(major, 128), width=1)
             for y in range(0, h, 100):
                 draw.line([(0, y), (w, y)], fill=rgba(major, 128), width=1)
 
-            # 中心線
             cx, cy = w // 2, h // 2
             draw.line([(cx, 0), (cx, h)], fill=rgba(center, 180), width=2)
             draw.line([(0, cy), (w, cy)], fill=rgba(center, 180), width=2)
 
-            # 座標刻度（每 100px 輕量標示）
             try:
                 font = self._load_font('NotoSansTC-Bold', 16)
             except Exception:
@@ -877,7 +831,6 @@ class IGRenderer:
             logger.warning(f"繪製導引線失敗: {e}")
 
     def _convert_time_format(self, fmt: str) -> str:
-        # 將自訂格式轉換為 strftime：YYYY->%Y, MM->%m, DD->%d, HH->%H, hh->%I, mm->%M, ss->%S, aa->%p
         mapping = [
             ('YYYY', '%Y'), ('YY', '%y'),
             ('MM', '%m'), ('DD', '%d'),
@@ -891,7 +844,6 @@ class IGRenderer:
         return out
 
     def _render_formatted_id(self, fid: dict, post) -> str:
-        # 先生成 id 值（僅使用 id_template）
         school_short = getattr(getattr(post, 'school', None), 'short_name', None) or 'FORUM'
         post_type = 'ANN' if getattr(post, 'announcement_type', None) else 'POST'
         raw_id = str(getattr(post, 'id', '0'))
@@ -909,10 +861,8 @@ class IGRenderer:
                 raise ValueError(f'URL 非圖片內容 (Content-Type={ctype})')
             return Image.open(io.BytesIO(response.content)).convert('RGBA')
         else:
-            # 優先使用 CDN URL
             cdn_base_url = (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/")
             if cdn_base_url and path.startswith('public/'):
-                # 轉換為 CDN URL 並下載
                 cdn_url = f"{cdn_base_url}/{path}"
                 try:
                     response = requests.get(cdn_url, timeout=10)
@@ -922,10 +872,8 @@ class IGRenderer:
                         raise ValueError(f'CDN URL 非圖片內容 (Content-Type={ctype})')
                     return Image.open(io.BytesIO(response.content)).convert('RGBA')
                 except Exception:
-                    # CDN 失敗時回退到本地檔案
                     pass
 
-            # 回退到本地檔案
             if not path.startswith('/'):
                 upload_root = os.getenv('UPLOAD_ROOT', 'uploads')
                 path = os.path.join(upload_root, path)
@@ -1014,24 +962,20 @@ class IGRenderer:
 
     def _load_font(self, font_family: str, size: int) -> ImageFont.FreeTypeFont:
         """載入字體（帶快取）"""
-        # 如果 font_family 為空，使用回退字體（找可用的 Noto 字體）
         if not font_family or not font_family.strip():
             logger.warning("font_family 為空，嘗試使用回退字體")
-            # 嘗試找系統中的 Noto 字體
             fallback_fonts = ["NotoSansTC-Bold", "NotoSansTC-Medium", "NotoSans-Bold"]
             for fallback in fallback_fonts:
                 try:
                     return self._load_font(fallback, size)
                 except:
                     continue
-            # 都找不到，報錯
             raise ValueError("font_family 為空且找不到回退字體，請在模板中設定字體或上傳字體檔案")
 
         cache_key = f"{font_family}_{size}"
         if cache_key in self.font_cache:
             return self.font_cache[cache_key]
 
-        # 1. 嘗試精確匹配
         exact_paths = [
             f"/app/fonts/{font_family}.ttf",
             f"/app/fonts/{font_family}.otf",
@@ -1048,12 +992,10 @@ class IGRenderer:
                 logger.info(f"成功載入字體（精確匹配）: {font_path}")
                 return font
 
-        # 2. 嘗試模糊匹配（支援帶後綴的檔名，如 NotoSansTC-Bold_a8952217.ttf）
         font_dirs = ["/app/fonts", "/app/uploads/fonts", "/uploads/fonts"]
         for font_dir in font_dirs:
             if os.path.exists(font_dir):
                 for filename in os.listdir(font_dir):
-                    # 檢查檔名是否以 font_family 開頭且是字體檔案
                     if filename.startswith(font_family) and (filename.endswith('.ttf') or filename.endswith('.otf')):
                         font_path = os.path.join(font_dir, filename)
                         font = ImageFont.truetype(font_path, size)
@@ -1061,7 +1003,6 @@ class IGRenderer:
                         logger.info(f"成功載入字體（模糊匹配）: {font_path}")
                         return font
 
-        # 3. 嘗試系統字體
         system_paths = [
             f"/usr/share/fonts/truetype/{font_family}.ttf",
             f"/usr/share/fonts/truetype/noto/{font_family}.ttf",
@@ -1075,7 +1016,6 @@ class IGRenderer:
                 logger.info(f"成功載入字體（系統字體）: {font_path}")
                 return font
 
-        # 找不到字體，報錯
         raise FileNotFoundError(f"找不到字體: {font_family}，請上傳字體檔案或檢查字體名稱")
 
     def _save_to_cdn(self, canvas: Image.Image, post_id: int) -> str:
@@ -1083,21 +1023,11 @@ class IGRenderer:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"ig_post_{post_id}_{timestamp}.jpg"
 
-        # 確保目錄存在
         os.makedirs(self.cdn_base_path, exist_ok=True)
 
         filepath = os.path.join(self.cdn_base_path, filename)
         canvas.convert('RGB').save(filepath, 'JPEG', quality=95, optimize=True)
 
-        # 返回公開路徑
-        # 規則：
-        # 1) 若環境提供 CDN_PUBLIC_BASE_URL 或 PUBLIC_CDN_URL，使用其為網域前綴，
-        #    從 self.cdn_base_path 的 /uploads/ 之後取相對目錄並拼接檔名。
-        #    這可覆蓋 ig_rendered 以及其他自定目錄（如 public/ig/previews）。
-        # 2) 否則，若 IG_RENDER_PUBLIC_PREFIX 設為相對路徑（不含 http/https），沿用該相對前綴。
-        # 3) 再否則：
-        #    a) 若 cdn_base_path 含 /uploads/，回傳以 /uploads/ 為根（供主站 Nginx /uploads 轉發）。
-        #    b) 其他情況回退為最後一層目錄名。
         import os as _os
 
         cdn_base_url = (
@@ -1145,7 +1075,6 @@ class IGRenderer:
             return text
 
         base_dt = getattr(post, 'created_at', None) or datetime.utcnow()
-        # 取得時間格式：水印 > caption > 預設
         tf = {}
         if isinstance(wm_config, dict) and isinstance(wm_config.get('time_format'), dict):
             tf = wm_config.get('time_format') or {}
@@ -1157,7 +1086,7 @@ class IGRenderer:
         dt_fmt = tf.get('datetime_format') or '%Y-%m-%d %H:%M:%S'
 
         try:
-            import pytz  # type: ignore
+            import pytz
             tz = pytz.timezone(tz_name)
             if base_dt.tzinfo is None:
                 base_dt = tz.localize(base_dt) if tz else base_dt
@@ -1170,7 +1099,6 @@ class IGRenderer:
         post_type = 'ANN' if getattr(post, 'announcement_type', None) else 'POST'
         post_id = str(getattr(post, 'id', '0'))
 
-        # 產生格式化 ID（若提供 wm_config.id_format）
         formatted_id = None
         try:
             if isinstance(wm_config, dict) and isinstance(wm_config.get('id_format'), dict):

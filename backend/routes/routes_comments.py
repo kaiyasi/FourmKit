@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_comments.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -22,13 +26,10 @@ def _author_label(u: User | None, client_id: str = None) -> str:
         
         username = u.username or ""
         
-        # 如果是系統展示帳號
         if username.startswith("demo_") or username.startswith("system_"):
             return "系統展示"
         
-        # 如果是匿名帳號
         if username.startswith("anon_"):
-            # 簡化的匿名標識生成
             if client_id:
                 try:
                     import hashlib
@@ -39,7 +40,6 @@ def _author_label(u: User | None, client_id: str = None) -> str:
                     return "匿名"
             return "匿名"
         
-        # 如果是正常登入帳號，返回用戶名
         return username if username else "用戶"
         
     except Exception:
@@ -53,12 +53,10 @@ def list_comments(pid: int):
         limit = min(max(int(request.args.get("limit", 20) or 20), 1), 100)
         
         with get_session() as s:  # type: Session
-            # 檢查貼文是否存在且已審核
             post = s.query(Post).filter(Post.id==pid, Post.status=="approved").first()
             if not post:
                 return jsonify({"ok": False, "error": "NOT_FOUND"}), 404
             
-            # 獲取留言列表
             base = s.query(Comment).filter(Comment.post_id==pid, Comment.is_deleted==False, Comment.status != 'rejected')
             total = base.count()
             rows = (
@@ -67,7 +65,6 @@ def list_comments(pid: int):
             )
             
             items = []
-            # User id for reactions
             uid: int | None = None
             try:
                 ident = get_jwt_identity()
@@ -76,7 +73,6 @@ def list_comments(pid: int):
             except Exception:
                 uid = None
             
-            # Preload user reactions for this page if logged in
             user_reactions: dict[int, str] = {}
             if uid and rows:
                 try:
@@ -87,14 +83,11 @@ def list_comments(pid: int):
                     print(f"Error loading user reactions: {e}")
                     user_reactions = {}
             
-            # 處理每個留言
             for c in rows:
                 try:
-                    # 獲取反應統計
                     likes = s.query(func.count(CommentReaction.id)).filter(CommentReaction.comment_id==c.id, CommentReaction.reaction_type=="like").scalar() or 0
                     dislikes = s.query(func.count(CommentReaction.id)).filter(CommentReaction.comment_id==c.id, CommentReaction.reaction_type=="dislike").scalar() or 0
                     
-                    # 獲取作者標籤
                     author_user = s.get(User, c.author_id)
                     author_label = "未知"
                     try:
@@ -103,7 +96,6 @@ def list_comments(pid: int):
                         print(f"Error getting author label: {e}")
                         author_label = "用戶"
                     
-                    # 格式化時間
                     created_at = None
                     try:
                         if hasattr(c, "created_at") and c.created_at:
@@ -122,7 +114,6 @@ def list_comments(pid: int):
                     })
                 except Exception as e:
                     print(f"Error processing comment {c.id}: {e}")
-                    # 跳過有問題的留言，繼續處理其他留言
                     continue
             
             has_next = (page*limit) < total
@@ -150,17 +141,14 @@ def create_comment(pid: int):
         return jsonify({"ok": False, "error": "CONTENT_REQUIRED"}), 400
     
     with get_session() as s:  # type: Session
-        # 獲取貼文信息
         p = s.get(Post, pid)
         if not p or p.status != "approved":
             return jsonify({"ok": False, "error": "NOT_FOUND"}), 404
         
-        # 獲取用戶信息
         user = s.get(User, uid)
         if not user:
             return jsonify({"ok": False, "error": "USER_NOT_FOUND"}), 404
         
-        # 檢查用戶是否有權限在該貼文留言
         if not can_comment_on_post(user, p):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED", "message": "您沒有權限在該貼文留言"}), 403
         
@@ -173,7 +161,6 @@ def create_comment(pid: int):
         s.commit()
         s.refresh(c)
         
-        # 記錄留言發布事件（Webhook/Queue）
         try:
             actor_name = getattr(user, 'username', None) or f"user:{uid}"
             snippet = (c.content or '')
@@ -193,11 +180,9 @@ def create_comment(pid: int):
         except Exception:
             pass  # 事件記錄失敗不影響留言發布
 
-        # 偵測 @提及 並寫入通知中心（最佳努力，不影響主流程）
         try:
             mentioned_user_ids = NotificationService._extract_mentions(c.content or '', s)  # type: ignore[attr-defined]
             if mentioned_user_ids:
-                # 準備作者顯示名（與前端一致的匿名/代號邏輯）
                 author_label = _author_label(user, request.headers.get("X-Client-Id", "").strip())
                 snippet = (c.content or '')
                 if len(snippet) > 120:
@@ -214,7 +199,6 @@ def create_comment(pid: int):
                             from_user_id=int(uid),
                             session=s,
                         )
-                        # 若該用戶在線，嘗試即時推播
                         try:
                             from services.socket_chat_service import SocketChatService
                             SocketChatService.notify_user(int(target_uid), 'mention', {
@@ -228,7 +212,6 @@ def create_comment(pid: int):
                             pass
                     except Exception:
                         continue
-                # 同步寫一筆事件，方便管理端與 Discord Hook 觀察
                 try:
                     from services.event_service import EventService
                     fields = [
@@ -257,10 +240,8 @@ def create_comment(pid: int):
         except Exception:
             pass
 
-        # 推送即時事件給前端（若有 SocketIO）
         try:
             from app import socketio
-            # 盡量提供 school_slug，供前端標示來源
             school_slug = None
             try:
                 sch = None
@@ -312,8 +293,7 @@ def _get_user_reactions(s: Session, pid: int, uid: int) -> list:
 @bp.get("/posts/<int:pid>/reactions")
 @jwt_required(optional=True)
 def get_post_reactions(pid: int):
-    with get_session() as s:  # type: Session
-        # 放寬條件：只要貼文存在即可讀取留言（避免因狀態影響前端顯示）
+    with get_session() as s:
         if not s.query(Post).filter(Post.id==pid).first():
             return jsonify({"error": "NOT_FOUND"}), 404
         uid = None
@@ -338,11 +318,10 @@ def toggle_post_reaction(pid: int):
         return jsonify({"ok": False, "error": "INVALID_REACTION"}), 400
     ident = get_jwt_identity()
     uid = int(ident) if ident is not None else None
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         if not s.query(Post).filter(Post.id==pid, Post.status=="approved").first():
             return jsonify({"ok": False, "error": "NOT_FOUND"}), 404
         
-        # 查找用戶對該貼文的特定反應
         cur = s.query(PostReaction).filter(
             PostReaction.post_id==pid, 
             PostReaction.user_id==uid,
@@ -350,15 +329,12 @@ def toggle_post_reaction(pid: int):
         ).first()
         
         if cur:
-            # 如果已存在該反應，則刪除（取消反應）
             s.delete(cur)
             s.commit()
         else:
-            # 如果不存在，則添加新反應
             s.add(PostReaction(post_id=pid, user_id=uid, reaction_type=rtype))
             s.commit()
         
-        # 返回更新後的統計和用戶反應列表
         return jsonify({ 
             "user_reactions": _get_user_reactions(s, pid, uid), 
             "stats": _post_reaction_stats(s, pid) 
@@ -374,7 +350,7 @@ def toggle_comment_reaction(cid: int):
         return jsonify({"ok": False, "error": "INVALID_REACTION"}), 400
     ident = get_jwt_identity()
     uid = int(ident) if ident is not None else None
-    with get_session() as s:  # type: Session
+    with get_session() as s:
         c = s.get(Comment, cid)
         if not c:
             return jsonify({"ok": False, "error": "NOT_FOUND"}), 404
@@ -403,7 +379,6 @@ def delete_comment(cid: int):
         c = s.get(Comment, cid)
         if not c or c.is_deleted:
             return jsonify({"ok": False, "error": "NOT_FOUND"}), 404
-        # 權限：作者本人或管理員（各類 admin）
         role = None
         try:
             u = s.get(User, uid)
@@ -416,3 +391,39 @@ def delete_comment(cid: int):
         c.is_deleted = True
         s.commit()
         return jsonify({"ok": True})
+@bp.get("/comments/my-violations")
+@jwt_required()
+def my_violations():
+    """一般用戶查詢：我的違規留言清單
+    與 /api/admin/comments/my-violations 對齊，但不使用 admin 前綴。
+    """
+    try:
+        user_id = get_jwt_identity()
+        if not user_id:
+            return jsonify({'ok': False, 'error': 'UNAUTHORIZED'}), 401
+
+        with get_session() as s:
+            rows = (
+                s.query(Comment)
+                .filter(Comment.author_id == user_id, Comment.status == 'rejected', Comment.is_deleted == False)  # noqa: E712
+                .order_by(Comment.updated_at.desc())
+                .all()
+            )
+
+            items = []
+            for c in rows:
+                p = c.post
+                items.append({
+                    'id': c.id,
+                    'content': c.content,
+                    'created_at': c.created_at.isoformat() if getattr(c, 'created_at', None) else None,
+                    'updated_at': c.updated_at.isoformat() if getattr(c, 'updated_at', None) else None,
+                    'post': {
+                        'id': p.id if p else None,
+                        'content': (p.content[:100] + '...') if (p and p.content and len(p.content) > 100) else (p.content if p else None)
+                    }
+                })
+
+            return jsonify({'ok': True, 'items': items})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'SERVER_ERROR', 'message': str(e)}), 500

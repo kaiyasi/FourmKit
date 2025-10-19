@@ -11,6 +11,9 @@ interface VerticalResizableDividerProps {
   disabled?: boolean
 }
 
+/**
+ *
+ */
 export function VerticalResizableDivider({
   topContent,
   bottomContent,
@@ -40,7 +43,6 @@ export function VerticalResizableDivider({
       
       let newTopHeight = (mouseY / containerHeight) * 100
       
-      // 限制在最小和最大高度之間
       newTopHeight = Math.max(minTopHeight, Math.min(maxTopHeight, newTopHeight))
       
       setTopHeight(newTopHeight)
@@ -63,7 +65,7 @@ export function VerticalResizableDivider({
       className={`flex flex-col h-full ${className}`}
       style={{ cursor: isDragging ? 'row-resize' : 'default' }}
     >
-      {/* 上方內容 */}
+      
       <div 
         className="overflow-hidden"
         style={{ 
@@ -74,7 +76,7 @@ export function VerticalResizableDivider({
         {topContent}
       </div>
 
-      {/* 拖拽分隔條 - 隱藏但保留功能 */}
+      
       {!disabled && (
         <div
           className="relative cursor-row-resize transition-all duration-300 flex items-center justify-center bg-transparent hover:bg-transparent"
@@ -87,7 +89,7 @@ export function VerticalResizableDivider({
         />
       )}
 
-      {/* 下方內容 */}
+      
       <div 
         className={`overflow-hidden ${disabled ? 'flex-1' : ''}`}
         style={{ 

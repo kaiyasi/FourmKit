@@ -10,6 +10,9 @@ type Stats = {
   recent_events: { timestamp: string; event_type: string; title: string; description: string }[]
 }
 
+/**
+ *
+ */
 export default function EventStatusCard() {
   const role = getRole()
   const [stats, setStats] = useState<Stats | null>(null)

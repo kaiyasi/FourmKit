@@ -17,7 +17,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 連接資料庫
 engine = create_engine('postgresql://forumkit:forumkit_password@127.0.0.1:12007/forumkit')
 Session = sessionmaker(bind=engine)
 db = Session()
@@ -46,14 +45,12 @@ def check_post_on_instagram(post: InstagramPost) -> dict:
         'issue': None
     }
 
-    # 如果資料庫中沒有 media_id，無法驗證
     if not post.ig_media_id:
         result['issue'] = '無 media_id，無法驗證'
         result['status_match'] = (post.status.value != 'PUBLISHED')
         return result
 
     try:
-        # 獲取帳號 Token
         account = post.account
         if not account:
             result['issue'] = '找不到關聯的 IG 帳號'
@@ -61,7 +58,6 @@ def check_post_on_instagram(post: InstagramPost) -> dict:
 
         access_token = decrypt_token(account.access_token_encrypted)
 
-        # 查詢 IG API
         with IGAPIClient(access_token, account.ig_user_id) as api:
             media_info = api.get_media_info(post.ig_media_id)
 
@@ -70,7 +66,6 @@ def check_post_on_instagram(post: InstagramPost) -> dict:
                 result['ig_media_id'] = media_info.get('id')
                 result['ig_permalink'] = media_info.get('permalink')
 
-                # 檢查狀態是否一致
                 if post.status.value == 'PUBLISHED':
                     result['status_match'] = True
                 else:
@@ -90,7 +85,6 @@ def check_post_on_instagram(post: InstagramPost) -> dict:
 def main():
     print("=== Instagram 發布狀態檢查工具 ===\n")
 
-    # 檢查所有有 media_id 的記錄
     posts_with_media = db.query(InstagramPost).filter(
         InstagramPost.ig_media_id.isnot(None)
     ).all()
@@ -122,13 +116,11 @@ def main():
                 post = db.query(InstagramPost).filter_by(id=issue['post_id']).first()
 
                 if issue['exists_on_ig'] and post.status.value != 'PUBLISHED':
-                    # IG 上存在，但資料庫狀態不對
                     post.status = 'PUBLISHED'
                     post.ig_permalink = issue['ig_permalink']
                     print(f"✓ 已將 ID {post.id} 狀態更新為 PUBLISHED")
 
                 elif not issue['exists_on_ig'] and post.status.value == 'PUBLISHED':
-                    # IG 上不存在，但資料庫顯示已發布
                     post.status = 'FAILED'
                     post.error_message = 'IG 上找不到此貼文'
                     print(f"✓ 已將 ID {post.id} 狀態更新為 FAILED")

@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 class IGCaptionGenerator:
     """Instagram Caption 生成器"""
 
-    # Instagram Caption 長度限制
     MAX_CAPTION_LENGTH = 2200
 
     def __init__(self):
@@ -49,7 +48,6 @@ class IGCaptionGenerator:
                         parts.append(self._replace_variables(divider_config.get('text', '━━━━━━━━━━'), caption_config, forum_post))
 
                 elif block_type == 'content':
-                    # 依需求：若為回覆，先顯示回覆行，再顯示正文
                     reply_line = self._format_reply_prefix(forum_post, caption_config)
                     clean_content = self._strip_markdown_and_html(forum_post.content)
                     content_block = '\n'.join(filter(None, [reply_line, clean_content]))
@@ -78,10 +76,8 @@ class IGCaptionGenerator:
                         hashtag_str = ' '.join([f'#{tag}' for tag in tags])
                         parts.append(hashtag_str)
 
-            # 組合 Caption
             caption = '\n\n'.join(filter(None, parts))
 
-            # 確保不超過長度限制
             caption = self._truncate_caption(caption, self.MAX_CAPTION_LENGTH)
 
             logger.info(f"成功生成單篇 Caption，長度: {len(caption)}")
@@ -107,7 +103,6 @@ class IGCaptionGenerator:
             caption_config = template.caption_template
             structure = caption_config.get('structure', [])
 
-            # 計算固定部分的長度
             fixed_parts = []
             for block_type in structure:
                 if block_type in ['header', 'divider', 'footer', 'hashtags']:
@@ -121,21 +116,17 @@ class IGCaptionGenerator:
 
             fixed_length = sum(len(part) for part in fixed_parts) + len(fixed_parts) * 2  # 加上換行符
 
-            # 計算每篇貼文可用的字元數
             post_count = len(forum_posts)
-            # 預留 Post ID 和分隔符的空間
             reserved_per_post = 50  # 預留給 Post ID 和格式化
             available_for_content = self.MAX_CAPTION_LENGTH - fixed_length - (post_count * reserved_per_post)
             chars_per_post = max(50, available_for_content // post_count)  # 至少 50 字元
 
-            # 組合 Caption
             parts = []
 
             for block_type in structure:
                 if block_type == 'header':
                     header_config = caption_config.get('header', {})
                     if header_config.get('enabled'):
-                        # 輪播使用第一篇貼文的時間資訊
                         parts.append(self._replace_variables(header_config.get('text', ''), caption_config, forum_posts[0]))
 
                 elif block_type == 'divider':
@@ -144,16 +135,12 @@ class IGCaptionGenerator:
                         parts.append(self._replace_variables(divider_config.get('text', '━━━━━━━━━━'), caption_config, forum_posts[0]))
 
                 elif block_type == 'content':
-                    # 輪播內容：每篇貼文
                     content_parts = []
                     for i, post in enumerate(forum_posts, 1):
-                        # 先處理回覆前綴
                         reply_line = self._format_reply_prefix(post, caption_config)
-                        # 移除 Markdown 和 HTML，然後截斷內容
                         clean_content = self._strip_markdown_and_html(post.content)
                         truncated_content = self._truncate_text(clean_content, chars_per_post, '...')
 
-                        # Post ID
                         post_id_config = caption_config.get('post_id_format', {})
                         if post_id_config.get('enabled'):
                             post_id_str = self._format_post_id(
@@ -182,10 +169,8 @@ class IGCaptionGenerator:
                         hashtag_str = ' '.join([f'#{tag}' for tag in tags])
                         parts.append(hashtag_str)
 
-            # 組合 Caption
             caption = '\n\n'.join(filter(None, parts))
 
-            # 最終長度檢查
             caption = self._truncate_caption(caption, self.MAX_CAPTION_LENGTH)
 
             logger.info(f"成功生成輪播 Caption，包含 {post_count} 篇貼文，總長度: {len(caption)}")
@@ -201,12 +186,12 @@ class IGCaptionGenerator:
         支援的設定（caption_template.reply，可選）：
           {
              "enabled": true,
-             "label": "回覆貼文",              # 文字前綴
-             "use_post_id_format": true,      # 使用 post_id_format 模板
+             "label": "回覆貼文",
+             "use_post_id_format": true,
              "template": "#{school_short_name}_{post_type}_{post_id}",
-             "style": "hashtag"               # 或 "plain"
+             "style": "hashtag"
           }
-        若未提供，預設：啟用；label=回覆貼文；使用 post_id_format（若有啟用），否則顯示 #<reply_id>
+        若未提供，預設：啟用；label=回覆貼文；使用 post_id_format（若有啟用），否則顯示
         """
         try:
             reply_id = getattr(post, 'reply_to_post_id', None)
@@ -214,7 +199,6 @@ class IGCaptionGenerator:
                 return ''
 
             cfg_root = (caption_config or {}).get('reply', {}) or {}
-            # 支援 reply.caption 與 reply（全域）兩層：caption 優先
             cfg = cfg_root.get('caption') if isinstance(cfg_root, dict) and isinstance(cfg_root.get('caption'), dict) else cfg_root
             if isinstance(cfg, dict) and cfg.get('enabled', True) is False:
                 return ''
@@ -222,7 +206,6 @@ class IGCaptionGenerator:
             label = (cfg.get('label') if isinstance(cfg, dict) else '回覆貼文') or '回覆貼文'
             label = label.strip()
 
-            # 構造一個簡單的替身 post 以套用格式
             class _P:
                 pass
             p = _P()
@@ -231,7 +214,6 @@ class IGCaptionGenerator:
             p.announcement_type = None
 
             formatted = None
-            # 優先使用 reply.template；否則若原本 post_id_format.enabled，就用它；最後 fallback #<id>
             tpl = (cfg.get('template') if isinstance(cfg, dict) else None)
             style = (cfg.get('style') if isinstance(cfg, dict) else 'hashtag') or 'hashtag'
 
@@ -264,27 +246,22 @@ class IGCaptionGenerator:
         Returns:
             str: 格式化後的 Post ID
         """
-        # 取得學校簡稱（School 沒有 short_name，使用 slug 或 name）
         if hasattr(post, 'school') and post.school:
             school_short_name = getattr(post.school, 'slug', None) or getattr(post.school, 'name', 'FORUM')
-            # 如果是完整名稱，取前幾個字
             if len(school_short_name) > 10:
                 school_short_name = school_short_name[:10]
         else:
             school_short_name = 'FORUM'
 
-        # 取得貼文類型
         if hasattr(post, 'announcement_type') and post.announcement_type:
             post_type = 'ANN'  # Announcement
         else:
             post_type = 'POST'
 
-        # 替換變數
         formatted = template_str.replace('{school_short_name}', school_short_name)
         formatted = formatted.replace('{post_type}', post_type)
         formatted = formatted.replace('{post_id}', str(post.id))
 
-        # 應用樣式
         if style == 'hashtag' and not formatted.startswith('#'):
             formatted = f'#{formatted}'
 
@@ -295,12 +272,10 @@ class IGCaptionGenerator:
         if len(text) <= max_length:
             return text
 
-        # 確保有空間放 suffix
         truncate_at = max_length - len(suffix)
         if truncate_at < 0:
             return suffix[:max_length]
 
-        # 在最近的空格處截斷，避免切斷單字
         truncated = text[:truncate_at]
         last_space = truncated.rfind(' ')
         if last_space > 0:
@@ -315,10 +290,8 @@ class IGCaptionGenerator:
 
         logger.warning(f"Caption 超過長度限制 ({len(caption)} > {max_length})，進行截斷")
 
-        # 保留重要部分（hashtags），截斷內容部分
         lines = caption.split('\n')
 
-        # 從後往前找 hashtags
         hashtag_lines = []
         content_lines = []
 
@@ -328,24 +301,19 @@ class IGCaptionGenerator:
             else:
                 content_lines.insert(0, line)
 
-        # 計算 hashtags 長度
         hashtags_text = '\n'.join(hashtag_lines)
         hashtags_length = len(hashtags_text)
 
-        # 計算內容可用長度
         available_for_content = max_length - hashtags_length - 10  # 預留 10 字元給換行和 "..."
 
         if available_for_content < 100:
-            # 如果空間太少，只保留部分 hashtags
             available_for_content = max_length - 50
             hashtags_text = hashtags_text[:40] + '...'
 
-        # 截斷內容
         content_text = '\n'.join(content_lines)
         if len(content_text) > available_for_content:
             content_text = content_text[:available_for_content] + '...'
 
-        # 重組
         final_caption = content_text + '\n\n' + hashtags_text
         return final_caption[:max_length]
 
@@ -382,13 +350,11 @@ class IGCaptionGenerator:
             elif block_type == 'divider':
                 config = caption_config.get('divider', {})
                 if config.get('enabled'):
-                    # 分隔符可能出現多次
                     lengths['divider'] = len(config.get('text', '')) * 2
 
             elif block_type == 'post_id':
                 config = caption_config.get('post_id_format', {})
                 if config.get('enabled'):
-                    # 估算 Post ID 長度
                     lengths['post_id'] = 30 * post_count
 
             elif block_type == 'footer':
@@ -402,10 +368,8 @@ class IGCaptionGenerator:
                     tags = config.get('tags', [])
                     lengths['hashtags'] = sum(len(tag) + 2 for tag in tags)  # +2 for "# "
 
-        # 計算固定部分總長度
         fixed_total = sum(lengths[k] for k in ['header', 'divider', 'post_id', 'footer', 'hashtags'])
 
-        # 計算內容可用長度
         lengths['content'] = self.MAX_CAPTION_LENGTH - fixed_total - 50  # 預留 50 字元
         lengths['total'] = self.MAX_CAPTION_LENGTH
 
@@ -419,55 +383,39 @@ class IGCaptionGenerator:
         if not text:
             return text
 
-        # 保護被反斜線轉義的 Markdown 符號（目前支援 *）
         ESCAPED_ASTERISK_TOKEN = '[[ESCAPED_ASTERISK]]'
         text = re.sub(r'\\\*', ESCAPED_ASTERISK_TOKEN, text)
 
-        # 1. 移除 HTML 標籤
         text = re.sub(r'<[^>]+>', '', text)
         text = unescape(text)
 
-        # 2. 移除 Markdown 語法
-        # 移除標題 (# ## ### 等)
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
 
-        # 移除粗體 (**text** 或 __text__)
         text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
         text = re.sub(r'__(.+?)__', r'\1', text)
 
-        # 移除斜體 (*text* 或 _text_)
         text = re.sub(r'\*(.+?)\*', r'\1', text)
         text = re.sub(r'_(.+?)_', r'\1', text)
 
-        # 移除刪除線 (~~text~~)
         text = re.sub(r'~~(.+?)~~', r'\1', text)
 
-        # 移除行內程式碼 (`code`)
         text = re.sub(r'`([^`]+)`', r'\1', text)
 
-        # 移除程式碼區塊 (```code```)
         text = re.sub(r'```[\s\S]*?```', '', text)
 
-        # 移除連結 [text](url)
         text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
 
-        # 移除圖片 ![alt](url)
         text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'\1', text)
 
-        # 移除引用 (> text)
         text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
 
-        # 移除水平線 (--- 或 ***)
         text = re.sub(r'^[-*]{3,}\s*$', '', text, flags=re.MULTILINE)
 
-        # 移除列表標記 (- * + 1. 等)
         text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
 
-        # 移除多餘空白行
         text = re.sub(r'\n{3,}', '\n\n', text)
 
-        # 還原被保護的符號並回傳
         text = text.replace(ESCAPED_ASTERISK_TOKEN, '*')
         return text.strip()
 
@@ -495,20 +443,17 @@ class IGCaptionGenerator:
         time_fmt = fmt_cfg.get('time_format') or '%H:%M:%S'
         dt_fmt = fmt_cfg.get('datetime_format') or '%Y-%m-%d %H:%M:%S'
 
-        # 取得來源時間
         now = datetime.utcnow()
         base_dt = getattr(post, 'created_at', None) or now
 
-        # 套用時區（若有 pytz，否則用原時間）
         try:
-            import pytz  # type: ignore
+            import pytz
             tz = pytz.timezone(tz_name)
             if base_dt.tzinfo is None:
                 base_dt = tz.localize(base_dt) if tz else base_dt
             else:
                 base_dt = base_dt.astimezone(tz)
         except Exception:
-            # 若無 pytz 或時區錯誤，忽略時區處理
             pass
 
         mappings = {

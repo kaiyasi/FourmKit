@@ -58,6 +58,9 @@ interface CommentStats {
   month: number
 }
 
+/**
+ *
+ */
 export default function AdminCommentsMonitorPage() {
   const { role } = useAuth()
   const isDev = (role === 'dev_admin')
@@ -76,29 +79,25 @@ export default function AdminCommentsMonitorPage() {
     ip: ''
   })
 
-  // 載入留言列表
   const loadComments = async () => {
     if (!canModerate) return
     setLoading(true)
     try {
       const params = new URLSearchParams()
       
-      // 根據過濾狀態調整 API 參數
       if (filters.status === 'active') {
-        // 正常留言：已核准且未刪除
         params.append('status', 'approved')
       } else if (filters.status === 'pending') {
-        // 待審核
         params.append('status', 'pending')
       } else if (filters.status === 'rejected') {
-        // 已拒絕
         params.append('status', 'rejected')
+      } else if (filters.status === 'warned') {
+        params.append('status', 'rejected')
+        params.append('warned', '1')
       } else if (filters.status === 'deleted') {
-        // 已下架：使用 status=deleted
         params.append('status', 'deleted')
       }
       
-      // 添加其他過濾參數
       if (filters.school && filters.school !== '') {
         params.append('school', filters.school)
       }
@@ -133,7 +132,6 @@ export default function AdminCommentsMonitorPage() {
     }
   }
 
-  // 載入統計資料
   const loadStats = async () => {
     try {
       const response = await fetch('/api/admin/comments/stats', {
@@ -157,7 +155,6 @@ export default function AdminCommentsMonitorPage() {
     loadStats()
   }, [filters])
 
-  // 下架留言
   const deleteComment = async (comment: Comment, reason: string) => {
     try {
       const response = await fetch(`/api/admin/comments/${comment.id}/delete`, {
@@ -181,7 +178,6 @@ export default function AdminCommentsMonitorPage() {
     }
   }
 
-  // 重新上架留言
   const restoreComment = async (comment: Comment) => {
     try {
       const response = await fetch(`/api/admin/comments/${comment.id}/restore`, {
@@ -204,31 +200,26 @@ export default function AdminCommentsMonitorPage() {
     }
   }
 
-  // 警告留言（這裡需要後端支援警告功能）
   const warnComment = async (comment: Comment, reason: string) => {
     try {
-      // 目前後端沒有警告 API，這裡先記錄到 console
-      console.log('Warning comment:', comment.id, 'reason:', reason)
-      
-      // TODO: 當後端支援警告功能時，呼叫相應的 API
-      // const response = await fetch(`/api/admin/comments/${comment.id}/warn`, {
-      //   method: 'POST',
-      //   headers: { 
-      //     'Authorization': `Bearer ${localStorage.getItem('token')||''}`,
-      //     'Content-Type': 'application/json'
-      //   },
-      //   body: JSON.stringify({ reason })
-      // })
-      
-      // 暫時顯示成功訊息
-      alert(`已警告留言 #${comment.id}：${reason}`)
+      const response = await fetch(`/api/admin/comments/${comment.id}/warn`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${localStorage.getItem('token')||''}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ reason })
+      })
+      if (!response.ok) throw new Error('警告失敗')
+      await loadComments()
+      await loadStats()
       setSelectedComment(null)
     } catch (error) {
       console.error('Failed to warn comment:', error)
+      alert('警告失敗')
     }
   }
 
-  // 格式化日期
   const formatDate = (dateString: string) => {
     try {
       return new Date(dateString).toLocaleString('zh-TW')
@@ -237,7 +228,6 @@ export default function AdminCommentsMonitorPage() {
     }
   }
 
-  // 獲取狀態顯示
   const getStatusDisplay = (comment: Comment) => {
     if (comment.is_deleted) {
       return { text: '已下架', color: 'bg-red-100 text-red-800' }
@@ -271,8 +261,12 @@ export default function AdminCommentsMonitorPage() {
       <NavBar pathname="/admin/comments" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-7xl px-3 sm:px-4 pt-8 sm:pt-20 md:pt-24 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
+<<<<<<< Updated upstream
         {/* 頁首 */}
+=======
+        
+>>>>>>> Stashed changes
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -290,7 +284,7 @@ export default function AdminCommentsMonitorPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 留言列表 */}
+          
           <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -309,7 +303,7 @@ export default function AdminCommentsMonitorPage() {
               </div>
             </div>
 
-            {/* 過濾器 */}
+            
             <div className="mb-4 p-3 bg-surface-hover rounded-lg">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <select
@@ -352,7 +346,7 @@ export default function AdminCommentsMonitorPage() {
               </div>
             </div>
 
-            {/* 留言列表 */}
+            
             <div className="space-y-3">
               {comments.length === 0 ? (
                 <div className="text-center py-8 text-muted">
@@ -373,8 +367,17 @@ export default function AdminCommentsMonitorPage() {
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded-full ${getStatusDisplay(comment).color}`}>
-                          {getStatusDisplay(comment).text}
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          comment.is_deleted ? 'bg-red-100 text-red-800' :
+                          comment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          (comment.status === 'rejected' && comment.warned) ? 'bg-amber-100 text-amber-800' :
+                          comment.status === 'rejected' ? 'bg-orange-100 text-orange-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {comment.is_deleted ? '已下架' :
+                           comment.status === 'pending' ? '待審核' :
+                           (comment.status === 'rejected' && comment.warned) ? '警告' :
+                           comment.status === 'rejected' ? '違規' : '正常'}
                         </span>
                         <span className="text-xs text-muted">#{comment.id}</span>
                         {comment.author?.school_name && (
@@ -391,7 +394,7 @@ export default function AdminCommentsMonitorPage() {
 
                     <div className="mb-2 text-sm line-clamp-2">{comment.content}</div>
                     
-                    {/* 根據角色顯示不同資訊 */}
+                    
                     {isDev ? (
                       <div className="text-xs text-muted mb-2 space-y-1">
                         <div>作者: {comment.author?.username || '匿名用戶'}
@@ -419,9 +422,9 @@ export default function AdminCommentsMonitorPage() {
             </div>
           </div>
 
-          {/* 側邊欄 */}
+          
           <div className="space-y-6">
-            {/* 統計資訊 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
               <h2 className="text-lg font-semibold text-fg mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5" />
@@ -465,7 +468,7 @@ export default function AdminCommentsMonitorPage() {
               )}
             </div>
 
-            {/* 選中留言詳情 */}
+            
             {selectedComment && (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4 flex items-center gap-2">
@@ -486,7 +489,7 @@ export default function AdminCommentsMonitorPage() {
                     <div>留言 ID: #{selectedComment.id}</div>
                     <div>貼文: #{selectedComment.post?.id} - {selectedComment.post?.content?.substring(0, 100)}...</div>
                     <div>建立時間: {formatDate(selectedComment.created_at)}</div>
-                    {/* 開發者可以看到更多資訊 */}
+                    
                     {isDev && (
                       <>
                         <div>貼文狀態: {selectedComment.post?.status}</div>
@@ -509,9 +512,9 @@ export default function AdminCommentsMonitorPage() {
                   )}
                 </div>
 
-                {/* 操作按鈕 */}
+                
                 <div className="mt-4 space-y-2">
-                  {/* 正常留言的操作 */}
+                  
                   {!selectedComment.is_deleted && selectedComment.status === 'approved' && (
                     <>
                       <button
@@ -531,7 +534,7 @@ export default function AdminCommentsMonitorPage() {
                     </>
                   )}
 
-                  {/* 待審核留言的操作 */}
+                  
                   {!selectedComment.is_deleted && selectedComment.status === 'pending' && (
                     <>
                       <button
@@ -544,7 +547,7 @@ export default function AdminCommentsMonitorPage() {
                     </>
                   )}
                   
-                  {/* 已下架留言的顯示 */}
+                  
                   {selectedComment.is_deleted && (
                     <div className="border-t pt-2 mt-2">
                       <div className="text-xs text-muted mb-2">此留言已下架</div>
@@ -552,7 +555,7 @@ export default function AdminCommentsMonitorPage() {
                         ❌ 此留言已被下架，不會公開顯示
                       </div>
                       
-                      {/* dev_admin 可以重新上架 */}
+                      
                       {isDev && (
                         <button
                           onClick={() => restoreComment(selectedComment)}

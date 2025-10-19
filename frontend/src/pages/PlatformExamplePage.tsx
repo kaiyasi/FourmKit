@@ -3,12 +3,15 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { PlatformPageLayout, MobileLayout, DesktopLayout, TabletLayout } from '@/components/layout/PlatformPageLayout'
 import { ResponsiveContainer } from '@/components/layout/PlatformLayout'
 
+/**
+ *
+ */
 export default function PlatformExamplePage() {
   const platform = usePlatform()
 
   return (
     <PlatformPageLayout pathname="/platform-example">
-      {/* 平台資訊顯示 */}
+      
       <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft mb-6">
         <h1 className="text-xl sm:text-2xl font-semibold dual-text mb-4">平台架構示例</h1>
         
@@ -35,9 +38,9 @@ export default function PlatformExamplePage() {
         </div>
       </div>
 
-      {/* 平台特定佈局示例 */}
+      
       <div className="space-y-6">
-        {/* 手機專用內容 */}
+        
         <MobileLayout>
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
             <h2 className="text-lg font-semibold text-blue-800 mb-2">📱 手機專用內容</h2>
@@ -57,7 +60,7 @@ export default function PlatformExamplePage() {
           </div>
         </MobileLayout>
 
-        {/* 平板專用內容 */}
+        
         <TabletLayout>
           <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
             <h2 className="text-lg font-semibold text-green-800 mb-2">📱 平板專用內容</h2>
@@ -75,7 +78,7 @@ export default function PlatformExamplePage() {
           </div>
         </TabletLayout>
 
-        {/* 桌面專用內容 */}
+        
         <DesktopLayout>
           <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
             <h2 className="text-lg font-semibold text-purple-800 mb-2">🖥️ 桌面專用內容</h2>
@@ -96,7 +99,7 @@ export default function PlatformExamplePage() {
           </div>
         </DesktopLayout>
 
-        {/* 響應式容器示例 */}
+        
         <ResponsiveContainer 
           className="bg-surface border border-border rounded-2xl p-4 shadow-soft"
           mobileClassName="platform-mobile-container"
@@ -124,7 +127,7 @@ export default function PlatformExamplePage() {
           </div>
         </ResponsiveContainer>
 
-        {/* 平台特定文字示例 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
           <h2 className="text-lg font-semibold dual-text mb-3">📝 平台特定文字</h2>
           
@@ -152,7 +155,7 @@ export default function PlatformExamplePage() {
           </div>
         </div>
 
-        {/* 平台特定間距示例 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
           <h2 className="text-lg font-semibold dual-text mb-3">📏 平台特定間距</h2>
           

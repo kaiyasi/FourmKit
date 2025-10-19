@@ -16,13 +16,15 @@ interface AuthNotification {
   details: Record<string, any>
 }
 
+/**
+ *
+ */
 export default function AuthNotificationsPanel() {
   const [notifications, setNotifications] = useState<AuthNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState<string | null>(null)
 
-  // 載入通知
   const loadNotifications = async () => {
     try {
       const response = await AdminAuthAPI.getNotificationEvents(50, 0)
@@ -45,7 +47,6 @@ export default function AuthNotificationsPanel() {
     loadNotifications()
   }, [])
 
-  // 處理學校請求
   const handleSchoolRequest = async (
     notificationId: string, 
     action: 'approve' | 'reject',
@@ -59,7 +60,6 @@ export default function AuthNotificationsPanel() {
     try {
       await AdminAuthAPI.processSchoolRequest(notificationId, action, schoolData)
       
-      // 更新通知狀態
       setNotifications(prev => prev.map(n => 
         n.id === notificationId 
           ? { ...n, status: action === 'approve' ? 'processed' : 'rejected' }
@@ -73,7 +73,6 @@ export default function AuthNotificationsPanel() {
     }
   }
 
-  // 格式化時間
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
     const now = new Date()
@@ -90,7 +89,6 @@ export default function AuthNotificationsPanel() {
     }
   }
 
-  // 取得通知圖示
   const getNotificationIcon = (type: AuthNotification['type']) => {
     switch (type) {
       case 'school_request':
@@ -106,7 +104,6 @@ export default function AuthNotificationsPanel() {
     }
   }
 
-  // 取得通知標題
   const getNotificationTitle = (notification: AuthNotification) => {
     switch (notification.type) {
       case 'school_request':
@@ -122,7 +119,6 @@ export default function AuthNotificationsPanel() {
     }
   }
 
-  // 渲染通知詳情
   const renderNotificationDetails = (notification: AuthNotification) => {
     switch (notification.type) {
       case 'school_request':
@@ -292,7 +288,7 @@ export default function AuthNotificationsPanel() {
                     {renderNotificationDetails(notification)}
                   </div>
 
-                  {/* 操作按鈕（僅顯示於待處理狀態） */}
+                  
                   {notification.status === 'pending' && notification.type === 'school_request' && (
                     <div className="flex gap-2 mt-4">
                       <button

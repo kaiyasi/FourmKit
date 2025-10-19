@@ -1,4 +1,3 @@
-// frontend/src/services/realtime.ts
 import { getSocket } from './socket'
 
 declare global { 
@@ -8,23 +7,19 @@ declare global {
 }
 
 let postListenerInstalled = false
-let commentListenerInstalled = false
-let announceListenerInstalled = false
+const commentListenerInstalled = false
+const announceListenerInstalled = false
 let moderationListenerInstalled = false
 let deleteReqListenerInstalled = false
-// 支援功能已移除
 let reactionListenerInstalled = false
 let postEventCount = 0
 
-// 全域唯一的 post listener 管理器
 let globalPostHandler: ((payload: any) => void) | null = null
 
-// 事件去重 Set
 const seenEvents = new Set<string>()
 const SEEN_MAX = 2000
 
 function getSeenKey(payload: any): string {
-  // 使用 event_id 或回退到 id + tx_id 組合
   const p = payload?.post || payload
   return payload.event_id || `${p?.id ?? 'temp'}:${payload?.client_tx_id ?? p?.client_tx_id ?? ''}`
 }
@@ -38,7 +33,6 @@ function markSeenOnce(payload: any): boolean {
   
   seenEvents.add(key)
   
-  // 簡單的 LRU：當太多時清理一半
   if (seenEvents.size > SEEN_MAX) {
     const toKeep = Array.from(seenEvents).slice(-Math.floor(SEEN_MAX / 2))
     seenEvents.clear()
@@ -49,11 +43,13 @@ function markSeenOnce(payload: any): boolean {
   return true
 }
 
+/**
+ *
+ */
 export function installPostListener(handler: (payload: any) => void) {
   const s = getSocket()
   const timestamp = new Date().toISOString()
   
-  // 無論如何都先清理現有的監聽器
   console.info(`[realtime] cleaning existing post_created listeners...`)
   s.off('post_created')
   
@@ -73,7 +69,6 @@ export function installPostListener(handler: (payload: any) => void) {
     console.info(`[realtime] received post_created #${postEventCount}: post_id=${post_id} origin=${origin} tx_id=${tx_id}`)
     console.debug('[realtime] full payload:', payload)
     
-    // 去重檢查
     if (!markSeenOnce(payload)) {
       return // 重複事件，忽略
     }
@@ -88,15 +83,19 @@ export function installPostListener(handler: (payload: any) => void) {
   
   console.info(`[realtime] post_created listener installed successfully`)
   
-  // 提供調試信息
   console.info(`[realtime] current post_created listeners count:`, s.listeners('post_created')?.length || 0)
 }
 
-// 向後相容的包裝函數
+/**
+ *
+ */
 export function ensurePostListener(onIncoming: (payload: any) => void) {
   installPostListener(onIncoming)
 }
 
+/**
+ *
+ */
 export function ensureCommentListener(onIncoming: (payload: any) => void) {
   const s = getSocket()
   
@@ -109,6 +108,9 @@ export function ensureCommentListener(onIncoming: (payload: any) => void) {
   s.on('comment.created', handler)
 }
 
+/**
+ *
+ */
 export function ensureAnnounceListener(onIncoming: (payload: any) => void) {
   const s = getSocket()
   
@@ -121,7 +123,9 @@ export function ensureAnnounceListener(onIncoming: (payload: any) => void) {
   s.on('announce', handler)
 }
 
-// 可選：回饋（讚/踩/表情）事件監聽器，若後端有推播則會生效
+/**
+ *
+ */
 export function ensureReactionListeners(onReacted: (payload: any) => void) {
   if (reactionListenerInstalled) return
   const s = getSocket()
@@ -129,7 +133,6 @@ export function ensureReactionListeners(onReacted: (payload: any) => void) {
     console.debug('[realtime] received reaction:', payload)
     onReacted(payload)
   }
-  // 嘗試多個事件名以相容不同後端實作
   s.off('post.reacted'); s.off('reaction'); s.off('comment.reacted')
   s.on('post.reacted', handler)
   s.on('reaction', handler)
@@ -137,6 +140,9 @@ export function ensureReactionListeners(onReacted: (payload: any) => void) {
   reactionListenerInstalled = true
 }
 
+/**
+ *
+ */
 export function ensureModerationListeners(onApproved: (payload: any) => void, onRejected: (payload: any) => void) {
   if (moderationListenerInstalled) return
   const s = getSocket()
@@ -146,6 +152,9 @@ export function ensureModerationListeners(onApproved: (payload: any) => void, on
   moderationListenerInstalled = true
 }
 
+/**
+ *
+ */
 export function ensureDeleteRequestListeners(onCreated: (payload:any)=>void, onApproved:(payload:any)=>void, onRejected:(payload:any)=>void) {
   if (deleteReqListenerInstalled) return
   const s = getSocket()
@@ -156,4 +165,3 @@ export function ensureDeleteRequestListeners(onCreated: (payload:any)=>void, onA
   deleteReqListenerInstalled = true
 }
 
-// 支援功能已移除

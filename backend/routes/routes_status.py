@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_status.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt
@@ -55,7 +59,6 @@ def integrations_status():
     if role not in ('dev_admin', 'campus_admin', 'cross_admin'):
         return jsonify({ 'ok': False, 'error': { 'code': 'FORBIDDEN', 'message': '僅限管理角色檢視' } }), 403
 
-    # 基本框架，前端可容忍缺欄位
     data: dict = {
         'ok': True,
         'admin_webhook': {
@@ -70,13 +73,11 @@ def integrations_status():
         'user_stats': { 'total': 0 },
     }
 
-    # 近期事件（對三種管理角色可見）
     try:
         raw_items = get_recent_events(limit=10)
         norm_items: list[dict] = []
         from datetime import datetime, timezone
         for ev in raw_items or []:
-            # 根據 get_recent_events 實際回傳結構轉換
             event_type = ev.get('event_type') if isinstance(ev, dict) else None
             title = ev.get('title') if isinstance(ev, dict) else None
             description = ev.get('description') if isinstance(ev, dict) else None
@@ -86,7 +87,6 @@ def integrations_status():
             target_type = ev.get('target_type') if isinstance(ev, dict) else None
             target_id = ev.get('target_id') if isinstance(ev, dict) else None
 
-            # 正規化時間為 ISO8601 字串
             ts_str: str | None = None
             try:
                 if isinstance(ts, datetime):
@@ -94,11 +94,9 @@ def integrations_status():
                 elif isinstance(ts, (int, float)):
                     ts_str = datetime.utcfromtimestamp(float(ts)).isoformat() + 'Z'
                 elif isinstance(ts, str):
-                    # 檢查是否已經是 ISO 格式
                     if 'T' in ts and ('+' in ts or 'Z' in ts):
                         ts_str = ts
                     else:
-                        # 嘗試解析其他格式
                         parsed = datetime.fromisoformat(ts.replace('Z', '+00:00'))
                         ts_str = parsed.isoformat()
                 else:
@@ -107,8 +105,7 @@ def integrations_status():
                 print(f"[WARNING] Failed to parse timestamp '{ts}': {parse_err}")
                 ts_str = datetime.now(timezone.utc).isoformat()
 
-            # 根據事件類型判斷操作成功與否
-            ok = True  # 預設成功
+            ok = True
             error_msg = None
             if severity == 'critical':
                 ok = False
@@ -120,7 +117,6 @@ def integrations_status():
                 ok = False
                 error_msg = description
 
-            # 轉換為前端期望格式
             norm_items.append({
                 'kind': event_type or 'admin_event',
                 'ok': ok,
@@ -137,7 +133,6 @@ def integrations_status():
         print(f"[ERROR] Failed to normalize admin events: {e}")
         data['recent_admin_events'] = []
 
-    # 嘗試取系統資訊（僅 dev_admin 提供完整）
     if role == 'dev_admin':
         try:
             import psutil, os, platform, time
@@ -162,7 +157,6 @@ def integrations_status():
                 'cpu_percent': float(psutil.cpu_percent(interval=0.2)),
             }
 
-            # DB/CDN 可用性概估：以布林映射為 1.0 或 None（供前端判斷顯示）
             try:
                 from utils.db import get_db_health
                 db_health = get_db_health()
@@ -183,16 +177,14 @@ def integrations_status():
         except Exception:
             data['system'] = {}
     else:
-        # 精簡：僅提供是否可用等非敏感概要
         data['system'] = {
             'platform': 'restricted',
         }
 
-    # 佇列狀態（Redis）：所有允許角色皆可見
     try:
         import os
         from urllib.parse import urlparse
-        import redis  # type: ignore
+        import redis
         url = os.getenv('REDIS_URL')
         if url:
             u = urlparse(url)
@@ -201,10 +193,8 @@ def integrations_status():
             size = int(r.llen(key) or 0)
             data['queue'] = { 'enabled': True, 'size': size, 'redis_connected': True }
     except Exception:
-        # 保持預設 disabled
         pass
 
-    # 使用者統計：所有允許角色皆可見
     try:
         from models import User
         from utils.db import get_session
@@ -212,7 +202,6 @@ def integrations_status():
             total_users = s.query(User).count()
             data['user_stats'] = { 'total': int(total_users) }
     except Exception:
-        # 保持預設 0
         pass
 
     return jsonify(data)
@@ -232,20 +221,16 @@ def project_stats():
 
     try:
         from utils.db import get_session
-        # 模型匯入：原本引用 models.instagram（已移除），改為使用社群發布模組
-        from models import User, Post, School, Comment, SocialAccount, SocialPost
+        from models import User, Post, School, Comment, InstagramAccount, InstagramPost
         from datetime import datetime, timezone, timedelta
         import os
         
-        # 計算時間範圍
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
         with get_session() as db:
-            # 學校統計
             total_schools = db.query(School).count()
-            # 活躍學校定義：本週有用戶發文的學校
             active_schools = db.query(School).join(
                 User, School.id == User.school_id
             ).join(
@@ -255,11 +240,9 @@ def project_stats():
             ).distinct().count()
             new_schools_this_week = db.query(School).filter(School.created_at >= week_ago).count()
             
-            # 用戶統計
             total_users = db.query(User).count()
             new_users_this_week = db.query(User).filter(User.created_at >= week_ago).count()
             
-            # 活躍用戶定義：本週有發文或留言的用戶
             active_users_this_week = db.query(User).outerjoin(
                 Post, User.id == Post.author_id
             ).outerjoin(
@@ -268,7 +251,6 @@ def project_stats():
                 (Post.created_at >= week_ago) | (Comment.created_at >= week_ago)
             ).distinct().count()
             
-            # 計算30天留存率：30天前註冊且本週仍有活動的用戶
             thirty_days_ago = now - timedelta(days=30)
             users_registered_30_days_ago = db.query(User).filter(
                 User.created_at >= thirty_days_ago,
@@ -287,30 +269,24 @@ def project_stats():
             
             retention_30d = (still_active_users / max(users_registered_30_days_ago, 1)) * 100
             
-            # 貼文統計
             total_posts = db.query(Post).count()
             posts_today = db.query(Post).filter(Post.created_at >= today_start).count()
             posts_this_week = db.query(Post).filter(Post.created_at >= week_ago).count()
             avg_daily_posts = posts_this_week / 7.0
             
-            # Instagram 整合狀態
-            ig_accounts = db.query(SocialAccount).filter(SocialAccount.status == 'active').count()
-            ig_posts_published = db.query(SocialPost).filter(SocialPost.status == 'published').count()
+            ig_accounts = db.query(InstagramAccount).filter(InstagramAccount.is_active == True).count()
+            ig_posts_published = db.query(InstagramPost).filter(InstagramPost.status == 'published').count()
             
-            # 獲取最近的 IG 同步時間
-            latest_ig_post = (
-                db.query(SocialPost)
-                .filter(SocialPost.published_at != None)
-                .order_by(SocialPost.published_at.desc())
-                .first()
-            )
-            last_ig_sync = latest_ig_post.published_at.isoformat() if latest_ig_post and latest_ig_post.published_at else None
+            try:
+                from sqlalchemy import func as _func
+                last_ts = db.query(_func.max(InstagramPost.published_at)).scalar()
+                last_ig_sync = last_ts.isoformat() if last_ts else None
+            except Exception:
+                last_ig_sync = None
             
-        # Discord Bot 狀態（檢查環境變數或配置）
         discord_configured = bool(os.getenv('DISCORD_BOT_TOKEN'))
-        discord_servers = 0  # 可以從 Discord API 或資料庫獲取
+        discord_servers = 0
         
-        # CDN 狀態檢查（與 /api/healthz 一致的解析邏輯）
         cdn_connected = False
         cdn_usage = 0
         try:
@@ -337,7 +313,6 @@ def project_stats():
 
             resp = requests.get(f"{scheme}://{cdn_host}:{cdn_port}", timeout=3)
             cdn_connected = (resp.status_code < 500)
-            # 使用量：若有環境提供就採用，否則先傳 0（之後可改為實際磁碟/流量統計）
             try:
                 cdn_usage = int(os.getenv('CDN_USAGE_PERCENT', '0'))
             except Exception:
@@ -345,11 +320,9 @@ def project_stats():
         except Exception:
             cdn_connected = False
         
-        # 性能指標（從系統事件或其他來源獲取真實數據）
-        # 這裡暫時使用基本值，後續可以從監控系統獲取
-        avg_response_time = 200  # ms
-        error_rate = 0.05  # %
-        uptime = 99.9  # %
+        avg_response_time = 200
+        error_rate = 0.05
+        uptime = 99.9
         
         stats = {
             'schools': {

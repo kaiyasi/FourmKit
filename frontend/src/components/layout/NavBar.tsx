@@ -69,6 +69,9 @@ const sets: Record<Role, { to: string; label: string; icon: any; iconOnly?: bool
   ],
 }
 
+/**
+ *
+ */
 export function NavBar({ pathname }: { pathname: string }) {
   const { isLoggedIn, role, logout } = useAuth()
   const currentRole = (isLoggedIn ? role : 'guest') as Role
@@ -76,20 +79,17 @@ export function NavBar({ pathname }: { pathname: string }) {
   const isActive = (to: string) => pathname === to || (to !== '/' && pathname && pathname.startsWith(to))
   const navRef = useRef<HTMLElement | null>(null)
 
-  // 動態回寫 Navbar 占用高度到 CSS 變數，供頁面留白使用
   useEffect(() => {
     const updateOffset = () => {
       const el = navRef.current
       if (!el) return
       const rect = el.getBoundingClientRect()
       const offset = Math.max(0, Math.ceil(rect.bottom))
-      // 多加 8px 緩衝，避免貼太近
       document.documentElement.style.setProperty('--fk-navbar-offset', `${offset + 8}px`)
     }
     updateOffset()
     const onResize = () => updateOffset()
     window.addEventListener('resize', onResize)
-    // 嘗試觀測尺寸變化（不同字體/縮放）
     let ro: ResizeObserver | null = null
     try {
       ro = new ResizeObserver(updateOffset)
@@ -106,9 +106,8 @@ export function NavBar({ pathname }: { pathname: string }) {
       <div className="mx-auto max-w-5xl">
         <div className="relative flex items-center justify-center">
           <ul className="flex items-center gap-6 px-6 py-3 rounded-2xl bg-surface/70 backdrop-blur-md border border-border shadow-sm h-12 tablet-nav">
-            {/* 主要導航項目 */}
+            
             {items.map(({ to, label, icon: Icon, iconOnly }) => {
-              // 檢查是否為非 dev_admin 的支援連結
               const isExternalSupport = to === '/admin/support' && currentRole !== 'dev_admin'
               const finalTo = isExternalSupport ? 'https://forum.serelix.xyz/support' : to
               
@@ -153,7 +152,7 @@ export function NavBar({ pathname }: { pathname: string }) {
               )
             })}
             
-            {/* 右側功能區塊 */}
+            
             <li className="pl-4 ml-4 border-l border-border flex items-center gap-3">
               <ThemeToggle />
               {isLoggedIn && (

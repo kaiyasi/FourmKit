@@ -1,9 +1,11 @@
+"""
+Module: backend/utils/email_rules.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import re
 
-# 粗驗 email 格式
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# 允許 edu / edu.tw 任意子網域，例如 nhsh.tp.edu.tw、dept.stanford.edu
 ALLOWED_SUFFIX_RE = re.compile(r"(?i)@([a-z0-9-]+\.)*(edu(\.tw)?)$")
 
 def normalize_email(email: str) -> str:

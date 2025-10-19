@@ -15,7 +15,6 @@ def make_celery() -> Celery:
         'services.tasks.ig_tasks',
     ])
 
-    # 基本設定
     app.conf.update(
         timezone=os.getenv('TZ', 'Asia/Taipei'),
         enable_utc=True,
@@ -27,12 +26,10 @@ def make_celery() -> Celery:
         broker_connection_retry_on_startup=True,
     )
 
-    # 啟用 beat 排程（若可用）
     try:
         from services.tasks.ig_tasks import get_celery_beat_schedule
         app.conf.beat_schedule = get_celery_beat_schedule()
     except Exception:
-        # 若任務模組不可用，忽略排程設定
         pass
 
     return app

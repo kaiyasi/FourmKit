@@ -11,13 +11,14 @@ const NAME_MAP: Record<ThemeName,string> = {
   dark: '灰黑'
 }
 
+/**
+ *
+ */
 export function ThemeToggle({ className = '' }: { className?: string }) {
   const initial = loadTheme().theme
   const [theme, setTheme] = useState<ThemeName>(initial)
 
   useEffect(() => { 
-    // auto 模式由 applyTheme 自行判斷深淺色
-    // 只有 dark 主題才設定為暗色模式
     applyTheme(theme, theme === 'dark')
   }, [theme])
 
@@ -25,11 +26,8 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     const idx = THEME_ORDER.indexOf(theme)
     const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
     setTheme(next)
-    // auto 模式不強制指定 isDark，讓系統決定
-    // 只有 dark 主題才設定為暗色模式
     saveTheme(next, next === 'dark')
     
-    // 觸覺反饋
     try {
       if ('vibrate' in navigator) {
         navigator.vibrate(10);
@@ -37,7 +35,6 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     } catch {}
   }
 
-  // 僅設定尺寸，顏色交給父層（避免變數色彩 + 透明度組合造成不可見）
   const baseIconCls = 'w-4 h-4';
   const icon = () => {
     switch(theme){
@@ -52,18 +49,15 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
   }
 
     useEffect(()=>{
-      // 標記已就緒避免 FOUC
       requestAnimationFrame(()=> {
         document.documentElement.classList.add('theme-ready');
       });
     },[]);
 
-  // 只在主題真正改變時添加過渡動畫
   const [prevTheme, setPrevTheme] = useState<ThemeName | null>(null);
   
   useEffect(() => {
     if (prevTheme && prevTheme !== theme) {
-      // 添加主題切換動畫類
       document.documentElement.classList.add('theme-transition');
       setTimeout(() => {
         document.documentElement.classList.remove('theme-transition');

@@ -1,4 +1,4 @@
-export type CSPair = { // eslint-disable-line @typescript-eslint/naming-convention
+export interface CSPair { // eslint-disable-line @typescript-eslint/naming-convention
 	/**
 	The ANSI terminal control sequence for starting this style.
 	*/
@@ -8,9 +8,9 @@ export type CSPair = { // eslint-disable-line @typescript-eslint/naming-conventi
 	The ANSI terminal control sequence for ending this style.
 	*/
 	readonly close: string;
-};
+}
 
-export type ColorBase = {
+export interface ColorBase {
 	/**
 	The ANSI terminal control sequence for ending this color.
 	*/
@@ -21,9 +21,9 @@ export type ColorBase = {
 	ansi256(code: number): string;
 
 	ansi16m(red: number, green: number, blue: number): string;
-};
+}
 
-export type Modifier = {
+export interface Modifier {
 	/**
 	Resets the current color chain.
 	*/
@@ -70,9 +70,9 @@ export type Modifier = {
 	Puts a horizontal line through the center of the text. (Not widely supported)
 	*/
 	readonly strikethrough: CSPair;
-};
+}
 
-export type ForegroundColor = {
+export interface ForegroundColor {
 	readonly black: CSPair;
 	readonly red: CSPair;
 	readonly green: CSPair;
@@ -100,9 +100,9 @@ export type ForegroundColor = {
 	readonly cyanBright: CSPair;
 	readonly magentaBright: CSPair;
 	readonly whiteBright: CSPair;
-};
+}
 
-export type BackgroundColor = {
+export interface BackgroundColor {
 	readonly bgBlack: CSPair;
 	readonly bgRed: CSPair;
 	readonly bgGreen: CSPair;
@@ -130,9 +130,9 @@ export type BackgroundColor = {
 	readonly bgCyanBright: CSPair;
 	readonly bgMagentaBright: CSPair;
 	readonly bgWhiteBright: CSPair;
-};
+}
 
-export type ConvertColor = {
+export interface ConvertColor {
 	/**
 	Convert from the RGB color space to the ANSI 256 color space.
 
@@ -178,7 +178,7 @@ export type ConvertColor = {
 	@param hex - A hexadecimal string containing RGB data.
 	*/
 	hexToAnsi(hex: string): number;
-};
+}
 
 /**
 Basic modifier names.

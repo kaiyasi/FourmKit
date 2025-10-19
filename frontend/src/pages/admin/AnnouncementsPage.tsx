@@ -8,6 +8,9 @@ import AdminCard from '@/components/admin/AdminCard'
 type Ann = { id?: number; ts?: number; title: string; description: string }
 type School = { id: number; name: string; slug: string }
 
+/**
+ *
+ */
 export default function AnnouncementsPage(){
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
@@ -31,7 +34,6 @@ export default function AnnouncementsPage(){
     } finally{ setLoading(false) }
   }
 
-  // 載入學校列表（僅 dev_admin 需要）
   const loadSchools = async () => {
     if (role !== 'dev_admin') return
     
@@ -61,7 +63,6 @@ export default function AnnouncementsPage(){
   const submit = async () => {
     if (!title.trim() || !message.trim()) { setInfo('請輸入標題與內容'); return }
     
-    // 根據角色確定 school_id
     let schoolId: number | null = null
     if (role === 'campus_admin') {
       schoolId = userSchoolId
@@ -108,7 +109,7 @@ export default function AnnouncementsPage(){
             <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="公告標題" className="form-control" />
             <textarea value={message} onChange={e=>setMessage(e.target.value)} rows={6} placeholder="公告內容（支援純文字；會送達已開啟公告推送的用戶 Webhook）" className="form-control" />
             
-            {/* 學校選擇（僅 dev_admin 顯示） */}
+            
             {role === 'dev_admin' && (
               <div className="flex items-center gap-3">
                 <Building2 className="w-4 h-4 text-muted" />
@@ -131,7 +132,7 @@ export default function AnnouncementsPage(){
               </div>
             )}
             
-            {/* 角色說明 */}
+            
             <div className="text-sm text-muted">
               {role === 'campus_admin' && '將發布給您學校的所有用戶'}
               {role === 'cross_admin' && '將發布給全平台的所有用戶'}

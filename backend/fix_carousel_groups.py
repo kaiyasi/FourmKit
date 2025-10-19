@@ -17,7 +17,6 @@ def fix_carousel_group_status():
     print("=== 修復輪播群組狀態 ===")
     
     with get_session() as db:
-        # 查找 failed 狀態的輪播群組
         failed_carousels = db.query(CarouselGroup).filter(
             CarouselGroup.status == 'failed'
         ).all()
@@ -30,12 +29,10 @@ def fix_carousel_group_status():
         for carousel in failed_carousels:
             print(f"\n檢查輪播 {carousel.group_id} (ID: {carousel.id})")
             
-            # 查找關聯的貼文
             posts = db.query(SocialPost).filter(
                 SocialPost.carousel_group_id == carousel.id
             ).all()
             
-            # 統計各狀態貼文
             queued_posts = [p for p in posts if p.status == PostStatus.QUEUED and p.generated_image_url and p.generated_caption]
             processing_posts = [p for p in posts if p.status == PostStatus.PROCESSING]
             published_posts = [p for p in posts if p.status == PostStatus.PUBLISHED]
@@ -44,27 +41,23 @@ def fix_carousel_group_status():
             print(f"   貼文狀態: 準備發布 {len(queued_posts)}, 處理中 {len(processing_posts)}, 已發布 {len(published_posts)}, 失敗 {len(failed_posts)}")
             
             try:
-                # 如果所有貼文都已發布，標記為完成
                 if len(published_posts) == len(posts) and len(posts) > 0:
                     carousel.status = 'completed'
                     carousel.published_at = datetime.now(timezone.utc)
                     print("   ✅ 改為 COMPLETED (所有貼文已發布)")
                     fixed_count += 1
                 
-                # 如果有準備發布的貼文，標記為準備就緒
                 elif len(queued_posts) > 0:
                     carousel.status = 'ready'
                     print(f"   🚀 改為 READY ({len(queued_posts)} 個貼文準備發布)")
                     fixed_count += 1
                     ready_count += 1
                 
-                # 如果所有貼文都在處理中，標記為處理中
                 elif len(processing_posts) == len(posts) and len(posts) > 0:
                     carousel.status = 'processing'
                     print("   🔄 改為 PROCESSING (所有貼文處理中)")
                     fixed_count += 1
                 
-                # 如果有混合狀態，根據主要狀態決定
                 elif len(queued_posts) + len(processing_posts) > 0:
                     if len(queued_posts) >= len(processing_posts):
                         carousel.status = 'ready'
@@ -104,7 +97,6 @@ def update_carousel_progress():
                 SocialPost.carousel_group_id == carousel.id
             ).all()
             
-            # 更新收集計數
             actual_collected = len(posts)
             if carousel.collected_count != actual_collected:
                 carousel.collected_count = actual_collected
@@ -119,7 +111,6 @@ def show_carousel_status():
     with get_session() as db:
         from sqlalchemy import func
         
-        # 按狀態統計輪播群組
         status_counts = db.query(
             CarouselGroup.status,
             func.count(CarouselGroup.id).label('count')
@@ -129,7 +120,6 @@ def show_carousel_status():
         for status, count in status_counts:
             print(f"   {status.upper()}: {count}")
         
-        # 顯示準備發布的輪播詳情
         ready_carousels = db.query(CarouselGroup).filter(
             CarouselGroup.status == 'ready'
         ).all()
@@ -149,13 +139,10 @@ if __name__ == "__main__":
     print("=" * 40)
     
     try:
-        # 1. 修復輪播群組狀態
         status_fixed = fix_carousel_group_status()
         
-        # 2. 更新進度信息
         update_carousel_progress()
         
-        # 3. 顯示當前狀態
         show_carousel_status()
         
         print("\n" + "=" * 40)

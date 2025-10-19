@@ -1,11 +1,15 @@
+"""
+Module: backend/utils/ratelimit.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 import time, os
 from typing import Callable, Dict, Tuple
 from flask import request, jsonify
+import ipaddress
 
-# 速率限制：優先使用 Redis，否則退回記憶體 Token Bucket（單進程）
 
-Bucket = Tuple[float, float]  # (tokens, last_refill_ts)
+Bucket = Tuple[float, float]
 _buckets: Dict[str, Bucket] = {}
 
 _redis = None
@@ -13,7 +17,7 @@ _redis_ok = False
 _redis_url = os.getenv('REDIS_URL') or os.getenv('FORUMKIT_REDIS_URL')
 if _redis_url:
     try:
-        import redis  # type: ignore
+        import redis
         _redis = redis.Redis.from_url(_redis_url, decode_responses=True)
         _redis.ping()
         _redis_ok = True
@@ -26,7 +30,6 @@ def _key_from(by: str) -> str:
     if by == 'client':
         return request.headers.get('X-Client-Id') or request.remote_addr or 'unknown'
     if by == 'user':
-        # 嘗試從 JWT 取得身分（若沒有就退回 client/ip）
         try:
             from flask_jwt_extended import get_jwt_identity
             u = get_jwt_identity()
@@ -35,7 +38,6 @@ def _key_from(by: str) -> str:
         except Exception:
             pass
         return request.headers.get('X-Client-Id') or request.remote_addr or 'unknown'
-    # default ip
     return request.remote_addr or 'unknown'
 
 def rate_limit(calls: int, per_seconds: int, by: str = 'ip') -> Callable:
@@ -46,13 +48,45 @@ def rate_limit(calls: int, per_seconds: int, by: str = 'ip') -> Callable:
     capacity = float(calls)
     refill_rate = capacity / float(per_seconds)
 
+    def _is_exempt_ip(ip: str | None) -> bool:
+        try:
+            ip = _normalize_ip(ip or '')
+            raw = (os.getenv('EXEMPT_IPS') or os.getenv('IP_WHITELIST') or '').strip()
+            if not raw:
+                return False
+            parts = [p.strip() for p in raw.split(',') if p.strip()]
+            for item in parts:
+                try:
+                    if '/' in item:
+                        if ipaddress.ip_address(ip) in ipaddress.ip_network(item, strict=False):
+                            return True
+                    else:
+                        if _normalize_ip(item) == ip:
+                            return True
+                except Exception:
+                    continue
+            return False
+        except Exception:
+            return False
+
     def deco(fn: Callable):
         def wrapper(*args, **kwargs):
+            try:
+                if request.path.startswith('/api/admin/chat/'):
+                    return fn(*args, **kwargs)
+            except Exception:
+                pass
+
             key_id = _key_from(by)
             key = f'rl:{by}:{key_id}:{fn.__name__}:{per_seconds}'
+
+            try:
+                if _is_exempt_ip(get_client_ip()):
+                    return fn(*args, **kwargs)
+            except Exception:
+                pass
             if _redis_ok and _redis is not None:
                 try:
-                    # 簡單固定視窗：INCR + EXPIRE
                     pipe = _redis.pipeline()
                     pipe.incr(key)
                     pipe.expire(key, per_seconds)
@@ -60,8 +94,11 @@ def rate_limit(calls: int, per_seconds: int, by: str = 'ip') -> Callable:
                     if int(count) > int(calls):
                         ttl = _redis.ttl(key)
                         retry = int(ttl) if ttl and ttl > 0 else per_seconds
-                        # 記錄一次封鎖嘗試與自動升級封鎖
-                        add_ip_strike()
+                        try:
+                            if not _is_exempt_ip(get_client_ip()):
+                                add_ip_strike()
+                        except Exception:
+                            pass
                         return jsonify({
                             'ok': False,
                             'error': {
@@ -70,20 +107,21 @@ def rate_limit(calls: int, per_seconds: int, by: str = 'ip') -> Callable:
                                 'hint': f'retry_after={retry}s'
                             }
                         }), 429
-                    # 允許請求
                     return fn(*args, **kwargs)
                 except Exception:
-                    # Redis 故障時退回記憶體方案
                     pass
 
-            # 記憶體 Token Bucket（單進程）
             now = time.time()
             tokens, last = _buckets.get(key, (capacity, now))
             delta = max(0.0, now - last)
             tokens = min(capacity, tokens + delta * refill_rate)
             if tokens < 1.0:
                 retry = int(max(1, (1.0 - tokens) / refill_rate))
-                add_ip_strike()
+                try:
+                    if not _is_exempt_ip(get_client_ip()):
+                        add_ip_strike()
+                except Exception:
+                    pass
                 return jsonify({
                     'ok': False,
                     'error': {
@@ -95,11 +133,10 @@ def rate_limit(calls: int, per_seconds: int, by: str = 'ip') -> Callable:
             tokens -= 1.0
             _buckets[key] = (tokens, now)
             return fn(*args, **kwargs)
-        wrapper.__name__ = fn.__name__  # type: ignore[attr-defined]
+        wrapper.__name__ = fn.__name__
         return wrapper
     return deco
 
-# --------- IP Block helpers ---------
 def _ip_key(ip: str, name: str) -> str:
     return f'ipsec:{name}:{ip}'
 
@@ -107,8 +144,19 @@ def _ip_key(ip: str, name: str) -> str:
 def _ip_meta_key(ip: str) -> str:
     return f'ipsec:meta:{ip}'
 
+def _normalize_ip(ip: str | None) -> str:
+    try:
+        s = (ip or '').strip()
+        if s.startswith('::ffff:') and s.count(':') >= 2 and s.rfind(':') != -1:
+            s = s.split(':')[-1]
+        if s.startswith('[') and s.endswith(']'):
+            s = s[1:-1]
+        return s
+    except Exception:
+        return ip or 'unknown'
+
+
 def get_client_ip() -> str:
-    # 優先 Cloudflare 提供的真實來源 IP，其次 Nginx，最後直連
     ip = (
         request.headers.get('CF-Connecting-IP')
         or request.headers.get('X-Real-IP')
@@ -116,9 +164,8 @@ def get_client_ip() -> str:
         or request.remote_addr
         or 'unknown'
     )
-    return ip
+    return _normalize_ip(ip)
 
-# --------- User mobility (IP distinct count) ---------
 def track_and_check_user_ip(uid: int | None, ip: str | None) -> tuple[bool, int, int]:
     """追蹤使用者 24 小時內使用過的不同 IP 數量，並檢查是否超過門檻。
     Returns: (allowed, current_count, threshold)
@@ -133,12 +180,10 @@ def track_and_check_user_ip(uid: int | None, ip: str | None) -> tuple[bool, int,
         if _redis_ok and _redis is not None:
             key = f'user:ips:{int(uid)}'
             _redis.sadd(key, ip)
-            # 設定 24h 期限（若已存在不重置，僅在首次或過期後重建）
             if _redis.ttl(key) < 0:
                 _redis.expire(key, 86400)
             cnt = int(_redis.scard(key) or 0)
             return (cnt <= threshold), cnt, threshold
-        # 無 Redis：不在單機記憶體強制，僅放行
         return True, 0, threshold
     except Exception:
         return True, 0, 0
@@ -147,7 +192,7 @@ def add_ip_strike(ip: str | None = None) -> int:
     ip = ip or get_client_ip()
     captcha_th = int(os.getenv('IP_CAPTCHA_STRIKES_THRESHOLD', '1'))
     threshold = int(os.getenv('IP_BLOCK_STRIKES_THRESHOLD', '2'))
-    ttl = int(os.getenv('IP_STRIKE_TTL_SECONDS', '1800'))  # 30 分鐘內連續違規
+    ttl = int(os.getenv('IP_STRIKE_TTL_SECONDS', '1800'))
     key = _ip_key(ip, 'strikes')
     if _redis_ok and _redis is not None:
         pipe = _redis.pipeline()
@@ -158,13 +203,11 @@ def add_ip_strike(ip: str | None = None) -> int:
     else:
         now = time.time()
         c, t = _buckets.get(key, (0.0, now))
-        # 簡單的 TTL：若過期則重置
         if now - t > ttl:
             c = 0.0
         c += 1.0
         _buckets[key] = (c, now)
         count = int(c)
-    # 先要求 CAPTCHA，再升級封鎖
     try:
         if count >= threshold:
             block_ip(ip)
@@ -180,7 +223,7 @@ def _normalize_ttl(desired: int | None) -> int:
     except Exception:
         min_ttl = 60
     try:
-        max_ttl = int(os.getenv('IP_BLOCK_MAX_TTL_SECONDS', '2592000'))  # 預設上限 30 天
+        max_ttl = int(os.getenv('IP_BLOCK_MAX_TTL_SECONDS', '2592000'))
     except Exception:
         max_ttl = 2592000
     try:
@@ -201,7 +244,6 @@ def block_ip(ip: str | None = None, ttl_seconds: int | None = None, metadata: di
     ip = ip or get_client_ip()
     ttl = _normalize_ttl(ttl_seconds)
     key = _ip_key(ip, 'blocked')
-    # 事件紀錄：IP 被封鎖
     try:
         from utils.admin_events import log_security_event
         log_security_event(
@@ -273,12 +315,11 @@ def get_ip_block_metadata(ip: str | None = None) -> dict | None:
         return value
     return None
 
-# --------- CAPTCHA helpers ---------
 def _captcha_key(ip: str) -> str:
     return _ip_key(ip, 'captcha')
 
 def _mark_captcha_required(ip: str) -> None:
-    ttl = int(os.getenv('IP_CAPTCHA_TTL_SECONDS', '900'))  # 預設 15 分鐘
+    ttl = int(os.getenv('IP_CAPTCHA_TTL_SECONDS', '900'))
     if _redis_ok and _redis is not None:
         _redis.setex(_captcha_key(ip), ttl, '1')
     else:
@@ -295,7 +336,6 @@ def clear_captcha_requirement(ip: str | None = None) -> None:
     key = _captcha_key(ip)
     if _redis_ok and _redis is not None:
         _redis.delete(key)
-        # 同步清空 strikes，避免立刻再次觸發
         _redis.delete(_ip_key(ip, 'strikes'))
     else:
         _buckets.pop(key, None)
@@ -310,12 +350,11 @@ def verify_captcha(token: str | None) -> bool:
     provider = (os.getenv('CAPTCHA_PROVIDER') or '').strip().lower()
     secret = (os.getenv('CAPTCHA_SECRET') or '').strip()
     if provider in {'', 'none'}:
-        # 未設定提供者，預設放行（避免誤傷正式流量）；建議上線務必設定
         return True
     if provider == 'dummy':
         return token == 'ok'
     try:
-        import requests  # type: ignore
+        import requests
         if provider == 'turnstile':
             url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
             data = {'secret': secret, 'response': token}
@@ -330,15 +369,11 @@ def verify_captcha(token: str | None) -> bool:
         j = r.json()
         return bool(j.get('success'))
     except Exception:
-        # 失敗時保守處理：不通過
         return False
 
 def is_ip_blocked(ip: str | None = None) -> bool:
     ip = ip or get_client_ip()
 
-    # 角色豁免：dev_admin / admin 不受 IP 封鎖影響
-    # 用戶名豁免：特定用戶（如 Kaiyasi）也不受 IP 封鎖影響
-    # 1) 優先透過 JWT identity 取得 user_id，查 DB 角色
     try:
         from flask_jwt_extended import get_jwt_identity
         uid = get_jwt_identity()
@@ -346,23 +381,19 @@ def is_ip_blocked(ip: str | None = None) -> bool:
             try:
                 from utils.db import get_session
                 from models import User
-                with get_session() as session:  # type: ignore
+                with get_session() as session:
                     u = session.get(User, int(uid))
                     if u:
-                        # 角色豁免
                         if u.role in ['dev_admin', 'admin']:
                             return False
-                        # 用戶名豁免（區分大小寫）
-                        exempt_usernames = ['Kaiyasi']  # 可以在此添加更多豁免用戶
+                        exempt_usernames = ['Kaiyasi']
                         if u.username and u.username in exempt_usernames:
                             return False
             except Exception:
-                # 若 DB 讀取失敗，繼續嘗試手動解析 JWT
                 pass
     except Exception:
         pass
 
-    # 2) JWT context 不可用時，手動解析 Authorization Bearer token 取 user_id 再查 DB 角色
     try:
         from flask import request
         auth_header = request.headers.get('Authorization', '')
@@ -376,13 +407,11 @@ def is_ip_blocked(ip: str | None = None) -> bool:
                 try:
                     from utils.db import get_session
                     from models import User
-                    with get_session() as session:  # type: ignore
+                    with get_session() as session:
                         u = session.get(User, int(user_id))
                         if u:
-                            # 角色豁免
                             if u.role in ['dev_admin', 'admin']:
                                 return False
-                            # 用戶名豁免（區分大小寫）
                             exempt_usernames = ['Kaiyasi']
                             if u.username and u.username in exempt_usernames:
                                 return False
@@ -391,14 +420,12 @@ def is_ip_blocked(ip: str | None = None) -> bool:
     except Exception:
         pass
 
-    # 白名單檢查 - 環境變數配置的IP
     whitelist_ips = os.getenv('IP_WHITELIST', '').split(',')
-    whitelist_ips = [w.strip() for w in whitelist_ips if w.strip()]
-    if ip in whitelist_ips:
+    whitelist_ips = [_normalize_ip(w.strip()) for w in whitelist_ips if w.strip()]
+    if _normalize_ip(ip) in whitelist_ips:
         return False
 
     key = _ip_key(ip, 'blocked')
     if _redis_ok and _redis is not None:
         return bool(_redis.get(key))
-    # in-memory：若曾設置便視為封鎖（未處理 TTL，足夠開發/單機）
     return key in _buckets

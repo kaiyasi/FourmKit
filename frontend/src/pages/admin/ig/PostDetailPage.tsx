@@ -149,7 +149,7 @@ const PostDetailPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* Header */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -178,7 +178,7 @@ const PostDetailPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 基本資訊 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <h2 className="text-lg font-semibold text-fg mb-4">基本資訊</h2>
             <div className="space-y-3">
@@ -213,7 +213,7 @@ const PostDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 論壇貼文資訊 */}
+          
           <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
             <h2 className="text-lg font-semibold text-fg mb-4">原始貼文</h2>
             <div className="space-y-3">
@@ -236,7 +236,7 @@ const PostDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 發布資訊 */}
+          
           {(post.scheduled_at || post.published_at || post.ig_permalink) && (
             <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft">
               <h2 className="text-lg font-semibold text-fg mb-4">發布資訊</h2>
@@ -276,7 +276,7 @@ const PostDetailPage: React.FC = () => {
             </div>
           )}
 
-          {/* 錯誤資訊 */}
+          
           {post.error_message && (
             <div className="bg-danger-bg border border-danger-text rounded-2xl p-6 shadow-soft">
               <h2 className="text-lg font-semibold text-danger-text mb-4 flex items-center gap-2">
@@ -308,7 +308,7 @@ const PostDetailPage: React.FC = () => {
             </div>
           )}
 
-          {/* 渲染預覽 */}
+          
           {post.rendered_image_cdn_path && (
             <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft lg:col-span-2">
               <h2 className="text-lg font-semibold text-fg mb-4">渲染預覽</h2>
@@ -320,7 +320,7 @@ const PostDetailPage: React.FC = () => {
             </div>
           )}
 
-          {/* Caption */}
+          
           {post.rendered_caption && (
             <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft lg:col-span-2">
               <h2 className="text-lg font-semibold text-fg mb-4">Caption</h2>

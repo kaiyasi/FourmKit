@@ -3,6 +3,9 @@ import { useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import MobileHeader from '@/components/MobileHeader'
 
+/**
+ *
+ */
 export default function AboutPage() {
   const { pathname } = useLocation()
   useEffect(() => {
@@ -34,7 +37,7 @@ export default function AboutPage() {
     <PageLayout pathname={pathname} maxWidth="max-w-3xl">
       <MobileHeader subtitle="About" />
       <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
-        <h1 className="text-2xl font-semibold dual-text mb-3">關於我們</h1>
+        <h1 className="hidden sm:block text-2xl font-semibold dual-text mb-3">關於我們</h1>
         {loading ? (
           <div className="text-muted">載入中...</div>
         ) : error ? (

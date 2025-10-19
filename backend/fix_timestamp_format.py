@@ -5,7 +5,6 @@
 import sys
 from pathlib import Path
 
-# 添加專案路徑
 sys.path.insert(0, str(Path(__file__).parent))
 
 def fix_timestamp_format_in_templates():
@@ -14,7 +13,6 @@ def fix_timestamp_format_in_templates():
     print("🔧 修復IG模板時間戳格式")
     print("=" * 50)
 
-    # 方案1：創建一個測試配置，強制使用相對時間格式
     test_config = {
         'image': {
             'cards': {
@@ -55,11 +53,8 @@ def create_timestamp_override():
     print("\n🛠️ 創建時間戳格式覆蓋")
     print("=" * 30)
 
-    # 方案：在content_generator中添加格式覆蓋
     override_code = '''
-    # 在 _generate_image 方法中添加：
 
-    # 強制覆蓋時間戳格式為相對時間
     if 'timestamp' in pillow_config and isinstance(pillow_config['timestamp'], dict):
         pillow_config['timestamp']['format'] = 'relative'
         logger.info("[IG發布] 強制使用相對時間格式")

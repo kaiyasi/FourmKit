@@ -10,6 +10,9 @@ import { Link } from 'react-router-dom'
 import { textToHtml } from '@/utils/safeHtml'
 import { Bold, Italic, Link as LinkIcon, List, Quote, Code, Eye, Paperclip } from 'lucide-react'
 
+/**
+ *
+ */
 export default function PostComposer({ token, hideFormattingToolbar = false }: { token: string, hideFormattingToolbar?: boolean }) {
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -42,7 +45,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
   const [toolbarOpen, setToolbarOpen] = useState(!hideFormattingToolbar)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
-  // 載入學校清單，預設使用 Navbar 的選擇（localStorage）
   useEffect(() => {
     (async () => {
       try {
@@ -54,7 +56,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
     })()
   }, [])
 
-  // 桌面版：學校清單載入後，若尚未選定，帶入預設（登入者=自己的學校；未登入=跨校）
   useEffect(() => {
     try {
       if (schools.length === 0) return
@@ -64,7 +65,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
     } catch {}
   }, [schools])
 
-  // 監聽全域學校切換事件，隨時同步到發文選擇
   useEffect(() => {
     const onChanged = (e: any) => {
       try {
@@ -76,7 +76,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
     return () => window.removeEventListener('fk_school_changed', onChanged as any)
   }, [])
 
-  // 開啟確認對話框時，若尚未選擇且有預設或清單，設置預設學校
   useEffect(() => {
     if (confirmOpen && !targetSlug) {
       const mySlug = mySchoolId ? (schools.find(s=>s.id===mySchoolId)?.slug || '') : ''
@@ -97,7 +96,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
     await doSubmit(targetSlug)
   }
 
-  // Mobile editor helpers
   const insertText = (before: string, after = '', placeholder = '') => {
     const textarea = textareaRef.current
     if (!textarea) return
@@ -107,7 +105,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
     const replacement = before + (selectedText || placeholder) + after
     const newText = content.slice(0, start) + replacement + content.slice(end)
     setContent(newText)
-    // restore caret
     setTimeout(() => {
       const newCursorPos = start + before.length + (selectedText || placeholder).length
       textarea.setSelectionRange(newCursorPos, newCursorPos)
@@ -125,7 +122,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
   ]
 
   async function doSubmit(finalSlug: string | '') {
-    // 防止重複提交 - 檢查狀態和時間戳
     const now = Date.now();
     if (submitting) {
       console.log('[PostComposer] Already submitting, ignoring duplicate request');
@@ -140,7 +136,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
 
     setSubmitting(true)
     try {
-      // 優先使用純文本API，如果有檔案則使用多媒體API
       if (files.length > 0) {
         const fd = new FormData()
         fd.set('content', content.trim())
@@ -158,7 +153,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
         setContent(""); setFiles([]); setIsAnnouncement(false)
         console.log('created:', validatedPost)
       } else {
-        // 特殊語法：#<id> → 發文但標記 reply_to_id
         let replyToId: number | null = null
         let textBody = content.trim()
         const m = textBody.match(/^#(\d+)\s*(.*)$/s)
@@ -166,7 +160,6 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
           replyToId = parseInt(m[1], 10)
           textBody = (m[2] || '').trim()
         }
-        // 純文本發文
         const payload: any = { content: textBody }
         if (finalSlug) payload.school_slug = finalSlug
         if (isAnnouncement) {
@@ -195,7 +188,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 max-w-2xl mx-auto md:pb-0">
-      {/* 桌面版：發佈範圍內嵌選擇器（行動版維持送出前彈窗） */}
+      
       <div className="hidden lg:flex items-center gap-3">
         <label className="text-sm text-muted">發佈範圍</label>
         <select
@@ -208,7 +201,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
             <option key={s.id} value={s.slug}>{s.name}</option>
           ))}
         </select>
-        {/* 公告選項 - 依角色顯示不同選項 */}
+        
         {token && canPublishAnnouncement() && (
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
@@ -243,7 +236,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
             )}
           </div>
         )}
-        {/* 廣告選項 - 僅 dev_admin */}
+        
         {token && role === 'dev_admin' && (
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -258,7 +251,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
       </div>
 
 
-      {/* 改進的手機版工具欄 */}
+      
       {!hideFormattingToolbar && toolbarOpen && (
         <div className="md:hidden bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-900/50 dark:to-gray-900/50 border border-border rounded-xl p-3 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
@@ -288,7 +281,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
         </div>
       )}
 
-      {/* 改進的文字輸入區域 */}
+      
       <div className="relative">
         <textarea
           ref={textareaRef}
@@ -306,14 +299,13 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
             } catch {}
           }}
           onFocus={() => {
-            // 手機版自動展開工具欄提示
             if (window.innerWidth < 768 && !hideFormattingToolbar && !toolbarOpen) {
               setTimeout(() => setToolbarOpen(true), 200)
             }
           }}
         />
 
-        {/* 字數統計 */}
+        
         <div className="absolute bottom-3 right-3 text-xs text-muted bg-surface/80 backdrop-blur px-2 py-1 rounded-md">
           {content.length} 字
         </div>
@@ -326,11 +318,15 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
       )}
 
 
+<<<<<<< Updated upstream
       {/* Mobile inline action card: scope + submit (no border) */}
-      <div className="md:hidden rounded-2xl bg-surface shadow-soft p-4 mt-3">
-        <div className="flex flex-col items-center gap-3 text-center">
+=======
+      
+>>>>>>> Stashed changes
+      <div className="md:hidden rounded-2xl bg-surface shadow-soft p-3 mt-3">
+        <div className="flex items-center gap-2">
           <select
-            className="form-control form-control--compact w-full"
+            className="form-control form-control--compact flex-1"
             value={targetSlug}
             onChange={(e)=> setTargetSlug(e.target.value as any)}
           >
@@ -342,7 +338,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
           <button
             type="submit"
             disabled={submitting}
-            className="btn-primary disabled:opacity-60 w-2/3"
+            className="btn-primary disabled:opacity-60 shrink-0"
             style={{ touchAction: 'manipulation' }}
           >
             {submitting ? '送出中…' : '發佈'}
@@ -350,13 +346,13 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
         </div>
       </div>
 
-      {/* Mobile-only inline scope selector */}
+      
       <div className="md:hidden">
-        {/* This is intentionally left empty because the school selector is now in the sticky footer */}
+        
       </div>
 
-      {/* 即時預覽（輕量）：轉義換行與連結，樣式與詳情頁一致 */}
-      {/* Desktop or mobile preview (toggle) */}
+      
+      
       {(content.trim() && (mobilePreview || window.innerWidth >= 768)) && (
         (() => {
           const m = content.trim().match(/^#(\d+)\s*(.*)$/s)
@@ -386,7 +382,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
       <div className="hidden md:flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted">{files.length} 個附件</div>
-          {/* 行動版隱藏「將發佈至」提示，避免與上方選單重複 */}
+          
           <div className="text-sm text-muted hidden lg:block">
             將發佈至：{(() => {
               const found = schools.find(s=>s.slug===targetSlug)
@@ -404,7 +400,7 @@ export default function PostComposer({ token, hideFormattingToolbar = false }: {
         </button>
       </div>
       {msg && <div className="text-sm text-warning">{msg}</div>}
-      {/* Sticky bottom action bar (mobile) - removed per new design */}
+      
     </form>
   );
 }

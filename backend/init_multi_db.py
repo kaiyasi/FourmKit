@@ -5,7 +5,6 @@
 import sys
 import os
 
-# 添加當前目錄到路徑
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.db_multi import init_all_databases, get_all_database_status
@@ -14,14 +13,12 @@ def main():
     print("🚀 初始化 ForumKit 多資料庫系統")
     print("=" * 50)
     
-    # 初始化所有資料庫
     print("📦 正在初始化資料庫...")
     success = init_all_databases()
     
     if success:
         print("\n✅ 所有資料庫初始化成功！")
         
-        # 顯示資料庫狀態
         print("\n📊 資料庫狀態:")
         status = get_all_database_status()
         

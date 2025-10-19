@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_mode.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import Blueprint, request, jsonify
 from utils.authz import require_role
 from utils.config_handler import load_config, set_mode, save_config
@@ -8,7 +12,6 @@ from models import User
 
 bp = Blueprint("mode", __name__, url_prefix="/api/mode")
 
-# 讀取模式：任何人可讀
 @bp.get("")
 def get_mode():
     try:
@@ -17,23 +20,19 @@ def get_mode():
             "mode": str(config.get("mode", "normal") or "normal"),
             "maintenance_message": config.get("maintenance_message"),
             "maintenance_until": config.get("maintenance_until"),
-            # 登入模式設定
             "login_mode": str(config.get("login_mode", "admin_only") or "admin_only"),
-            # 內容規則（提供給後台設定使用）
             "enforce_min_post_chars": bool(config.get("enforce_min_post_chars", True)),
             "min_post_chars": int(config.get("min_post_chars", 15)),
         })
     except Exception as e:
         return jsonify({"msg": f"讀取模式失敗: {str(e)}"}), 500
 
-# 切換模式：僅限 dev_admin 權限
 @bp.post("")
 @require_role("dev_admin")
 def set_mode_endpoint():
     data = request.get_json(silent=True) or {}
     mode = data.get("mode")
     login_mode = data.get("login_mode")
-    # 移除手機版維護設定：不再接受 mobile_maintenance/mobile_maintenance_message
     
     if mode and mode not in ("normal", "test", "maintenance", "development"):
         return jsonify({"msg": "無效的模式參數"}), 400
@@ -41,14 +40,11 @@ def set_mode_endpoint():
     if login_mode and login_mode not in ("single", "admin_only", "open"):
         return jsonify({"msg": "無效的登入模式參數"}), 400
     
-    # 舊參數容錯：直接忽略
     
     try:
-        # 處理維護訊息和時間，空白字串視為未設定
         notice = data.get("notice")
         eta = data.get("eta")
         
-        # 空白字串或只有空格的字串視為 None
         if notice is not None:
             notice = str(notice).strip()
             if not notice:
@@ -59,10 +55,8 @@ def set_mode_endpoint():
             if not eta:
                 eta = None
         
-        # 載入當前配置
         updated = load_config() or {}
         
-        # 更新系統模式
         if mode:
             updated = set_mode(
                 str(mode),
@@ -70,21 +64,17 @@ def set_mode_endpoint():
                 maintenance_until=eta,
             )
         elif notice is not None or eta is not None:
-            # 如果沒有更新 mode 但有更新維護訊息或時間
             if notice is not None:
                 updated["maintenance_message"] = notice
             if eta is not None:
                 updated["maintenance_until"] = eta
             save_config(updated)
         
-        # 更新登入模式
         if login_mode:
             updated["login_mode"] = login_mode
             save_config(updated)
             
-        # 移除手機版維護設定：不再寫入
             
-        # 允許同時更新內容規則
         if "enforce_min_post_chars" in data or "min_post_chars" in data:
             try:
                 if "enforce_min_post_chars" in data:
@@ -98,7 +88,6 @@ def set_mode_endpoint():
             except Exception:
                 pass
                 
-        # 通知（dev_admin 監看）：模式/登入模式/內容規則變更
         try:
             uid = get_jwt_identity()
             actor = None
@@ -111,7 +100,6 @@ def set_mode_endpoint():
                 desc_parts.append(f"mode={mode}")
             if login_mode:
                 desc_parts.append(f"login_mode={login_mode}")
-            # 已移除 mobile_* 設定
             if "enforce_min_post_chars" in data or "min_post_chars" in data:
                 desc_parts.append(f"content_rules={{enforce_min_post_chars={updated.get('enforce_min_post_chars')}, min_post_chars={updated.get('min_post_chars')}}}")
             log_system_event(

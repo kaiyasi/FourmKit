@@ -32,7 +32,6 @@ interface ModerationItem {
   post_id?: number;
   path?: string;
   preview_url?: string;
-  // 刪文請求特有欄位
   reason?: string;
   requester_ip?: string;
 }
@@ -50,13 +49,15 @@ interface ModerationLog {
     username: string;
   };
   created_at: string;
-  // 新後端欄位（相容）
   action_display?: string;
   old_status_display?: string;
   new_status_display?: string;
   source?: string | null;
 }
 
+/**
+ *
+ */
 export default function ModerationPage() {
   const { role } = useAuth();
   const isDev = (role === 'dev_admin');
@@ -77,7 +78,6 @@ export default function ModerationPage() {
   });
   const [stats, setStats] = useState<any>(null);
 
-  // 媒體預覽組件
   const MediaPreview = ({ id, path, kind, url: providedUrl }: { id: number; path: string; kind?: string; url?: string }) => {
     const [url, setUrl] = useState<string | null>(null);
     const [err, setErr] = useState<string | null>(null);
@@ -126,7 +126,6 @@ export default function ModerationPage() {
           try {
             let rel = (path || '').replace(/^\/+/, '');
             if (rel.startsWith('public/')) {
-              // 對於已發布的媒體，直接使用 CDN URL
               rel = rel.replace(/^public\//, '');
               const direct = `https://cdn.serelix.xyz/${rel}?t=${Date.now()}`;
               console.log(`MediaPreview: Using direct CDN URL for media ${id}:`, direct);
@@ -134,7 +133,6 @@ export default function ModerationPage() {
               setErr(null);
               return;
             } else if (!rel.startsWith('pending/')) {
-              // 對於其他媒體，嘗試 pending 路徑
               rel = `pending/${rel}`;
               const direct = `https://cdn.serelix.xyz/${rel}?t=${Date.now()}`;
               console.log(`MediaPreview: Using pending CDN URL for media ${id}:`, direct);
@@ -184,11 +182,9 @@ export default function ModerationPage() {
     return <a href={url} download className="text-xs underline">下載附件</a>;
   };
 
-  // 獲取審核隊列
   const fetchQueue = useCallback(async () => {
     setLoading(true);
     try {
-      // 如果是刪文請求類型，使用獨立的 API 端點
       if (filters.type === 'delete_request') {
         const params = new URLSearchParams();
         if (filters.status) params.append('status', filters.status);
@@ -198,7 +194,6 @@ export default function ModerationPage() {
           const response = await api(`/api/admin/delete-requests?${params}`);
           console.log('📥 刪文請求 API 回應:', response);
           
-          // 將刪文請求轉換為審核項目格式（容錯不同回傳格式）
           const deleteRequests = (response as any)?.data?.items || (response as any)?.items || [];
           const convertedItems = deleteRequests.map((req: any) => ({
             id: req.id,
@@ -215,7 +210,6 @@ export default function ModerationPage() {
             reason: req.reason,
             requester_ip: req.requester_ip
           }));
-          // 依建立時間排序（先送出的在上面）
           convertedItems.sort((a: any, b: any) => {
             const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
             const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -228,7 +222,6 @@ export default function ModerationPage() {
           console.log('❌ 刪文請求 API 回應不正確:', error);
         }
       } else {
-        // 一般貼文和媒體審核
         const params = new URLSearchParams();
         Object.entries(filters).forEach(([key, value]) => {
           if (value) params.append(key, value.toString());
@@ -240,7 +233,6 @@ export default function ModerationPage() {
           console.log('📥 API 回應:', response);
           
           const list = (response as any)?.data?.items || (response as any)?.items || (response as any)?.posts || [];
-          // 依建立時間排序（先送出的在上面）
           const sorted = [...list].sort((a: any, b: any) => {
             const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
             const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -260,7 +252,6 @@ export default function ModerationPage() {
     }
   }, [filters]);
 
-  // 獲取審核日誌
   const fetchLogs = useCallback(async () => {
     if (!canModerate) return; // 僅有審核權限者可取用
     try {
@@ -282,7 +273,6 @@ export default function ModerationPage() {
     }
   }, [canModerate]);
 
-  // 獲取統計
   const fetchStats = useCallback(async () => {
     try {
       try {
@@ -296,7 +286,6 @@ export default function ModerationPage() {
     }
   }, []);
 
-  // 獲取項目詳情
   const fetchItemDetail = useCallback(async (item: ModerationItem) => {
     if (item.type === 'post') {
       try {
@@ -308,11 +297,9 @@ export default function ModerationPage() {
     }
   }, []);
 
-  // 核准內容
   const approveItem = useCallback(async (item: ModerationItem, reason?: string) => {
     try {
       if (item.type === 'delete_request') {
-        // 刪文請求使用獨立的 API 端點
         await api(`/api/admin/delete-requests/${item.id}/approve`, {
           method: 'POST',
           body: JSON.stringify({
@@ -320,7 +307,6 @@ export default function ModerationPage() {
           })
         });
       } else {
-        // 一般貼文和媒體審核
         await api('/api/moderation/approve', {
           method: 'POST',
           body: JSON.stringify({
@@ -331,7 +317,6 @@ export default function ModerationPage() {
         });
       }
       
-      // API 成功時會自動拋出錯誤，所以這裡不需要檢查 response.ok
       await fetchQueue();
       await fetchLogs();
       await fetchStats();
@@ -342,11 +327,9 @@ export default function ModerationPage() {
     }
   }, [fetchQueue, fetchLogs, fetchStats]);
 
-  // 拒絕內容
   const rejectItem = useCallback(async (item: ModerationItem, reason: string) => {
     try {
       if (item.type === 'delete_request') {
-        // 刪文請求使用獨立的 API 端點
         await api(`/api/admin/delete-requests/${item.id}/reject`, {
           method: 'POST',
           body: JSON.stringify({
@@ -354,7 +337,6 @@ export default function ModerationPage() {
           })
         });
       } else {
-        // 一般貼文和媒體審核
         await api('/api/moderation/reject', {
           method: 'POST',
           body: JSON.stringify({
@@ -365,7 +347,6 @@ export default function ModerationPage() {
         });
       }
       
-      // API 成功時會自動拋出錯誤，所以這裡不需要檢查 response.ok
       await fetchQueue();
       await fetchLogs();
       await fetchStats();
@@ -376,7 +357,6 @@ export default function ModerationPage() {
     }
   }, [fetchQueue, fetchLogs, fetchStats]);
 
-  // 否決決策（高級權限）
   const overrideDecision = useCallback(async (item: ModerationItem, action: 'approve' | 'reject', reason: string) => {
     try {
       await api('/api/moderation/override', {
@@ -389,7 +369,6 @@ export default function ModerationPage() {
         })
       });
       
-      // API 成功時會自動拋出錯誤，所以這裡不需要檢查 response.ok
       await fetchQueue();
       await fetchLogs();
       await fetchStats();
@@ -400,14 +379,12 @@ export default function ModerationPage() {
     }
   }, [fetchQueue, fetchLogs, fetchStats]);
 
-  // 平台自訂對話框狀態
   const [modal, setModal] = useState<{ kind: 'reject' | 'override_approve' | 'override_reject' | 'escalate'; item?: ModerationItem } | null>(null);
   const [modalReason, setModalReason] = useState('');
   const closeModal = () => { setModal(null); setModalReason(''); };
   const submitModal = async () => {
     if (!modal || !selectedItem) return;
     const reason = (modalReason || '').trim();
-    // 理由必填
     if (!reason) return;
     if (modal.kind === 'reject') {
       await rejectItem(selectedItem, reason);
@@ -436,7 +413,6 @@ export default function ModerationPage() {
     }
   };
 
-  // 初始化
   useEffect(() => {
     fetchQueue();
     fetchLogs();
@@ -448,10 +424,8 @@ export default function ModerationPage() {
     socket.on('media.approved', fetchQueue);
     socket.on('media.rejected', fetchQueue);
     
-    // 監聽送審事件
     socket.on('post.pending', (data) => {
       console.log('📝 收到送審事件:', data);
-      // 顯示通知
       if (data.post_id && data.content) {
         const notification = document.createElement('div');
         notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
@@ -463,7 +437,6 @@ export default function ModerationPage() {
         `;
         document.body.appendChild(notification);
         
-        // 3秒後自動移除
         setTimeout(() => {
           if (notification.parentNode) {
             notification.parentNode.removeChild(notification);
@@ -471,7 +444,6 @@ export default function ModerationPage() {
         }, 3000);
       }
       
-      // 重新載入隊列
       fetchQueue();
       fetchStats();
     });
@@ -481,7 +453,6 @@ export default function ModerationPage() {
     };
   }, [fetchQueue, fetchLogs, fetchStats]);
 
-  // 當過濾器改變時重新獲取數據
   useEffect(() => {
     fetchQueue();
   }, [fetchQueue]);
@@ -503,8 +474,12 @@ export default function ModerationPage() {
       <NavBar pathname="/admin/moderation" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-7xl px-4 pt-8 sm:pt-20 md:pt-24 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
+<<<<<<< Updated upstream
         {/* 頁面標題 */}
+=======
+        
+>>>>>>> Stashed changes
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -522,7 +497,7 @@ export default function ModerationPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 審核隊列 */}
+          
           <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -541,7 +516,7 @@ export default function ModerationPage() {
               </div>
             </div>
 
-            {/* 過濾器 */}
+            
             <div className="mb-4 p-3 bg-surface-hover rounded-lg">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <select
@@ -552,7 +527,7 @@ export default function ModerationPage() {
                   <option value="post">貼文</option>
                   <option value="delete_request">刪文</option>
                 </select>
-                {/* 非 dev_admin 隱藏狀態/學校/使用者過濾，並強制為待審核 */}
+                
                 {isDev ? (
                   <>
                     <select
@@ -594,7 +569,7 @@ export default function ModerationPage() {
               </div>
             </div>
 
-            {/* 項目列表 */}
+            
             <div className="space-y-3">
               {items.length === 0 ? (
                 <div className="text-center py-8 text-muted">
@@ -620,7 +595,7 @@ export default function ModerationPage() {
                       }
                     }}
                   >
-                    {/* 處理中狀態指示器 */}
+                    
                     {item.processing && (
                       <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full shadow-md">
                         <ArrowUp className="w-3 h-3 inline mr-1" />
@@ -715,7 +690,7 @@ export default function ModerationPage() {
                             {item.author.school_name && ` (${item.author.school_name})`}
                           </div>
                         )}
-                        {/* 媒體預覽 */}
+                        
                         <div className="mt-2">
                           <MediaPreview
                             id={item.id}
@@ -733,9 +708,9 @@ export default function ModerationPage() {
             </div>
           </div>
 
-          {/* 側邊欄 */}
+          
           <div className="space-y-6">
-            {/* 選中項目詳情 - 手機版優先顯示 */}
+            
             {selectedItem && (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-2">
                 <h3 className="text-lg font-semibold text-fg mb-4">貼文詳情</h3>
@@ -774,9 +749,9 @@ export default function ModerationPage() {
                   </div>
                 ) : null}
 
-                {/* 操作按鈕 */}
+                
                 <div className="mt-4 space-y-2">
-                  {/* 待審核狀態的操作 */}
+                  
                   {selectedItem.status === 'pending' && (
                     <>
                       <button
@@ -796,7 +771,7 @@ export default function ModerationPage() {
                     </>
                   )}
                   
-                  {/* 已核准狀態的否決操作（僅 dev_admin 可用） */}
+                  
                   {isDev && selectedItem.status === 'approved' && (
                     <div className="border-t pt-2 mt-2">
                       <div className="text-xs text-muted mb-2">否決操作</div>
@@ -810,7 +785,7 @@ export default function ModerationPage() {
                     </div>
                   )}
                   
-                  {/* 已拒絕狀態的否決操作（僅 dev_admin 可用） */}
+                  
                   {isDev && selectedItem.status === 'rejected' && (
                     <div className="border-t pt-2 mt-2">
                       <div className="text-xs text-muted mb-2">否決操作</div>
@@ -824,7 +799,7 @@ export default function ModerationPage() {
                     </div>
                   )}
                   
-                  {/* 非 dev_admin 用戶的狀態顯示 */}
+                  
                   {!isDev && (selectedItem.status === 'approved' || selectedItem.status === 'rejected') && (
                     <div className="border-t pt-2 mt-2">
                       <div className="text-xs text-muted mb-2">
@@ -847,7 +822,7 @@ export default function ModerationPage() {
               </div>
             )}
 
-            {/* 統計資訊 - 手機版顯示在貼文詳情下方 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft lg:order-1">
               <h2 className="text-lg font-semibold text-fg mb-4">統計資訊</h2>
               {stats ? (
@@ -900,7 +875,7 @@ export default function ModerationPage() {
             </div>
 
 
-            {/* 審核日誌（有審核權限者皆可顯示） */}
+            
             {canModerate && (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
                 <h3 className="text-lg font-semibold text-fg mb-4">
@@ -939,14 +914,14 @@ export default function ModerationPage() {
                             </div>
                           </div>
                           <div className="text-xs text-muted">
-                            {formatDate(log.created_at)}
+                            {new Date(log.created_at).toLocaleDateString('zh-TW')}
                           </div>
                         </div>
                         
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-xs">
                             <User className="w-3 h-3" />
-                            <span className="text-muted">經手人：</span>
+                            <span className="text-muted">經手：</span>
                             <span className="text-fg font-medium">
                               {typeof log.moderator === 'string' 
                                 ? log.moderator 
@@ -974,7 +949,7 @@ export default function ModerationPage() {
         </div>
       </main>
 
-      {/* 平台自訂對話框：理由必填 */}
+      
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">

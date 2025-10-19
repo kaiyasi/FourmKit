@@ -19,7 +19,6 @@ def fix_unprocessed_approved_posts():
     print("=== 處理未轉換的已審核論壇貼文 ===")
     
     with get_session() as db:
-        # 查找已審核但未轉換的論壇貼文
         approved_posts = db.query(Post).filter(
             Post.status == 'approved'
         ).order_by(Post.created_at.desc()).limit(15).all()
@@ -42,7 +41,6 @@ def fix_unprocessed_approved_posts():
             print(f"   審核時間: {forum_post.created_at}")
             
             try:
-                # 觸發自動發布處理
                 result = trigger_auto_publish_on_approval(forum_post)
                 
                 if result.get('success'):
@@ -69,7 +67,6 @@ def fix_stuck_processing_posts():
     print("\n=== 修復卡住的 PROCESSING 貼文 ===")
     
     with get_session() as db:
-        # 查找卡住的 PROCESSING 貼文
         processing_posts = db.query(SocialPost).filter(
             SocialPost.status == PostStatus.PROCESSING
         ).all()
@@ -78,7 +75,6 @@ def fix_stuck_processing_posts():
         
         fixed_count = 0
         for post in processing_posts:
-            # 計算卡住時間
             if post.created_at:
                 stuck_hours = (datetime.now(timezone.utc) - post.created_at).total_seconds() / 3600
                 
@@ -88,7 +84,6 @@ def fix_stuck_processing_posts():
                 print(f"   文案: {'有' if post.generated_caption else '無'}")
                 
                 try:
-                    # 如果已有內容但狀態錯誤，改為 QUEUED
                     if post.generated_image_url and post.generated_caption:
                         print("   🔄 已有內容，改為 QUEUED 狀態")
                         post.status = PostStatus.QUEUED
@@ -97,17 +92,14 @@ def fix_stuck_processing_posts():
                         fixed_count += 1
                         print("   ✅ 狀態已修正為 QUEUED")
                         
-                    # 如果沒有內容，嘗試重新生成
-                    elif stuck_hours > 0.5:  # 超過30分鐘
+                    elif stuck_hours > 0.5:
                         print("   🔄 重新生成內容...")
                         
-                        # 重設狀態並重新生成
                         post.status = PostStatus.PENDING
                         post.error_message = None
                         post.retry_count = post.retry_count + 1
                         post.updated_at = datetime.now(timezone.utc)
                         
-                        # 生成內容
                         content_generator = ContentGenerator()
                         generated_content = content_generator.generate_content(
                             forum_post=post.forum_post,
@@ -144,14 +136,12 @@ def check_publishing_system():
     print("\n=== 檢查發布系統狀態 ===")
     
     with get_session() as db:
-        # 檢查 QUEUED 貼文數量
         queued_count = db.query(SocialPost).filter(
             SocialPost.status == PostStatus.QUEUED,
             SocialPost.generated_image_url.isnot(None),
             SocialPost.generated_caption.isnot(None)
         ).count()
         
-        # 檢查活躍帳號
         active_accounts = db.query(SocialAccount).filter(
             SocialAccount.platform == PlatformType.INSTAGRAM,
             SocialAccount.status == 'active'
@@ -163,7 +153,6 @@ def check_publishing_system():
         if queued_count > 0 and active_accounts > 0:
             print("   ✅ 系統準備就緒，貼文可以發布")
             
-            # 檢查批次觸發條件
             account = db.query(SocialAccount).filter(
                 SocialAccount.platform == PlatformType.INSTAGRAM,
                 SocialAccount.status == 'active'
@@ -191,13 +180,10 @@ if __name__ == "__main__":
     print("=" * 50)
     
     try:
-        # 1. 處理未轉換的已審核論壇貼文
         unprocessed_fixed = fix_unprocessed_approved_posts()
         
-        # 2. 修復卡住的 PROCESSING 貼文
         stuck_fixed = fix_stuck_processing_posts()
         
-        # 3. 檢查發布系統狀態
         check_publishing_system()
         
         print("\n" + "=" * 50)

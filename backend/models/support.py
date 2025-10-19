@@ -33,20 +33,21 @@ class TicketStatus(str, enum.Enum):
 
 class TicketCategory(str, enum.Enum):
     """支援單分類"""
+<<<<<<< Updated upstream
     TECHNICAL = "technical"         # 技術問題
     ACCOUNT = "account"            # 帳戶問題
     FEATURE = "feature"            # 功能建議
     BUG = "bug"                   # 錯誤回報
     ABUSE = "abuse"               # 濫用檢舉
     OTHER = "other"               # 其他問題
-
-
-class TicketPriority(str, enum.Enum):
-    """支援單優先級"""
-    LOW = "low"           # 低優先級
-    MEDIUM = "medium"     # 中優先級  
-    HIGH = "high"         # 高優先級
-    URGENT = "urgent"     # 緊急
+=======
+    TECHNICAL = "technical"
+    ACCOUNT = "account"
+    FEATURE = "feature"
+    BUG = "bug"
+    ABUSE = "abuse"
+    OTHER = "other"
+>>>>>>> Stashed changes
 
 
 class AuthorType(str, enum.Enum):
@@ -61,7 +62,6 @@ class EventType(str, enum.Enum):
     TICKET_CREATED = "ticket_created"
     MESSAGE_SENT = "message_sent"
     STATUS_CHANGED = "status_changed"
-    PRIORITY_CHANGED = "priority_changed"
     LABEL_ADDED = "label_added"
     LABEL_REMOVED = "label_removed"
     ASSIGNED = "assigned"
@@ -91,39 +91,29 @@ class SupportTicket(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     
-    # 公開 ID（對外顯示，不透露內部 ID）
     public_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     
-    # 所屬學校/租戶（支援多校擴展）
     school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     
-    # 用戶身份（登入用戶或訪客）
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     guest_email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    pseudonym_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # 訪客顯示名稱
+    pseudonym_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     
-    # 支援單內容
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     category: Mapped[str] = mapped_column(String(20), nullable=False, default=TicketCategory.OTHER)
-    priority: Mapped[str] = mapped_column(String(10), nullable=False, default=TicketPriority.MEDIUM)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=TicketStatus.OPEN, index=True)
     
-    # 指派與負責人
     assigned_to: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     
-    # 訪客驗證狀態
     guest_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    guest_reply_token_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)  # 訪客回覆token的hash
+    guest_reply_token_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     
-    # 時間戳記
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     
-    # 統計數據
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     
-    # 關聯關係
     school: Mapped["School | None"] = relationship("School", back_populates="support_tickets")
     user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], back_populates="submitted_tickets")
     assigned_user: Mapped["User | None"] = relationship("User", foreign_keys=[assigned_to], back_populates="assigned_tickets")
@@ -133,11 +123,9 @@ class SupportTicket(Base):
     labels: Mapped[List["SupportTicketLabel"]] = relationship("SupportTicketLabel", back_populates="ticket", cascade="all, delete-orphan")
     
     def __init__(self, **kwargs):
-        # 自動生成 public_id（僅當沒有提供時）
         if 'public_id' not in kwargs or not kwargs['public_id']:
             kwargs['public_id'] = generate_public_id()
         
-        # 如果是訪客工單，生成匿名代碼
         if 'user_id' not in kwargs or kwargs['user_id'] is None:
             if 'pseudonym_code' not in kwargs:
                 kwargs['pseudonym_code'] = generate_pseudonym_code()
@@ -146,16 +134,12 @@ class SupportTicket(Base):
     
     def can_access(self, user_id: int | None = None, guest_signature: str | None = None) -> bool:
         """檢查是否有權限存取此支援單"""
-        # 登入用戶：必須是建立者
         if user_id and self.user_id == user_id:
             return True
         
-        # 訪客：需要有效簽章或已驗證
         if guest_signature and self.guest_email:
-            # TODO: 實際驗證簽章
             return True
             
-        # 管理員權限在 API 層處理
         return False
     
     def get_display_name(self) -> str:
@@ -175,21 +159,16 @@ class SupportMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticket_id: Mapped[int] = mapped_column(ForeignKey("support_tickets.id"), nullable=False, index=True)
     
-    # 訊息作者
     author_type: Mapped[str] = mapped_column(String(10), nullable=False, default=AuthorType.USER)
     author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     
-    # 訊息內容
     body: Mapped[str] = mapped_column(Text, nullable=False)
     attachments: Mapped[dict] = mapped_column(JSON, nullable=True)  # 附件清單 JSON
     
-    # 內部備註（不對客戶顯示）
     is_internal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
-    # 時間戳記
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 關聯關係
     ticket: Mapped["SupportTicket"] = relationship("SupportTicket", back_populates="messages")
     author_user: Mapped["User | None"] = relationship("User", back_populates="support_messages")
     
@@ -203,7 +182,7 @@ class SupportMessage(Base):
             if self.author_user:
                 return self.author_user.username or f"用戶 #{self.author_user.id}"
             return "用戶"
-        else:  # GUEST
+        else:
             return self.ticket.pseudonym_code if self.ticket and self.ticket.pseudonym_code else "訪客"
 
 
@@ -214,17 +193,13 @@ class SupportEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticket_id: Mapped[int] = mapped_column(ForeignKey("support_tickets.id"), nullable=False, index=True)
     
-    # 事件類型與內容
     event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=True)  # 事件相關資料
     
-    # 觸發者
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     
-    # 時間戳記
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 關聯關係
     ticket: Mapped["SupportTicket"] = relationship("SupportTicket", back_populates="events")
     actor: Mapped["User | None"] = relationship("User", back_populates="support_events")
 
@@ -236,10 +211,8 @@ class TicketWatcher(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("support_tickets.id"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     
-    # 關注時間
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 關聯關係
     ticket: Mapped["SupportTicket"] = relationship("SupportTicket", back_populates="watchers")
     user: Mapped["User"] = relationship("User", back_populates="watched_tickets")
 
@@ -254,10 +227,8 @@ class SupportLabel(Base):
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6B7280")  # hex color
     description: Mapped[str | None] = mapped_column(String(200), nullable=True)
     
-    # 時間戳記
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 關聯關係
     ticket_labels: Mapped[List["SupportTicketLabel"]] = relationship("SupportTicketLabel", back_populates="label", cascade="all, delete-orphan")
 
 
@@ -268,17 +239,14 @@ class SupportTicketLabel(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("support_tickets.id"), primary_key=True)
     label_id: Mapped[int] = mapped_column(ForeignKey("support_labels.id"), primary_key=True)
     
-    # 添加時間與操作者
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     
-    # 關聯關係
     ticket: Mapped["SupportTicket"] = relationship("SupportTicket", back_populates="labels")
     label: Mapped["SupportLabel"] = relationship("SupportLabel", back_populates="ticket_labels")
     added_by_user: Mapped["User | None"] = relationship("User")
 
 
-# 創建索引以優化查詢效能
 Index("idx_support_tickets_status_created", SupportTicket.status, SupportTicket.created_at.desc())
 Index("idx_support_tickets_school_status", SupportTicket.school_id, SupportTicket.status)
 Index("idx_support_tickets_assigned_status", SupportTicket.assigned_to, SupportTicket.status)

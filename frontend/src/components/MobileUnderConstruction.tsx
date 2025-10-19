@@ -1,9 +1,11 @@
-// 注意：為避免行動端極端環境下的圖示載入導致錯誤，這裡改用輕量的內嵌圖示。
 
 interface Props {
   message?: string
 }
 
+/**
+ *
+ */
 export default function MobileUnderConstruction({ message }: Props) {
   const bypass = () => {
     try { localStorage.setItem('fk_mobile_ok', '1') } catch {}

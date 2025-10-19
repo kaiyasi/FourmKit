@@ -15,7 +15,6 @@ def set_ready_posts_to_failed():
     print("=== 將準備發布貼文改為失敗狀態 ===")
     
     with get_session() as db:
-        # 查找所有 QUEUED 狀態的貼文
         ready_posts = db.query(SocialPost).filter(
             SocialPost.status == PostStatus.QUEUED
         ).all()
@@ -28,7 +27,6 @@ def set_ready_posts_to_failed():
             try:
                 print(f"將貼文 ID {post.id} 改為失敗狀態")
                 
-                # 更新狀態
                 post.status = PostStatus.FAILED
                 post.error_message = "手動設置為失敗狀態"
                 post.updated_at = datetime.now(timezone.utc)
@@ -38,7 +36,6 @@ def set_ready_posts_to_failed():
             except Exception as e:
                 print(f"更新貼文 {post.id} 失敗: {e}")
         
-        # 提交更改
         db.commit()
         
         print(f"\n✅ 成功更新 {updated_count} 個貼文為失敗狀態")
@@ -50,7 +47,6 @@ def update_carousel_groups():
     print("\n=== 更新輪播群組狀態 ===")
     
     with get_session() as db:
-        # 查找所有準備發布的輪播群組
         ready_carousels = db.query(CarouselGroup).filter(
             CarouselGroup.status == 'ready'
         ).all()
@@ -61,7 +57,6 @@ def update_carousel_groups():
         
         for carousel in ready_carousels:
             try:
-                # 檢查關聯貼文的狀態
                 posts = db.query(SocialPost).filter(
                     SocialPost.carousel_group_id == carousel.id
                 ).all()
@@ -88,7 +83,6 @@ def show_final_status():
     with get_session() as db:
         from sqlalchemy import func
         
-        # 統計貼文狀態
         status_counts = db.query(
             SocialPost.status,
             func.count(SocialPost.id).label('count')
@@ -98,7 +92,6 @@ def show_final_status():
         for status, count in status_counts:
             print(f"   {status.upper()}: {count}")
         
-        # 統計輪播狀態
         carousel_counts = db.query(
             CarouselGroup.status,
             func.count(CarouselGroup.id).label('count')
@@ -113,13 +106,10 @@ if __name__ == "__main__":
     print("=" * 50)
     
     try:
-        # 1. 將準備發布貼文改為失敗
         posts_updated = set_ready_posts_to_failed()
         
-        # 2. 更新輪播群組狀態
         carousels_updated = update_carousel_groups()
         
-        # 3. 顯示最終狀態
         show_final_status()
         
         print("\n" + "=" * 50)

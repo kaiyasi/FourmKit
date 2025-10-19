@@ -27,6 +27,9 @@ type DetailPost = {
   reply_to_id?: number;
 }
 
+/**
+ *
+ */
 export default function MobilePostDetailPage() {
   const { id } = useParams()
   const pid = Number(id)
@@ -39,7 +42,6 @@ export default function MobilePostDetailPage() {
   const [lightbox, setLightbox] = useState<{ url: string } | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
-  // 無效 id
   if (!pid || isNaN(pid)) {
     return (
       <PageLayout pathname="/posts/404" maxWidth="max-w-5xl">
@@ -48,7 +50,6 @@ export default function MobilePostDetailPage() {
     )
   }
 
-  // 載入詳情
   useEffect(() => {
     (async () => {
       try {
@@ -64,7 +65,6 @@ export default function MobilePostDetailPage() {
     })()
   }, [pid])
 
-  // 點擊內容圖片開啟燈箱
   useEffect(() => {
     const container = document.getElementById('post-content')
     if (!container) return
@@ -139,7 +139,7 @@ export default function MobilePostDetailPage() {
 
   return (
     <PageLayout pathname={`/posts/${post.id}`}>
-      {/* Sticky Header */}
+      
       <div className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border px-3 py-2 flex items-center gap-2">
         <button aria-label="返回" onClick={() => navigate(-1)} className="w-9 h-9 rounded-lg flex items-center justify-center text-fg hover:bg-surface-hover">
           <ArrowLeft className="w-5 h-5" />
@@ -156,29 +156,29 @@ export default function MobilePostDetailPage() {
         </button>
       </div>
 
-      {/* Post Card */}
+      
       <div className="px-3 py-3">
         <div className="bg-surface border border-border rounded-2xl p-3 shadow-soft">
-          {/* Meta */}
+          
           <div className="text-[11px] text-muted mb-2">
             #{post.id}
             {post.created_at && <><span className="mx-1">•</span>{formatLocalMinute(post.created_at)}</>}
             {(() => { const name = displaySchoolName(); return name ? (<><span className="mx-1">•</span><span className="text-fg">{name}</span></>) : null })()}
           </div>
 
-          {/* Reply hint */}
+          
           {(post as any).reply_to_id && (
             <div className="text-xs text-muted mb-2">
               <a href={`/posts/${(post as any).reply_to_id}`} className="underline">回覆貼文 #{(post as any).reply_to_id}</a>
             </div>
           )}
 
-          {/* Content */}
+          
           <div id="post-content" className="prose prose-sm max-w-none text-fg leading-relaxed">
             <SafeHtmlContent html={post.content || ''} allowLinks={true} />
           </div>
 
-          {/* Media */}
+          
           {post.media && post.media.length > 0 && (
             <div className="mt-3 grid grid-cols-1 gap-2">
               {post.media.map((m) => (
@@ -189,20 +189,20 @@ export default function MobilePostDetailPage() {
         </div>
       </div>
 
-      {/* Comments */}
+      
       <div id="comments-anchor" />
       <div className="px-3 pb-24">
         <CommentSection postId={post.id} />
       </div>
 
-      {/* Share toast */}
+      
       {shareMsg && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
           {shareMsg}
         </div>
       )}
 
-      {/* Delete Request Modal */}
+      
       {showDeleteRequestModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={()=>setShowDeleteRequestModal(false)}>
           <div className="bg-surface border border-border rounded-2xl p-5 w-full max-w-sm" onClick={(e)=>e.stopPropagation()}>
@@ -224,7 +224,7 @@ export default function MobilePostDetailPage() {
         </div>
       )}
 
-      {/* Lightbox */}
+      
       {lightbox && (
         <LightboxOverlay 
           url={lightbox.url}
@@ -260,7 +260,7 @@ function MobileMediaTile({ m, onOpen }: { m: { id:number; path:string; kind?:str
           const j = await r.json()
           if (alive && j?.url) { setUrl(j.url); setLoading(false); return }
         }
-        let rel = (m.path || '').replace(/^\/+/, '')
+        const rel = (m.path || '').replace(/^\/+/, '')
         if (rel.startsWith('public/')) setUrl(`${API_BASE}/${rel.replace(/^public\//, '')}`)
         else if (rel.startsWith('media/')) setUrl(`${API_BASE}/${rel}`)
         else { const ext = (m.path || '').split('.').pop() || 'jpg'; setUrl(`${API_BASE}/${m.id}.${ext}`) }
@@ -306,7 +306,7 @@ function LightboxOverlay({
   const images = (post.media || [])
     .filter(m => /\.(jpg|jpeg|png|webp|gif)$/i.test(m.path || '') || m.kind === 'image')
     .map(m => {
-      let rel = (m.path || '').replace(/^\/+/, '')
+      const rel = (m.path || '').replace(/^\/+/, '')
       if (rel.startsWith('public/')) return `${API_BASE}/${rel.replace(/^public\//, '')}`
       if (rel.startsWith('media/')) return `${API_BASE}/${rel}`
       const ext = (m.path || '').split('.').pop() || 'jpg'
@@ -353,7 +353,7 @@ function LightboxOverlay({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* 左右切換 */}
+      
       {images.length > 1 && (
         <>
           <button className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 text-white" onClick={(e)=>{ e.stopPropagation(); go(-1) }} aria-label="上一張">‹</button>

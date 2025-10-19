@@ -9,8 +9,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from models.user_status import UserStatus, UserNotification, UserStatusEnum
-# Chat功能已移除
-# from models.chat import ChatMessage, ChatRoomMember
 from models.base import User
 from utils.db import get_session
 
@@ -71,13 +69,11 @@ class NotificationService:
             user_status = db.query(UserStatus).filter(UserStatus.user_id == user_id).first()
 
             if not user_status:
-                return True  # 默認通知
+                return True
 
-            # 勿打擾模式下只允許重要通知
             if user_status.status == UserStatusEnum.DND:
                 return notification_type in ['system', 'mention']
 
-            # 根據通知類型檢查設置
             if notification_type == 'chat_message':
                 return user_status.chat_notifications
             elif notification_type == 'mention':
@@ -123,15 +119,6 @@ class NotificationService:
             with get_session() as db:
                 return _create(db)
 
-    # Chat功能已移除，以下方法已禁用
-    # @classmethod
-    # def process_chat_message(
-    #     cls,
-    #     message: ChatMessage,
-    #     session: Optional[Session] = None
-    # ) -> List[UserNotification]:
-    #     """處理聊天消息，生成相應的通知"""
-    #     pass
 
     @classmethod
     def _extract_mentions(cls, message: str, session: Session) -> List[int]:
@@ -144,26 +131,20 @@ class NotificationService:
         if not message:
             return []
 
-        # 允許的使用者名稱片段（對齊 routes_auth._validate_username 規則的子集）
-        # - 中日韓統一表意文字區段 + 英數 + _ .
-        # - 長度限制 2~20，避免吃進噪音
         pattern = r"@([A-Za-z0-9_.\u4e00-\u9fff\u3400-\u4dbf]{2,20})"
         raw = re.findall(pattern, str(message))
         if not raw:
             return []
 
-        # 去重、轉小寫供不區分大小寫查詢
         cand_lower = sorted({s.lower() for s in raw})
         if not cand_lower:
             return []
 
-        # 以不區分大小寫查詢匹配使用者
         users = (
             session.query(User)
             .filter(func.lower(User.username).in_(cand_lower))
             .all()
         )
-        # 回傳唯一用戶ID
         seen: set[int] = set()
         out: List[int] = []
         for u in users:

@@ -14,7 +14,9 @@ import {
   Star
 } from 'lucide-react';
 
-// 共用類型定義
+/**
+ *
+ */
 export interface BaseTicket {
   id: string;
   ticket_id: string;
@@ -29,6 +31,9 @@ export interface BaseTicket {
   tags?: string[];
 }
 
+/**
+ *
+ */
 export interface BaseMessage {
   id: string;
   message: string;
@@ -39,6 +44,9 @@ export interface BaseMessage {
   is_internal?: boolean;
 }
 
+/**
+ *
+ */
 export interface BaseAttachment {
   id: string;
   filename: string;
@@ -47,7 +55,6 @@ export interface BaseAttachment {
   content_type: string;
 }
 
-// 共用工具函數
 export const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -89,7 +96,6 @@ export const formatFullDateTime = (dateString: string): string => {
   });
 };
 
-// 狀態相關工具
 export const getStatusInfo = (status: string) => {
   const statusMap = {
     open: { 
@@ -148,7 +154,6 @@ export const getCategoryInfo = (category: string) => {
   return categoryMap[category as keyof typeof categoryMap] || categoryMap.other;
 };
 
-// 狀態標籤組件
 interface StatusBadgeProps {
   status: string;
   variant?: 'desktop' | 'mobile';
@@ -185,7 +190,6 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   );
 };
 
-// 優先級標籤組件
 interface PriorityBadgeProps {
   priority: string;
   showIcon?: boolean;
@@ -212,7 +216,6 @@ export const PriorityBadge: React.FC<PriorityBadgeProps> = ({
   );
 };
 
-// 分類標籤組件
 interface CategoryBadgeProps {
   category: string;
   showIcon?: boolean;
@@ -245,7 +248,6 @@ export const CategoryBadge: React.FC<CategoryBadgeProps> = ({
   );
 };
 
-// 緊急標記組件
 interface UrgentBadgeProps {
   priority: string;
   size?: 'sm' | 'md';
@@ -262,7 +264,6 @@ export const UrgentBadge: React.FC<UrgentBadgeProps> = ({ priority, size = 'md' 
   return <Zap className={`text-red-500 ${sizeClasses[size]} animate-pulse`} />;
 };
 
-// 滿意度評分組件
 interface SatisfactionRatingProps {
   rating: number;
   size?: 'sm' | 'md' | 'lg';
@@ -299,7 +300,6 @@ export const SatisfactionRating: React.FC<SatisfactionRatingProps> = ({
   );
 };
 
-// 附件預覽組件
 interface AttachmentPreviewProps {
   attachment: BaseAttachment;
   variant?: 'list' | 'compact';
@@ -379,7 +379,6 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   );
 };
 
-// 載入中狀態組件
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg';
   text?: string;
@@ -405,7 +404,6 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   );
 };
 
-// 空狀態組件
 interface EmptyStateProps {
   icon: React.ComponentType<any>;
   title: string;

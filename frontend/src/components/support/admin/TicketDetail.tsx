@@ -1,6 +1,9 @@
 import React from 'react'
 import { ArrowLeft, MessageSquare, RefreshCw, Send, Calendar, User } from 'lucide-react'
 
+/**
+ *
+ */
 export interface AdminMessage {
   id: number|string
   body: string
@@ -10,6 +13,9 @@ export interface AdminMessage {
   created_at: string
 }
 
+/**
+ *
+ */
 export interface AdminTicketDetailData {
   id: string
   ticket_id: string
@@ -42,7 +48,7 @@ export const TicketDetail: React.FC<{
     <div className="min-h-screen bg-bg">
       <div className="page-content">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          {/* Header */}
+          
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
             <div className="flex items-center gap-3 mb-2">
               <button onClick={onBack} className="flex items-center gap-2 text-muted hover:text-fg transition-colors">
@@ -62,7 +68,7 @@ export const TicketDetail: React.FC<{
             </div>
           </div>
 
-          {/* Conversation */}
+          
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
               <h2 className="text-lg font-semibold text-fg flex items-center gap-2 mb-4">
@@ -94,7 +100,7 @@ export const TicketDetail: React.FC<{
                 })}
               </div>
 
-              {/* reply */}
+              
               <div className="p-4 bg-surface-hover rounded-lg">
                 <div className="flex gap-3">
                   <textarea
@@ -112,7 +118,7 @@ export const TicketDetail: React.FC<{
               </div>
             </div>
 
-            {/* Right slot for actions supplied by parent */}
+            
             <div id="ticket-actions-slot" className="space-y-6" />
           </div>
         </div>

@@ -12,7 +12,6 @@ import sys
 import os
 from datetime import datetime
 
-# 添加父目錄到路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from ui_components import (
@@ -29,7 +28,6 @@ class SlashCommandCog(commands.Cog):
         self.bot = bot
         self.discord_service = DiscordService()
     
-    # ===================== 系統指令 =====================
     
     @app_commands.command(name="ping", description="🏓 測試機器人延遲")
     async def ping_slash(self, interaction: discord.Interaction):
@@ -51,7 +49,6 @@ class SlashCommandCog(commands.Cog):
         import psutil
         import platform
         
-        # 獲取系統資訊
         cpu_percent = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory()
         boot_time = datetime.fromtimestamp(psutil.boot_time())
@@ -88,20 +85,14 @@ CPU 使用率: {cpu_percent}%
             color='info'
         )
         
-        # 創建選擇選單視圖
         view = HelpMenuView()
         await interaction.response.send_message(embed=embed, view=view)
     
-    # ===================== 審核指令 =====================
     
     @app_commands.command(name="moderation", description="👮 開啟審核管理面板")
     async def moderation_slash(self, interaction: discord.Interaction):
         """審核管理主面板"""
         
-        # 權限檢查
-        # has_permission = await self._check_permission(interaction, DiscordPermissionLevel.MODERATOR)
-        # if not has_permission:
-        #     return
         
         embed = TerminalEmbed.create(
             title="審核管理面板",
@@ -111,7 +102,6 @@ CPU 使用率: {cpu_percent}%
             color='moderator'
         )
         
-        # 創建審核動作選單
         view = ModerationPanelView()
         await interaction.response.send_message(embed=embed, view=view)
     
@@ -129,7 +119,6 @@ CPU 使用率: {cpu_percent}%
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
-        # 模擬待審核數據
         pending_items = [
             {"id": 1001, "type": "貼文", "author": "user123", "preview": "這是一個測試貼文..."},
             {"id": 1002, "type": "回覆", "author": "user456", "preview": "回覆內容預覽..."},
@@ -148,7 +137,6 @@ CPU 使用率: {cpu_percent}%
             color='warning'
         )
         
-        # 添加快速操作按鈕
         view = PendingItemsView(pending_items[:limit])
         await interaction.response.send_message(embed=embed, view=view)
     
@@ -175,7 +163,6 @@ CPU 使用率: {cpu_percent}%
         """拒絕內容"""
         
         if not reason:
-            # 如果沒有提供原因，打開 Modal
             from ui_components import RejectReasonModal
             modal = RejectReasonModal()
             modal.content_id = content_id
@@ -190,7 +177,6 @@ CPU 使用率: {cpu_percent}%
             
             await interaction.response.send_message(embed=embed)
     
-    # ===================== 用戶管理指令 =====================
     
     @app_commands.command(name="users", description="👥 檢視用戶列表")
     @app_commands.describe(
@@ -205,7 +191,6 @@ CPU 使用率: {cpu_percent}%
     ):
         """檢視用戶列表"""
         
-        # 模擬用戶數據
         users_data = [
             {"username": "user123", "status": "active", "join_date": "2023-01-15", "posts": 45},
             {"username": "user456", "status": "banned", "join_date": "2023-02-20", "posts": 12},
@@ -266,7 +251,6 @@ CPU 使用率: {cpu_percent}%
         
         await interaction.response.send_message(embed=embed)
     
-    # ===================== 統計指令 =====================
     
     @app_commands.command(name="stats", description="📊 檢視統計數據")
     @app_commands.describe(
@@ -307,7 +291,6 @@ CPU 使用率: {cpu_percent}%
         
         await interaction.response.send_message(embed=embed)
     
-    # ===================== 配置指令 =====================
     
     @app_commands.command(name="config", description="⚙️ 開啟配置面板")
     async def config_slash(self, interaction: discord.Interaction):
@@ -321,7 +304,6 @@ CPU 使用率: {cpu_percent}%
             color='admin'
         )
         
-        # 創建配置選單
         view = ConfigurationPanelView()
         await interaction.response.send_message(embed=embed, view=view)
     
@@ -349,15 +331,11 @@ CPU 使用率: {cpu_percent}%
         
         await interaction.followup.send(embed=embed)
     
-    # ===================== 工具方法 =====================
     
     async def _check_permission(self, interaction: discord.Interaction, required_level: DiscordPermissionLevel) -> bool:
         """檢查用戶權限"""
-        # 這裡實現權限檢查邏輯
-        # 暫時返回 True，實際應該調用 discord_service
         return True
 
-# ===================== UI 視圖類別 =====================
 
 class HelpMenuView(discord.ui.View):
     """幫助選單視圖"""
@@ -365,7 +343,6 @@ class HelpMenuView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
         
-        # 指令分類數據
         self.commands_categories = {
             "system": {
                 "ping": {"description": "測試機器人延遲"},
@@ -384,7 +361,6 @@ class HelpMenuView(discord.ui.View):
             }
         }
         
-        # 添加選擇選單
         self.add_item(CategorySelect(self.commands_categories))
 
 class CategorySelect(discord.ui.Select):
@@ -405,7 +381,6 @@ class CategorySelect(discord.ui.Select):
         category = self.values[0]
         commands_data = self.categories[category]
         
-        # 創建指令選單
         view = discord.ui.View(timeout=300)
         view.add_item(CommandSelectMenu(category, commands_data))
         
@@ -434,7 +409,6 @@ class ModerationPanelView(discord.ui.View):
     
     @discord.ui.button(label="快速審核", style=discord.ButtonStyle.primary, emoji="⚡")
     async def quick_review(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 創建審核動作選單
         view = discord.ui.View()
         view.add_item(ModerationActionSelect())
         
@@ -465,7 +439,6 @@ class PendingItemsView(discord.ui.View):
     
     @discord.ui.button(label="選擇性審核", style=discord.ButtonStyle.secondary, emoji="🔍")
     async def selective_review(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 創建項目選擇選單
         options = []
         for item in self.items[:10]:  # Discord 限制最多 25 個選項
             options.append(
@@ -499,7 +472,6 @@ class ItemSelect(discord.ui.Select):
         selected_id = int(self.values[0])
         selected_item = next(item for item in self.items if item['id'] == selected_id)
         
-        # 創建審核動作選單
         view = discord.ui.View()
         view.add_item(ModerationActionSelect())
         

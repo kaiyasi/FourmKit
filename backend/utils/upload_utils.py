@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/upload_utils.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import os, uuid, io
 from datetime import datetime
 from PIL import Image, UnidentifiedImageError
@@ -6,7 +10,6 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-# 跨平台的 magic 支援
 try:
     import magic
     HAS_MAGIC = True
@@ -30,7 +33,6 @@ def infer_ext_from_mime(mime: Optional[str], fallback: str = "jpg") -> str:
         return ALLOWED_IMAGE[mime]
     if mime in ALLOWED_VIDEO:
         return ALLOWED_VIDEO[mime]
-    # 常見別名
     if mime in {"image/jpg"}: return "jpg"
     if mime in {"image/jpeg"}: return "jpg"
     if mime in {"image/png"}: return "png"
@@ -50,7 +52,6 @@ def _mime_magic(buf: bytes) -> str:
         mg = magic.Magic(mime=True)
         return mg.from_buffer(buf)
     else:
-        # Fallback: 基於檔案 header 的簡單檢測
         if buf.startswith(b'\xFF\xD8\xFF'):
             return 'image/jpeg'
         elif buf.startswith(b'\x89PNG\r\n\x1A\n'):
@@ -58,10 +59,8 @@ def _mime_magic(buf: bytes) -> str:
         elif buf.startswith(b'RIFF') and b'WEBP' in buf[:12]:
             return 'image/webp'
         elif len(buf) > 8 and buf[4:8] == b'ftyp':
-            # 更精確的 MP4 檢測：檢查 ftyp box
             return 'video/mp4'
         elif buf.startswith(b'\x1a\x45\xdf\xa3'):
-            # WebM (EBML header)
             return 'video/webm'
         else:
             return 'application/octet-stream'
@@ -131,18 +130,15 @@ def save_video(file_storage, root: str):
 
 def generate_unique_filename(original_name: str, file_hash: str) -> str:
     """生成唯一的檔案名"""
-    # 使用檔案雜湊和時間戳生成唯一名稱
     timestamp = str(int(os.urandom(4).hex(), 16))
     extension = Path(original_name).suffix
     return f"{file_hash}_{timestamp}{extension}"
 
 def save_upload_chunk(file, unique_name: str, chunk_index: int, user_id: int) -> str:
     """保存上傳分塊"""
-    # 創建分塊目錄
     chunks_dir = Path("uploads/chunks") / str(user_id) / unique_name
     chunks_dir.mkdir(parents=True, exist_ok=True)
     
-    # 保存分塊檔案
     chunk_path = chunks_dir / f"chunk_{chunk_index:04d}"
     file.save(str(chunk_path))
     
@@ -156,7 +152,6 @@ def merge_chunks(unique_name: str, total_chunks: int, user_id: int) -> str:
     
     final_path = final_dir / unique_name
     
-    # 合併所有分塊
     with open(final_path, 'wb') as outfile:
         for i in range(total_chunks):
             chunk_path = chunks_dir / f"chunk_{i:04d}"
@@ -164,7 +159,6 @@ def merge_chunks(unique_name: str, total_chunks: int, user_id: int) -> str:
                 with open(chunk_path, 'rb') as infile:
                     shutil.copyfileobj(infile, outfile)
     
-    # 清理分塊檔案
     try:
         shutil.rmtree(chunks_dir)
     except Exception:
@@ -188,17 +182,12 @@ def publish_media_by_id(current_rel_path: str, media_id: int, mime_type: Optiona
     回傳相對 uploads 的新路徑（例如：public/media/123.jpg）。
     若找不到來源檔，回傳原路徑（呼叫端可決定是否忽略）。
     """
-    # 使用環境變數的上傳根目錄
     upload_root = Path(os.getenv("UPLOAD_ROOT", "uploads"))
     
-    # 來源候選
     name = Path(current_rel_path).name
     candidates = []
-    # 直接相對路徑
     candidates.append(upload_root / current_rel_path.lstrip("/"))
-    # 可能位於 media 根
     candidates.append(upload_root / "media" / name)
-    # 廣義搜尋 pending 下任何同名
     pending_root = upload_root / "pending"
     if pending_root.exists():
         try:
@@ -220,17 +209,14 @@ def publish_media_by_id(current_rel_path: str, media_id: int, mime_type: Optiona
     if not src:
         return current_rel_path
 
-    # 推斷副檔名
     ext = Path(src.name).suffix.lstrip('.').lower() or infer_ext_from_mime(mime_type, 'jpg')
     if ext == 'jpeg':
         ext = 'jpg'
 
-    # 目標位置：uploads/public/media/<id>.<ext>
     dst_dir = upload_root / "public/media"
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / f"{media_id}.{ext}"
 
-    # 移動/複製（不同檔系統可能需要 copy2）
     try:
         if src.resolve() != dst.resolve():
             try:
@@ -240,7 +226,6 @@ def publish_media_by_id(current_rel_path: str, media_id: int, mime_type: Optiona
     except Exception:
         return current_rel_path
 
-    # 建立相容副本：uploads/public/<id>.<ext>
     try:
         alias_dir = upload_root / "public"
         alias_dir.mkdir(parents=True, exist_ok=True)
@@ -266,7 +251,6 @@ def find_public_media_rel(media_id: int) -> Optional[str]:
         for p in list(pub_media.glob(f"{media_id}.*")) + list(pub_root.glob(f"{media_id}.*")):
             if p.is_file():
                 rel = str(p.relative_to(upload_root))
-                # 規範化：若在 root，建相容 media/ 別名
                 if rel.startswith("public/") and not rel.startswith("public/media/"):
                     try:
                         alias = pub_media / p.name
@@ -291,33 +275,25 @@ def resolve_or_publish_public_media(current_rel_path: str, media_id: int, mime_t
     """確保並回傳完整的公開媒體 URL。
     優先從 CDN 提供，若 CDN 設定不存在則回退到本地相對路徑。
     """
-    # 檢查 CDN URL 是否已設定
     cdn_base_url = (os.getenv("CDN_PUBLIC_BASE_URL") or os.getenv("PUBLIC_CDN_URL") or "").strip().rstrip("/")
     
-    # 1. 先嘗試尋找已存在的公開媒體檔案
     public_rel_path = find_public_media_rel(media_id)
     
-    # 2. 如果找不到，則嘗試發布
     if not public_rel_path:
         public_rel_path = publish_media_by_id(current_rel_path or '', media_id, mime_type)
 
-    # 3. 如果找到或成功發布了公開檔案
     if public_rel_path and public_rel_path.startswith('public/'):
-        # 如果設定了 CDN，則將檔案發布到 CDN 並回傳 CDN URL
         if cdn_base_url:
             upload_root = Path(os.getenv("UPLOAD_ROOT", "uploads"))
             full_local_path = upload_root / public_rel_path
             
             if full_local_path.exists():
-                # 使用 'media' 作為子目錄，與 content_generator.py 的行為保持一致
                 cdn_url = publish_to_cdn(str(full_local_path), subdir="media")
                 if cdn_url:
                     return cdn_url
         
-        # 如果沒有設定 CDN 或 CDN 發布失敗，回退到本地相對 URL
         return f"/uploads/{public_rel_path}"
 
-    # 4. 如果最終還是失敗，回傳 None
     return None
 
 def cleanup_orphaned_chunks(user_id: int, max_age_hours: int = 24):
@@ -332,7 +308,6 @@ def cleanup_orphaned_chunks(user_id: int, max_age_hours: int = 24):
     
     for chunk_dir in chunks_base.iterdir():
         if chunk_dir.is_dir():
-            # 檢查目錄年齡
             dir_age = current_time - chunk_dir.stat().st_mtime
             if dir_age > max_age_seconds:
                 try:
@@ -354,10 +329,8 @@ def save_media_simple(file_storage, media_id: int, root: str = "uploads") -> dic
     if not raw:
         raise ValueError("empty file")
     
-    # 檢測 MIME 類型
     mime = _mime_magic(raw)
     
-    # 確定檔案類型
     if mime in ALLOWED_IMAGE:
         file_type = "image"
         ext = ALLOWED_IMAGE[mime]
@@ -367,15 +340,12 @@ def save_media_simple(file_storage, media_id: int, root: str = "uploads") -> dic
     else:
         raise ValueError(f"unsupported mime type: {mime}")
     
-    # 簡化的目錄結構：uploads/media/{media_id}.{ext}
     media_dir = Path(root) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     
-    # 使用 ID 作為檔案名
     filename = f"{media_id}.{ext}"
     file_path = media_dir / filename
     
-    # 保存檔案
     with open(file_path, "wb") as f:
         f.write(raw)
     
@@ -390,7 +360,6 @@ def move_media_file(old_id: int, new_id: int, root: str = "uploads") -> bool:
     """移動媒體檔案到新的 ID"""
     media_dir = Path(root) / "media"
     
-    # 尋找舊檔案
     old_files = list(media_dir.glob(f"{old_id}.*"))
     if not old_files:
         return False
@@ -400,7 +369,6 @@ def move_media_file(old_id: int, new_id: int, root: str = "uploads") -> bool:
     new_file = media_dir / f"{new_id}{ext}"
     
     try:
-        # 移動檔案
         old_file.rename(new_file)
         return True
     except Exception:
@@ -410,13 +378,11 @@ def cleanup_temp_files(temp_id: int, root: str = "uploads") -> bool:
     """清理臨時檔案"""
     media_dir = Path(root) / "media"
     
-    # 尋找臨時檔案
     temp_files = list(media_dir.glob(f"{temp_id}.*"))
     if not temp_files:
         return False
     
     try:
-        # 刪除臨時檔案
         for temp_file in temp_files:
             temp_file.unlink()
         return True
@@ -429,24 +395,19 @@ def save_page_file(file_storage, page_id: int, root: str = "uploads") -> dict:
     if not raw:
         raise ValueError("empty file")
     
-    # 檢測 MIME 類型
     mime = _mime_magic(raw)
     
-    # 頁面檔案通常是圖片
     if mime not in ALLOWED_IMAGE:
         raise ValueError(f"unsupported mime type for page: {mime}")
     
     ext = ALLOWED_IMAGE[mime]
     
-    # 簡化的目錄結構：uploads/pages/{page_id}.{ext}
     pages_dir = Path(root) / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
     
-    # 使用 ID 作為檔案名
     filename = f"{page_id}.{ext}"
     file_path = pages_dir / filename
     
-    # 保存檔案
     with open(file_path, "wb") as f:
         f.write(raw)
     
@@ -459,12 +420,10 @@ def save_page_file(file_storage, page_id: int, root: str = "uploads") -> dict:
 
 def get_media_url(media_id: int, file_type: str = "image") -> str:
     """根據媒體 ID 生成檔案 URL"""
-    # 這裡需要根據實際的檔案類型來確定副檔名
-    # 可以從資料庫查詢或使用預設值
     ext = "jpg"  # 預設值，實際應該從資料庫查詢
     return f"/uploads/public/media/{media_id}.{ext}"
 
 def get_page_url(page_id: int) -> str:
     """根據頁面 ID 生成檔案 URL"""
-    ext = "jpg"  # 預設值，實際應該從資料庫查詢
+    ext = "jpg"
     return f"/uploads/pages/{page_id}.{ext}"

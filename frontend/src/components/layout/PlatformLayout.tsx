@@ -28,7 +28,6 @@ export function PlatformLayout({
 }: PlatformLayoutProps) {
   const { isMobile, isTablet, isDesktop } = usePlatform()
 
-  // 如果提供了平台特定組件，優先使用
   if (isMobile && MobileComponent) {
     return <MobileComponent {...mobileProps} />
   }
@@ -41,7 +40,6 @@ export function PlatformLayout({
     return <DesktopComponent {...desktopProps} />
   }
 
-  // 如果沒有提供平台特定組件，使用 fallback 或 children
   if (fallback) {
     return <>{fallback}</>
   }

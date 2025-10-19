@@ -24,16 +24,17 @@ interface AnnouncementEvent {
   }
 }
 
+/**
+ *
+ */
 export function useAnnouncementNotifications() {
   const { addNotification } = useNotifications()
   
-  // 監聽 WebSocket 公告事件
   useEffect(() => {
     const handleAnnouncement = (payload: AnnouncementEvent) => {
       if (payload.type === 'new_announcement') {
         const announcement = payload.data
         
-        // 添加到通知視窗
         addNotification({
           type: 'announcement',
           title: `📢 ${announcement.title}`,
@@ -53,15 +54,12 @@ export function useAnnouncementNotifications() {
           }
         })
         
-        // 如果是緊急公告，顯示額外提示
         if (announcement.priority === 'urgent' || announcement.is_pinned) {
           console.log('[URGENT] New important announcement:', announcement.title)
-          // TODO: 可以在這裡添加 toast 通知或聲音提示
         }
       }
     }
     
-    // 監聽公告事件
     on('announcement', handleAnnouncement)
     
     return () => {
@@ -69,7 +67,6 @@ export function useAnnouncementNotifications() {
     }
   }, [addNotification])
   
-  // 手動觸發公告通知（用於測試）
   const triggerTestNotification = () => {
     addNotification({
       type: 'announcement',

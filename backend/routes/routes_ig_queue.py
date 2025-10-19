@@ -26,34 +26,43 @@ def get_queue():
     """
     try:
         with get_session() as session:
-            # 獲取查詢參數
-            status = request.args.get('status', '')
+            raw_status = (request.args.get('status', '') or '').strip()
+            status = raw_status.lower()
             limit = int(request.args.get('limit', 50))
             offset = int(request.args.get('offset', 0))
 
-            # 構建查詢
             query = session.query(InstagramPost).join(InstagramAccount)
 
-            # 狀態篩選
-            if status:
-                query = query.filter(InstagramPost.status == status)
+            if status and status not in {'all', '全部'}:
+                query = query.filter(InstagramPost.status.in_([status, status.upper()]))
             else:
-                # 預設只顯示未完成的
-                query = query.filter(InstagramPost.status.in_(['pending', 'rendering', 'ready', 'publishing']))
+                unfinished = ['pending', 'rendering', 'ready', 'publishing']
+                unfinished_both = unfinished + [s.upper() for s in unfinished]
+                query = query.filter(InstagramPost.status.in_(unfinished_both))
 
-            # 排序：優先級高的在前，然後按建立時間
-            query = query.order_by(InstagramPost.created_at.asc())
+            from sqlalchemy import case
+            order_case = case(
+                (
+                    InstagramPost.status.in_(['pending','PENDING']), 1
+                ), (
+                    InstagramPost.status.in_(['rendering','RENDERING']), 2
+                ), (
+                    InstagramPost.status.in_(['ready','READY']), 3
+                ), (
+                    InstagramPost.status.in_(['publishing','PUBLISHING']), 4
+                ), else_=5
+            )
+            query = query.order_by(order_case.asc(), InstagramPost.created_at.asc())
 
-            # 分頁
             total = query.count()
             posts = query.limit(limit).offset(offset).all()
 
-            print(f"[IG Queue] Found {len(posts)} posts for status '{status}' with limit {limit} and offset {offset}")
-
+<<<<<<< Updated upstream
             # 格式化返回
+=======
+>>>>>>> Stashed changes
             queue_data = []
             for post in posts:
-                # 為沒有時區的 datetime 加上 UTC 標記
                 created_at = post.created_at.replace(tzinfo=timezone.utc) if post.created_at.tzinfo is None else post.created_at
                 updated_at = post.updated_at.replace(tzinfo=timezone.utc) if post.updated_at.tzinfo is None else post.updated_at
                 scheduled_at = None
@@ -92,13 +101,11 @@ def get_queue_stats():
     """獲取佇列統計資訊"""
     try:
         with get_session() as session:
-            # 統計各狀態的數量
-            total_pending = session.query(InstagramPost).filter(InstagramPost.status == 'pending').count()
-            total_rendering = session.query(InstagramPost).filter(InstagramPost.status == 'rendering').count()
-            total_ready = session.query(InstagramPost).filter(InstagramPost.status == 'ready').count()
-            total_publishing = session.query(InstagramPost).filter(InstagramPost.status == 'publishing').count()
+            total_pending = session.query(InstagramPost).filter(InstagramPost.status.in_(['pending','PENDING'])).count()
+            total_rendering = session.query(InstagramPost).filter(InstagramPost.status.in_(['rendering','RENDERING'])).count()
+            total_ready = session.query(InstagramPost).filter(InstagramPost.status.in_(['ready','READY'])).count()
+            total_publishing = session.query(InstagramPost).filter(InstagramPost.status.in_(['publishing','PUBLISHING'])).count()
 
-            # 按帳號統計
             accounts_stats = []
             accounts = session.query(InstagramAccount).filter(InstagramAccount.is_active == True).all()
 
@@ -110,9 +117,7 @@ def get_queue_stats():
                     )
                 ).count()
 
-                # 判斷是否達到批次發布條件
                 batch_ready = False
-                # 使用模型欄位 batch_count（非 batch_size）
                 if account.publish_mode == 'batch' and ready_count >= (getattr(account, 'batch_count', None) or 0):
                     batch_ready = True
 
@@ -148,7 +153,6 @@ def cancel_post(post_id):
             if not post:
                 return jsonify({'error': '貼文不存在'}), 404
 
-            # 只能取消未發布的
             if post.status in ['published', 'failed', 'cancelled']:
                 return jsonify({'error': f'無法取消狀態為 {post.status} 的貼文'}), 400
 
@@ -177,28 +181,24 @@ def clear_queue():
 
         with get_session() as session:
             if do_delete:
-                # 硬刪除：直接刪掉未完成的貼文
                 q = session.query(InstagramPost).filter(InstagramPost.status.in_(target_status))
                 count = q.count()
-                # 清除以免殘留關聯
                 for p in q.all():
                     session.delete(p)
                 session.commit()
                 return jsonify({'ok': True, 'mode': 'hard', 'deleted': count}), 200
             else:
-                # 軟清理：標記為 cancelled 並清除批次資訊
                 q = session.query(InstagramPost).filter(InstagramPost.status.in_(target_status))
                 count = 0
                 now = datetime.utcnow().replace(tzinfo=timezone.utc)
                 for p in q.all():
                     p.status = 'cancelled'
                     p.updated_at = now
-                    # 解除輪播群組
                     p.carousel_group_id = None
                     p.carousel_position = None
                     p.carousel_total = None
                 session.commit()
-                count = q.count()  # 重新計數已不重要，但保留為 0 或使用前一個值
+                count = q.count()
                 return jsonify({'ok': True, 'mode': 'soft', 'affected': count}), 200
     except Exception as e:
         print(f'[IG Queue] Error clearing queue: {e}')

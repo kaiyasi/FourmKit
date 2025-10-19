@@ -43,13 +43,15 @@ const MODE_CONFIGS: Record<ModeType, ModeConfig> = {
   }
 };
 
+/**
+ *
+ */
 export function ModeIndicator({ showText = true }: { showText?: boolean }) {
   const [mode, setMode] = useState<ModeType>("normal");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadMode();
-    // 每30秒刷新一次模式狀態
     const interval = setInterval(loadMode, 30000);
     return () => clearInterval(interval);
   }, []);

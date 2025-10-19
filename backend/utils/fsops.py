@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/fsops.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import os, shutil
 from pathlib import Path
 
@@ -18,5 +22,4 @@ def move_to_public(rel_pending_path: str) -> str:
     if src.exists():
         shutil.move(str(src), str(dst))
         os.chmod(dst, 0o644)
-    # 若 dst 已存在，視同成功（冪等）
     return str((Path("public") / rel_pending_path).as_posix())

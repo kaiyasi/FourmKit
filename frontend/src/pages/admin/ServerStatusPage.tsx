@@ -37,6 +37,9 @@ interface PlatformStatus {
   current_time: string
 }
 
+/**
+ *
+ */
 export default function ServerStatusPage() {
   const navigate = useNavigate()
   const { isLoggedIn, role } = useAuth()
@@ -46,7 +49,6 @@ export default function ServerStatusPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
-  // 檢查是否為 dev_admin
   useEffect(() => {
     if (!isLoggedIn || role !== 'dev_admin') {
       navigate('/403')
@@ -97,7 +99,6 @@ export default function ServerStatusPage() {
       if (response.ok) {
         const data = await response.json()
         alert(`✅ ${data.message}`)
-        // 重新獲取狀態
         await fetchPlatformStatus()
       } else {
         const errorData = await response.json()
@@ -207,7 +208,7 @@ export default function ServerStatusPage() {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -254,7 +255,7 @@ export default function ServerStatusPage() {
           </div>
         )}
 
-        {/* 整體狀態指示 */}
+        
         {status && (
           <div className="bg-surface border border-border rounded-2xl p-4 mb-6 shadow-soft">
             <div className="flex items-center justify-center gap-3">
@@ -274,9 +275,9 @@ export default function ServerStatusPage() {
           </div>
         ) : status ? (
           <>
-            {/* 服務狀態卡片 */}
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              {/* 應用程序狀態 */}
+              
               <StatusCard
                 title="應用程序"
                 status="success"
@@ -300,7 +301,7 @@ export default function ServerStatusPage() {
                 }
               />
 
-              {/* 系統狀態 */}
+              
               <StatusCard
                 title="系統環境"
                 status="success"
@@ -329,7 +330,7 @@ export default function ServerStatusPage() {
               />
             </div>
 
-            {/* 資源使用狀況 */}
+            
             <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
@@ -340,7 +341,7 @@ export default function ServerStatusPage() {
               
               <div className="p-4">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* CPU 使用率 */}
+                  
                   <div className="bg-surface-hover rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -364,7 +365,7 @@ export default function ServerStatusPage() {
                     </div>
                   </div>
 
-                  {/* 記憶體使用率 */}
+                  
                   <div className="bg-surface-hover rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -388,7 +389,7 @@ export default function ServerStatusPage() {
               </div>
             </div>
 
-            {/* 平台操作 */}
+            
             <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
@@ -438,9 +439,9 @@ export default function ServerStatusPage() {
               </div>
             </div>
 
-            {/* 指標卡片 */}
+            
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              {/* 進程狀態 */}
+              
               <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-3 h-3 rounded-full bg-green-500"></div>
@@ -452,7 +453,7 @@ export default function ServerStatusPage() {
                 <div className="text-xs text-muted">PID: {status.process_id}</div>
               </div>
 
-              {/* 應用運行時間 */}
+              
               <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-3 h-3 rounded-full bg-blue-500"></div>
@@ -466,7 +467,7 @@ export default function ServerStatusPage() {
                 </div>
               </div>
 
-              {/* 系統運行時間 */}
+              
               <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-3 h-3 rounded-full bg-purple-500"></div>
@@ -480,7 +481,7 @@ export default function ServerStatusPage() {
                 </div>
               </div>
 
-              {/* 當前時間 */}
+              
               <div className="bg-surface-hover rounded-lg p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-3 h-3 rounded-full bg-orange-500"></div>

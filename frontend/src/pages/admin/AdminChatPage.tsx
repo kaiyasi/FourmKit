@@ -4,7 +4,7 @@ import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { 
   ArrowLeft, MessageSquare, Send, Users, Settings, Clock, Search, Filter, 
   RefreshCw, CheckCircle, XCircle, AlertTriangle, FileText, Vote, 
-  Eye, MoreVertical, Trash2, Edit3, Pin, Archive 
+  Eye, MoreVertical, Trash2, Edit3, Pin, Archive, UserPlus 
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/services/api'
@@ -14,7 +14,7 @@ interface ChatRoom {
   id: number
   name: string
   description: string
-  type: 'school' | 'cross' | 'emergency' | 'system' | 'developer' | 'global'
+  type: 'school' | 'cross' | 'emergency' | 'system' | 'developer' | 'global' | 'custom'
   school_name?: string
   member_count?: number
   unread_count: number
@@ -74,6 +74,7 @@ interface Vote {
     id: number
     text: string
     count: number
+    me?: boolean
   }>
   status: 'active' | 'passed' | 'rejected' | 'expired'
   total_votes: number
@@ -81,6 +82,7 @@ interface Vote {
   expires_at?: string
   created_at: string
   result_option_id?: number
+  allow_multiple?: boolean
 }
 
 interface ChatStats {
@@ -92,12 +94,34 @@ interface ChatStats {
   urgent_announcements: number
 }
 
+/**
+ *
+ */
 export default function AdminChatPage() {
   const { user, role, username } = useAuth()
   const isDev = (role === 'dev_admin')
   const canModerate = ['dev_admin', 'campus_admin', 'cross_admin', 'campus_moderator', 'cross_moderator'].includes(role || '')
-  
+<<<<<<< Updated upstream
+  // 行動裝置偵測（保障手機版不渲染建立房間功能）
+=======
+>>>>>>> Stashed changes
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try { return window.matchMedia('(max-width: 767px)').matches } catch { return false }
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mq.matches)
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
+
+<<<<<<< Updated upstream
   // 狀態管理
+=======
+>>>>>>> Stashed changes
+
   const [loading, setLoading] = useState(true)
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null)
@@ -107,7 +131,6 @@ export default function AdminChatPage() {
   const [sending, setSending] = useState(false)
   const [stats, setStats] = useState<ChatStats | null>(null)
   
-  // 篩選和搜尋
   const [filters, setFilters] = useState({
     search: '',
     type: '',
@@ -116,7 +139,6 @@ export default function AdminChatPage() {
   const [messageSearch, setMessageSearch] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   
-  // UI 狀態
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
   const [showMessageDetail, setShowMessageDetail] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
@@ -125,7 +147,8 @@ export default function AdminChatPage() {
     title: '',
     description: '',
     options: ['', ''],
-    expires_hours: 24
+    expires_hours: 24,
+    allow_multiple: false as boolean,
   })
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [createForm, setCreateForm] = useState({
@@ -137,49 +160,164 @@ export default function AdminChatPage() {
     search: '',
     candidates: [] as Array<{ id: number; username: string; email?: string; role: string }>,
   })
+<<<<<<< Updated upstream
+
+  // 編輯自訂聊天室
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    description: '',
+    is_private: false,
+    max_members: 100,
+  })
+  // 編輯-邀請管理
+  const [members, setMembers] = useState<Array<{ id:number; username:string; role?:string }>>([])
+
+  const deleteRoom = useCallback(async () => {
+    if (!selectedRoom) return
+    if (!confirm(`確定要刪除頻道「${selectedRoom.name}」嗎？此動作無法復原。`)) return
+    try {
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}`, { method: 'DELETE' })
+      // 從列表移除並清空選擇
+      setRooms(prev => prev.filter(r => r.id !== selectedRoom.id))
+      setSelectedRoom(null)
+    } catch (e:any) {
+      alert(e?.message || '刪除頻道失敗')
+    }
+  }, [selectedRoom, setRooms, setSelectedRoom])
+
+  const loadMembers = useCallback(async () => {
+    if (!selectedRoom) return
+    try {
+      const res = await api<{ members: Array<{ id:number; username:string; role?:string }> }>(`/api/admin/chat/rooms/${selectedRoom.id}/members`)
+      setMembers(res.members || [])
+    } catch {
+      setMembers([])
+    }
+  }, [selectedRoom])
+
+  const removeMember = useCallback(async (userId: number) => {
+    if (!selectedRoom) return
+    try {
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}/members/${userId}`, { method: 'DELETE' })
+      setMembers(prev => prev.filter(m => m.id !== userId))
+      // 同步更新右上顯示的成員數
+      setSelectedRoom(prev => prev ? ({ ...prev, member_count: Math.max(0, (prev.member_count || 1) - 1) }) as any : prev)
+    } catch (e:any) {
+      alert(e?.message || '移除成員失敗')
+    }
+  }, [selectedRoom])
+
+  useEffect(() => {
+    if (showEditModal) {
+      loadMembers()
+    }
+  }, [showEditModal, loadMembers])
+
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [inviteCandidates, setInviteCandidates] = useState<Array<{ id:number; username:string; email?:string }>>([])
+  const [invited, setInvited] = useState<Array<{ id:number; username:string }>>([])
+
+  const searchInviteCandidates = useCallback(async (q: string) => {
+    if (!q.trim()) { setInviteCandidates([]); return }
+    try {
+      const res = await api<{ users: Array<{ id:number; username:string; email?:string }> }>(`/api/admin/chat/admin-users?q=${encodeURIComponent(q)}`)
+      setInviteCandidates(res.users || [])
+    } catch {
+      setInviteCandidates([])
+    }
+  }, [])
+
   
   // 引用
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const socketRef = useRef<any>(null)
+=======
+>>>>>>> Stashed changes
 
-  // 載入聊天室統計
-  const fetchStats = useCallback(async () => {
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    description: '',
+    is_private: false,
+    max_members: 100,
+  })
+  const [members, setMembers] = useState<Array<{ id:number; username:string; role?:string }>>([])
+
+  const deleteRoom = useCallback(async () => {
+    if (!selectedRoom) return
+    if (!confirm(`確定要刪除頻道「${selectedRoom.name}」嗎？此動作無法復原。`)) return
     try {
-      // 嘗試從實際的聊天室數據計算統計
-      const response = await api<{ rooms: ChatRoom[] }>('/api/admin/chat/rooms')
-      const rooms = response.rooms || []
-      
-      setStats({
-        total_rooms: rooms.length,
-        active_rooms: rooms.filter((r: ChatRoom) => r.is_active).length,
-        total_messages_today: rooms.reduce((sum: number, r: ChatRoom) => sum + (r.unread_count || 0), 0),
-        active_members: 18, // 這個需要後端 API 支援
-        pending_votes: 1,   // 這個需要後端 API 支援
-        urgent_announcements: 0 // 這個需要後端 API 支援
-      })
-    } catch (error) {
-      console.error('載入統計失敗:', error)
-      // 使用預設統計數據
-      setStats({
-        total_rooms: 8,
-        active_rooms: 8,
-        total_messages_today: 62,
-        active_members: 18,
-        pending_votes: 1,
-        urgent_announcements: 0
-      })
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}`, { method: 'DELETE' })
+      setRooms(prev => prev.filter(r => r.id !== selectedRoom.id))
+      setSelectedRoom(null)
+    } catch (e:any) {
+      alert(e?.message || '刪除頻道失敗')
+    }
+  }, [selectedRoom, setRooms, setSelectedRoom])
+
+  const loadMembers = useCallback(async () => {
+    if (!selectedRoom) return
+    try {
+      const res = await api<{ members: Array<{ id:number; username:string; role?:string }> }>(`/api/admin/chat/rooms/${selectedRoom.id}/members`)
+      setMembers(res.members || [])
+    } catch {
+      setMembers([])
+    }
+  }, [selectedRoom])
+
+  const removeMember = useCallback(async (userId: number) => {
+    if (!selectedRoom) return
+    try {
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}/members/${userId}`, { method: 'DELETE' })
+      setMembers(prev => prev.filter(m => m.id !== userId))
+      setSelectedRoom(prev => prev ? ({ ...prev, member_count: Math.max(0, (prev.member_count || 1) - 1) }) as any : prev)
+    } catch (e:any) {
+      alert(e?.message || '移除成員失敗')
+    }
+  }, [selectedRoom])
+
+  useEffect(() => {
+    if (showEditModal) {
+      loadMembers()
+    }
+  }, [showEditModal, loadMembers])
+
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [inviteCandidates, setInviteCandidates] = useState<Array<{ id:number; username:string; email?:string }>>([])
+  const [invited, setInvited] = useState<Array<{ id:number; username:string }>>([])
+  const [manualInviteInput, setManualInviteInput] = useState('')
+  const [manualInvites, setManualInvites] = useState<string[]>([])
+
+  const searchInviteCandidates = useCallback(async (q: string) => {
+    if (!q.trim()) { setInviteCandidates([]); return }
+    try {
+      const res = await api<{ users: Array<{ id:number; username:string; email?:string }> }>(`/api/admin/chat/admin-users?q=${encodeURIComponent(q)}`)
+      setInviteCandidates(res.users || [])
+    } catch {
+      setInviteCandidates([])
     }
   }, [])
 
-  // 載入聊天室列表
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const socketRef = useRef<any>(null)
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await api<ChatStats>('/api/admin/chat/stats')
+      setStats(response as any)
+    } catch (error) {
+      console.error('載入統計失敗:', error)
+    }
+  }, [])
+
   const fetchRooms = useCallback(async () => {
     setLoading(true)
     try {
-      // 調用實際的 API 獲取聊天室列表
       const response = await api<{ rooms: ChatRoom[] }>('/api/admin/chat/rooms')
       let rooms = response.rooms || []
       
-      // 根據篩選條件過濾房間
       if (filters.search) {
         rooms = rooms.filter((room: ChatRoom) => 
           room.name.includes(filters.search) || 
@@ -199,7 +337,6 @@ export default function AdminChatPage() {
       }
     } catch (error) {
       console.error('載入聊天室失敗:', error)
-      // 如果 API 失敗，使用演示數據作為後備
       const demoRooms: ChatRoom[] = [
         {
           id: 1,
@@ -246,12 +383,10 @@ export default function AdminChatPage() {
     }
   }, [filters])
 
-  // 載入訊息
   const fetchMessages = useCallback(async (roomId: number, before?: number) => {
     if (!roomId) return
     
     try {
-      // 調用實際的 API 獲取訊息
       const params = new URLSearchParams()
       params.append('limit', '50')
       if (before) params.append('before', before.toString())
@@ -262,7 +397,6 @@ export default function AdminChatPage() {
       const response = await api<{ messages: ChatMessage[] }>(url)
       let messages = response.messages || []
       
-      // 根據搜尋條件過濾訊息
       if (messageSearch) {
         messages = messages.filter((msg: ChatMessage) => 
           msg.content.includes(messageSearch) ||
@@ -272,7 +406,6 @@ export default function AdminChatPage() {
       
       if (!before) {
         setMessages(messages)
-        // 同時更新房間訊息記錄
         setRoomMessages(prev => ({
           ...prev,
           [roomId]: messages
@@ -280,7 +413,6 @@ export default function AdminChatPage() {
       }
     } catch (error) {
       console.error('載入訊息失敗:', error)
-      // 如果 API 失敗，從本地狀態獲取訊息
       setRoomMessages(prev => {
         const roomMsgs = prev[roomId] || []
         
@@ -300,13 +432,11 @@ export default function AdminChatPage() {
     }
   }, [messageSearch])
 
-  // 發送訊息
   const sendMessage = useCallback(async () => {
     if (!messageInput.trim() || !selectedRoom || sending) return
 
     setSending(true)
     try {
-      // 調用實際的 API 發送訊息
       const messageData = {
         content: messageInput.trim(),
         post_id: replyTo?.post?.id || undefined
@@ -318,16 +448,13 @@ export default function AdminChatPage() {
       })
       const newMessage = response.message
       
-      // 更新房間訊息記錄
       setRoomMessages(prev => ({
         ...prev,
         [selectedRoom.id]: [...(prev[selectedRoom.id] || []), newMessage]
       }))
       
-      // 更新當前顯示的訊息
       setMessages(prev => [...prev, newMessage])
       
-      // 更新房間列表中的最新訊息
       setRooms(prev => prev.map(room => 
         room.id === selectedRoom.id 
           ? { 
@@ -348,7 +475,6 @@ export default function AdminChatPage() {
     } catch (error) {
       console.error('發送訊息失敗:', error)
       
-      // 如果 API 失敗，仍然在本地創建訊息（但標記為未同步）
       const newMessage: ChatMessage = {
         id: Date.now(), // 暫時使用時間戳，實際應該使用服務器返回的 ID
         content: messageInput.trim(),
@@ -368,7 +494,6 @@ export default function AdminChatPage() {
         } : undefined
       }
 
-      // 更新本地狀態
       setRoomMessages(prev => ({
         ...prev,
         [selectedRoom.id]: [...(prev[selectedRoom.id] || []), newMessage]
@@ -394,41 +519,50 @@ export default function AdminChatPage() {
       setReplyTo(null)
       scrollToBottom()
       
-      // 提示用戶訊息可能未同步
       alert('訊息發送可能失敗，請檢查網路連線並重新整理頁面')
     } finally {
       setSending(false)
     }
   }, [messageInput, selectedRoom, sending, replyTo, user, role, username])
 
-  // 投票
   const castVote = useCallback(async (voteId: number, optionId: number) => {
     try {
-      // 模擬投票行為
-      setMessages(prev => prev.map(msg => {
-        if (msg.vote?.id === voteId) {
-          const updatedVote = { ...msg.vote }
-          // 更新投票結果
-          updatedVote.options = updatedVote.options.map(opt => 
-            opt.id === optionId 
-              ? { ...opt, count: opt.count + 1 }
-              : opt
-          )
-          updatedVote.total_votes += 1
-          updatedVote.user_voted_option = optionId
-          return { ...msg, vote: updatedVote }
-        }
-        return msg
-      }))
+      const res = await api<{ message?: string; vote: any }>(`/api/admin/chat/votes/${voteId}/cast`, {
+        method: 'POST',
+        body: JSON.stringify({ option_id: optionId })
+      })
+      const v = res.vote
+      const normalized: Vote = {
+        id: v.id,
+        title: v.title,
+        description: v.description,
+        status: v.status,
+        expires_at: v.expires_at,
+        created_at: new Date().toISOString(),
+        allow_multiple: !!v.allow_multiple,
+        options: (v.options || []).map((o: any) => ({
+          id: o.id,
+          text: o.text,
+          count: typeof o.count === 'number' ? o.count : (typeof o.votes === 'number' ? o.votes : 0),
+          me: !!o.me,
+        })),
+        total_votes: (v.options || []).reduce((s: number, o: any) => s + (o.votes ?? o.count ?? 0), 0),
+        user_voted_option: undefined,
+        result_option_id: v.result_option_id,
+      }
+      if (!normalized.allow_multiple) {
+        const mine = normalized.options.find(o => o.me)
+        normalized.user_voted_option = mine?.id
+      }
+
+      setMessages(prev => prev.map(msg => (msg.vote?.id === voteId ? { ...msg, vote: normalized } : msg)))
     } catch (error) {
       console.error('投票失敗:', error)
     }
   }, [])
 
-  // 訊息操作
   const pinMessage = useCallback(async (messageId: number) => {
     try {
-      // 模擬置頂操作
       setMessages(prev => prev.map(msg => 
         msg.id === messageId ? { ...msg, is_pinned: !msg.is_pinned } : msg
       ))
@@ -441,21 +575,54 @@ export default function AdminChatPage() {
     if (!confirm('確定要刪除這則訊息嗎？')) return
     
     try {
-      // 模擬刪除操作
       setMessages(prev => prev.filter(msg => msg.id !== messageId))
     } catch (error) {
       console.error('刪除失敗:', error)
     }
   }, [])
 
-  // 發起投票
   const createVote = useCallback(async () => {
     if (!voteForm.title.trim() || voteForm.options.filter(opt => opt.trim()).length < 2 || !selectedRoom) return
 
     try {
+      const payload = {
+        title: voteForm.title.trim(),
+        description: voteForm.description?.trim() || '',
+        options: voteForm.options.filter(opt => opt.trim()),
+        expires_hours: voteForm.expires_hours,
+        allow_multiple: !!voteForm.allow_multiple,
+      }
+      const res = await api<{ vote: any }>(`/api/admin/chat/rooms/${selectedRoom.id}/votes`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      })
+      const v = res.vote
+      const normalized: Vote = {
+        id: v.id,
+        title: v.title,
+        description: v.description,
+        status: v.status,
+        expires_at: v.expires_at,
+        created_at: new Date().toISOString(),
+        allow_multiple: !!v.allow_multiple,
+        options: (v.options || []).map((o: any) => ({
+          id: o.id,
+          text: o.text,
+          count: typeof o.count === 'number' ? o.count : (typeof o.votes === 'number' ? o.votes : 0),
+          me: !!o.me,
+        })),
+        total_votes: (v.options || []).reduce((s: number, o: any) => s + (o.votes ?? o.count ?? 0), 0),
+        user_voted_option: undefined,
+        result_option_id: v.result_option_id,
+      }
+      if (!normalized.allow_multiple) {
+        const mine = normalized.options.find(o => o.me)
+        normalized.user_voted_option = mine?.id
+      }
+
       const newVoteMessage: ChatMessage = {
         id: Date.now(),
-        content: voteForm.description || '請大家投票',
+        content: normalized.description || '請大家投票',
         message_type: 'vote',
         user: {
           id: user?.id || 999,
@@ -465,54 +632,35 @@ export default function AdminChatPage() {
         },
         created_at: new Date().toISOString(),
         is_pinned: false,
-        vote: {
-          id: Date.now(),
-          title: voteForm.title,
-          description: voteForm.description,
-          options: voteForm.options
-            .filter(opt => opt.trim())
-            .map((opt, index) => ({
-              id: index + 1,
-              text: opt.trim(),
-              count: 0
-            })),
-          status: 'active',
-          total_votes: 0,
-          expires_at: new Date(Date.now() + voteForm.expires_hours * 3600000).toISOString(),
-          created_at: new Date().toISOString()
-        }
+        vote: normalized,
       }
 
-      // 更新房間訊息記錄
       setRoomMessages(prev => ({
         ...prev,
         [selectedRoom.id]: [...(prev[selectedRoom.id] || []), newVoteMessage]
       }))
-      
-      // 更新當前顯示的訊息
       setMessages(prev => [...prev, newVoteMessage])
-      
-      // 更新房間列表中的最新訊息
-      setRooms(prev => prev.map(room => 
-        room.id === selectedRoom.id 
-          ? { 
-              ...room, 
+      setRooms(prev => prev.map(room => (
+        room.id === selectedRoom.id
+          ? {
+              ...room,
               latest_message: {
-                content: `投票: ${newVoteMessage.vote?.title}`,
+                content: `投票: ${normalized.title}`,
                 created_at: newVoteMessage.created_at,
                 user_name: newVoteMessage.user.username,
-                user_role: newVoteMessage.user.role
+                user_role: newVoteMessage.user.role,
               }
             }
           : room
-      ))
-      
+      )))
+
       setShowVoteModal(false)
       setVoteForm({
         title: '',
         description: '',
         options: ['', ''],
-        expires_hours: 24
+        expires_hours: 24,
+        allow_multiple: false,
       })
       scrollToBottom()
     } catch (error) {
@@ -520,7 +668,6 @@ export default function AdminChatPage() {
     }
   }, [voteForm, user, role, selectedRoom, username])
 
-  // 添加投票選項
   const addVoteOption = useCallback(() => {
     if (voteForm.options.length < 6) {
       setVoteForm(prev => ({
@@ -530,7 +677,6 @@ export default function AdminChatPage() {
     }
   }, [voteForm.options.length])
 
-  // 移除投票選項
   const removeVoteOption = useCallback((index: number) => {
     if (voteForm.options.length > 2) {
       setVoteForm(prev => ({
@@ -540,7 +686,6 @@ export default function AdminChatPage() {
     }
   }, [voteForm.options.length])
 
-  // 建立房間
   const searchCandidates = useCallback(async (q: string) => {
     try {
       const res = await api<{ users: Array<{ id: number; username: string; email?: string; role: string }> }>(
@@ -589,12 +734,54 @@ export default function AdminChatPage() {
     }
   }, [createForm, fetchRooms])
 
+  const submitEditRoom = useCallback(async () => {
+    if (!selectedRoom) return
+    try {
+      const payload: any = {
+        name: editForm.name.trim(),
+        description: editForm.description.trim(),
+        is_private: editForm.is_private,
+        max_members: editForm.max_members,
+      }
+      await api(`/api/admin/chat/rooms/${selectedRoom.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+<<<<<<< Updated upstream
+      // 若勾選私有且有新增邀請，追加邀請
+=======
+>>>>>>> Stashed changes
+      if (editForm.is_private && invited.length > 0) {
+        await api<{ added:number }>(`/api/admin/chat/rooms/${selectedRoom.id}/invite`, {
+          method: 'POST',
+          body: JSON.stringify({ user_ids: invited.map(x => x.id) }),
+        })
+      }
+      setShowEditModal(false)
+<<<<<<< Updated upstream
+      // 重新載入列表與當前房間資訊
+      await fetchRooms()
+      // 更新選中的房間基本資訊
+      setSelectedRoom(prev => prev ? ({ ...prev, ...payload }) as any : prev)
+      // 清空邀請狀態
+=======
+      await fetchRooms()
+      setSelectedRoom(prev => prev ? ({ ...prev, ...payload }) as any : prev)
+>>>>>>> Stashed changes
+      setInvited([]); setInviteCandidates([]); setInviteSearch('')
+    } catch (e:any) {
+      alert(e?.message || '更新聊天室失敗')
+    }
+  }, [selectedRoom, editForm, fetchRooms])
+
+<<<<<<< Updated upstream
   // 滾動到底部
+=======
+>>>>>>> Stashed changes
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  // 時間格式化
   const formatTime = (timestamp: string) => {
     try {
       const { formatLocalMinute } = require('@/utils/time')
@@ -604,7 +791,6 @@ export default function AdminChatPage() {
     }
   }
 
-  // 房間類型圖示和名稱
   const getRoomTypeIcon = (type: string) => {
     switch (type) {
       case 'school': return '校園'
@@ -625,7 +811,6 @@ export default function AdminChatPage() {
     }
   }
 
-  // 使用者角色標籤
   const getUserRoleBadge = (userRole: string) => {
     switch (userRole) {
       case 'dev_admin':
@@ -643,33 +828,28 @@ export default function AdminChatPage() {
     }
   }
 
-  // 初始化
   useEffect(() => {
     fetchStats()
     fetchRooms()
+    const t = setInterval(fetchStats, 10000)
+    return () => clearInterval(t)
   }, []) // 只在組件掛載時執行一次
 
-  // 選擇房間時載入訊息
   useEffect(() => {
     if (selectedRoom) {
       fetchMessages(selectedRoom.id)
     }
   }, [selectedRoom?.id]) // 只依賴房間 ID
 
-  // 自動滾動到底部
   useEffect(() => {
     scrollToBottom()
   }, [messages])
 
-  // WebSocket 連接
   useEffect(() => {
-    // 不連接 WebSocket，避免錯誤
-    // 在實際部署時可以啟用
     console.log('WebSocket 連接已禁用以避免錯誤')
     return () => {}
   }, [selectedRoom?.id]) // 只依賴房間 ID
 
-  // 過濾器改變時重新獲取數據
   useEffect(() => {
     fetchRooms()
   }, [filters]) // 依賴過濾器
@@ -679,7 +859,7 @@ export default function AdminChatPage() {
       <div className="min-h-screen">
         <NavBar pathname="/admin/chat" />
         <MobileBottomNav />
-        <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+        <main className="mx-auto max-w-7xl px-4 pt-16 sm:pt-20 md:pt-28 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
           <div className="text-center py-8">
             <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
             <p className="text-muted">載入中...</p>
@@ -694,8 +874,12 @@ export default function AdminChatPage() {
       <NavBar pathname="/admin/chat" />
       <MobileBottomNav />
       
-      <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
+      <main className="mx-auto max-w-7xl px-4 pt-12 sm:pt-20 md:pt-24 pb-8" style={{ paddingBottom: 'var(--fk-bottomnav-offset, 88px)' }}>
+<<<<<<< Updated upstream
         {/* 頁面標題 */}
+=======
+        
+>>>>>>> Stashed changes
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -722,15 +906,19 @@ export default function AdminChatPage() {
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
-              {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && (
+              {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && !isMobile && (
                 <button onClick={()=> setShowCreateModal(true)} className="btn-primary px-3 py-1.5 text-sm">建立自訂房間</button>
               )}
             </div>
           </div>
       </div>
 
+<<<<<<< Updated upstream
       {/* 建立房間彈窗 */}
-      {showCreateModal && (
+=======
+      
+>>>>>>> Stashed changes
+      {showCreateModal && !isMobile && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-surface border border-border rounded-xl p-4 w-full max-w-lg shadow-lg">
             <div className="flex items-center justify-between mb-2">
@@ -752,8 +940,9 @@ export default function AdminChatPage() {
               </div>
               <div>
                 <label className="block text-sm mb-1">邀請成員</label>
+<<<<<<< Updated upstream
                 <div className="flex items-center gap-2 mb-2">
-                  <input className="flex-1 input" placeholder="搜尋使用者（帳號/Email）" value={createForm.search} onChange={(e)=> { const v=e.target.value; setCreateForm(p=>({...p, search:v})); if (v.trim().length>=1) searchCandidates(v.trim()); }} />
+                  <input className="flex-1 input" placeholder="搜尋使用者（帳號/Email）" value={createForm.search} onChange={(e)=> { const val = e.target.value || ''; setCreateForm(p=>({...p, search: val})); if (val.trim().length >= 1) searchCandidates(val.trim()); }} />
                   <button onClick={()=> searchCandidates(createForm.search)} className="btn-secondary px-2"><Search className="w-4 h-4"/></button>
                 </div>
                 <div className="max-h-40 overflow-auto border border-border rounded p-2 mb-2">
@@ -770,19 +959,239 @@ export default function AdminChatPage() {
                       <span key={inv.id} className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs">@{inv.username}</span>
                     ))}
                   </div>
+=======
+                {role === 'dev_admin' ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <input className="flex-1 input" placeholder="搜尋使用者（帳號/Email）" value={createForm.search} onChange={(e)=> { const val = e.target.value || ''; setCreateForm(p=>({...p, search: val})); if (val.trim().length >= 1) searchCandidates(val.trim()); }} />
+                      <button onClick={()=> searchCandidates(createForm.search)} className="btn-secondary px-2"><Search className="w-4 h-4"/></button>
+                    </div>
+                    <div className="max-h-40 overflow-auto border border-border rounded p-2 mb-2">
+                      {createForm.candidates.map(u=> (
+                        <button key={u.id} onClick={()=> setCreateForm(p=> p.invites.some(i=>i.id===u.id)? p : ({...p, invites:[...p.invites, {id:u.id, username:u.username}]}))} className="block w-full text-left text-sm py-1 hover:bg-surface-hover">
+                          @{u.username} <span className="text-xs text-muted">({u.role})</span>
+                        </button>
+                      ))}
+                      {createForm.candidates.length===0 && <div className="text-xs text-muted">輸入關鍵字搜尋可邀請的管理用戶</div>}
+                    </div>
+                    {createForm.invites.length>0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {createForm.invites.map(inv=> (
+                          <span key={inv.id} className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs">@{inv.username}</span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs text-muted mb-1">手動邀請（輸入 Gmail 或帳號，Enter 新增）</div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <input className="flex-1 input" placeholder="example@gmail.com 或 username" value={manualInviteInput} onChange={(e)=> setManualInviteInput(e.target.value)} onKeyDown={(e)=> { if (e.key==='Enter' && manualInviteInput.trim()) { const v=manualInviteInput.trim(); if (!manualInvites.includes(v)) setManualInvites(prev=>[...prev, v]); setManualInviteInput('') } }} />
+                      <button className="btn-secondary px-2" onClick={()=> { const v=manualInviteInput.trim(); if (v && !manualInvites.includes(v)) setManualInvites(prev=>[...prev, v]); setManualInviteInput('') }}><Plus className="w-4 h-4"/></button>
+                    </div>
+                    {manualInvites.length>0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {manualInvites.map(v=> (
+                          <span key={v} className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs flex items-center gap-2">{v}<button className="text-danger" onClick={()=> setManualInvites(prev=> prev.filter(x=> x!==v))}>移除</button></span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+>>>>>>> Stashed changes
                 )}
               </div>
               <div className="flex items-center justify-end gap-2">
                 <button onClick={()=> setShowCreateModal(false)} className="btn-secondary">取消</button>
                 <button onClick={submitCreateRoom} className="btn-primary">建立</button>
               </div>
+<<<<<<< Updated upstream
+              {/* 既有成員（可移除） */}
+=======
+              
+>>>>>>> Stashed changes
+              <div className="rounded-lg border border-border p-3 bg-surface/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    <span className="text-sm font-medium">現有成員</span>
+                  </div>
+                </div>
+                {members.length === 0 ? (
+                  <div className="text-sm text-muted">暫無成員</div>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto divide-y divide-border">
+                    {members.map(m => (
+                      <div key={m.id} className="flex items-center justify-between py-2 px-1">
+                        <div className="text-sm">{m.username} <span className="text-muted">{m.role || ''}</span></div>
+                        <button className="text-danger text-sm" onClick={()=> removeMember(m.id)}>移除</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
+<<<<<<< Updated upstream
+      {/* 編輯自訂聊天室彈窗 */}
+      {showEditModal && <>
+
+              {/* 私有房間邀請管理 */}
+=======
+      
+      {showEditModal && <>
+
+              
+>>>>>>> Stashed changes
+              <div className="rounded-lg border border-border p-3 bg-surface/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="w-4 h-4" />
+                    <span className="text-sm font-medium">邀請成員</span>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs">
+                    <input type="checkbox" checked={editForm.is_private} onChange={(e)=> setEditForm(p=>({...p, is_private:e.target.checked}))} />
+                    私有頻道（需邀請）
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    value={inviteSearch}
+<<<<<<< Updated upstream
+                    onChange={(e)=> { setInviteSearch(e.target.value); searchInviteCandidates(e.target.value) }}
+                    placeholder="搜尋使用者帳號或 Email"
+                    className="flex-1 input"
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={()=> searchInviteCandidates(inviteSearch)}
+                  >搜尋</button>
+                </div>
+                {inviteCandidates.length > 0 && (
+=======
+                    onChange={(e)=> { setInviteSearch(e.target.value); if (role==='dev_admin') searchInviteCandidates(e.target.value) }}
+                    placeholder={role==='dev_admin' ? '搜尋使用者帳號或 Email' : '手動輸入帳號/Gmail，按 Enter 新增'}
+                    className="flex-1 input"
+                    onKeyDown={(e)=> {
+                      if (role !== 'dev_admin' && e.key === 'Enter') {
+                        const v = inviteSearch.trim()
+                        if (v && !manualInvites.includes(v)) setManualInvites(prev => [...prev, v])
+                        setInviteSearch('')
+                      }
+                    }}
+                  />
+                  {role==='dev_admin' && (
+                    <button
+                      className="btn-secondary"
+                      onClick={()=> searchInviteCandidates(inviteSearch)}
+                    >搜尋</button>
+                  )}
+                </div>
+                {role==='dev_admin' && inviteCandidates.length > 0 && (
+>>>>>>> Stashed changes
+                  <div className="max-h-40 overflow-y-auto border border-border rounded mb-2">
+                    {inviteCandidates.map(u => (
+                      <div key={u.id} className="flex items-center justify-between px-3 py-2 border-b border-border/60 last:border-0">
+                        <div className="text-sm">{u.username} <span className="text-muted">{u.email || ''}</span></div>
+                        <button className="text-primary text-sm" onClick={()=> setInvited(prev => prev.find(x=>x.id===u.id) ? prev : [...prev, { id:u.id, username:u.username }])}>加入邀請</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {invited.length > 0 && (
+                  <div className="rounded border border-border p-2">
+                    <div className="text-xs text-muted mb-1">已邀請</div>
+                    <div className="flex flex-wrap gap-2">
+                      {invited.map(x => (
+                        <span key={x.id} className="px-2 py-1 rounded bg-surface-hover border border-border text-sm flex items-center gap-2">
+                          {x.username}
+                          <button className="text-danger" onClick={()=> setInvited(prev => prev.filter(i => i.id !== x.id))}>移除</button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+<<<<<<< Updated upstream
+=======
+                
+                <div className="mt-2">
+                  <label className="block text-xs text-muted mb-1">手動邀請（輸入 Gmail 或帳號，Enter 新增）</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="flex-1 input"
+                      placeholder="example@gmail.com 或 username"
+                      value={manualInviteInput}
+                      onChange={(e)=> setManualInviteInput(e.target.value)}
+                      onKeyDown={(e)=> {
+                        if (e.key === 'Enter' && manualInviteInput.trim()) {
+                          const v = manualInviteInput.trim()
+                          if (!manualInvites.includes(v)) setManualInvites(prev => [...prev, v])
+                          setManualInviteInput('')
+                        }
+                      }}
+                    />
+                    <button className="btn-secondary" onClick={()=> {
+                      const v = manualInviteInput.trim();
+                      if (v && !manualInvites.includes(v)) setManualInvites(prev => [...prev, v]);
+                      setManualInviteInput('')
+                    }}>新增</button>
+                  </div>
+                  {manualInvites.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {manualInvites.map(v => (
+                        <span key={v} className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs flex items-center gap-2">
+                          {v}
+                          <button className="text-danger" onClick={()=> setManualInvites(prev => prev.filter(x => x !== v))}>移除</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+>>>>>>> Stashed changes
+              </div>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-surface border border-border rounded-xl p-4 w-full max-w-lg shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-semibold">編輯聊天室</div>
+              <button onClick={()=> setShowEditModal(false)} className="text-muted hover:text-fg"><XCircle className="w-5 h-5"/></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm mb-1">名稱</label>
+                <input className="w-full input" value={editForm.name} onChange={(e)=> setEditForm(p=>({...p, name:e.target.value}))} />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">描述（可選）</label>
+                <textarea className="w-full input" rows={2} value={editForm.description} onChange={(e)=> setEditForm(p=>({...p, description:e.target.value}))} />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.is_private} onChange={(e)=> setEditForm(p=>({...p, is_private:e.target.checked}))}/> 私有頻道（需邀請）</label>
+                <label className="flex items-center gap-2 text-sm">最大人數 <input type="number" min={2} max={500} className="w-20 input" value={editForm.max_members} onChange={(e)=> setEditForm(p=>({...p, max_members: parseInt(e.target.value||'100') }))} /></label>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <button onClick={deleteRoom} className="btn-danger px-3 py-2">刪除頻道</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=> setShowEditModal(false)} className="btn-secondary">取消</button>
+                  <button onClick={submitEditRoom} className="btn-primary">儲存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+      }
+
+      
+
+<<<<<<< Updated upstream
         {/* 統計資訊 */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+=======
+        
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-6 gap-4 mb-2">
+>>>>>>> Stashed changes
           <div className="bg-surface border border-border rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <MessageSquare className="w-4 h-4 text-blue-500" />
@@ -845,22 +1254,27 @@ export default function AdminChatPage() {
             </div>
           </div>
         </div>
+        
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<<<<<<< Updated upstream
           {/* 聊天室列表 */}
-          <div className="lg:col-span-1 bg-surface border border-border rounded-2xl shadow-soft">
+=======
+          
+>>>>>>> Stashed changes
+          <div className="lg:col-span-1 bg-surface border border-border rounded-2xl shadow-soft flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100dvh - var(--fk-navbar-offset, 84px) - 120px)' }}>
             <div className="p-4 border-b border-border">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-fg">聊天室列表</h2>
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className="p-2 text-muted hover:text-fg transition-colors"
+                  className="hidden md:inline-flex p-2 text-muted hover:text-fg transition-colors"
                 >
                   <Filter className="w-4 h-4" />
                 </button>
               </div>
               
-              {/* 篩選器 */}
+              
               {showFilters && (
                 <div className="mb-4 p-3 bg-surface-hover rounded-lg">
                   <div className="space-y-3">
@@ -896,7 +1310,7 @@ export default function AdminChatPage() {
               )}
             </div>
             
-            <div className="max-h-96 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
               {rooms.length === 0 ? (
                 <div className="p-6 text-center text-muted">
                   <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -904,6 +1318,11 @@ export default function AdminChatPage() {
                 </div>
               ) : (
                 <div className="space-y-1">
+<<<<<<< Updated upstream
+                      {/* 刪除頻道操作已移至編輯彈窗 */}
+=======
+                      
+>>>>>>> Stashed changes
                   {rooms.map(room => (
                     <div
                       key={room.id}
@@ -938,6 +1357,9 @@ export default function AdminChatPage() {
                         </div>
                       </div>
                       
+                      {room.description && (
+                        <div className="text-xs text-muted whitespace-normal break-words mb-2">{room.description}</div>
+                      )}
                       <div className="flex items-center gap-2 text-xs text-muted mb-2">
                         <Users className="w-3 h-3" />
                         <span>{room.member_count || room.online_count || 0} 成員</span>
@@ -951,7 +1373,7 @@ export default function AdminChatPage() {
                       
                       {room.latest_message && (
                         <div className="text-xs text-muted">
-                          <p className="truncate">
+                          <p className="whitespace-normal break-words">
                             <span className="font-medium">{room.latest_message.user_name}:</span>{' '}
                             {room.latest_message.content}
                           </p>
@@ -965,11 +1387,15 @@ export default function AdminChatPage() {
             </div>
           </div>
 
+<<<<<<< Updated upstream
           {/* 聊天區域 */}
-          <div className="lg:col-span-2 bg-surface border border-border rounded-2xl shadow-soft flex flex-col">
+=======
+          
+>>>>>>> Stashed changes
+          <div className="lg:col-span-2 bg-surface border border-border rounded-2xl shadow-soft flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100dvh - var(--fk-navbar-offset, 84px) - 120px)' }}>
             {selectedRoom ? (
               <>
-                {/* 聊天室標題 */}
+                
                 <div className="p-4 border-b border-border">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -979,10 +1405,27 @@ export default function AdminChatPage() {
                         <p className="text-sm text-muted">{selectedRoom.description}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+<<<<<<< Updated upstream
+                    {/* Mobile actions */}
+=======
+                    
+>>>>>>> Stashed changes
+                    <div className="flex md:hidden items-center gap-2 mt-2">
+                      {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && ((selectedRoom as any).type === 'custom' || !!selectedRoom.is_private) && (
+                        <button onClick={()=> {
+                          setEditForm({
+                            name: selectedRoom.name || '',
+                            description: selectedRoom.description || '',
+                            is_private: !!selectedRoom.is_private,
+                            max_members: (selectedRoom as any).max_members || 100,
+                          });
+                          setShowEditModal(true);
+                        }} className="px-3 py-1.5 text-sm btn-secondary">編輯</button>
+                      )}
+                    </div>
+                    <div className="hidden md:flex items-center gap-3">
                       {messageSearch && (
-                        <div className="flex items-center gap-2">
-                          <Search className="w-4 h-4 text-muted" />
+                        <div className="flex items-center">
                           <input
                             type="text"
                             placeholder="搜尋訊息..."
@@ -1002,12 +1445,48 @@ export default function AdminChatPage() {
                         <Users className="w-4 h-4" />
                         <span>{selectedRoom.member_count || selectedRoom.online_count || 0} 成員</span>
                       </div>
+                      {(role === 'dev_admin' || role === 'cross_admin' || role === 'campus_admin') && ((selectedRoom as any).type === 'custom' || !!selectedRoom.is_private) && (
+                        <button onClick={()=> {
+                          setEditForm({
+                            name: selectedRoom.name || '',
+                            description: selectedRoom.description || '',
+                            is_private: !!selectedRoom.is_private,
+                            max_members: (selectedRoom as any).max_members || 100,
+                          });
+                          setShowEditModal(true);
+                        }} className="px-3 py-1.5 text-sm btn-secondary">編輯</button>
+                      )}
                     </div>
                   </div>
                 </div>
 
+<<<<<<< Updated upstream
                 {/* 訊息列表 */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-96 max-h-96">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-4 md:pb-0">
+=======
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-4 md:pb-0">
+                  
+                  {messages.some(m => m.is_pinned) && (
+                    <div className="sticky top-0 z-10 -mt-4 pt-4 pb-2 bg-gradient-to-b from-surface to-surface/80 backdrop-blur border-b border-border/60">
+                      <div className="flex items-center gap-2 text-amber-700 mb-2">
+                        <Pin className="w-4 h-4" />
+                        <span className="text-sm font-medium">置頂訊息</span>
+                      </div>
+                      <div className="space-y-2">
+                        {messages.filter(m => m.is_pinned).map(pm => (
+                          <div key={`pin-${pm.id}`} className="text-sm p-2 rounded border border-amber-200 bg-amber-50">
+                            <div className="flex items-center justify-between">
+                              <div className="font-medium">{pm.user.username}</div>
+                              <span className="text-xs text-muted">{formatTime(pm.created_at)}</span>
+                            </div>
+                            <div className="text-sm whitespace-pre-wrap break-words mt-1">{pm.content}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+>>>>>>> Stashed changes
                   {messages.length === 0 ? (
                     <div className="text-center py-8 text-muted">
                       <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -1017,7 +1496,7 @@ export default function AdminChatPage() {
                     <>
                       {messages.map(message => (
                         <div key={message.id} className="group">
-                          {/* 置頂訊息標記 */}
+                          
                           {message.is_pinned && (
                             <div className="flex items-center gap-2 mb-2 text-xs text-amber-600">
                               <Pin className="w-3 h-3" />
@@ -1025,7 +1504,7 @@ export default function AdminChatPage() {
                             </div>
                           )}
                           
-                          {/* 回覆引用 */}
+                          
                           {message.reply_to && (
                             <div className="ml-8 mb-2 p-2 bg-muted/20 border-l-2 border-muted rounded text-xs">
                               <span className="font-medium text-muted">{message.reply_to.user_name}: </span>
@@ -1053,14 +1532,14 @@ export default function AdminChatPage() {
                                 )}
                               </div>
                               
-                              {/* 普通訊息 */}
+                              
                               {message.message_type === 'text' && (
                                 <div className="bg-surface-hover rounded-lg p-3 border border-border">
                                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                                 </div>
                               )}
 
-                              {/* 系統訊息 */}
+                              
                               {message.message_type === 'system' && (
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                   <div className="flex items-center gap-2 text-blue-800">
@@ -1071,7 +1550,7 @@ export default function AdminChatPage() {
                                 </div>
                               )}
 
-                              {/* 公告訊息 */}
+                              
                               {message.message_type === 'announcement' && message.announcement && (
                                 <div className={`border rounded-lg p-3 ${
                                   message.announcement.priority === 'urgent' ? 'bg-red-50 border-red-200' :
@@ -1110,7 +1589,7 @@ export default function AdminChatPage() {
                                 </div>
                               )}
 
-                              {/* 貼文審核訊息 */}
+                              
                               {message.message_type === 'post_review' && message.post && (
                                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                                   <div className="flex items-center gap-2 mb-2">
@@ -1135,7 +1614,7 @@ export default function AdminChatPage() {
                                 </div>
                               )}
 
-                              {/* 投票訊息 */}
+                              
                               {message.message_type === 'vote' && message.vote && (
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                   <div className="flex items-center gap-2 mb-3">
@@ -1159,11 +1638,13 @@ export default function AdminChatPage() {
                                   )}
                                   
                                   <div className="space-y-2">
-                                    {message.vote.options.map(option => {
-                                      const isSelected = message.vote?.user_voted_option === option.id
+                                  {message.vote.options.map(option => {
+                                      const selectedByMe = (option as any).me === true
+                                      const isSelected = message.vote?.allow_multiple ? selectedByMe : ((message.vote?.user_voted_option === option.id) || selectedByMe)
                                       const isWinner = message.vote?.result_option_id === option.id
+                                      const count = typeof (option as any).count === 'number' ? (option as any).count : (typeof (option as any).votes === 'number' ? (option as any).votes : 0)
                                       const percentage = message.vote?.total_votes > 0 
-                                        ? (option.count / message.vote.total_votes * 100) 
+                                        ? (count / message.vote.total_votes * 100) 
                                         : 0
 
                                       return (
@@ -1183,11 +1664,11 @@ export default function AdminChatPage() {
                                                 {isSelected && <CheckCircle className="w-4 h-4 text-blue-600" />}
                                                 {isWinner && <span className="text-xs text-green-600">獲勝</span>}
                                                 <span className="text-xs text-muted">
-                                                  {option.count} 票 ({percentage.toFixed(0)}%)
+                                                  {count} 票 ({percentage.toFixed(0)}%)
                                                 </span>
                                               </div>
                                             </div>
-                                            {/* 進度條 */}
+                                            
                                             <div className="mt-2 h-1 bg-gray-200 rounded-full overflow-hidden">
                                               <div 
                                                 className={`h-full transition-all ${
@@ -1214,7 +1695,7 @@ export default function AdminChatPage() {
                                 </div>
                               )}
                               
-                              {/* 訊息操作選單 */}
+                              
                               {canModerate && (
                                 <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
@@ -1254,9 +1735,9 @@ export default function AdminChatPage() {
                   )}
                 </div>
 
-                {/* 回覆預覽 */}
+                
                 {replyTo && (
-                  <div className="px-4 py-2 bg-muted/10 border-t border-border">
+                  <div className="hidden md:block px-4 py-2 bg-muted/10 border-t border-border">
                     <div className="flex items-center justify-between">
                       <div className="text-sm">
                         <span className="text-muted">回覆 </span>
@@ -1273,9 +1754,13 @@ export default function AdminChatPage() {
                   </div>
                 )}
 
-                {/* 訊息輸入區 */}
+<<<<<<< Updated upstream
+                {/* 訊息輸入區（行動與桌面） */}
+=======
+                
+>>>>>>> Stashed changes
                 <div className="p-4 border-t border-border">
-                  {/* 系統頻道權限檢查 */}
+                  
                   {selectedRoom?.type === 'system' && role !== 'dev_admin' ? (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
                       <div className="flex items-center justify-center gap-2 text-amber-700 mb-2">
@@ -1288,7 +1773,7 @@ export default function AdminChatPage() {
                     </div>
                   ) : (
                     <div className="flex items-start gap-3">
-                      {/* 輸入框 - 獨立元素 */}
+                      
                       <div className="flex-1">
                         <textarea
                           value={messageInput}
@@ -1335,10 +1820,10 @@ export default function AdminChatPage() {
                         }} />
                       </div>
                       
-                      {/* 投票按鈕 - 獨立元素 */}
+                      
                       <button
                         onClick={() => setShowVoteModal(true)}
-                        className="px-3 h-12 border border-border rounded-lg hover:bg-surface-hover flex items-center gap-1 shrink-0 bg-surface"
+                        className="hidden md:inline-flex px-3 h-12 border border-border rounded-lg hover:bg-surface-hover items-center gap-1 shrink-0 bg-surface"
                         title="發起投票"
                         disabled={selectedRoom?.type === 'system'}
                       >
@@ -1346,7 +1831,7 @@ export default function AdminChatPage() {
                         <span className="hidden sm:inline text-sm">投票</span>
                       </button>
                       
-                      {/* 發送按鈕 - 獨立元素 */}
+                      
                       <button
                         onClick={sendMessage}
                         disabled={!messageInput.trim() || sending}
@@ -1372,7 +1857,7 @@ export default function AdminChatPage() {
           </div>
         </div>
 
-        {/* 訊息詳情側邊欄 */}
+        
         {selectedMessage && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1467,7 +1952,7 @@ export default function AdminChatPage() {
           </div>
         )}
         
-        {/* 發起投票對話框 */}
+        
         {showVoteModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1555,6 +2040,13 @@ export default function AdminChatPage() {
                     <option value={72}>3 天</option>
                     <option value={168}>1 週</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-fg mb-2">投票模式</label>
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={!!voteForm.allow_multiple} onChange={(e)=> setVoteForm(prev => ({...prev, allow_multiple: e.target.checked}))} />
+                    允許多選
+                  </label>
                 </div>
                 
                 <div className="flex justify-end gap-3 pt-4 border-t border-border">

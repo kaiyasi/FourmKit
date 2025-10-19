@@ -12,6 +12,7 @@ interface CommentItem {
   content: string
   status: string
   is_deleted: boolean
+  warned?: boolean
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -39,6 +40,7 @@ interface CommentStats {
   pending: number
   approved: number
   rejected: number
+  warning: number
   deleted: number
   today: number
   week: number
@@ -51,6 +53,9 @@ interface School {
   name: string
 }
 
+/**
+ *
+ */
 export default function AdminCommentsMonitorPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +71,6 @@ export default function AdminCommentsMonitorPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [deleteReason, setDeleteReason] = useState('')
 
-  // 篩選狀態
   const [showFilters, setShowFilters] = useState(false)
   const [status, setStatus] = useState<string>('')
   const [keyword, setKeyword] = useState('')
@@ -103,7 +107,14 @@ export default function AdminCommentsMonitorPage() {
       setError(null)
 
       const params = new URLSearchParams()
-      if (status) params.append('status', status)
+      if (status) {
+        if (status === 'warned') {
+          params.append('status', 'rejected')
+          params.append('warned', '1')
+        } else {
+          params.append('status', status)
+        }
+      }
       if (keyword) params.append('keyword', keyword)
       if (postId) params.append('post_id', postId)
       if (school) params.append('school', school)
@@ -299,7 +310,7 @@ export default function AdminCommentsMonitorPage() {
       
       <div className="container mx-auto px-4 py-6 max-w-7xl sm:pt-24 md:pt-28">
         <div className="flex flex-col gap-6">
-          {/* 標題與刷新 */}
+          
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-fg flex items-center gap-3">
               <MessageSquare className="w-6 h-6" />
@@ -328,7 +339,7 @@ export default function AdminCommentsMonitorPage() {
              </div>
           </div>
 
-          {/* 統計卡片 */}
+          
           {stats && (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
               <div className="bg-surface border border-border rounded-xl p-4">
@@ -352,16 +363,24 @@ export default function AdminCommentsMonitorPage() {
                    <CheckCircle className="w-4 h-4 text-green-500" />
                    <h3 className="font-medium text-sm text-fg">正常</h3>
                  </div>
-                 <div className="text-2xl font-bold text-fg">{stats.approved}</div>
-               </div>
-               
-               <div className="bg-surface border border-border rounded-xl p-4">
-                 <div className="flex items-center gap-2 mb-2">
-                   <XCircle className="w-4 h-4 text-red-500" />
-                   <h3 className="font-medium text-sm text-fg">違規</h3>
-                 </div>
-                 <div className="text-2xl font-bold text-fg">{stats.rejected}</div>
-               </div>
+               <div className="text-2xl font-bold text-fg">{stats.approved}</div>
+              </div>
+              
+              <div className="bg-surface border border-border rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="w-4 h-4 text-red-500" />
+                  <h3 className="font-medium text-sm text-fg">違規</h3>
+                </div>
+                <div className="text-2xl font-bold text-fg">{stats.rejected}</div>
+              </div>
+
+              <div className="bg-surface border border-border rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <h3 className="font-medium text-sm text-fg">警告</h3>
+                </div>
+                <div className="text-2xl font-bold text-fg">{stats.warning}</div>
+              </div>
               
               <div className="bg-surface border border-border rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -389,7 +408,7 @@ export default function AdminCommentsMonitorPage() {
             </div>
           )}
 
-          {/* 篩選器 */}
+          
           <div className="bg-surface border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-medium text-fg">篩選條件</h3>
@@ -419,13 +438,14 @@ export default function AdminCommentsMonitorPage() {
                      value={status}
                      onChange={(e) => setStatus(e.target.value)}
                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                   >
-                     <option value="">全部狀態</option>
-                     <option value="pending">待檢查</option>
-                     <option value="approved">正常</option>
-                     <option value="rejected">違規</option>
-                     <option value="deleted">已刪除</option>
-                   </select>
+                  >
+                    <option value="">全部狀態</option>
+                    <option value="pending">待檢查</option>
+                    <option value="approved">正常</option>
+                    <option value="rejected">違規</option>
+                    <option value="warned">警告</option>
+                    <option value="deleted">已刪除</option>
+                  </select>
                 </div>
                 
                 <div>
@@ -476,7 +496,7 @@ export default function AdminCommentsMonitorPage() {
             )}
           </div>
 
-          {/* 留言列表 */}
+          
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
               {loading ? (
@@ -507,12 +527,14 @@ export default function AdminCommentsMonitorPage() {
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                               comment.status === 'pending' ? 'bg-warning-bg text-warning-text' :
                               comment.status === 'approved' ? 'bg-success-bg text-success-text' :
+                              (comment.status === 'rejected' && comment.warned) ? 'bg-amber-100 text-amber-800' :
                               comment.status === 'rejected' ? 'bg-danger-bg text-danger-text' :
                               comment.status === 'deleted' ? 'bg-muted/10 text-muted' :
                               'bg-muted/10 text-muted'
                             }`}>
                               {comment.status === 'pending' ? '待檢查' :
                                comment.status === 'approved' ? '正常' :
+                               (comment.status === 'rejected' && comment.warned) ? '警告' :
                                comment.status === 'rejected' ? '違規' :
                                comment.status === 'deleted' ? '已刪除' : '未知'}
                             </span>
@@ -652,7 +674,7 @@ export default function AdminCommentsMonitorPage() {
           </div>
         </div>
 
-        {/* 拒絕確認對話框 */}
+        
        {showRejectModal && (
          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
            <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
@@ -691,7 +713,7 @@ export default function AdminCommentsMonitorPage() {
         </div>
       )}
 
-      {/* 刪除確認對話框 */}
+      
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
@@ -730,7 +752,7 @@ export default function AdminCommentsMonitorPage() {
         </div>
       )}
 
-             {/* 詳情對話框 */}
+             
        {showDetailModal && (
          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
            <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -754,7 +776,7 @@ export default function AdminCommentsMonitorPage() {
                </div>
              ) : detailData ? (
                <div className="space-y-6">
-                 {/* 留言內容 */}
+                 
                  <div>
                    <h4 className="font-medium text-fg mb-2">留言內容</h4>
                    <div className="bg-surface-hover border border-border rounded-lg p-4">
@@ -765,7 +787,7 @@ export default function AdminCommentsMonitorPage() {
                    </div>
                  </div>
                  
-                 {/* 貼文內容 */}
+                 
                  <div>
                    <h4 className="font-medium text-fg mb-2">所屬貼文</h4>
                    <div className="bg-surface-hover border border-border rounded-lg p-4">
@@ -784,7 +806,7 @@ export default function AdminCommentsMonitorPage() {
                    </div>
                  </div>
                  
-                 {/* 作者信息 */}
+                 
                  <div>
                    <h4 className="font-medium text-fg mb-2">作者信息</h4>
                    <div className="bg-surface-hover border border-border rounded-lg p-4">
@@ -822,7 +844,7 @@ export default function AdminCommentsMonitorPage() {
                    </div>
                  </div>
                  
-                 {/* 時間信息 */}
+                 
                  <div>
                    <h4 className="font-medium text-fg mb-2">時間信息</h4>
                    <div className="bg-surface-hover border border-border rounded-lg p-4">

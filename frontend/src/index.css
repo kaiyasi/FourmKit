@@ -39,6 +39,9 @@
   --fk-bottomnav-offset: calc(64px + env(safe-area-inset-bottom));
 }
 
+/* 統一手機卡片寬度 */
+.mobile-card { width: 100%; }
+
 .page-content {
   /* 兩端都留點氣口，避免元素一上來就貼邊 */
   padding-top: max(var(--fk-navbar-offset, 84px), 16px);

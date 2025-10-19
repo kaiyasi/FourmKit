@@ -14,14 +14,12 @@ import RegisterConfirmPage from '@/pages/RegisterConfirmPage'
 import PostList from '@/components/PostList'
 import HomeComposer from '@/components/home/HomeComposer'
 import FilterBar from '@/components/FilterBar'
-// 聊天功能已移除
 import PostDetailPage from '@/pages/PostDetailPage'
 import AdminCommentsMonitorPage from '@/pages/admin/AdminCommentsMonitorPage'
 import DiscordPage from '@/pages/admin/DiscordPage'
 import AdminChatPage from '@/pages/admin/AdminChatPage'
 import ProjectStatusPage from '@/pages/admin/ProjectStatusPage'
 import ServerStatusPage from '@/pages/admin/ServerStatusPage'
-// TokenManagementPage 已移除
 import EventStatusCard from '@/components/admin/EventStatusCard'
 import ResizableSection from '@/components/ResizableSection'
 import { canSetMode, getUserId } from '@/utils/auth'
@@ -44,13 +42,15 @@ type Role = 'guest' | 'user' | 'moderator' | 'admin'
 interface ProgressItem { name: string; status: 'completed'|'in_progress'|'planned'; description: string }
 interface ProgressData { progress_items: ProgressItem[]; recent_updates: string[]; last_updated: string; error?: string }
 
+/**
+ *
+ */
 export default function App() {
   const { isLoggedIn } = useAuth();
   
-  // 啟用公告通知整合
   useAnnouncementNotifications()
   
-  /* ---------- 局部 CSS：740–820px 調整右欄 ---------- */
+  /** ---------- 局部 CSS：740–820px 調整右欄 ---------- */
   const MidWidthCSS = () => (
     <style>{`
       @media (min-width: 740px) and (max-width: 820px) {
@@ -60,7 +60,6 @@ export default function App() {
     `}</style>
   )
 
-  // 響應式螢幕尺寸檢測
   function useScreenSize() {
     const [isSmallScreen, setIsSmallScreen] = useState(false)
     const [isTinyScreen, setIsTinyScreen] = useState(false)
@@ -77,17 +76,14 @@ export default function App() {
     return { isSmallScreen, isTinyScreen }
   }
 
-  // 取得響應式螢幕尺寸狀態（修正 ReferenceError）
   const { isSmallScreen, isTinyScreen } = useScreenSize()
 
-  // 站台標題（可由後端提供設定）
   const [siteTitle, setSiteTitle] = useState<string>('ForumKit')
   useEffect(() => {
     let alive = true
     api<{ home_title?: string }>('/api/settings/site')
       .then(j => { if (!alive) return; const t = (j?.home_title || '').trim(); if (t) setSiteTitle(t) })
       .catch((e)=>{
-        // Fail silently, as this is not a critical piece of information.
         console.warn('Failed to fetch site title:', e.message);
       })
     return () => { alive = false }
@@ -99,7 +95,6 @@ export default function App() {
       let idSeq = 1
       const push = (text: string) => {
         const id = idSeq++
-        // 安靜模式：只記錄，不彈出提示
         const quiet = (()=>{ try { return localStorage.getItem('fk_quiet_toasts') === '1' } catch { return false } })()
         if (!quiet) {
           setToasts(cur => [...cur, { id, text }])
@@ -110,18 +105,15 @@ export default function App() {
       const myClientId = getClientId()
       const myUserId = isLoggedIn ? getUserId() : null
       
-      // 統一的 post 處理器：僅對本人顯示「已提交審核」提示；不再注入清單
       const combinedPostHandler = (payload: any) => {
         const { post, origin, client_tx_id } = payload
         
         console.info(`[App] processing socket payload: post_id=${post?.id} origin=${origin} tx_id=${client_tx_id}`)
         
-        // 僅通知發文者：改為「已提交審核」並記錄我的貼文 id（供列表顯示私有標記）
         if (origin === `client:${myClientId}` || (myUserId && origin === `user:${myUserId}`)) {
           const text = `您的貼文已提交審核：${(post?.content ?? '').slice(0, 30)}…`
           push(text)
           try { addNotification({ type: 'post.pending', text, school: deriveSchoolTag(payload) }) } catch {}
-          // 將正式 id 回寫到本地占位，並保留 pending 標記
           try { onNewPost?.({ ...payload, post: { ...post, pending_private: true } }) } catch {}
           try {
             const key = 'forumkit_my_posts'
@@ -133,7 +125,6 @@ export default function App() {
             }
           } catch {}
         }
-        // 不再注入 pending 貼文到清單（等待審核通過才出現在後端清單中）
       }
       
       const deriveSchoolTag = (src?: any) => {
@@ -160,7 +151,6 @@ export default function App() {
         try { addNotification({ type: 'announce.new', text, school: deriveSchoolTag(a) }) } catch {}
       }
       
-      // 只註冊一次 post listener，合併 toast 和狀態更新功能
       ensurePostListener(combinedPostHandler)
       ensureCommentListener(onCmt)
       ensureAnnounceListener(onAnn)
@@ -174,7 +164,6 @@ export default function App() {
           addNotification({ type: 'reaction', text: txt, school: deriveSchoolTag(payload) })
         } catch {}
       })
-      // 審核結果：只對自己看得懂（我的貼文 ID）
       ensureModerationListeners(
         (payload:any)=>{
           const id = Number(payload?.id)
@@ -186,14 +175,12 @@ export default function App() {
               const text = `您的貼文 #${id} 已通過審核`
               push(text)
               try { addNotification({ type: 'post.approved', text, school: deriveSchoolTag(payload) }) } catch {}
-              // 記錄到已審清單
               const k2 = 'forumkit_approved_posts'
               const ap = JSON.parse(localStorage.getItem(k2) || '[]') as number[]
               if (!ap.includes(id)) {
                 localStorage.setItem(k2, JSON.stringify([id, ...ap].slice(0,500)))
               try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key: k2 } })) } catch {}
             }
-            // 從送審清單移除，避免「送審」數持續累加
             const next = arr.filter(x => x !== id)
             localStorage.setItem(key, JSON.stringify(next))
             try { window.dispatchEvent(new CustomEvent('forumkit_local_change', { detail: { key } })) } catch {}
@@ -220,7 +207,6 @@ export default function App() {
         }catch{}
       }
     )
-      // 刪文請求事件（管理員/審核角色收到）
       ensureDeleteRequestListeners(
         (payload:any)=>{
           const role = (localStorage.getItem('role')||'guest')
@@ -249,10 +235,8 @@ export default function App() {
         }
       )
 
-      // 已移除：支援/事件回報僅針對 dev_admin 的即時提示，避免干擾
       getSocket()  // 確保 Socket 連線
       
-      // 清理函數由 ensureXXXListener 內部處理，這裡不需要手動 off
     }, [onNewPost])
     return toasts
   }
@@ -271,7 +255,6 @@ export default function App() {
   }
 
   const [pathname, setPathname] = useState(() => {
-    // 安全地獲取 pathname，避免在 SSR 或某些環境中出現問題
     try {
       return window?.location?.pathname || '/'
     } catch {
@@ -287,23 +270,19 @@ export default function App() {
   const [progressLoading, setProgressLoading] = useState(true)
 
 
-  // 手機用戶直接導向 boards 頁面
   const isMobileDevice = typeof navigator !== 'undefined' && /Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   
-  // 如果是手機用戶且在首頁，直接重導向到 boards
   if (isMobileDevice && pathname === '/' && !window.location.search.includes('stay')) {
     window.location.href = '/boards'
     return <div className="min-h-screen grid place-items-center"><div className="text-muted">導向中...</div></div>
   }
   
-  // 維護模式的手機控制保持不變
   const mobileGateEnabled = platform?.mobile_maintenance ?? false
   if (mobileGateEnabled && isMobileDevice && pathname !== '/mode') {
     return <MobileUnderConstruction message={platform?.mobile_maintenance_message} />
   }
   const [injectedItems, setInjectedItems] = useState<any[]>([])
 
-  // 未登入時：刷新後清掉本地送審/已審紀錄（匿名臨時帳號刷新即重置）
   useEffect(() => {
     if (!isLoggedIn) {
       try { localStorage.removeItem('forumkit_my_posts') } catch {}
@@ -311,13 +290,10 @@ export default function App() {
     }
   }, [])
   
-  // 已移除：「我的送審 / 已審」區塊
   
-  // 用於 upsert 邏輯的 injected 處理
   const handleNewPost = (postOrPayload: any) => {
     const timestamp = new Date().toISOString()
     
-    // 如果是來自 Socket.IO 的 payload 格式
     if (postOrPayload?.post) {
       console.info(`[handleNewPost] socket payload at ${timestamp}:`, {
         post_id: postOrPayload.post?.id,
@@ -326,14 +302,12 @@ export default function App() {
         event_id: postOrPayload.event_id
       })
       
-      // 使用專門的 socket payload 處理函數
       setInjectedItems(prev => {
         const result = upsertSocketPayload(prev, postOrPayload)
         console.info(`[handleNewPost] socket upsert: ${prev.length} -> ${result.length} items`)
         return result
       })
     } else {
-      // 直接的 post 對象（來自 PostForm 的樂觀插入或 API 回應）
       const isOptimistic = !postOrPayload?.id
       console.info(`[handleNewPost] direct post at ${timestamp}: ${isOptimistic ? 'optimistic' : 'confirmed'} id=${postOrPayload?.id} tx_id=${postOrPayload?.client_tx_id}`)
       
@@ -345,7 +319,6 @@ export default function App() {
     }
   }
 
-  // 初始化主題
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
@@ -353,7 +326,6 @@ export default function App() {
     return () => html.classList.remove('theme-ready')
   }, [])
 
-  // 重啟時清除搜尋條件，學校預設「全部」但不覆蓋使用者已選
   useEffect(() => {
     try { localStorage.removeItem('posts_filter_keyword') } catch {}
     try { localStorage.removeItem('posts_filter_start') } catch {}
@@ -370,7 +342,6 @@ export default function App() {
       .catch(e => {
         const msg = (e && e.message) ? String(e.message) : String(e);
         if (msg.includes('IP Blocked')) {
-          // This error is expected when blocked, let the global overlay handle it.
         } else {
           setError(msg);
           const m = msg.match(/HTTP\s+(\d{3})/);
@@ -380,7 +351,6 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [])
 
-  // 監聽來自 /mode 的更新事件，及時刷新平台模式（含手機維護設定）
   useEffect(() => {
     const onModeUpdated = () => {
       fetch('/api/mode')
@@ -408,7 +378,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  // 在 development 模式，以及 test 模式(非管理員)的首頁載入進度（後端已合併 CHANGELOG）
   useEffect(() => {
     const shouldFetchProgress = (
       (platform?.mode === 'development' && pathname === '/') ||
@@ -426,7 +395,6 @@ export default function App() {
           }
         } catch (e:any) {
           if (e.message.includes('IP Blocked')) {
-            // Silently fail, the overlay will handle the UI
           } else {
             setProgressData({ progress_items: [], recent_updates: [], last_updated: new Date().toISOString(), error: e?.message || String(e) })
           }
@@ -447,14 +415,11 @@ export default function App() {
     return <ErrorPage status={status} title={title} message={error || '無法取得平台模式'} hint={hint} />
   }
 
-  // /mode 管理頁
   if (pathname === '/mode') {
     return <AdminModePanel platform={platform} onUpdated={setPlatform} full />
   }
 
-  // 聊天功能已移除
 
-  // 錯誤/限制頁（Google 校外或登入模式限制）
   if (pathname === '/error/external-account') {
     return <ExternalAccountErrorPage />
   }
@@ -462,7 +427,6 @@ export default function App() {
     return <LoginRestrictedPage />
   }
 
-  // 新登入/註冊頁（Google 起手 + 快速註冊）
   if (pathname === '/auth') {
     return <NewAuthPage />
   }
@@ -470,7 +434,6 @@ export default function App() {
     return <RegisterConfirmPage />
   }
 
-  // /posts/:id 詳情頁（public approved）
   if (pathname && pathname.startsWith('/posts/')) {
     const idStr = pathname.split('/')[2]
     const id = Number(idStr)
@@ -479,38 +442,29 @@ export default function App() {
     }
   }
 
-      // /admin/comments 留言監控頁（需權限，後端保護）
     if (pathname === '/admin/comments') {
         return <AdminCommentsMonitorPage />
     }
 
-  // /admin/discord Discord 管理頁（需權限，後端保護）
   if (pathname === '/admin/discord') {
     return <DiscordPage />
   }
 
-  // /admin/chat 管理員聊天室（需權限，後端保護）
   if (pathname === '/admin/chat') {
     return <AdminChatPage />
   }
 
-  // /admin/project 專案空間狀態頁（需權限，後端保護）
   if (pathname === '/admin/project') {
     return <ProjectStatusPage />
   }
 
-  // /admin/platform 伺服器狀態頁（需權限，後端保護）
   if (pathname === '/admin/platform') {
     return <ServerStatusPage />
   }
 
-  // /admin/tokens Token 管理工具（需權限，後端保護）
   console.log('[RoutingDebug] 當前 pathname:', pathname)
-  // Token 管理頁面已移除
     
-    // 支援功能已移除
 
-  // 維護模式
   if (platform.mode === 'maintenance') {
     return (
       <div className="min-h-screen flex items-center justify-center p-3 sm:p-6 text-center">
@@ -525,29 +479,25 @@ export default function App() {
           <p className="text-sm text-muted mb-4">我們正在升級服務以提供更佳體驗，造成不便敬請見諒。</p>
           <p className="mb-4 whitespace-pre-wrap text-sm sm:text-base">{platform.maintenance_message || '維護作業進行中。'}</p>
           {platform.maintenance_until && <p className="text-sm text-muted mb-4 sm:mb-6">預計完成：{platform.maintenance_until}</p>}
-          {/* 支援功能已移除 */}
+          
         </div>
       </div>
     )
   }
 
-  // 取代原本的 splitDatePrefix
   const parseUpdate = (raw: string): { date?: string; text: string } => {
     if (!raw) return { text: '' }
 
-    // 支援：YYYY-MM-DD / YYYY/M/D / M/D / M月D日，分隔符可有可無
     const dateRe = /(^(?:\d{4}-\d{2}-\d{2}|\d{4}\/\d{1,2}\/\d{1,2}|\d{1,2}\/\d{1,2}|\d{1,2}月\d{1,2}日))\s*[-：:·]?\s*/
 
     let s = raw.trim()
     let badge: string | undefined
 
-    // 第一次擷取作為徽章
     const first = s.match(dateRe)
     if (first) {
       badge = first[1]
     }
 
-    // 無論是否有抓到徽章，都把開頭連續的「日期 + 分隔」清掉到見不到為止
     let guard = 0
     while (dateRe.test(s) && guard++ < 10) {
       s = s.replace(dateRe, '')
@@ -556,18 +506,15 @@ export default function App() {
     return { date: badge, text: s.trim() }
   }
 
-  // 顯示「開發頁」：
-  // - development 模式任何人
-  // - test 模式的非管理員
   if (((platform.mode === 'development') || (platform.mode === 'test' && !canSetMode())) && pathname === '/') {
     return (
       <div className="min-h-screen">
         <MidWidthCSS />
 
-        {/* dev_admin 平台狀態卡 */}
+        
         <EventStatusCard />
 
-        {/* 右上角主題切換器 */}
+        
         <div className="fixed top-4 right-4 z-50">
           <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface/70 backdrop-blur border border-border shadow-sm">
             <ThemeToggle />
@@ -577,9 +524,9 @@ export default function App() {
 
         <div className="flex flex-col items-center pt-12 sm:pt-16 md:pt-20 px-3 sm:px-4 pb-6 sm:pb-8">
           <div className="max-w-4xl w-full space-y-4 sm:space-y-6 md:space-y-8">
-            {/* Socket 連線測試徽章已移除 */}
+            
 
-            {/* 頂部介紹卡 */}
+            
             <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 md:p-8 shadow-soft">
               <div className="text-center mb-4 sm:mb-6 md:mb-8">
                 <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold dual-text mb-2 sm:mb-3">{siteTitle}</h1>
@@ -590,23 +537,23 @@ export default function App() {
               </div>
             </div>
 
-            {/* 開發專區：左顏色搭配器 + 右進度/更新 */}
+            
             {isSmallScreen ? (
               <div className="space-y-4 sm:space-y-6">
-                {/* 左：顏色搭配器 */}
+                
                 <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft">
                   <h3 className="font-semibold dual-text mb-3 sm:mb-4">顏色搭配器</h3>
                   <ColorDesigner />
                 </div>
 
-                {/* Realtime 聊天室示範 */}
-                {/* 聊天室已移除 */}
+                
+                
 
-                {/* 右：開發紀錄 */}
+                
                 <div className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft right-col-spacing">
                   <h3 className="font-semibold dual-text mb-3 sm:mb-4">開發紀錄</h3>
 
-                  {/* 項目進度（可拖拉） */}
+                  
                   <ResizableSection
                     title="項目進度"
                     min={200}
@@ -635,7 +582,7 @@ export default function App() {
                     )}
                   </ResizableSection>
 
-                  {/* 更新紀錄（每條獨立顯示日期） */}
+                  
                   <ResizableSection
                     title="更新紀錄"
                     min={200}
@@ -669,9 +616,8 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              // 桌機
               <div className="flex h-[740px] md:h-[780px] lg:h-[820px] bg-surface border border-border rounded-2xl overflow-hidden shadow-soft relative isolate">
-                {/* 左：顏色搭配器 */}
+                
                 <div className="w-[400px] flex-shrink-0">
                   <div className="h-full min-h-[740px] p-4 md:p-6 overflow-y-auto">
                     <h3 className="font-semibold dual-text mb-4">顏色搭配器</h3>
@@ -679,11 +625,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 右：開發紀錄區域 */}
+                
                 <div className="flex-1 h-full p-4 md:p-6 overflow-hidden flex flex-col right-col-spacing min-h-0">
                   <h3 className="font-semibold dual-text mb-4">開發紀錄</h3>
                   <div className="flex-1 flex flex-col space-y-4 min-h-0">
-                    {/* 上：項目進度（可拖拉） */}
+                    
                     <ResizableSection
                       title="項目進度"
                       min={350}
@@ -712,7 +658,7 @@ export default function App() {
                       )}
                     </ResizableSection>
 
-                    {/* 下：更新紀錄（每條獨立顯示日期） */}
+                    
                     <ResizableSection
                       title="更新紀錄"
                       min={350}
@@ -746,14 +692,14 @@ export default function App() {
                 </div>
               </div>
             )}
-            {/* 桌機：聊天室獨立區塊（不佔顏色搭配器區） */}
+            
             {!isSmallScreen && (
               <div className="mt-4 bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
-                {/* 聊天室已移除 */}
+                
               </div>
             )}
 
-            {/* 意見回饋 */}
+            
             <div id="feedback" className="bg-surface border border-border rounded-2xl p-3 sm:p-4 md:p-6 shadow-soft relative z-[5]">
               <h3 className="font-semibold dual-text mb-3 sm:mb-4">意見回饋</h3>
               <ReportForm compact />
@@ -766,7 +712,6 @@ export default function App() {
     )
   }
 
-  // 手機版主頁：Hero(Title+副標注意事項) → Composer（動態置中 Composer 上緣於視窗中線）
   if (isSmallScreen) {
     const token = (()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()
     const heroRef = useRef<HTMLDivElement | null>(null)
@@ -786,12 +731,12 @@ export default function App() {
     return (
       <div className="min-h-[100dvh] flex flex-col overflow-hidden">
         <main className="flex-1 px-4" style={{ paddingTop: padTop, paddingBottom: 'var(--fk-bottomnav-offset, 72px)' }}>
-          {/* Hero（固定格式：標題 + 注意事項） */}
+          
           <section ref={heroRef} className="max-w-[720px] mx-auto text-center mb-16">
             <h1 className="font-playfair text-[40px] dual-text leading-tight text-glow">{siteTitle}</h1>
             <p className="mt-2 text-xs text-muted">平台注意事項：友善發文，避免人身攻擊與個資外洩。</p>
           </section>
-          {/* Composer */}
+          
           <section className="max-w-[720px] mx-auto mb-8">
             <div className="rounded-2xl border border-border bg-surface/90 shadow-soft p-4">
               <HomeComposer token={token} />
@@ -799,7 +744,7 @@ export default function App() {
           </section>
         </main>
 
-        {/* 統一手機版導航 */}
+        
         <MobileBottomNav />
         
         <RealtimeToastPanel onNewPost={handleNewPost} />
@@ -807,7 +752,6 @@ export default function App() {
     )
   }
 
-  // 桌面版主頁：Hero(Title+副標注意事項) → Composer（動態置中 Composer 上緣於視窗中線）
   return (
       <div className="min-h-[100dvh] overflow-hidden">
         <NavBar pathname={pathname} />
@@ -830,25 +774,20 @@ function DesktopHome({ siteTitle = 'ForumKit' }: {
       const heroH = heroRef.current?.offsetHeight || 0
       const composerH = composerRef.current?.offsetHeight || 0
       
-      // 確保內容不過度置頂，並在上方保留足夠空間
       const minPadding = 80
 
-      // 總內容高度 = Hero 高度 + Hero 下方 margin (mb-16 = 4rem = 64px) + Composer 高度
       const totalContentH = heroH + 64 + composerH
       
       let newPadTop: number;
       if (totalContentH >= vh) {
-        // 如果內容高度超過或等於視窗高度，使用最小 padding，讓使用者可以滾動
         newPadTop = minPadding
       } else {
-        // 如果內容可完整顯示，計算置中所需 padding
         const centeredPadTop = (vh - totalContentH) / 2
         newPadTop = Math.max(minPadding, centeredPadTop)
       }
       setPadTop(newPadTop)
     }
     
-    // 延遲極短時間再計算，確保元件尺寸正確
     const timer = setTimeout(calc, 50)
     window.addEventListener('resize', calc)
     
@@ -860,12 +799,12 @@ function DesktopHome({ siteTitle = 'ForumKit' }: {
 
   return (
     <main className="mx-auto max-w-5xl px-3 sm:px-4" style={{ paddingTop: padTop }}>
-        {/* Hero（固定格式：標題 + 注意事項） */}
+        
         <section ref={heroRef} className="text-center mb-16">
           <h1 className="font-playfair text-[64px] dual-text leading-tight text-glow">{siteTitle}</h1>
           <p className="mt-3 text-sm text-muted">平台注意事項：友善發文，避免人身攻擊與個資外洩。</p>
         </section>
-        {/* Composer */}
+        
         <section ref={composerRef} id="composer" className="rounded-2xl border border-border bg-surface/90 shadow-soft p-5 max-w-[720px] mx-auto">
           <HomeComposer token={(()=>{ try { return localStorage.getItem('token') || '' } catch { return '' } })()} />
         </section>
@@ -873,7 +812,7 @@ function DesktopHome({ siteTitle = 'ForumKit' }: {
   )
 }
 
-/* ---------- 元件：回報表單（多次可提交） ---------- */
+/** ---------- 元件：回報表單（多次可提交） ---------- */
 function ReportForm({ compact }: { compact?: boolean }) {
   const [email, setEmail] = useState('')
   const [category, setCategory] = useState('一般回報')
@@ -996,7 +935,7 @@ function ReportForm({ compact }: { compact?: boolean }) {
   )
 }
 
-/* ---------- 元件：顏色設計器 ---------- */
+/** ---------- 元件：顏色設計器 ---------- */
 function ColorDesigner() {
   const [primaryColor, setPrimaryColor] = useState('#F8F5EE')
   const [primaryErr, setPrimaryErr] = useState<string | null>(null)
@@ -1007,7 +946,6 @@ function ColorDesigner() {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // 動態計算顏色屬性
   const getLuminance = (hex: string): number => {
     const rgb = hexToRgb(hex)
     if (!rgb) return 0.5
@@ -1023,7 +961,6 @@ function ColorDesigner() {
   const textColor = colorType === 'light' ? '#1F1F1F' : '#FFFFFF'
   const btnColor = colorType === 'light' ? darken(primaryColor, 0.15) : lighten(primaryColor, 0.25)
 
-  // ---- HEX 檢查與格式化 ----
   const toHex = (n: number) => {
     const s = Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0').toUpperCase()
     return s
@@ -1124,7 +1061,6 @@ function ColorDesigner() {
 
   const applyToTheme = () => {
     if (primaryErr || secondaryErr) return
-    // 僅調整主色與邊框等關鍵 token，避免破壞現有主題對比
     try {
       const root = document.documentElement
       root.style.setProperty('--primary', primaryColor)
@@ -1132,7 +1068,6 @@ function ColorDesigner() {
       root.style.setProperty('--primary-100', lighten(primaryColor, 0.78))
       root.style.setProperty('--primary-hover', darken(primaryColor, 0.22))
       root.style.setProperty('--border', secondaryColor)
-      // 可選：同步按鈕次要色調，降低突兀
       root.style.setProperty('--button-secondary', lighten(primaryColor, 0.86))
       root.style.setProperty('--button-secondary-hover', lighten(primaryColor, 0.80))
     } catch { /* no-op */ }
@@ -1160,7 +1095,7 @@ function ColorDesigner() {
         </div>
       </div>
 
-      {/* 顏色輸入 */}
+      
       <div className="space-y-3">
         <div>
           <label className="block text-sm font-medium text-fg mb-2">主色調 (背景顏色)</label>
@@ -1190,7 +1125,7 @@ function ColorDesigner() {
         </div>
       </div>
 
-      {/* 主題資訊輸入 */}
+      
       <div className="space-y-3">
         <div>
           <label className="block text-sm font-medium text-fg mb-2">主題名稱</label>
@@ -1226,7 +1161,7 @@ function ColorDesigner() {
   )
 }
 
-/* ---------- /mode 管理面板 ---------- */
+/** ---------- /mode 管理面板 ---------- */
 function AdminModePanel({ platform, onUpdated, full }: { platform: PlatformMode; onUpdated: (p: PlatformMode)=> void; full?: boolean }) {
   const [mode, setMode] = useState(platform.mode)
   const [msg, setMsg] = useState(platform.maintenance_message || '')

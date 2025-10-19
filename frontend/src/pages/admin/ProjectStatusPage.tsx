@@ -63,6 +63,9 @@ interface ProjectStats {
   }
 }
 
+/**
+ *
+ */
 export default function ProjectStatusPage() {
   const navigate = useNavigate()
   const { isLoggedIn, role } = useAuth()
@@ -71,7 +74,6 @@ export default function ProjectStatusPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
-  // 檢查權限
   useEffect(() => {
     if (!isLoggedIn || !['dev_admin', 'campus_admin', 'cross_admin'].includes(role || '')) {
       navigate('/403')
@@ -117,7 +119,6 @@ export default function ProjectStatusPage() {
     if (typeof status === 'boolean') {
       return status ? 'text-green-600' : 'text-red-600'
     }
-    // 數值狀態 (如錯誤率)
     if (status > 5) return 'text-red-600'
     if (status > 1) return 'text-yellow-600'
     return 'text-green-600'
@@ -183,7 +184,7 @@ export default function ProjectStatusPage() {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -237,7 +238,7 @@ export default function ProjectStatusPage() {
           </div>
         ) : stats ? (
           <>
-            {/* 核心業務指標 */}
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <StatsCard
                 title="學校總數"
@@ -275,7 +276,7 @@ export default function ProjectStatusPage() {
               />
             </div>
 
-            {/* 用戶活動分析 */}
+            
             <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
@@ -315,7 +316,7 @@ export default function ProjectStatusPage() {
               </div>
             </div>
 
-            {/* 整合服務狀態 */}
+            
             <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden mb-6">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2">
@@ -327,7 +328,7 @@ export default function ProjectStatusPage() {
               <div className="p-4">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-                  {/* Discord Bot */}
+                  
                   <div className="bg-surface-hover rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -345,7 +346,7 @@ export default function ProjectStatusPage() {
                     </div>
                   </div>
 
-                  {/* CDN 狀態 */}
+                  
                   <div className="bg-surface-hover rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -366,7 +367,7 @@ export default function ProjectStatusPage() {
               </div>
             </div>
 
-            {/* 性能指標 */}
+            
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="bg-surface-hover rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-3">

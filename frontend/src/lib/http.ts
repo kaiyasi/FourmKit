@@ -1,11 +1,9 @@
 import { messageFrom } from '@/utils/errors';
 
-// 允許以環境變數設定 API 基底 URL；若未設定則使用相對路徑交由開發代理或反向代理處理
 const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
 
 function join(url: string): string {
   if (!API_BASE) return url; // 相對路徑
-  // 確保不重複斜線
   return API_BASE.replace(/\/?$/, '') + (url.startsWith('/') ? url : `/${url}`);
 }
 
@@ -13,6 +11,9 @@ export class HttpError extends Error {
   status: number;
   body: any;
   
+  /**
+   *
+   */
   constructor(status: number, body: any) {
     const message = messageFrom(status, body, `HTTP ${status}`);
     
@@ -42,6 +43,9 @@ async function tryRefresh(): Promise<string | null> {
   }
 }
 
+/**
+ *
+ */
 export async function safeJson(res: Response) {
   const text = await res.text();
   try { 
@@ -70,6 +74,9 @@ function getSelectedSchoolSlug(): string | null {
   } catch { return null; }
 }
 
+/**
+ *
+ */
 export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   let token = getStoredToken();
   let res = await fetch(join(url), { 
@@ -104,16 +111,15 @@ export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   if (!res.ok || body?.ok === false) {
     throw new HttpError(res.status, body);
   }
-  // 後端有兩種回傳風格：
-  // 1) 包在 { ok?, data } 內（較新）
-  // 2) 直接回傳物件（舊/部分 API）
-  // 這裡做寬鬆處理：有 data 就回 data；否則整個 body 當結果。
   if (body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'data')) {
     return (body as any).data as T;
   }
   return body as T;
 }
 
+/**
+ *
+ */
 export async function postJSON<T>(url: string, payload: any, init?: RequestInit): Promise<T> {
   let token = getStoredToken();
   let res = await fetch(join(url), {
@@ -158,6 +164,9 @@ export async function postJSON<T>(url: string, payload: any, init?: RequestInit)
   return body as T;
 }
 
+/**
+ *
+ */
 export async function postFormData<T>(url: string, formData: FormData, init?: RequestInit): Promise<T> {
   let token = getStoredToken();
   let res = await fetch(join(url), {
@@ -168,7 +177,6 @@ export async function postFormData<T>(url: string, formData: FormData, init?: Re
       'X-Client-Id': getClientId(),
       ...(getSelectedSchoolSlug() ? { 'X-School-Slug': getSelectedSchoolSlug()! } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {})
-      // 不設置 Content-Type，讓瀏覽器自動設置 multipart/form-data boundary
     },
     body: formData
   });

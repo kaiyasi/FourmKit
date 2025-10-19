@@ -101,7 +101,7 @@ def upgrade():
         sa.Column('ig_media_id', sa.String(length=100), nullable=True, comment='Instagram Media ID'),
         sa.Column('ig_container_id', sa.String(length=100), nullable=True, comment='Instagram Container ID'),
         sa.Column('ig_permalink', sa.String(length=500), nullable=True, comment='Instagram 連結'),
-        sa.Column('status', sa.Enum('PENDING', 'RENDERING', 'READY', 'PUBLISHING', 'PUBLISHED', 'FAILED', 'CANCELLED', name='poststatus'), nullable=False, server_default='PENDING', comment='發布狀態'),
+        sa.Column('status', sa.String(length=20), nullable=False, server_default='pending', comment='發布狀態（改用小寫文字，避免 Enum 大小寫不一致問題）'),
         sa.Column('publish_mode', sa.Enum('INSTANT', 'BATCH', 'SCHEDULED', name='publishmode'), nullable=False, comment='發布模式'),
         sa.Column('scheduled_at', sa.DateTime(), nullable=True, comment='排程發布時間'),
         sa.Column('published_at', sa.DateTime(), nullable=True, comment='實際發布時間'),

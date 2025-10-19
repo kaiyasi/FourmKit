@@ -6,6 +6,9 @@ interface Props {
   onUploaded?: (m: {media_id:number; path:string; status:string}) => void;
 }
 
+/**
+ *
+ */
 export default function UploadBox({ postId, token, onUploaded }: Props) {
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);

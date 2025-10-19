@@ -1,3 +1,7 @@
+"""
+Module: backend/routes/routes_auth.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from flask import Blueprint, request, jsonify, redirect
 import os
 from urllib.parse import urlencode
@@ -13,21 +17,17 @@ from sqlalchemy import func
 from utils.db import get_session
 from models import User, School
 
-# Google OAuth 基本工具
 from utils.oauth_google import (
     is_config_ready as google_ready,
     build_auth_redirect,
     exchange_code_for_tokens,
     fetch_user_info,
-    # 你原本在 callback 用到但沒先 import，這裡補上
     _find_school_by_domain,
     derive_school_slug_from_domain,
 )
 
-# 管理員通知
 from utils.notify import send_admin_event as admin_notify
 
-# 統一的 email 規則：支援任意子網域 .edu / .edu.tw，且會 normalize
 from utils.email_rules import (
     is_valid_email_format,
     is_allowed_edu_email,
@@ -38,9 +38,6 @@ from utils.config_handler import load_config
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
-# -----------------------------
-# 基礎驗證工具
-# -----------------------------
 def _validate_password_strength(pw: str) -> tuple[bool, str]:
     """密碼強度檢查（依新規）
     - 長度 ≥ 8
@@ -98,7 +95,6 @@ def _validate_username(nick: str) -> tuple[bool, str, str]:
     if not allowed.match(name):
         return False, '暱稱只能包含中英文、數字、底線和句點', name
 
-    # 粗略檢查是否全為空白或標點（移除字母數字中文字後是否為空）
     stripped = re.sub(r'[\u4e00-\u9fff\u3400-\u4dbfA-Za-z0-9]+', '', name)
     if len(stripped) == len(name):
         return False, '暱稱不可全為空白或標點符號', name
@@ -126,9 +122,6 @@ def check_login_mode():
     except Exception:
         return False, "admin_only"
 
-# -----------------------------
-# 帳密登入
-# -----------------------------
 from utils.ratelimit import rate_limit, get_client_ip, track_and_check_user_ip
 
 @bp.post("/login")
@@ -138,7 +131,6 @@ def login():
     account = (data.get("username") or "").strip()
     password = data.get("password") or ""
 
-    # 若此 IP 需要 CAPTCHA，先驗證
     try:
         from utils.ratelimit import is_captcha_required, verify_captcha, clear_captcha_requirement
         ip = get_client_ip()
@@ -159,7 +151,6 @@ def login():
     except Exception:
         pass
 
-    # 檢查登入模式
     allowed, mode = check_login_mode()
     if not allowed:
         if mode == "single":
@@ -175,7 +166,6 @@ def login():
                     return jsonify({"msg": "目前僅允許管理員登入", "login_mode": "admin_only"}), 403
 
     with get_session() as s:  # type: Session
-        # 支援「帳號或 Email」登入
         u = s.query(User).filter_by(username=account).first()
         if (not u) and ("@" in account):
             u = s.query(User).filter(func.lower(User.email) == account.lower()).first()
@@ -183,13 +173,11 @@ def login():
         if not u or not check_password_hash(u.password_hash, password):
             return jsonify({"msg": "帳號或密碼錯誤"}), 401
 
-        # 補綁定學校
         try:
             if (not getattr(u, 'school_id', None)) and (u.email or '').strip():
                 mail = (u.email or '').lower().strip()
                 if '@' in mail:
                     dom = mail.split('@', 1)[1]
-                    # 只要是 edu / edu.tw 或帶有 .edu. 片段就嘗試推導
                     if dom.endswith('.edu') or dom.endswith('.edu.tw') or '.edu.' in dom or dom.endswith('.edu.cn') or dom.endswith('.edu.hk'):
                         slug = derive_school_slug_from_domain(dom)
                         if slug:
@@ -202,7 +190,6 @@ def login():
         except Exception:
             pass
 
-        # 風控：同一使用者 24h 內不同 IP 數量限制（管理員豁免）
         try:
             if u.role not in ["dev_admin", "admin"]:
                 ip = get_client_ip()
@@ -221,7 +208,6 @@ def login():
         token = create_access_token(identity=str(u.id), additional_claims={"role": u.role})
         refresh = create_refresh_token(identity=str(u.id))
 
-        # 記錄登入事件（失敗不致命）
         try:
             from utils.admin_events import log_user_action
             log_user_action(
@@ -239,13 +225,11 @@ def login():
             "role": u.role,
             "school_id": getattr(u, 'school_id', None),
         })
-        # 若為 dev_admin，設置識別 cookie（Nginx 用於 admin.html 分流）與簽名 cookie（後端保護 admin 資產）
         try:
             if u.role == 'dev_admin':
                 max_age = int(os.getenv('ADMIN_ASSET_COOKIE_MAXAGE', '1800'))
                 secure = os.getenv('ENABLE_HSTS', '0') in {'1','true','yes'}
                 resp.set_cookie('fk_admin', '1', max_age=max_age, secure=secure, httponly=False, samesite='Lax', path='/')
-                # 產生簽名 token：uid.ts.hmac(uid.ts.ip)
                 import hmac, hashlib, time as _t
                 uid_s = str(u.id)
                 ts_s = str(int(_t.time()))
@@ -259,9 +243,6 @@ def login():
             pass
         return resp
 
-# -----------------------------
-# 令牌刷新
-# -----------------------------
 @bp.post("/refresh")
 @jwt_required(refresh=True)
 def refresh_token():
@@ -273,16 +254,10 @@ def refresh_token():
         token = create_access_token(identity=str(u.id), additional_claims={"role": u.role})
         return jsonify({"access_token": token})
 
-# -----------------------------
-# 關閉純表單註冊（統一走 Google）
-# -----------------------------
 @bp.post("/register")
 def register():
     return jsonify({"msg": "目前僅提供 Google 註冊，請點擊『使用 Google 繼續』"}), 403
 
-# -----------------------------
-# Google 註冊確認（JSON）
-# -----------------------------
 @bp.post("/register-confirm")
 def register_confirm():
     data = request.get_json(silent=True) or {}
@@ -313,7 +288,6 @@ def register_confirm():
         return jsonify({"msg": f"暱稱不符合規範：{whyu}"}), 400
 
     with get_session() as s:
-        # 檢查 Email 黑名單（註銷）
         try:
             from utils.config_handler import load_config
             cfg = load_config() or {}
@@ -329,7 +303,6 @@ def register_confirm():
 
         u = User(username=username_norm, password_hash=generate_password_hash(password), role='user', email=email)
 
-        # 綁定學校
         try:
             target_slug = confirmed_school_slug
             if not target_slug:
@@ -341,7 +314,6 @@ def register_confirm():
                 if not sch:
                     sch = School(slug=target_slug, name=target_slug.upper())
                     s.add(sch); s.flush(); s.refresh(sch)
-                    # 通知管理員
                     try:
                         admin_notify(
                             kind="school_onboarding",
@@ -362,7 +334,6 @@ def register_confirm():
         s.commit()
         s.refresh(u)
 
-        # 記錄事件
         try:
             from utils.admin_events import log_user_action
             log_user_action(
@@ -386,9 +357,6 @@ def register_confirm():
             "school_id": getattr(u, 'school_id', None),
         })
 
-# -----------------------------
-# Google OAuth 入口
-# -----------------------------
 @bp.get("/google/oauth")
 def google_oauth_alias():
     if not google_ready():
@@ -402,9 +370,6 @@ def google_login():
     url = build_auth_redirect()
     return redirect(url, code=302)
 
-# -----------------------------
-# Google Callback（GET，重導式）
-# -----------------------------
 @bp.get("/google/callback")
 def google_callback():
     code = (request.args.get('code') or '').strip()
@@ -417,6 +382,34 @@ def google_callback():
         tokens = exchange_code_for_tokens(code)
         access_token = tokens.get('access_token')
         id_token = tokens.get('id_token')
+        if not access_token and not id_token:
+            return jsonify({
+                "success": False,
+                "error": tokens.get('error') or 'TOKEN_EXCHANGE_FAILED',
+                "error_description": tokens.get('error_description') or tokens.get('raw') or str(tokens),
+                "errorCode": "E_TOKEN_EXCHANGE"
+            }), 401
+        if not access_token and not id_token:
+<<<<<<< Updated upstream
+            # 更可讀的錯誤輸出，便於定位 401/redirect_uri_mismatch 等
+=======
+>>>>>>> Stashed changes
+            try:
+                err = tokens.get('error') or 'token_exchange_failed'
+                desc = tokens.get('error_description') or tokens.get('raw') or str(tokens)
+                admin_notify(
+                    kind='auth_error',
+                    title='Google Token 交換失敗',
+                    description=f"{err}: {desc}"[:500],
+                    actor='system',
+                    source='auth/google/callback',
+                    fields=[
+                        {"name": "redirect_uri", "value": os.getenv('OAUTH_REDIRECT_URL') or os.getenv('PUBLIC_BASE_URL') or 'n/a', "inline": False}
+                    ],
+                )
+            except Exception:
+                pass
+            return redirect("/error/oauth-failed", code=302)
 
         profile = fetch_user_info(access_token=access_token, id_token=id_token)
         email = (profile.get('email') or '').strip().lower()
@@ -424,13 +417,11 @@ def google_callback():
         if not email or not verified:
             return jsonify({"msg": "無法取得已驗證的 Email"}), 400
 
-        # 用統一規則判斷 edu / edu.tw
         if not is_allowed_edu_email(email):
             domain = extract_domain(email)
             qs = urlencode({"domain": domain, "email": email.split('@')[0]})
             return redirect(f"/error/external-account?{qs}", code=302)
 
-        # 登入模式
         try:
             allowed, mode = check_login_mode()
         except Exception:
@@ -451,7 +442,6 @@ def google_callback():
             u = s.query(User).filter(func.lower(User.email) == email).first()
 
             if not u:
-                # 首登 → 重導到註冊確認頁（避免 ghost 帳號）
                 bound = _find_school_by_domain(domain)
                 suggested_slug = bound.slug if bound else derive_school_slug_from_domain(domain)
                 params = {
@@ -464,7 +454,6 @@ def google_callback():
                 }
                 return redirect(f"/auth/register-confirm?{urlencode(params)}", code=302)
 
-            # 老用戶但未綁學校 → 嘗試自動綁定
             if not getattr(u, "school_id", None):
                 bound = _find_school_by_domain(domain)
                 slug = bound.slug if bound else derive_school_slug_from_domain(domain)
@@ -490,7 +479,6 @@ def google_callback():
             return redirect(f"/auth#{frag}", code=302)
 
     except Exception as e:
-        # 系統出錯應該導向 OAuth 失敗頁，而不是外部帳號頁
         try:
             admin_notify(
                 kind='auth_error',
@@ -503,9 +491,6 @@ def google_callback():
             pass
         return redirect("/error/oauth-failed", code=302)
 
-# -----------------------------
-# Google Callback（POST，回 JSON）
-# -----------------------------
 @bp.post("/google/callback")
 def google_callback_post():
     body = request.get_json(silent=True) or {}
@@ -533,7 +518,6 @@ def google_callback_post():
 
         if not is_allowed_edu_email(email):
             domain = extract_domain(email)
-            # 通知一次即可，別把 UX 再壓爛
             try:
                 admin_notify(
                     kind='auth',
@@ -557,7 +541,6 @@ def google_callback_post():
         with get_session() as s:  # type: Session
             u = s.query(User).filter(func.lower(User.email) == email).first()
         if u:
-            # 若帳號被註銷（停權），拒絕登入
             try:
                 from utils.config_handler import load_config
                 cfg = load_config() or {}
@@ -578,7 +561,6 @@ def google_callback_post():
                 "tokens": {"access_token": token, "refresh_token": refresh},
             })
 
-        # 需要快速註冊
         return jsonify({
             "success": True,
             "requiresRegistration": True,
@@ -597,9 +579,6 @@ def google_callback_post():
             pass
         return jsonify({"success": False, "error": "Google 登入失敗，請稍後再試", "errorCode": "E_GOOGLE_CALLBACK"}), 502
 
-# -----------------------------
-# 快速註冊（Google 後）
-# -----------------------------
 @bp.post("/quick-register")
 def quick_register():
     data = request.get_json(silent=True) or {}
@@ -631,7 +610,6 @@ def quick_register():
         return jsonify({"success": False, "error": f"暱稱不符合規範：{whyu}", "errorCode": "E_USERNAME_POLICY"}), 400
 
     with get_session() as s:  # type: Session
-        # 檢查 Email 黑名單
         try:
             from utils.config_handler import load_config
             cfg = load_config() or {}
@@ -646,7 +624,6 @@ def quick_register():
 
         u = User(username=username_norm, password_hash=generate_password_hash(password), role='user', email=email)
 
-        # 綁學校：前端若選單帶了 school_id 就綁，否則先略過
         target_school_id = None
         if isinstance(school_id, int):
             sch = s.get(School, int(school_id))
@@ -659,7 +636,6 @@ def quick_register():
         s.commit()
         s.refresh(u)
 
-        # 自訂學校請求
         if custom_req:
             try:
                 fields = []
@@ -690,16 +666,12 @@ def quick_register():
             "tokens": {"access_token": token, "refresh_token": refresh},
         })
 
-# -----------------------------
-# 小工具端點
-# -----------------------------
 @bp.post('/validate-domain')
 def validate_domain():
     body = request.get_json(silent=True) or {}
     email = (body.get('email') or '').strip().lower()
     valid = bool(is_valid_email_format(email) and is_allowed_edu_email(email))
     domain = extract_domain(email) if email else ''
-    # 嘗試推斷 slug（不依賴外部套件，僅針對 .edu/.edu.tw）
     slug_guess = None
     canonical_guess = None
     city_code = None
@@ -710,12 +682,10 @@ def validate_domain():
           parts = host.split('.')
           rest = parts[:-2]
           if len(rest) == 1:
-              # 大學樣式 ncku.edu.tw
               slug_guess = rest[0]
               canonical_guess = f"{slug_guess}.edu.tw"
               confidence = 'medium'
           elif len(rest) >= 2:
-              # K-12 樣式 <school>.<city>.edu.tw ，移除常見雜訊前綴
               def strip_prefix(xs):
                   useless = {'mail','mx','gs','o365','owa','webmail','imap','smtp','student','stud','std','alumni','staff','teacher','teachers'}
                   ys = [x for x in xs if x]
@@ -845,9 +815,6 @@ def report_slug():
         pass
     return jsonify({"success": True, "message": "已回報"})
 
-# -----------------------------
-# Profile 舊路徑相容
-# -----------------------------
 @bp.get("/profile")
 @jwt_required(optional=True)
 def profile_alias():
@@ -868,18 +835,13 @@ def profile_alias():
         sch = s.get(School, getattr(u, 'school_id', None)) if getattr(u, 'school_id', None) else None
         auth_provider = 'local'
         try:
-            # 檢查用戶是否有 Google OAuth 記錄（更準確的判斷）
-            # 如果用戶通過 Google 註冊但後來設定了密碼，仍應顯示為 Google 登入
             if hasattr(u, 'oauth_provider') and u.oauth_provider == 'google':
                 auth_provider = 'google'
             elif not (u.password_hash or '').strip():
-                # 沒有密碼的用戶通常是 Google 用戶
                 auth_provider = 'google'
             else:
-                # 有密碼的用戶為本地登入
                 auth_provider = 'local'
         except Exception:
-            # 默認根據密碼存在與否判斷
             auth_provider = 'google' if not (u.password_hash or '').strip() else 'local'
         return jsonify({
             'id': u.id,
@@ -892,9 +854,6 @@ def profile_alias():
             'has_password': bool((u.password_hash or '').strip()),
         })
 
-# -----------------------------
-# 變更密碼（遵守同一套強度政策）
-# -----------------------------
 @bp.post("/change_password")
 @jwt_required()
 def change_password():
@@ -912,7 +871,6 @@ def change_password():
         if not u:
             return jsonify({ 'msg': 'not found' }), 404
 
-        # 若原帳號有密碼，需驗證；若為外部登入（hash 空），可直接設定
         if u.password_hash:
             if not check_password_hash(u.password_hash, current):
                 return jsonify({ 'msg': '當前密碼不正確' }), 403
@@ -920,7 +878,6 @@ def change_password():
         u.password_hash = generate_password_hash(new)
         s.commit()
 
-        # 記錄密碼變更事件
         try:
             from utils.admin_events import log_user_action
             log_user_action(

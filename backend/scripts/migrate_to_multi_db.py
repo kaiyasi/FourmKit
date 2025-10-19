@@ -10,7 +10,6 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, List
 
-# 添加父目錄到路徑以便導入模組
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.db_multi import DB_SERVICES, db_service
@@ -66,7 +65,6 @@ class DatabaseMigrator:
             cursor.execute(f"SELECT * FROM {table_name}")
             data = cursor.fetchall()
             
-            # 獲取欄位名稱
             cursor.execute(f"PRAGMA table_info({table_name})")
             columns = [column[1] for column in cursor.fetchall()]
             
@@ -106,36 +104,30 @@ class DatabaseMigrator:
             'announcement_reads': 'organization'
         }
         
-        return table_mapping.get(table_name, 'core')  # 預設放到 core
+        return table_mapping.get(table_name, 'core')
     
     def migrate_table(self, source_db: str, table_name: str, target_service: str) -> bool:
         """遷移單個表格到目標服務資料庫"""
         try:
-            # 獲取原始資料
             data, columns = self.get_table_data(source_db, table_name)
             if not data:
                 self.log(f"表格 {table_name} 沒有資料，跳過遷移")
                 return True
             
-            # 獲取目標資料庫
             target_engine = db_service.get_engine(target_service)
             target_path = db_service.get_database_path(target_service)
             
-            # 連接目標資料庫
             target_conn = sqlite3.connect(target_path)
             target_cursor = target_conn.cursor()
             
-            # 檢查目標表格是否存在
             target_cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
             if not target_cursor.fetchone():
                 self.log(f"目標資料庫中不存在表格 {table_name}，請先初始化資料庫")
                 target_conn.close()
                 return False
             
-            # 清空目標表格（如果已有資料）
             target_cursor.execute(f"DELETE FROM {table_name}")
             
-            # 插入資料
             placeholders = ','.join(['?' for _ in columns])
             insert_sql = f"INSERT INTO {table_name} ({','.join(columns)}) VALUES ({placeholders})"
             
@@ -166,22 +158,18 @@ class DatabaseMigrator:
         self.log("🚀 開始資料庫遷移...")
         self.log(f"原始資料庫: {source_db_path}")
         
-        # 獲取原始資料庫的表格列表
         tables = self.get_table_list(source_db_path)
         self.log(f"找到 {len(tables)} 個表格: {', '.join(tables)}")
         
-        # 初始化目標資料庫
         self.log("初始化目標資料庫...")
         if not db_service.initialize_all():
             self.log("❌ 目標資料庫初始化失敗")
             return False
         
-        # 遷移每個表格
         success_count = 0
         total_count = len(tables)
         
         for table_name in tables:
-            # 跳過系統表格和遷移相關表格
             if table_name.startswith(('alembic_', 'sqlite_')):
                 self.log(f"跳過系統表格: {table_name}")
                 continue
@@ -192,7 +180,6 @@ class DatabaseMigrator:
             if self.migrate_table(source_db_path, table_name, target_service):
                 success_count += 1
         
-        # 產生遷移報告
         self.generate_migration_report()
         
         self.log(f"🎉 遷移完成！成功遷移 {success_count}/{total_count} 個表格")
@@ -234,7 +221,6 @@ def main():
     
     migrator = DatabaseMigrator()
     
-    # 檢查是否有指定原始資料庫
     source_db = None
     if len(sys.argv) > 1:
         source_db = sys.argv[1]
@@ -242,7 +228,6 @@ def main():
             print(f"❌ 指定的資料庫檔案不存在: {source_db}")
             return
     
-    # 執行遷移
     success = migrator.perform_migration(source_db)
     
     if success:

@@ -26,12 +26,12 @@ export function PlatformNavigation({
 
   return (
     <>
-      {/* 桌面導航 */}
+      
       {isDesktop && showDesktopNav && (
         <NavBar pathname={pathname} {...desktopNavProps} />
       )}
       
-      {/* 手機底部導航 */}
+      
       {isMobile && showMobileNav && (
         <MobileBottomNav {...mobileNavProps} />
       )}

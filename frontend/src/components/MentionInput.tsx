@@ -25,6 +25,9 @@ interface MentionSuggestion {
   query: string
 }
 
+/**
+ *
+ */
 export function MentionInput({
   value,
   onChange,
@@ -42,7 +45,6 @@ export function MentionInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
 
-  // 解析當前提及狀態
   const parseMentionContext = useMemo(() => {
     if (!value || caretPosition <= 0) return null
 
@@ -51,12 +53,10 @@ export function MentionInput({
 
     if (lastAtIndex === -1) return null
 
-    // 檢查@符號前是否為空格或行首
     if (lastAtIndex > 0 && !/\s/.test(textBeforeCaret[lastAtIndex - 1])) return null
 
     const queryText = textBeforeCaret.substring(lastAtIndex + 1)
 
-    // 檢查查詢文字是否包含空格（如果包含則視為非提及）
     if (/\s/.test(queryText)) return null
 
     return {
@@ -65,7 +65,6 @@ export function MentionInput({
     }
   }, [value, caretPosition])
 
-  // 過濾用戶建議
   const filteredUsers = useMemo(() => {
     if (!parseMentionContext) return []
 
@@ -74,7 +73,6 @@ export function MentionInput({
     ).slice(0, 5) // 最多顯示5個建議
   }, [onlineUsers, parseMentionContext])
 
-  // 更新建議狀態
   useEffect(() => {
     if (parseMentionContext && filteredUsers.length > 0) {
       setMentionSuggestion({
@@ -90,7 +88,6 @@ export function MentionInput({
     }
   }, [parseMentionContext, filteredUsers])
 
-  // 處理輸入變化
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     const newCaretPosition = e.target.selectionStart || 0
@@ -99,14 +96,12 @@ export function MentionInput({
     setCaretPosition(newCaretPosition)
   }
 
-  // 處理光標位置變化
   const handleSelectionChange = () => {
     if (inputRef.current) {
       setCaretPosition(inputRef.current.selectionStart || 0)
     }
   }
 
-  // 插入提及
   const insertMention = (user: OnlineUser) => {
     if (!mentionSuggestion) return
 
@@ -121,7 +116,6 @@ export function MentionInput({
     setShowSuggestions(false)
     setMentionSuggestion(null)
 
-    // 設置新的光標位置
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus()
@@ -131,7 +125,6 @@ export function MentionInput({
     }, 0)
   }
 
-  // 處理鍵盤事件
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!showSuggestions || filteredUsers.length === 0) {
       if (e.key === 'Enter' && onSubmit) {
@@ -167,13 +160,11 @@ export function MentionInput({
     }
   }
 
-  // 處理建議項點擊
   const handleSuggestionClick = (user: OnlineUser, index: number) => {
     setSelectedSuggestionIndex(index)
     insertMention(user)
   }
 
-  // 獲取角色顯示名稱
   const getRoleDisplayName = (role: string) => {
     const roleNames: Record<string, string> = {
       'dev_admin': '開發人員',
@@ -201,7 +192,7 @@ export function MentionInput({
         maxLength={maxLength}
       />
 
-      {/* 提及建議彈窗 */}
+      
       {showSuggestions && filteredUsers.length > 0 && (
         <div
           ref={suggestionsRef}
@@ -243,21 +234,20 @@ export function MentionInput({
   )
 }
 
-// 用於渲染包含提及的訊息文字
+/**
+ *
+ */
 export function renderMessageWithMentions(message: string, currentUsername?: string): React.ReactNode {
-  // 匹配 @用戶名 格式
   const mentionRegex = /@(\w+)/g
   const parts: React.ReactNode[] = []
   let lastIndex = 0
   let match
 
   while ((match = mentionRegex.exec(message)) !== null) {
-    // 添加提及前的普通文字
     if (match.index > lastIndex) {
       parts.push(message.substring(lastIndex, match.index))
     }
 
-    // 添加提及標籤
     const mentionedUsername = match[1]
     const isCurrentUser = mentionedUsername === currentUsername
 
@@ -277,7 +267,6 @@ export function renderMessageWithMentions(message: string, currentUsername?: str
     lastIndex = match.index + match[0].length
   }
 
-  // 添加最後的普通文字
   if (lastIndex < message.length) {
     parts.push(message.substring(lastIndex))
   }

@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react'
 
 type School = { id: number; slug: string; name: string }
 
+/**
+ *
+ */
 export default function FilterBar() {
   const [keyword, setKeyword] = useState<string>(() => {
     try { return localStorage.getItem('posts_filter_keyword') || '' } catch { return '' }
@@ -29,7 +32,6 @@ export default function FilterBar() {
       const k = keyword.trim()
       if (k) localStorage.setItem('posts_filter_keyword', k); else localStorage.removeItem('posts_filter_keyword')
     } catch {}
-    // 通知列表刷新
     try { window.dispatchEvent(new CustomEvent('fk_filter_changed')) } catch {}
   }
 
@@ -43,7 +45,6 @@ export default function FilterBar() {
     return false
   }
 
-  // 學校下拉選單資料
   const [schools, setSchools] = useState<School[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string>(() => {
     try { return localStorage.getItem('school_slug') || '__ALL__' } catch { return '__ALL__' }
@@ -73,7 +74,6 @@ export default function FilterBar() {
         localStorage.setItem('current_school_slug', '')
         localStorage.setItem('selected_school_slug', '')
       } else {
-        // 跨校視圖：以空字串保存，避免被判定為未設定（__ALL__）
         localStorage.setItem('school_slug', '')
         localStorage.setItem('current_school_slug', '')
         localStorage.setItem('selected_school_slug', '')
@@ -115,7 +115,7 @@ export default function FilterBar() {
               <select
                 className="form-control form-control--compact text-sm"
                 value={selectedSlug}
-                onChange={(e) => { const v = e.target.value; setSelectedSlug(v); setStoredSchool(v) }}
+                onChange={(e) => { const val = e.target.value || ''; setSelectedSlug(val); setStoredSchool(val) }}
               >
                 <option value="__ALL__">全部（所有學校）</option>
                 <option value="">跨校</option>

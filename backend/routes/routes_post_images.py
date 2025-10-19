@@ -93,9 +93,6 @@ def generate_publish_image():
     }), 410
 
 
-# 移除 HTML 預覽端點，所有預覽都使用真實圖片
-# 原因：上傳到 Instagram 需要真實的圖片檔案，HTML 無法使用
-# @bp.route('/preview-html', methods=['POST']) - 已移除
 
 
 @bp.route('/preview-image', methods=['POST'])

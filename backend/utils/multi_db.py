@@ -8,7 +8,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
-# 資料庫配置映射
 DATABASE_CONFIGS = {
     'forum': {
         'file': 'forum.db',
@@ -134,10 +133,8 @@ class MultiDatabaseManager:
         
         return health
 
-# 全局實例
 db_manager = MultiDatabaseManager()
 
-# 便利函數
 def get_forum_session() -> Session:
     """獲取論壇資料庫會話"""
     return db_manager.get_session('forum')

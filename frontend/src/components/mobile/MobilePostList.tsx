@@ -10,6 +10,9 @@ interface MobilePostListProps {
   showAll?: boolean
 }
 
+/**
+ *
+ */
 export function MobilePostList({ injectedItems = [], showAll = false }: MobilePostListProps) {
   const [data, setData] = useState<PostListType | null>(null)
   const [page, setPage] = useState(1)
@@ -26,7 +29,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
   const pullThreshold = 80
   const perPage = showAll ? 1000 : 15  // 如果 showAll 為 true，則顯示大量貼文
   const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
-  // 手機版搜尋/篩選
   const [kw, setKw] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_keyword')||'' }catch{ return '' }})
   const [start, setStart] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_start')||'' }catch{ return '' }})
   const [end, setEnd] = useState<string>(()=>{ try{ return localStorage.getItem('posts_filter_end')||'' }catch{ return '' }})
@@ -87,7 +89,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
         }
       })
       
-      // 檢查用戶是否為總管理員
       let isDevAdmin = false
       try {
         const profileResponse = await fetch('/api/auth/profile', { cache: 'no-store' })
@@ -124,7 +125,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
       try {
         result = await getJSON<any>(url)
       } catch (e) {
-        // 容錯：若指定學校導致 500，改以跨校作為降級備援
         if (slug && slug !== '__ALL__') {
           const fallbackUrl = `/api/posts/list?limit=${perPage}&page=${p}&cross_only=true${dateQ}${kwQ}`
           console.warn('[MobilePostList] 初次請求失敗，回退為跨校：', slug, fallbackUrl)
@@ -135,7 +135,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
         }
       }
       console.log('📦 [DEBUG] API Response:', result)
-      // 後端此路由回傳 { items }（無分頁欄位），這裡做寬鬆相容
       let validated: PostListType
       try {
         validated = validatePostList(result)
@@ -165,12 +164,10 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     }
   }
 
-  // 初始載入
   useEffect(() => {
     fetchPage(1, true)
   }, [])
 
-  // 載入學校清單（供顯示名稱 fallback 使用）
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -184,7 +181,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     return () => { alive = false }
   }, [])
 
-  // 學校切換時自動刷新清單
   useEffect(() => {
     const onSchoolChanged = () => {
       setPage(1)
@@ -196,21 +192,17 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     return () => window.removeEventListener('fk_school_changed', onSchoolChanged as any)
   }, [])
 
-  // 觸控下拉刷新處理
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
     const handleTouchStart = (e: TouchEvent) => {
-      // 只有在頁面頂部且不在刷新狀態時才開始拉拽檢測
       if (container.scrollTop === 0 && !refreshing && !loading) {
         startYRef.current = e.touches[0].clientY
-        // 不立即設置 isPulling，等到確認是下拉動作時再設置
       }
     }
 
     const handleTouchMove = (e: TouchEvent) => {
-      // 如果不在頁面頂部，忽略觸控事件
       if (container.scrollTop > 5) {
         setIsPulling(false)
         setPullDistance(0)
@@ -220,7 +212,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
       const currentY = e.touches[0].clientY
       const deltaY = currentY - startYRef.current
       
-      // 只有向下拉且距離超過最小閾值時才認為是下拉刷新
       if (deltaY > 10) {
         if (!isPulling) {
           setIsPulling(true)
@@ -229,10 +220,8 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
         const distance = Math.max(0, deltaY * 0.4) // 降低拖拽敏感度
         setPullDistance(Math.min(distance, pullThreshold * 1.2))
         
-        // 防止頁面滾動
         e.preventDefault()
       } else if (deltaY < -5) {
-        // 上拉時立即取消拖拽狀態
         setIsPulling(false)
         setPullDistance(0)
       }
@@ -257,7 +246,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     }
   }, [isPulling, pullDistance])
 
-  // 滾動監聽
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -265,10 +253,8 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container
       
-      // 顯示回到頂部按鈕
       setShowScrollTop(scrollTop > 500)
       
-      // 無限滾動
       if (scrollHeight - scrollTop - clientHeight < 300 && hasMore && !loading) {
         fetchPage(page)
       }
@@ -278,7 +264,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
     return () => container.removeEventListener('scroll', handleScroll)
   }, [page, hasMore, loading])
 
-  // 下拉刷新
   const handlePullRefresh = () => {
     haptic(12)
     fetchPage(1, true)
@@ -302,7 +287,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
       })
 
       if (response.ok) {
-        // 重新載入該貼文數據
         fetchPage(1, true)
       } else {
         console.warn('反應失敗:', response.status, response.statusText)
@@ -323,7 +307,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
         })
       } else {
         await navigator.clipboard.writeText(url)
-        // 可以顯示一個 toast 通知
       }
     } catch (err) {
       console.warn('分享失敗:', err)
@@ -331,7 +314,6 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
   }
 
   const handlePostCreated = (post: any) => {
-    // 新貼文加入到列表頂部（本地占位）
     setData(prev => prev ? {
       ...prev,
       posts: [post, ...prev.posts]
@@ -355,7 +337,7 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
 
   return (
     <div ref={containerRef} className="h-full overflow-y-auto relative">
-      {/* 下拉刷新提示 - 只在拉動時顯示 */}
+      
       {(isPulling || refreshing) && (
         <div 
           className="absolute top-0 left-0 right-0 z-10 bg-bg/95 backdrop-blur-sm border-b border-border/30 transition-transform duration-300"
@@ -382,11 +364,11 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
         </div>
       )}
 
-      {/* 貼文列表 */}
+      
       <div className="mobile-horizontal-padding mobile-vertical-padding pb-24">
 
         
-        {/* 手機版搜尋/篩選 */}
+        
         <div className="mb-3">
           <button
             className="w-full text-left text-sm px-3 py-2 rounded-xl border border-border bg-surface/70"
@@ -451,7 +433,7 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
             </div>
           )}
         </div>
-        {/* 骨架載入（初次） */}
+        
         {!data && loading && (
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -463,9 +445,9 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
             ))}
           </div>
         )}
-        {/* 取消本地送審預覽：只顯示伺服器項目 */}
+        
 
-        {/* 服務器貼文 */}
+        
         {data?.items.map((post) => (
           <MobilePostCard
             key={post.id}
@@ -476,21 +458,21 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
           />
         ))}
 
-        {/* 載入更多 */}
+        
         {loading && page > 1 && (
           <div className="flex justify-center py-6">
             <RefreshCw className="w-6 h-6 animate-spin text-muted" />
           </div>
         )}
 
-        {/* 沒有更多內容 */}
+        
         {!hasMore && ((data?.items?.length || 0) > 5) && (
           <div className="text-center py-6 text-muted text-sm">
             沒有更多貼文了
           </div>
         )}
 
-        {/* 空狀態 */}
+        
         {data?.items.length === 0 && (
           <div className="text-center py-12">
             <p className="text-muted mb-4">還沒有任何貼文</p>
@@ -499,7 +481,7 @@ export function MobilePostList({ injectedItems = [], showAll = false }: MobilePo
         )}
       </div>
 
-      {/* 回到頂部按鈕 */}
+      
       {showScrollTop && (
         <button
           onClick={scrollToTop}

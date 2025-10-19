@@ -7,7 +7,6 @@ def init_upload_dirs():
     """創建必要的上傳目錄結構"""
     root = os.getenv("UPLOAD_ROOT", "uploads")
     
-    # 基本目錄結構
     dirs = [
         os.path.join(root, "pending"),
         os.path.join(root, "public"),
@@ -23,7 +22,6 @@ def init_upload_dirs():
         except Exception as e:
             print(f"✗ {dir_path}: {e}")
     
-    # 為現有學校創建目錄
     try:
         import sys
         sys.path.append('/app')
@@ -46,7 +44,6 @@ def init_upload_dirs():
     except Exception as e:
         print(f"無法創建學校目錄: {e}")
         print("將手動創建常見的學校目錄...")
-        # 手動創建常見的學校目錄
         common_schools = [1, 2, 3, 4, 5]
         for school_id in common_schools:
             school_dir = os.path.join(root, "public", "schools", str(school_id))

@@ -101,7 +101,7 @@ const QueueManagementPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -118,7 +118,7 @@ const QueueManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 統計卡片 */}
+        
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
@@ -136,7 +136,7 @@ const QueueManagementPage: React.FC = () => {
           </div>
         )}
 
-        {/* 篩選器 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Filter className="w-4 h-4 text-muted" />
@@ -159,7 +159,7 @@ const QueueManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 佇列列表 */}
+        
         <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h2 className="text-lg font-semibold text-fg">佇列項目</h2>

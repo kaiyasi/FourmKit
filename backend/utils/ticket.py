@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/ticket.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from datetime import datetime, timezone
 import uuid

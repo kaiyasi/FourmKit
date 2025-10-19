@@ -11,6 +11,9 @@ interface UseBadgesOptions {
 
 const DEFAULT_PREFIX = 'badge:'
 
+/**
+ *
+ */
 export function useBadges(opts: UseBadgesOptions = {}) {
   const { watched = [], useSocket = true, storagePrefix = DEFAULT_PREFIX } = opts
   const [counts, setCounts] = useState<Counts>(() => {
@@ -47,7 +50,6 @@ export function useBadges(opts: UseBadgesOptions = {}) {
 
   const get = useCallback((path: string) => counts[path] || 0, [counts])
 
-  // Listen to localStorage changes
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (!e.key || !e.key.startsWith(storagePrefix)) return
@@ -59,16 +61,12 @@ export function useBadges(opts: UseBadgesOptions = {}) {
     return () => window.removeEventListener('storage', onStorage)
   }, [storagePrefix])
 
-  // Listen to socket badge events if enabled
   useEffect(() => {
     if (!useSocket) return
     let s: ReturnType<typeof getSocket> | null = null
     try {
       s = getSocket()
       const onUpdate = (payload: any) => {
-        // 支援功能已移除
-        // 1) { path: string, count: number }
-        // 2) { counts: Record<string, number> }
         if (payload && typeof payload === 'object') {
           if (payload.path && typeof payload.count === 'number') {
             apply(String(payload.path), Number(payload.count))
@@ -90,7 +88,6 @@ export function useBadges(opts: UseBadgesOptions = {}) {
         try { s?.off('badge.clear', onClear) } catch {}
       }
     } catch {
-      // ignore socket errors, fallback to storage only
       return
     }
   }, [apply, clear, useSocket])

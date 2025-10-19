@@ -170,7 +170,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({ template, onSuccess, onCanc
         </div>
       )}
 
-      {/* 基本資訊 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">基本資訊</h3>
 
@@ -238,7 +238,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({ template, onSuccess, onCanc
         </div>
       </div>
 
-      {/* 畫布配置 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">畫布配置</h3>
 
@@ -277,7 +277,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({ template, onSuccess, onCanc
         </div>
       </div>
 
-      {/* 文字配置 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">文字配置</h3>
 
@@ -332,7 +332,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({ template, onSuccess, onCanc
         </div>
       </div>
 
-      {/* 操作按鈕 */}
+      
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button
           type="button"

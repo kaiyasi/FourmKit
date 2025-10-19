@@ -6,4 +6,7 @@ import { getRole, Role } from '@/utils/auth'
 
 type Action = { to: string; label: string; icon: any; require?: (role: Role) => boolean }
 
+/**
+ *
+ */
 export function MobileFabNav() { return null }

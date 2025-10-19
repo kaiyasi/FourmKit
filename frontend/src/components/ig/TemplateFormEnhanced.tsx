@@ -47,7 +47,6 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 折疊狀態
   const [expandedSections, setExpandedSections] = useState({
     canvas: true,
     textWith: true,
@@ -223,7 +222,6 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
     }
   }, [template]);
 
-  // 將表單狀態向上回傳供預覽使用
   useEffect(() => {
     try { onFormDataChange?.(formData) } catch {}
   }, [formData])
@@ -270,7 +268,6 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
     setError(null);
 
     try {
-      // 若為自訂 Logo 且有檔案，先上傳取得路徑
       let payload = { ...formData } as any;
       if (payload.logo_config?.source === 'custom' && logoFile) {
         const fd = new FormData();
@@ -363,7 +360,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         </div>
       )}
 
-      {/* 基本資訊 */}
+      
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">基本資訊</h3>
 
@@ -431,7 +428,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         </div>
       </div>
 
-      {/* 畫布配置 */}
+      
       <div className="space-y-4">
         <SectionHeader title="畫布配置" section="canvas" />
         {expandedSections.canvas && (
@@ -483,7 +480,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-      {/* 文字配置（有圖片） */}
+      
       <div className="space-y-4">
         <SectionHeader title="文字配置（有附件圖片時）" section="textWith" />
         {expandedSections.textWith && (
@@ -639,12 +636,12 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-      {/* 文字配置（無圖片） */}
+      
       <div className="space-y-4">
         <SectionHeader title="文字配置（無附件圖片時）" section="textWithout" />
         {expandedSections.textWithout && (
           <div className="grid grid-cols-3 gap-4 pl-4">
-            {/* 與上面相同的欄位結構，但綁定到 text_without_attachment */}
+            
             <div>
               <label className="block text-sm font-medium mb-1">字型</label>
               <select
@@ -796,7 +793,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-      {/* 附件配置 */}
+      
       <div className="space-y-4">
         <SectionHeader title="附件圖片配置" section="attachment" />
         {expandedSections.attachment && (
@@ -877,7 +874,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-      {/* Logo 配置 */}
+      
       <div className="space-y-4">
         <SectionHeader title="Logo 配置" section="logo" />
         {expandedSections.logo && (
@@ -916,7 +913,6 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
                         setLogoFile(e.target.files[0]);
-                        // TODO: 上傳到 CDN 並獲取路徑
                       }
                     }}
                     className="w-full px-3 py-2 border border-border rounded focus:ring-2 focus:ring-primary"
@@ -994,12 +990,12 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-        {/* 浮水印配置 */}
+        
         <div className="space-y-4">
         <SectionHeader title="浮水印配置" section="watermark" />
         {expandedSections.watermark && (
           <div className="space-y-4 pl-4">
-            {/* 子項：自訂文字 */}
+            
             <div className="border rounded-lg p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">自訂文字</div>
@@ -1137,7 +1133,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
               </div>
             </div>
 
-            {/* 子項：時間戳 */}
+            
             <div className="border rounded-lg p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">時間戳</div>
@@ -1238,7 +1234,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
               </div>
             </div>
 
-            {/* 子項：格式化 ID */}
+            
             <div className="border rounded-lg p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">格式化 ID</div>
@@ -1333,12 +1329,12 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-        {/* Caption 模板配置 */}
+        
         <div className="space-y-4">
           <SectionHeader title="Caption 模板配置" section="caption" />
           {expandedSections.caption && (
             <div className="space-y-4 pl-4">
-            {/* Header */}
+            
             <div className="space-y-2">
               <div className="flex items-center">
                 <input
@@ -1376,7 +1372,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
               )}
             </div>
 
-            {/* Footer */}
+            
             <div className="space-y-2">
               <div className="flex items-center">
                 <input
@@ -1414,7 +1410,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
               )}
             </div>
 
-            {/* Divider */}
+            
             <div className="space-y-2">
               <div className="flex items-center">
                 <input
@@ -1452,7 +1448,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
               )}
             </div>
 
-            {/* Post ID 格式化 */}
+            
             <div className="space-y-2 border-t pt-4">
               <div className="flex items-center">
                 <input
@@ -1513,7 +1509,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
               )}
             </div>
 
-              {/* 時間戳格式（不展示說明塊） */}
+              
               <div className="space-y-2 border-t pt-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
                   <div>
@@ -1596,7 +1592,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
                 </div>
               </div>
 
-            {/* Hashtags */}
+            
             <div className="space-y-2 border-t pt-4">
               <div className="flex items-center">
                 <input
@@ -1639,7 +1635,7 @@ const TemplateFormEnhanced: React.FC<TemplateFormProps> = ({ template, onSuccess
         )}
       </div>
 
-      {/* 操作按鈕 */}
+      
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button
           type="button"

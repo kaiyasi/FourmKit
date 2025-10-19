@@ -13,6 +13,9 @@ interface DomainRestrictionPageProps {
   onTryAgain: () => void
 }
 
+/**
+ *
+ */
 export default function DomainRestrictionPage({
   email,
   onContactAdmin,
@@ -26,17 +29,17 @@ export default function DomainRestrictionPage({
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft text-center">
-          {/* 警告圖示 */}
+          
           <div className="w-16 h-16 mx-auto mb-4 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
             <AlertTriangle className="w-8 h-8 text-amber-600 dark:text-amber-400" />
           </div>
 
-          {/* 標題 */}
+          
           <h1 className="text-xl font-semibold text-fg mb-2">
             目前僅接受學校信箱
           </h1>
 
-          {/* 主要說明 */}
+          
           <div className="text-sm text-muted mb-4 space-y-2">
             <p>
               請使用 <code className="bg-muted/30 px-1 py-0.5 rounded text-fg">.edu.tw</code> 或{' '}
@@ -47,7 +50,7 @@ export default function DomainRestrictionPage({
             </p>
           </div>
 
-          {/* 用戶輸入的域名資訊 */}
+          
           <div className="bg-muted/20 border border-border rounded-lg p-3 mb-4">
             <div className="flex items-center justify-center gap-2 text-sm">
               <Mail className="w-4 h-4 text-muted" />
@@ -61,7 +64,7 @@ export default function DomainRestrictionPage({
             </p>
           </div>
 
-          {/* 詳細說明 */}
+          
           <div className="text-xs text-muted text-left mb-6 space-y-2">
             <p className="font-medium">為什麼需要學校信箱？</p>
             <ul className="list-disc list-inside space-y-1 pl-2">
@@ -71,7 +74,7 @@ export default function DomainRestrictionPage({
             </ul>
           </div>
 
-          {/* 建議的學校域名格式 */}
+          
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-6">
             <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
               學校信箱格式範例：
@@ -83,7 +86,7 @@ export default function DomainRestrictionPage({
             </div>
           </div>
 
-          {/* 操作按鈕 */}
+          
           <div className="space-y-3">
             <button
               onClick={onContactAdmin}
@@ -109,7 +112,7 @@ export default function DomainRestrictionPage({
           </div>
         </div>
 
-        {/* 額外資訊 */}
+        
         <div className="mt-4 text-center">
           <p className="text-xs text-muted">
             ForumKit 校園匿名討論平台 - 專為教育環境設計

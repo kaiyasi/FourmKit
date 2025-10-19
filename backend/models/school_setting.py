@@ -1,3 +1,7 @@
+"""
+Module: backend/models/school_setting.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, ForeignKey, DateTime, Text, UniqueConstraint, func

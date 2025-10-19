@@ -33,7 +33,6 @@ const FontManagementPage: React.FC = () => {
   const [editingFont, setEditingFont] = useState<Font | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // 從 localStorage 獲取使用者角色
   const userRole = localStorage.getItem('role');
   const isDevAdmin = userRole === 'dev_admin';
 
@@ -66,7 +65,7 @@ const FontManagementPage: React.FC = () => {
       <MobileBottomNav />
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -83,7 +82,7 @@ const FontManagementPage: React.FC = () => {
               <p className="text-sm text-muted mt-1">管理 Instagram 模板使用的字體資源</p>
             </div>
             <div className="flex gap-2">
-              {/* Campus Admin: 申請字體 */}
+              
               {!isDevAdmin && (
                 <button
                   onClick={() => setShowRequestForm(!showRequestForm)}
@@ -94,7 +93,7 @@ const FontManagementPage: React.FC = () => {
                 </button>
               )}
 
-              {/* Dev Admin: 上傳字體 */}
+              
               {isDevAdmin && (
                 <button
                   onClick={() => setShowUploadForm(!showUploadForm)}
@@ -108,7 +107,7 @@ const FontManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 申請表單 */}
+        
         {showRequestForm && !isDevAdmin && (
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -127,7 +126,7 @@ const FontManagementPage: React.FC = () => {
           </div>
         )}
 
-        {/* 上傳表單（Dev Admin）*/}
+        
         {showUploadForm && isDevAdmin && (
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -146,7 +145,7 @@ const FontManagementPage: React.FC = () => {
           </div>
         )}
 
-        {/* 編輯表單（Dev Admin）*/}
+        
         {editingFont && isDevAdmin && (
           <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -166,7 +165,7 @@ const FontManagementPage: React.FC = () => {
           </div>
         )}
 
-        {/* 字體列表 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft">
           <h2 className="text-lg font-semibold text-fg mb-4">可用字體</h2>
           <FontList key={refreshKey} onEdit={handleEdit} />

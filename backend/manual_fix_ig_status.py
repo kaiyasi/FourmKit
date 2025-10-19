@@ -12,7 +12,6 @@ from sqlalchemy.orm import sessionmaker
 from models import InstagramPost, PostStatus
 from datetime import datetime, timezone
 
-# 連接資料庫
 engine = create_engine('postgresql://forumkit:forumkit_password@127.0.0.1:12007/forumkit')
 Session = sessionmaker(bind=engine)
 db = Session()
@@ -26,19 +25,16 @@ def mark_as_published(post_id_or_public_id: str, ig_media_id: str, ig_permalink:
         ig_media_id: Instagram Media ID
         ig_permalink: Instagram 連結
     """
-    # 嘗試以 ID 查詢
     try:
         post_id = int(post_id_or_public_id)
         post = db.query(InstagramPost).filter_by(id=post_id).first()
     except ValueError:
-        # 如果不是數字，當作 public_id 查詢
         post = db.query(InstagramPost).filter_by(public_id=post_id_or_public_id).first()
 
     if not post:
         print(f"❌ 找不到記錄: {post_id_or_public_id}")
         return False
 
-    # 更新狀態
     post.status = PostStatus.PUBLISHED
     post.ig_media_id = ig_media_id
     post.ig_permalink = ig_permalink
@@ -59,19 +55,16 @@ def mark_as_failed(post_id_or_public_id: str, error_message: str = None):
         post_id_or_public_id: 記錄的 ID 或 public_id
         error_message: 錯誤訊息
     """
-    # 嘗試以 ID 查詢
     try:
         post_id = int(post_id_or_public_id)
         post = db.query(InstagramPost).filter_by(id=post_id).first()
     except ValueError:
-        # 如果不是數字，當作 public_id 查詢
         post = db.query(InstagramPost).filter_by(public_id=post_id_or_public_id).first()
 
     if not post:
         print(f"❌ 找不到記錄: {post_id_or_public_id}")
         return False
 
-    # 更新狀態
     post.status = PostStatus.FAILED
     if error_message:
         post.error_message = error_message
@@ -142,7 +135,6 @@ def interactive_mode():
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        # 命令列模式
         action = sys.argv[1]
         if action == 'published' and len(sys.argv) >= 5:
             mark_as_published(sys.argv[2], sys.argv[3], sys.argv[4])
@@ -154,5 +146,4 @@ if __name__ == '__main__':
             print("  標記為已發布: python3 manual_fix_ig_status.py published <post_id> <ig_media_id> <ig_permalink>")
             print("  標記為失敗: python3 manual_fix_ig_status.py failed <post_id> [error_message]")
     else:
-        # 互動模式
         interactive_mode()

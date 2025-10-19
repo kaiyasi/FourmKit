@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/redis_health.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 import os
 import socket
@@ -5,7 +9,6 @@ from urllib.parse import urlparse
 
 
 def _default_url() -> str:
-    # 與 docker-compose.yml 對齊：對外映射 12008 -> 容器 80
     return os.getenv("REDIS_URL", "redis://127.0.0.1:12008/0").strip()
 
 
@@ -36,13 +39,12 @@ def get_redis_health() -> dict:
         p = urlparse(raw if "://" in raw else f"redis://{raw}")
         host = p.hostname or "127.0.0.1"
         port = int(p.port or 6379)
-        # 直接 TCP 連線並送出 RESP 格式的 PING
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(1.5)
         try:
             s.connect((host, port))
             s.sendall(b"*1\r\n$4\r\nPING\r\n")
-            data = s.recv(64)  # 期望回應 +PONG\r\n
+            data = s.recv(64)
             ok = data.startswith(b"+PONG")
             return {"ok": ok, "url": _mask_url(raw), **({"error": data.decode(errors="ignore").strip()} if not ok else {})}
         finally:

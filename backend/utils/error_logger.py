@@ -14,7 +14,6 @@ from functools import wraps
 from utils.db import get_session
 from models.social_publishing import SocialPost, PostStatus
 
-# 配置日誌格式
 DETAILED_LOG_FORMAT = '%(asctime)s | %(levelname)s | %(name)s:%(lineno)d | %(funcName)s() | %(message)s'
 
 class ErrorLogger:
@@ -26,16 +25,13 @@ class ErrorLogger:
     
     def setup_logging(self):
         """設置日誌配置"""
-        # 如果還沒有設置處理器，才添加
         if not self.logger.handlers:
-            # 控制台處理器
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(logging.INFO)
             console_formatter = logging.Formatter(DETAILED_LOG_FORMAT)
             console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
             
-            # 文件處理器（如果可以創建文件）
             try:
                 log_dir = os.path.join(os.getcwd(), 'logs')
                 os.makedirs(log_dir, exist_ok=True)
@@ -50,7 +46,6 @@ class ErrorLogger:
                 self.logger.addHandler(file_handler)
                 
             except Exception:
-                # 如果無法創建文件處理器，忽略
                 pass
             
             self.logger.setLevel(logging.INFO)
@@ -72,7 +67,6 @@ class ErrorLogger:
             'context': context or {}
         }
         
-        # 嘗試獲取貼文詳細信息
         try:
             with get_session() as db:
                 post = db.query(SocialPost).filter(SocialPost.id == post_id).first()
@@ -87,16 +81,13 @@ class ErrorLogger:
                         'has_caption': bool(post.generated_caption)
                     }
         except Exception:
-            # 如果無法獲取貼文信息，繼續記錄錯誤
             pass
         
-        # 記錄到日誌
         self.logger.error(
             f"社交貼文錯誤 [ID:{post_id}] [{operation}] {type(error).__name__}: {error}",
             extra={'error_details': error_info}
         )
         
-        # 更新數據庫中的錯誤信息
         self._update_post_error(post_id, str(error))
         
         return error_info
@@ -181,20 +172,17 @@ class ErrorLogger:
             with get_session() as db:
                 post = db.query(SocialPost).filter(SocialPost.id == post_id).first()
                 if post:
-                    # 限制錯誤信息長度，避免數據庫字段溢出
                     truncated_message = error_message[:500] + "..." if len(error_message) > 500 else error_message
                     
                     post.error_message = truncated_message
                     post.updated_at = datetime.now(timezone.utc)
                     post.retry_count = post.retry_count + 1
                     
-                    # 如果重試次數過多，標記為失敗
                     if post.retry_count >= 3 and post.status != PostStatus.FAILED:
                         post.status = PostStatus.FAILED
                     
                     db.commit()
         except Exception:
-            # 如果更新失敗，不影響原始錯誤的記錄
             pass
 
 def log_errors(operation: str = "unknown"):
@@ -206,14 +194,12 @@ def log_errors(operation: str = "unknown"):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                # 嘗試從參數中提取有用信息
                 context = {
                     'function': func.__name__,
                     'args_count': len(args),
                     'kwargs_keys': list(kwargs.keys())
                 }
                 
-                # 如果第一個參數看起來像 post_id
                 if args and isinstance(args[0], int):
                     error_logger.log_social_post_error(args[0], e, context, operation)
                 else:
@@ -222,7 +208,7 @@ def log_errors(operation: str = "unknown"):
                         exc_info=True
                     )
                 
-                raise  # 重新拋出異常
+                raise
         return wrapper
     return decorator
 
@@ -230,7 +216,6 @@ def create_error_summary() -> Dict[str, Any]:
     """創建錯誤摘要報告"""
     try:
         with get_session() as db:
-            # 統計失敗貼文
             failed_posts = db.query(SocialPost).filter(
                 SocialPost.status == PostStatus.FAILED
             ).all()
@@ -238,7 +223,6 @@ def create_error_summary() -> Dict[str, Any]:
             error_patterns = {}
             for post in failed_posts:
                 if post.error_message:
-                    # 提取錯誤類型
                     error_type = post.error_message.split(':')[0] if ':' in post.error_message else 'Unknown'
                     error_patterns[error_type] = error_patterns.get(error_type, 0) + 1
             
@@ -266,10 +250,8 @@ def create_error_summary() -> Dict[str, Any]:
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
 
-# 全域錯誤記錄器實例
 social_media_error_logger = ErrorLogger('social_media')
 
-# 便捷函數
 def log_post_error(post_id: int, error: Exception, context: Dict = None, operation: str = "unknown"):
     """便捷函數：記錄貼文錯誤"""
     return social_media_error_logger.log_social_post_error(post_id, error, context, operation)

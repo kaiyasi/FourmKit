@@ -7,6 +7,9 @@ interface AnonymousAccountDisplayProps {
   showIcon?: boolean
 }
 
+/**
+ *
+ */
 export default function AnonymousAccountDisplay({ 
   className = '', 
   showIcon = false 
@@ -14,17 +17,14 @@ export default function AnonymousAccountDisplay({
   const { isLoggedIn, username } = useAuth()
   
   const getDisplayText = () => {
-    // 如果是預填內容，顯示「系統展示」
     if (isSystemDemo()) {
       return '系統展示'
     }
     
-    // 如果已登入，顯示帳號名稱
     if (isLoggedIn && username) {
       return username
     }
     
-    // 未登入，顯示6碼唯一碼
     return generateAnonymousCode()
   }
   

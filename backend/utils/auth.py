@@ -1,3 +1,7 @@
+"""
+Module: backend/utils/auth.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from functools import wraps
 from typing import Iterable
 import os
@@ -15,11 +19,9 @@ def get_current_user() -> User | None:
         return None
     db = next(get_db())
     try:
-        # ident 現在是字串形式的 user.id，需要轉換回整數
         user_id = int(ident)
         return db.query(User).filter_by(id=user_id).first()
     except (ValueError, TypeError):
-        # 如果轉換失敗，可能是舊的 username 格式，嘗試用 username 查找
         return db.query(User).filter_by(username=ident).first()
     finally:
         db.close()
@@ -45,7 +47,6 @@ def require_role(*roles: str):
     return decorator
 
 
-# ---- 向後相容：提供 token_required 與 get_user_role ----
 def token_required(fn):
     """簡單的 JWT 驗證裝飾器（向後相容）。
     - 驗證通過後在 g 物件上設置 user 與 user_id，供舊路由使用。
@@ -89,7 +90,6 @@ def get_effective_user_id() -> int | None:
     """回傳 JWT 身分；若啟用 dev bypass，找/建 dev_bypass 使用者並回傳其 id。"""
     ident = None
     try:
-        # optional=True：即使未帶 JWT 也不會丟例外，之後 get_jwt_identity() 會回 None
         verify_jwt_in_request(optional=True)
         ident = get_jwt_identity()
         if ident is not None:
@@ -98,12 +98,7 @@ def get_effective_user_id() -> int | None:
             except Exception:
                 pass
     except Exception:
-        # 未帶 JWT 或驗證失敗都視為未登入；後續看是否啟用 dev bypass
         ident = None
-    # 1) 完整匿名：允許以 X-Client-Id 做為匿名使用（無需登入）
-    #    過去會為每個 client 建立一個使用者（anon_{client_id})，造成帳號氾濫。
-    #    改為統一掛載到單一來賓帳號：username='anon_guest'（role='user'），
-    #    顯示名稱仍由貼文的 client_id 產生 6 碼匿名碼，不受使用者名稱影響。
     try:
         client_id = request.headers.get("X-Client-Id", "").strip()
         if client_id:
@@ -120,10 +115,8 @@ def get_effective_user_id() -> int | None:
             finally:
                 db.close()
     except Exception:
-        # 匿名建立失敗，進一步嘗試 dev bypass
         pass
 
-    # 2) 開發繞過：僅在 development 模式啟用
     if _is_dev_bypass_enabled():
         db = next(get_db())
         try:
@@ -137,7 +130,6 @@ def get_effective_user_id() -> int | None:
         finally:
             db.close()
 
-    # 否則視為未登入
     return None
 
 def role_required(roles: Iterable[UserRole]):

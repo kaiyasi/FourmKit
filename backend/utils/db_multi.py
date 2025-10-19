@@ -8,7 +8,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
-# 按服務功能分離的資料庫配置
 DB_SERVICES = {
     'core': {
         'database': 'forumkit_core',
@@ -78,7 +77,7 @@ class DatabaseService:
     def get_session(self, service: str) -> Session:
         """獲取資料庫會話"""
         if service not in self.session_makers:
-            self.get_engine(service)  # 初始化引擎
+            self.get_engine(service)
         return self.session_makers[service]()
     
     def initialize_all(self):
@@ -105,7 +104,6 @@ class DatabaseService:
         for service, config in DB_SERVICES.items():
             db_url = self.get_database_url(service)
 
-            # 檢查連接狀態
             health = False
             exists = False
             size = 0
@@ -113,7 +111,6 @@ class DatabaseService:
                 engine = self.get_engine(service)
                 with engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
-                    # 檢查資料庫是否存在並取得大小
                     result = conn.execute(text("SELECT pg_database_size(current_database())"))
                     size = result.scalar() or 0
                     exists = True
@@ -125,7 +122,7 @@ class DatabaseService:
             status[service] = {
                 'description': config['description'],
                 'database': config['database'],
-                'url': db_url.replace(f":{self.password}@", ":***@"),  # 隱藏密碼
+                'url': db_url.replace(f":{self.password}@", ":***@"),
                 'exists': exists,
                 'size': size,
                 'size_mb': round(size / 1024 / 1024, 2) if size > 0 else 0,
@@ -148,7 +145,6 @@ class DatabaseService:
         backup_filename = f"{service}_{timestamp}.sql"
         backup_path = os.path.join(backup_dir, backup_filename)
 
-        # 使用 pg_dump 備份 PostgreSQL 資料庫
         import subprocess
         try:
             cmd = [
@@ -191,10 +187,8 @@ class DatabaseService:
 
         print(f"🗑️ 清理了 {removed_count} 個舊備份檔案")
 
-# 全局實例
 db_service = DatabaseService()
 
-# 便利函數
 def get_core_session() -> Session:
     """獲取核心功能資料庫會話"""
     return db_service.get_session('core')

@@ -33,6 +33,9 @@ interface SchoolStats {
   edu_email_count: number
 }
 
+/**
+ *
+ */
 export default function AdminSchoolsPage() {
   const { role } = useAuth()
   const [schools, setSchools] = useState<School[]>([])
@@ -47,7 +50,6 @@ export default function AdminSchoolsPage() {
   const [crossUnlock, setCrossUnlock] = useState<{ code: string | null; updated_at: string | null }>({ code: null, updated_at: null })
 
   useEffect(() => {
-    // Remove hardcoded theme - let theme system handle it
     const html = document.documentElement
     html.classList.add('theme-ready')
     return () => html.classList.remove('theme-ready')
@@ -371,7 +373,7 @@ export default function AdminSchoolsPage() {
       <MobileBottomNav />
       
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* Header */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -405,7 +407,7 @@ export default function AdminSchoolsPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* 跨校 Logo 區塊（僅提供上傳校徽） */}
+          
           <div className="lg:col-span-3">
             <div className="bg-surface border border-border rounded-2xl shadow-soft p-4 sm:p-6 mb-2 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -451,7 +453,7 @@ export default function AdminSchoolsPage() {
               </div>
             </div>
           </div>
-          {/* 學校列表 */}
+          
           <div className="lg:col-span-2">
             <div className="bg-surface border border-border rounded-2xl shadow-soft">
               <div className="p-4 sm:p-6 border-b border-border">
@@ -539,7 +541,7 @@ export default function AdminSchoolsPage() {
             </div>
           </div>
 
-          {/* 統計面板 */}
+          
           <div>
             {selectedSchool && schoolStats ? (
               <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
@@ -558,7 +560,7 @@ export default function AdminSchoolsPage() {
                 </div>
                 
               <div className="p-4 sm:p-6 space-y-6">
-                {/* 綁定網域清單 */}
+                
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-medium dual-text flex items-center gap-2"><Globe className="w-4 h-4" /> 綁定網域</h4>
@@ -579,7 +581,7 @@ export default function AdminSchoolsPage() {
                     )}
                   </div>
                 </div>
-                  {/* 基本統計 */}
+                  
                   <div className="grid grid-cols-2 gap-4">
                     <div className="text-center p-3 bg-surface-hover rounded-lg border border-border">
                       <div className="flex items-center justify-center mb-2">
@@ -598,7 +600,7 @@ export default function AdminSchoolsPage() {
                     </div>
                   </div>
 
-                  {/* 活躍度 */}
+                  
                   <div>
                     <h4 className="font-medium dual-text mb-3">活躍度</h4>
                     <div className="space-y-3">
@@ -617,7 +619,7 @@ export default function AdminSchoolsPage() {
                     </div>
                   </div>
 
-                  {/* 內容分布 */}
+                  
                   <div>
                     <h4 className="font-medium dual-text mb-3">內容分布</h4>
                     <div className="space-y-2">
@@ -636,7 +638,7 @@ export default function AdminSchoolsPage() {
                     </div>
                   </div>
 
-                  {/* Email 分布 */}
+                  
                   {schoolStats.top_email_domains.length > 0 && (
                     <div>
                       <h4 className="font-medium dual-text mb-3">Email 網域</h4>
@@ -664,7 +666,7 @@ export default function AdminSchoolsPage() {
         </div>
       </main>
 
-      {/* 點擊外部關閉選單 */}
+      
       {showActionMenu && (
         <div
           className="fixed inset-0 z-5"

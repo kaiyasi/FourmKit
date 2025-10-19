@@ -1,9 +1,13 @@
+"""
+Module: backend/routes/routes_abuse.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from typing import Any
 from utils.ratelimit import unblock_ip, get_client_ip, get_ip_block_metadata
-from utils.ratelimit import _redis, _redis_ok  # type: ignore
-from utils.ticket import new_ticket_id  # reuse ticket generator (avoids circular import)
+from utils.ratelimit import _redis, _redis_ok
+from utils.ticket import new_ticket_id
 from utils.admin_events import log_security_event
 from utils.db import get_session
 from models import School, SchoolSetting
@@ -29,7 +33,6 @@ def _load_unlock_codes() -> list[str]:
                     part = line.strip()
                     if not part:
                         continue
-                    # 支援逗號分隔或逐行
                     for seg in part.split(','):
                         seg = seg.strip()
                         if seg:
@@ -37,7 +40,6 @@ def _load_unlock_codes() -> list[str]:
     except Exception:
         pass
 
-    # 去除重複，維持輸入順序
     seen: set[str] = set()
     unique_codes: list[str] = []
     for code in codes:
@@ -95,16 +97,13 @@ def _verify_unlock_code(provided: str, ip: str) -> bool:
     def _matches(expected: str | None) -> bool:
         return bool(expected and expected.upper() == code_upper)
 
-    # Cross code可跨校
     if normalized_code == 'cross':
         expected, _ = _get_school_unlock_code('cross')
         if _matches(expected):
             return True
-        # fallback：環境設定
         fallback = _load_unlock_codes()
         return any(c.lower() == provided.lower() for c in fallback)
 
-    # 若封鎖記錄指向特定學校，僅允許相同學校或跨校碼
     if normalized_blocked and normalized_blocked not in {'cross', 'platform'}:
         if normalized_code and normalized_code != normalized_blocked:
             return False
@@ -122,14 +121,12 @@ def _verify_unlock_code(provided: str, ip: str) -> bool:
             expected, _ = _get_school_unlock_code(target_slug)
             if _matches(expected):
                 return True
-            # 若沒有對應，允許跨校碼（若封鎖沒有標記學校）
             if normalized_code is None:
                 expected_cross, _ = _get_school_unlock_code('cross')
                 if _matches(expected_cross):
                     return True
         return False
 
-    # 沒有鎖定特定學校 → 嘗試跨校碼
     cross_code, _ = _get_school_unlock_code('cross')
     if _matches(cross_code):
         return True
@@ -149,7 +146,6 @@ def audit_report():
     ticket = new_ticket_id('FKA')
     ip = get_client_ip()
 
-    # 儲存一份 JSONL（若有 Redis/DB 可替換）
     try:
         root = os.getenv('AUDIT_SAVE_DIR', 'uploads')
         os.makedirs(root, exist_ok=True)
@@ -160,7 +156,6 @@ def audit_report():
     except Exception:
         pass
 
-    # 解封該 IP
     try:
         unblock_ip(ip)
     except Exception:
@@ -173,7 +168,6 @@ def list_blocked_ips():
     out = []
     if _redis_ok and _redis is not None:
         try:
-            # 粗略列出所有封鎖 key（需 Redis 5+ 支援 scan）
             cursor = 0
             pattern = 'ipsec:blocked:*'
             while True:
@@ -186,7 +180,6 @@ def list_blocked_ips():
                     break
         except Exception:
             pass
-    # 單機模式無法枚舉，回傳空陣列（仍可透過 451 與解封 API 作業）
     return jsonify({ 'items': out, 'total': len(out) })
 
 @bp.post('/abuse/unblock')

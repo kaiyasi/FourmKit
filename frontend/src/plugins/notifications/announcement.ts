@@ -6,6 +6,9 @@
 import { NotificationPlugin } from '@/types/notifications'
 import { Megaphone } from 'lucide-react'
 
+/**
+ *
+ */
 export interface AnnouncementNotificationData {
   id: number
   title: string

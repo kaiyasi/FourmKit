@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+"""
+Module: backend/check_tables.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 import sqlite3
 import os
 
-# 檢查所有可用的數據庫檔案
 db_files = [
     r"g:\ForumKit\backend\data\forumkit_core.db",
     r"g:\ForumKit\backend\data\forumkit_chat.db",
@@ -23,18 +26,15 @@ for db_path in db_files:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # 列出所有表
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = cursor.fetchall()
         
         print(f"表數量: {len(tables)}")
         
-        # 尋找 Instagram 相關的表
         ig_tables = [t[0] for t in tables if 'ig' in t[0].lower() or 'instagram' in t[0].lower()]
         if ig_tables:
             print(f"Instagram 相關表: {', '.join(ig_tables)}")
             
-            # 檢查每個 Instagram 表的結構
             for table in ig_tables:
                 cursor.execute(f"PRAGMA table_info({table})")
                 columns = cursor.fetchall()
@@ -42,7 +42,6 @@ for db_path in db_files:
                 for col in columns:
                     print(f"  {col[1]} ({col[2]})")
                 
-                # 查詢記錄數
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cursor.fetchone()[0]
                 print(f"  記錄數: {count}")

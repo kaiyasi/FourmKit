@@ -23,10 +23,8 @@ from typing import Optional
 def _ensure_dir(path: str) -> None:
     try:
         os.makedirs(path, exist_ok=True)
-        # 確保目錄可被 nginx worker 讀取（x）與列出（r）
         try:
             os.chmod(path, 0o755)
-            # 也修復父目錄權限（針對 schools 等目錄）
             parent_path = os.path.dirname(path)
             if parent_path and parent_path != path:
                 os.chmod(parent_path, 0o755)
@@ -51,7 +49,6 @@ def publish_to_cdn(local_file_path: str, *, subdir: str = "social_media") -> Opt
         return None
 
     cdn_root = (os.getenv("CDN_LOCAL_ROOT") or "cdn-data").strip()
-    # 目標目錄：<cdn_root>/<subdir>
     target_dir = os.path.join(cdn_root, subdir)
     _ensure_dir(target_dir)
 
@@ -59,16 +56,13 @@ def publish_to_cdn(local_file_path: str, *, subdir: str = "social_media") -> Opt
     target_path = os.path.join(target_dir, filename)
 
     try:
-        # 同名覆蓋（確保最新）
         shutil.copy2(local_file_path, target_path)
         try:
-            # 設定安全讀取權限（nginx 可讀）
             os.chmod(target_dir, 0o755)
             os.chmod(target_path, 0o644)
         except Exception:
             pass
     except Exception:
-        # 若複製失敗，讓呼叫端有機會 fallback
         return None
 
     return f"{cdn_base}/{subdir}/{filename}"

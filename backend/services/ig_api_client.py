@@ -24,14 +24,12 @@ class IGAPIError(Exception):
 class IGAPIClient:
     """Instagram Graph API 客戶端"""
 
-    # API 版本
     API_VERSION = "v21.0"
     BASE_URL = f"https://graph.facebook.com/{API_VERSION}"
 
-    # 錯誤類型分類
-    TOKEN_ERRORS = [190, 102, 463, 467]  # Token 相關錯誤碼
-    RATE_LIMIT_ERRORS = [4, 17, 32, 613]  # 限流錯誤碼
-    CONTENT_ERRORS = [100, 368]  # 內容違規錯誤碼
+    TOKEN_ERRORS = [190, 102, 463, 467]
+    RATE_LIMIT_ERRORS = [4, 17, 32, 613]
+    CONTENT_ERRORS = [100, 368]
 
     def __init__(self, access_token: str, ig_user_id: str):
         """
@@ -188,7 +186,6 @@ class IGAPIClient:
         try:
             logger.info(f"發布 Media Container: {creation_id}")
 
-            # 遇到 9007（Media ID is not available）進行短暫退避重試
             max_attempts = int(os.getenv('IG_PUBLISH_MAX_ATTEMPTS', '3'))
             for attempt in range(1, max_attempts + 1):
                 try:
@@ -197,7 +194,6 @@ class IGAPIClient:
                     if not media_id:
                         raise IGAPIError("API 返回無效的 Media ID")
 
-                    # 獲取 permalink
                     permalink = self._get_media_permalink(media_id)
 
                     logger.info(f"成功發布 Media: {media_id}, Permalink: {permalink}")
@@ -207,7 +203,6 @@ class IGAPIClient:
                     }
 
                 except IGAPIError as e:
-                    # 只有在 9007 或訊息包含關鍵字時才進行重試
                     message = str(e) if str(e) else ''
                     if (e.error_code and str(e.error_code) == '9007') or ('Media ID is not available' in message):
                         if attempt < max_attempts:
@@ -215,7 +210,6 @@ class IGAPIClient:
                             logger.warning(f"遇到 9007，{wait_time}s 後重試 (第 {attempt}/{max_attempts} 次)...")
                             time.sleep(wait_time)
                             continue
-                    # 其他錯誤或已達到最大次數
                     raise
 
         except IGAPIError:
@@ -384,7 +378,6 @@ class IGAPIClient:
                     timeout=30
                 )
 
-                # 解析響應
                 try:
                     result = response.json()
                 except ValueError:
@@ -393,7 +386,6 @@ class IGAPIClient:
                         status_code=response.status_code
                     )
 
-                # 檢查錯誤
                 if response.status_code != 200:
                     error = result.get('error', {})
                     error_message = error.get('message', '未知錯誤')
@@ -403,11 +395,9 @@ class IGAPIClient:
                     logger.error(f"API 錯誤 [{response.status_code}]: {error_message} "
                                f"(code: {error_code}, subcode: {error_subcode})")
 
-                    # 判斷錯誤類型
                     if error_code in self.RATE_LIMIT_ERRORS:
-                        # 限流錯誤：等待後重試
                         if attempt < retry_count - 1:
-                            wait_time = 2 ** attempt * 5  # 指數退避
+                            wait_time = 2 ** attempt * 5
                             logger.warning(f"遇到限流，等待 {wait_time} 秒後重試...")
                             time.sleep(wait_time)
                             continue
@@ -418,7 +408,6 @@ class IGAPIClient:
                         status_code=response.status_code
                     )
 
-                # 成功
                 return result
 
             except requests.RequestException as e:

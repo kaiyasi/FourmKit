@@ -45,13 +45,10 @@ def list_accounts():
     """
     with get_session() as db:
         try:
-            # 基礎查詢
             query = db.query(InstagramAccount)
 
-            # 權限過濾
             query = filter_by_permission(query, "account", "school_id")
 
-            # 篩選條件
             school_id = request.args.get('school_id', type=int)
             if school_id and g.user.role == 'dev_admin':
                 query = query.filter(InstagramAccount.school_id == school_id)
@@ -65,18 +62,15 @@ def list_accounts():
                 from models import PublishMode
                 query = query.filter(InstagramAccount.publish_mode == PublishMode(publish_mode))
 
-            # 分頁
             page = request.args.get('page', 1, type=int)
             per_page = request.args.get('per_page', 20, type=int)
 
             total = query.count()
             accounts = query.offset((page - 1) * per_page).limit(per_page).all()
 
-            # 序列化結果
             result = []
             for account in accounts:
                 try:
-                    # 檢查 Token 過期狀態
                     expiry_info = check_account_expiry(account.id)
 
                     result.append({
@@ -136,7 +130,6 @@ def get_account(id):
             if not account:
                 return jsonify({'error': 'Not found', 'message': '帳號不存在'}), 404
 
-            # 檢查 Token 過期狀態
             expiry_info = check_account_expiry(account.id)
 
             return jsonify({
@@ -204,13 +197,11 @@ def create_account():
             data = request.get_json()
             print(f"[IG Account Create] Received data: {data}", flush=True)
 
-            # 驗證必填欄位
             required_fields = ['ig_user_id', 'username', 'access_token', 'publish_mode']
             for field in required_fields:
                 if not data.get(field):
                     return jsonify({'error': 'Bad request', 'message': f'缺少必填欄位：{field}'}), 400
 
-            # 學校 ID 處理
             if g.user.role == 'dev_admin':
                 school_id = data.get('school_id')  # Dev Admin 可指定或設為 None（跨校）
             else:
@@ -218,36 +209,30 @@ def create_account():
 
             print(f"[IG Account Create] school_id={school_id}, user_role={g.user.role}", flush=True)
 
-            # 檢查 IG User ID 是否已存在
             existing = db.query(InstagramAccount).filter_by(ig_user_id=data['ig_user_id']).first()
             if existing:
                 return jsonify({'error': 'Conflict', 'message': 'IG User ID 已存在'}), 409
 
-            # 驗證發布模式
             from models import PublishMode
             try:
                 publish_mode = PublishMode(data['publish_mode'])
             except ValueError:
                 return jsonify({'error': 'Bad request', 'message': '無效的發布模式'}), 400
 
-            # 驗證批次數量
             batch_count = data.get('batch_count', 10)
             if publish_mode == PublishMode.BATCH:
                 if not isinstance(batch_count, int) or batch_count < 1 or batch_count > 10:
                     return jsonify({'error': 'Bad request', 'message': '批次數量必須在 1-10 之間'}), 400
 
-            # 驗證排程時間
             scheduled_times = data.get('scheduled_times')
             if publish_mode == PublishMode.SCHEDULED:
                 if not scheduled_times or not isinstance(scheduled_times, list):
                     return jsonify({'error': 'Bad request', 'message': 'scheduled 模式必須提供 scheduled_times'}), 400
 
-            # 處理 Token 和 App 認證
             access_token = data['access_token']
             app_id = data.get('app_id', '').strip()
             app_secret = data.get('app_secret', '').strip()
 
-            # 如果提供了 App ID 和 Secret，先進行 Token 轉換
             if app_id and app_secret:
                 print(f"[IG Account Create] Converting short-lived token to long-lived token", flush=True)
                 from services.ig_token_manager import IGTokenManager
@@ -262,18 +247,15 @@ def create_account():
                         'message': f'無法轉換 Token：{error}'
                     }), 400
 
-                # 使用轉換後的長期 Token
                 access_token = token_data['access_token']
                 token_expires_seconds = token_data['expires_in']
                 token_expires_at = datetime.utcnow() + timedelta(seconds=token_expires_seconds)
                 print(f"[IG Account Create] Token converted successfully, expires in {token_expires_seconds}s", flush=True)
             else:
-                # 沒有 App 認證，使用預設過期時間
                 token_expires_days = data.get('token_expires_days', 60)
                 token_expires_at = datetime.utcnow() + timedelta(days=token_expires_days)
                 print(f"[IG Account Create] Using default token expiry: {token_expires_days} days", flush=True)
 
-            # 加密 Token
             try:
                 encrypted_token = encrypt_token(access_token)
                 print(f"[IG Account Create] Token encrypted successfully", flush=True)
@@ -282,7 +264,6 @@ def create_account():
                 traceback.print_exc()
                 return jsonify({'error': 'Internal server error', 'message': f'Token 加密失敗：{str(e)}'}), 500
 
-            # 加密 App Secret（如果有提供）
             encrypted_app_secret = None
             if app_secret:
                 try:
@@ -292,7 +273,6 @@ def create_account():
                     print(f"[IG Account Create] App Secret encryption failed: {str(e)}", flush=True)
                     return jsonify({'error': 'Internal server error', 'message': f'App Secret 加密失敗：{str(e)}'}), 500
 
-            # 創建帳號
             print(f"[IG Account Create] Creating account object", flush=True)
             account = InstagramAccount(
                 school_id=school_id,
@@ -364,7 +344,6 @@ def update_account(id):
 
             data = request.get_json()
 
-            # 更新欄位
             if 'username' in data:
                 account.username = data['username']
 
@@ -390,33 +369,23 @@ def update_account(id):
             if 'is_active' in data:
                 account.is_active = data['is_active']
 
-            # --- 認證資訊更新 ---
-            # 採用更安全的順序：先更新 App ID 和 Secret，再更新 Token
 
-            # 1. 更新 App ID
-            # 如果 'app_id' 在請求中，則進行更新。允許傳入空字串來清空 App ID。
             if 'app_id' in data:
                 account.app_id = data['app_id'].strip() if data['app_id'] else None
 
-            # 2. 更新 App Secret
-            # 只有在 'app_secret' 在請求中，並且值不是空字串時，才更新。
-            # 這可以防止在僅更新 Token 時，意外地清空 Secret。
             if 'app_secret' in data and data['app_secret'] and data['app_secret'].strip():
                 app_secret = data['app_secret'].strip()
                 account.app_secret_encrypted = encrypt_token(app_secret)
 
-            # 3. 更新 Access Token
             if 'access_token' in data and data['access_token'] and data['access_token'].strip():
                 new_token = data['access_token'].strip()
                 
-                # 使用帳號上最新的 App ID 和 Secret 進行 Token 交換
                 app_id_for_exchange = account.app_id
                 app_secret_for_exchange = None
                 if account.app_secret_encrypted:
                     from utils.ig_crypto import decrypt_token
                     app_secret_for_exchange = decrypt_token(account.app_secret_encrypted)
 
-                # 如果有 App credentials，嘗試轉換為長期 Token
                 if app_id_for_exchange and app_secret_for_exchange:
                     from services.ig_token_manager import IGTokenManager
                     try:
@@ -430,14 +399,12 @@ def update_account(id):
                             account.token_expires_at = token_expires_at
                             print(f"[IG Account Update] Token exchanged successfully for account {id}", flush=True)
                         else:
-                            # 轉換失敗，使用原始 Token，設定預設過期時間
                             print(f"[IG Account Update] Token exchange failed: {error}, using original token", flush=True)
                             account.token_expires_at = datetime.utcnow() + timedelta(days=60)
                     except Exception as e:
                         print(f"[IG Account Update] Token exchange exception: {e}, using original token", flush=True)
                         account.token_expires_at = datetime.utcnow() + timedelta(days=60)
                 else:
-                    # 沒有 App credentials，使用預設過期時間
                     account.token_expires_at = datetime.utcnow() + timedelta(days=60)
 
                 account.access_token_encrypted = encrypt_token(new_token)

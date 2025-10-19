@@ -57,11 +57,16 @@ const fmt = (s: string) => {
   try { return new Date(s).toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) } catch { return s }
 }
 
+<<<<<<< Updated upstream
 export default function AdminSupportPage() {
+=======
+/**
+ *
+ */
+export default function AdminSupportPage() {
+>>>>>>> Stashed changes
   const { role } = useAuth()
-  // 可進入頁面的角色（含審核員，只是唯讀）
   const canAccess = ['dev_admin','campus_admin','cross_admin','campus_moderator','cross_moderator'].includes(role || '')
-  // 可操作（回覆/變更狀態）的角色：僅三個管理角色
   const canManage = ['dev_admin','campus_admin','cross_admin'].includes(role || '')
 
   const [list, setList] = useState<TicketListItem[]>([])
@@ -69,7 +74,6 @@ export default function AdminSupportPage() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<TicketDetail | null>(null)
 
-  // filters（比照審核管理的 filter 行為與樣式）
   const [filters, setFilters] = useState({
     status: '' as '' | TicketListItem['status'],
     priority: '' as '' | TicketListItem['priority'],
@@ -104,14 +108,20 @@ export default function AdminSupportPage() {
     }
   }, [])
 
+<<<<<<< Updated upstream
   const [reply, setReply] = useState('')
   const [replyLoading, setReplyLoading] = useState(false)
+  const [replyErr, setReplyErr] = useState('')
+=======
+  const [reply, setReply] = useState('')
+  const [replyLoading, setReplyLoading] = useState(false)
+  const [replyErr, setReplyErr] = useState('')
+>>>>>>> Stashed changes
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assignLoading, setAssignLoading] = useState(false)
   const [adminUsers, setAdminUsers] = useState<any[]>([])
   const [isDevAdmin] = useState(() => role === 'dev_admin')
   
-  // 新增：指派成功通知
   const [showNotification, setShowNotification] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState('')
   const [notificationType, setNotificationType] = useState<'success' | 'error'>('success')
@@ -150,17 +160,32 @@ export default function AdminSupportPage() {
     }
   }, [selected, loadDetail, loadList, canManage])
 
+<<<<<<< Updated upstream
   const loadAdminUsers = useCallback(async () => {
     try {
-      const resp = await api<{ ok: boolean; items: any[] }>('/api/admin/users')
-      const adminUsers = resp.items.filter(user => 
-        ['campus_admin', 'cross_admin'].includes(user.role)
+      // 改用後端提供的管理端使用者清單（避免 404）
+      const resp = await api<{ users: any[] }>(
+        '/api/admin/chat/admin-users'
       )
-      setAdminUsers(adminUsers)
+      const users = (resp.users || []).filter((u:any)=> ['campus_admin','cross_admin','dev_admin'].includes(u.role))
+      setAdminUsers(users)
     } catch (e) {
       console.error('載入管理員列表失敗:', e)
     }
   }, [])
+=======
+  const loadAdminUsers = useCallback(async () => {
+    try {
+      const resp = await api<{ users: any[] }>(
+        '/api/admin/chat/admin-users'
+      )
+      const users = (resp.users || []).filter((u:any)=> ['campus_admin','cross_admin','dev_admin'].includes(u.role))
+      setAdminUsers(users)
+    } catch (e) {
+      console.error('載入管理員列表失敗:', e)
+    }
+  }, [])
+>>>>>>> Stashed changes
 
   const assignToAdmin = useCallback(async (adminUserId: number) => {
     if (!selected) return
@@ -174,14 +199,12 @@ export default function AdminSupportPage() {
       await loadList()
       setShowAssignModal(false)
       
-      // 顯示指派成功通知
       const adminUser = adminUsers.find(u => u.id === adminUserId)
       if (adminUser) {
         setNotificationMessage(`已成功指派給 ${adminUser.username}`)
         setNotificationType('success')
         setShowNotification(true)
         
-        // 3秒後自動隱藏通知
         setTimeout(() => setShowNotification(false), 3000)
       }
     } catch (e) {
@@ -195,7 +218,6 @@ export default function AdminSupportPage() {
     }
   }, [selected, loadDetail, loadList, adminUsers])
 
-  // 新增：移除指派功能
   const removeAssignment = useCallback(async () => {
     if (!selected) return
     try {
@@ -207,7 +229,6 @@ export default function AdminSupportPage() {
       await loadDetail(selected.public_id)
       await loadList()
       
-      // 顯示移除指派成功通知
       setNotificationMessage('已移除指派')
       setNotificationType('success')
       setShowNotification(true)
@@ -244,12 +265,23 @@ export default function AdminSupportPage() {
     }
   }
 
+  // 第二排：狀態選單用
+  const [statusChoice, setStatusChoice] = useState<TicketListItem['status']>('open')
+  useEffect(() => {
+    if (selected?.status) setStatusChoice(selected.status)
+  }, [selected?.status])
+
+  const [statusChoice, setStatusChoice] = useState<TicketListItem['status']>('open')
+  useEffect(() => {
+    if (selected?.status) setStatusChoice(selected.status)
+  }, [selected?.status])
+
   return (
     <div className="min-h-screen">
       <NavBar pathname="/admin/support" />
       <MobileBottomNav />
 
-      {/* 通知橫幅 */}
+      
       {showNotification && (
         <div className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg transition-all duration-300 ${
           notificationType === 'success' 
@@ -264,7 +296,7 @@ export default function AdminSupportPage() {
       )}
 
       <main className="mx-auto max-w-7xl px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁面標題（對齊審核管理） */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-6">
           <div className="flex items-center gap-3 mb-2">
             <button onClick={() => window.history.back()} className="flex items-center gap-2 text-muted hover:text-fg transition-colors">
@@ -279,7 +311,7 @@ export default function AdminSupportPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 左：支援單列表（對齊審核卡片） */}
+          
           <div className="lg:col-span-2 bg-surface border border-border rounded-2xl p-4 shadow-soft">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
@@ -292,7 +324,7 @@ export default function AdminSupportPage() {
               </button>
             </div>
 
-            {/* 篩選列（與審核相同高度） */}
+            
             <div className="mb-4 p-3 bg-surface-hover rounded-lg">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <input
@@ -330,7 +362,7 @@ export default function AdminSupportPage() {
               }
             </div>
 
-            {/* 列表 */}
+            
             <div className="space-y-3">
               {error && <div className="text-sm text-red-600">{error}</div>}
               {list.length === 0 ? (
@@ -353,7 +385,7 @@ export default function AdminSupportPage() {
                         <span className={`text-xs ${priorityColor(t.priority)}`}>
                           {t.priority === 'low' ? '低' : t.priority === 'medium' ? '中' : t.priority === 'high' ? '高' : '緊急'}
                         </span>
-                        {/* 新增：指派狀態顯示 */}
+                        
                         {t.assigned_to && (
                           <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 flex items-center gap-1">
                             <UserCheck className="w-3 h-3" />
@@ -378,7 +410,7 @@ export default function AdminSupportPage() {
             </div>
           </div>
 
-          {/* 右：詳情與操作（對齊審核側欄） */}
+          
           <div className="space-y-6">
             {!selected ? (
               <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft text-center text-muted">選取左側一筆支援單以檢視詳情</div>
@@ -406,7 +438,7 @@ export default function AdminSupportPage() {
                     </div>
                   </div>
 
-                  {/* 新增：指派狀態顯示 */}
+                  
                   {selected.assigned_to && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                       <div className="flex items-center justify-between">
@@ -431,7 +463,7 @@ export default function AdminSupportPage() {
                     </div>
                   )}
 
-                  {/* 訊息串 */}
+                  
                   <div className="space-y-3 max-h-80 overflow-y-auto">
                     {selected.messages.map(m => (
                       <div key={m.id} className={`p-3 rounded-lg ${
@@ -457,49 +489,101 @@ export default function AdminSupportPage() {
                     ))}
                   </div>
 
-                  {/* 操作區（對齊審核樣式） */}
+<<<<<<< Updated upstream
+                  {/* 操作區：兩排佈局 */}
                   <div className="mt-3 space-y-2">
+                    {/* 排 1：回覆輸入 + 送出（2:1） */}
                     {selected.status !== 'closed' && (
-                      <div className="bg-surface-hover rounded-lg p-3 border border-border">
-                        <div className="text-sm font-medium mb-2">新增回覆</div>
-                        <textarea
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
                           value={reply}
-                          onChange={(e) => setReply(e.target.value)}
-                          rows={3}
-                          className="form-control"
-                          placeholder="輸入您的回覆..."
+                          onChange={(e) => { setReply(e.target.value); setReplyErr('') }}
+                          className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm w-full"
+                          placeholder="輸入回覆內容…"
                           maxLength={10000}
                           disabled={!canManage}
                         />
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-muted">{reply.length}/10000</span>
-                          <button onClick={submitReply} disabled={!canManage || !reply.trim() || replyLoading} className="btn-primary px-4 py-2">
-                            {replyLoading ? <><RefreshCw className="w-4 h-4 inline animate-spin mr-2" />發送中...</> : <><Send className="w-4 h-4 inline mr-2" />發送回覆</>}
+                        <div className="flex flex-col items-end gap-1">
+                          <button onClick={submitReply} disabled={!canManage || !reply.trim() || replyLoading} className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm disabled:opacity-50 w-full">
+                            {replyLoading ? '發送中…' : '送出回覆'}
                           </button>
+                          {replyErr && <span className="text-danger text-xs">{replyErr}</span>}
                         </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2">
-                      {isDevAdmin ? (
+                    {/* 排 2：狀態選單 + 更新 + 指派（1:1:1） */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <select value={statusChoice} onChange={(e)=> setStatusChoice(e.target.value as TicketListItem['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm w-full">
+                        <option value="open">開啟</option>
+                        <option value="awaiting_admin">待處理</option>
+                        <option value="awaiting_user">待回覆</option>
+                        <option value="resolved">已解決</option>
+                        <option value="closed">已關閉</option>
+                      </select>
+                      <button onClick={() => updateStatus(statusChoice)} disabled={!canManage} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">更新狀態</button>
+                      {isDevAdmin && (
                         <button 
-                          onClick={() => {
-                            loadAdminUsers()
-                            setShowAssignModal(true)
-                          }} 
-                          disabled={!canManage} 
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-secondary disabled:opacity-50"
+                          onClick={() => { loadAdminUsers(); setShowAssignModal(true) }}
+                          disabled={!canManage}
+                          className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full"
                         >
-                          <User className="w-4 h-4" />找支援
+                          指派/轉單
                         </button>
-                      ) : (
-                        <button onClick={() => updateStatus('awaiting_user')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-secondary disabled:opacity-50"><MessageSquare className="w-4 h-4" />等用戶</button>
                       )}
-                      <button onClick={() => updateStatus('resolved')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-primary disabled:opacity-50"><CheckCircle className="w-4 h-4" />已解決</button>
-                      <button onClick={() => updateStatus('awaiting_admin')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-secondary disabled:opacity-50"><Clock className="w-4 h-4" />等處理</button>
-                      <button onClick={() => updateStatus('closed')} disabled={!canManage} className="w-full flex items-center justify-center gap-2 px-4 py-2 btn-danger disabled:opacity-50"><XCircle className="w-4 h-4" />關閉單</button>
+                      {!isDevAdmin && (
+                        <div className="w-full" />
+                      )}
                     </div>
                   </div>
+=======
+                  
+                  <div className="mt-3 space-y-2">
+                    
+                    {selected.status !== 'closed' && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          value={reply}
+                          onChange={(e) => { setReply(e.target.value); setReplyErr('') }}
+                          className="col-span-2 px-3 py-2 border border-border rounded-lg bg-surface-hover text-fg text-sm w-full"
+                          placeholder="輸入回覆內容…"
+                          maxLength={10000}
+                          disabled={!canManage}
+                        />
+                        <div className="flex flex-col items-end gap-1">
+                          <button onClick={submitReply} disabled={!canManage || !reply.trim() || replyLoading} className="px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 text-sm disabled:opacity-50 w-full">
+                            {replyLoading ? '發送中…' : '送出回覆'}
+                          </button>
+                          {replyErr && <span className="text-danger text-xs">{replyErr}</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                      <select value={statusChoice} onChange={(e)=> setStatusChoice(e.target.value as TicketListItem['status'])} className="px-3 py-2 rounded-lg border border-border bg-surface text-sm w-full">
+                        <option value="open">開啟</option>
+                        <option value="awaiting_admin">待處理</option>
+                        <option value="awaiting_user">待回覆</option>
+                        <option value="resolved">已解決</option>
+                        <option value="closed">已關閉</option>
+                      </select>
+                      <button onClick={() => updateStatus(statusChoice)} disabled={!canManage} className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full">更新狀態</button>
+                      {isDevAdmin && (
+                        <button 
+                          onClick={() => { loadAdminUsers(); setShowAssignModal(true) }}
+                          disabled={!canManage}
+                          className="px-3 py-2 rounded-lg border bg-surface hover:bg-surface-hover text-sm w-full"
+                        >
+                          指派/轉單
+                        </button>
+                      )}
+                      {!isDevAdmin && (
+                        <div className="w-full" />
+                      )}
+                    </div>
+                  </div>
+>>>>>>> Stashed changes
                 </div>
               </div>
             )}
@@ -507,7 +591,7 @@ export default function AdminSupportPage() {
         </div>
       </main>
 
-      {/* 指派模態框 */}
+      
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-dramatic">
@@ -558,4 +642,8 @@ export default function AdminSupportPage() {
       )}
     </div>
   )
+<<<<<<< Updated upstream
 }
+=======
+}
+>>>>>>> Stashed changes

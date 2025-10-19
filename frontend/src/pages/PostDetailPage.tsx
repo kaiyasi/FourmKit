@@ -11,7 +11,6 @@ import { SafeHtmlContent } from '@/components/ui/SafeHtmlContent'
 import CommentSection from '@/components/CommentSection'
 import { getRole } from '@/utils/auth'
 import { Trash2, Link as LinkIcon, ArrowLeft } from 'lucide-react'
-// 移除行動版懸浮操作列所需圖示（留言/分享/回報），避免與內文重複
 
 type DetailPost = { 
   id: number; 
@@ -28,13 +27,14 @@ type DetailPost = {
   is_advertisement?: boolean;
 }
 
+/**
+ *
+ */
 export default function PostDetailPage({ id }: { id?: number }) {
-  // 允許直接路由使用
   const params = useParams()
   const navigate = useNavigate()
   const pid = id ?? Number(params.id)
   
-  // 狀態宣告置頂，避免 early return 使用尚未宣告的變數
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [post, setPost] = useState<DetailPost | null>(null)
@@ -46,7 +46,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
   const [shareMsg, setShareMsg] = useState<string | null>(null)
   const [schools, setSchools] = useState<{ id:number; slug:string; name:string }[]>([])
 
-  // 確保 pid 是有效數字
   if (!pid || isNaN(pid)) {
     return (
       <PageLayout pathname="/posts/404" maxWidth="max-w-5xl">
@@ -74,7 +73,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
     })()
   }, [pid])
 
-  // 讓內文中的 <img> 點擊可開啟輕量燈箱
   useEffect(() => {
     const container = document.getElementById('post-content')
     if (!container) return
@@ -96,7 +94,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
     }
   }, [post?.content])
 
-  // 載入學校清單，供顯示名稱 fallback
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -113,7 +110,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
   const displaySchoolName = () => {
     if (!post) return ''
     
-    // 檢查是否為公告，優先顯示公告類型
     if ((post as any).is_announcement) {
       const announcementType = (post as any).announcement_type
       switch(announcementType) {
@@ -124,7 +120,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
       }
     }
     
-    // 檢查是否為廣告
     if ((post as any).is_advertisement) {
       return '廣告'
     }
@@ -139,7 +134,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
     return (found?.name || found?.slug || '').trim()
   }
 
-  // 刪文請求
   const handleDeleteRequest = async () => {
     if (!deleteReason.trim()) {
       alert('請填寫刪文理由')
@@ -149,7 +143,6 @@ export default function PostDetailPage({ id }: { id?: number }) {
     try {
       setDeleteRequesting(true)
       
-      // 構建 headers，如果有 token 就加上，沒有也沒關係
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       }
@@ -210,8 +203,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
             if (alive && j?.url) { setUrl(j.url); setLoading(false); return }
           }
           
-          // fallback: 直接構建 CDN URL
-          let rel = (m.path || '').replace(/^\/+/, '')
+          const rel = (m.path || '').replace(/^\/+/, '')
           if (rel.startsWith('public/')) {
             setUrl(`${API_BASE}/${rel.replace(/^public\//, '')}`)
           } else if (rel.startsWith('media/')) {
@@ -271,7 +263,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
     <PageLayout pathname={`/posts/${post.id}`} maxWidth="max-w-5xl">
       <MobileHeader subtitle="Post" />
       
-      {/* 返回按鈕 */}
+      
       <div className="mb-4">
         <button
           onClick={() => navigate(-1)}
@@ -289,7 +281,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
             {(() => { const name = displaySchoolName(); return name ? (<><span className="mx-1">•</span> <span className="text-fg">{name}</span></>) : null })()}
           </div>
           
-          {/* 公告/廣告徽章 */}
+          
           <div className="flex items-center gap-2">
             {post.is_announcement && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400">
@@ -311,19 +303,19 @@ export default function PostDetailPage({ id }: { id?: number }) {
           </div>
         </div>
         
-        {/* 回覆提示（灰色小字） */}
+        
         {(post as any).reply_to_id && (
           <div className="text-xs text-muted mb-2">
             <a href={`/posts/${(post as any).reply_to_id}`} className="hover:underline">回覆貼文 #{(post as any).reply_to_id}</a>
           </div>
         )}
 
-        {/* 內容顯示（後端已轉為 HTML）。套用閱讀樣式，並在載入後掛上圖片燈箱。*/}
+        
         <div id="post-content" className="max-w-none text-fg break-words [&>*:first-child]:mt-0">
           <SafeHtmlContent html={post.content || ''} className="prose prose-sm" allowLinks={true} />
         </div>
         
-        {/* 媒體內容 */}
+        
         {post.media && post.media.length > 0 && (
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {post.media.map((m) => (
@@ -333,7 +325,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
         )}
       </div>
 
-      {/* 留言和反應區 */}
+      
       <div id="comments-anchor" />
       <CommentSection
         postId={post.id}
@@ -364,14 +356,14 @@ export default function PostDetailPage({ id }: { id?: number }) {
         }
       />
 
-      {/* 分享成功提示 */}
+      
       {shareMsg && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
           {shareMsg}
         </div>
       )}
 
-      {/* 刪文請求模態框 */}
+      
       {showDeleteRequestModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md">
@@ -406,7 +398,7 @@ export default function PostDetailPage({ id }: { id?: number }) {
           </div>
         </div>
       )}
-      {/* 圖片燈箱（含左右切換與快捷鍵） */}
+      
       {lightbox && (
         <LightboxOverlay 
           url={lightbox.url} 
@@ -418,12 +410,11 @@ export default function PostDetailPage({ id }: { id?: number }) {
           setUrl={(u) => setLightbox({ url: u })}
         />
       )}
-      {/* 移除：行動版懸浮工具列（留言/分享/回報），避免與內文重複 */}
+      
     </PageLayout>
   )
 }
 
-// 燈箱元件（支援左右切換、鍵盤、觸控手勢）
 function LightboxOverlay({ 
   url, 
   post, 
@@ -443,18 +434,16 @@ function LightboxOverlay({
 }) {
   const [startX, setStartX] = useState<number | null>(null)
 
-  // 從 post.media 建出可切換的圖片 URL 清單
   const images = (post.media || [])
     .filter(m => /\.(jpg|jpeg|png|webp|gif)$/i.test(m.path || '') || m.kind === 'image')
     .map(m => {
-      let rel = (m.path || '').replace(/^\/+/, '')
+      const rel = (m.path || '').replace(/^\/+/, '')
       if (rel.startsWith('public/')) return `${API_BASE}/${rel.replace(/^public\//, '')}`
       if (rel.startsWith('media/')) return `${API_BASE}/${rel}`
       const ext = (m.path || '').split('.').pop() || 'jpg'
       return `${API_BASE}/${m.id}.${ext}`
     })
 
-  // 解析目前 url 在清單中的位置
   useEffect(() => {
     if (!images.length) { onResolveIndex(null); return }
     const idx = images.findIndex(u => (u.split('?')[0] === url.split('?')[0]))
@@ -480,7 +469,6 @@ function LightboxOverlay({
     return () => document.removeEventListener('keydown', onKey)
   }, [index, images.length])
 
-  // 觸控滑動切換
   const onTouchStart = (e: React.TouchEvent) => setStartX(e.touches[0].clientX)
   const onTouchEnd = (e: React.TouchEvent) => {
     if (startX === null) return
@@ -496,7 +484,7 @@ function LightboxOverlay({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* 左右切換 */}
+      
       {images.length > 1 && (
         <>
           <button

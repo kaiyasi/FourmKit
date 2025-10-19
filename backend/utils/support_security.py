@@ -30,11 +30,11 @@ class HoneyPotDetector:
     """蜂蜜罐檢測器 - 檢測機器人提交"""
     
     HONEYPOT_FIELDS = [
-        'website',      # 隱藏的網站欄位
-        'url',          # 隱藏的 URL 欄位
-        'phone',        # 隱藏的電話欄位
-        'company',      # 隱藏的公司欄位
-        'message_copy', # 重複的訊息欄位
+        'website',
+        'url',
+        'phone',
+        'company',
+        'message_copy',
     ]
     
     @staticmethod
@@ -57,7 +57,6 @@ class HoneyPotDetector:
 class ContentValidator:
     """內容驗證器"""
     
-    # 可疑關鍵詞（簡化版）
     SPAM_KEYWORDS = [
         'viagra', 'casino', 'poker', 'lottery', 'winner', 'congratulations',
         'click here', 'buy now', 'limited time', 'act now', 'free money',
@@ -65,13 +64,11 @@ class ContentValidator:
         '賺錢', '中獎', '免費', '點擊這裡', '立即購買', '限時優惠'
     ]
     
-    # 惡意 URL 模式
     MALICIOUS_URL_PATTERNS = [
         r'bit\.ly',
         r'tinyurl\.com',
         r'goo\.gl',
         r't\.co',
-        # 可添加更多短網址服務
     ]
     
     @staticmethod
@@ -82,7 +79,6 @@ class ContentValidator:
         
         text_lower = text.lower()
         
-        # 檢查垃圾關鍵詞
         spam_count = 0
         found_keywords = []
         
@@ -91,7 +87,6 @@ class ContentValidator:
                 spam_count += 1
                 found_keywords.append(keyword)
         
-        # 如果發現多個垃圾關鍵詞
         if spam_count >= 3:
             return SecurityViolation(
                 violation_type='spam_content',
@@ -111,7 +106,6 @@ class ContentValidator:
         if not text:
             return None
         
-        # 尋找 URL
         url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
         urls = re.findall(url_pattern, text, re.IGNORECASE)
         
@@ -173,24 +167,18 @@ class RateLimiter:
     def is_rate_limited(self, key: str, limit: int, window: int) -> bool:
         """檢查是否超過速率限制"""
         if not self.redis:
-            # 如果沒有 Redis，使用簡單的內存檢查（不推薦用於生產環境）
             return False
         
         try:
-            # 使用滑動窗口演算法
             now = time.time()
             pipeline = self.redis.pipeline()
             
-            # 移除過期的請求記錄
             pipeline.zremrangebyscore(key, '-inf', now - window)
             
-            # 獲取當前窗口內的請求數
             pipeline.zcard(key)
             
-            # 添加當前請求
             pipeline.zadd(key, {str(now): now})
             
-            # 設置過期時間
             pipeline.expire(key, window)
             
             results = pipeline.execute()
@@ -204,7 +192,6 @@ class RateLimiter:
     
     def get_rate_limit_key(self, prefix: str, identifier: str) -> str:
         """生成速率限制鍵值"""
-        # 使用 IP 地址的 hash 來避免直接儲存 IP
         ip_hash = hashlib.sha256(identifier.encode()).hexdigest()[:16]
         return f"rate_limit:{prefix}:{ip_hash}"
 
@@ -230,9 +217,8 @@ class SimilarContentDetector:
     
     def _get_content_hash(self, text: str) -> str:
         """生成內容雜湊值"""
-        # 標準化文字（移除空白、標點符號、轉小寫）
         normalized = re.sub(r'[^\w\s]', '', text.lower().strip())
-        normalized = ' '.join(normalized.split())  # 標準化空白
+        normalized = ' '.join(normalized.split())
         
         return hashlib.sha256(normalized.encode()).hexdigest()
     
@@ -245,11 +231,9 @@ class SimilarContentDetector:
             content_hash = self._get_content_hash(text)
             key = f"content_hash:{content_hash}"
             
-            # 檢查是否存在相同內容
             if self.redis.exists(key):
                 return True
             
-            # 記錄新內容
             self.redis.setex(key, window_minutes * 60, 1)
             return False
             
@@ -270,12 +254,10 @@ class SupportSecurityManager:
         """驗證工單建立請求"""
         violations = []
         
-        # 1. 蜂蜜罐檢測
         honeypot_violation = HoneyPotDetector.check_honeypot(form_data)
         if honeypot_violation:
             violations.append(honeypot_violation)
         
-        # 2. 速率限制檢查
         if self.rate_limiter.is_rate_limited(
             self.rate_limiter.get_rate_limit_key('ticket_create', client_ip),
             limit=5,
@@ -291,26 +273,21 @@ class SupportSecurityManager:
                 details={'limit': 5, 'window': 300}
             ))
         
-        # 3. 內容驗證
         subject = form_data.get('subject', '')
         body = form_data.get('body', '')
         
-        # 檢查垃圾內容
         spam_violation = ContentValidator.check_spam_content(f"{subject} {body}")
         if spam_violation:
             violations.append(spam_violation)
         
-        # 檢查惡意 URL
         url_violation = ContentValidator.check_malicious_urls(body)
         if url_violation:
             violations.append(url_violation)
         
-        # 檢查長度
         length_violation = ContentValidator.check_excessive_length(body)
         if length_violation:
             violations.append(length_violation)
         
-        # 4. 相似內容檢測
         if self.content_detector.is_similar_content(f"{subject}|{body}"):
             violations.append(SecurityViolation(
                 violation_type='duplicate_content',
@@ -322,7 +299,6 @@ class SupportSecurityManager:
                 details={}
             ))
         
-        # 記錄違規
         self.violations.extend(violations)
         
         return violations
@@ -331,11 +307,10 @@ class SupportSecurityManager:
         """驗證訊息建立請求"""
         violations = []
         
-        # 1. 速率限制檢查
         if self.rate_limiter.is_rate_limited(
             self.rate_limiter.get_rate_limit_key('message_create', client_ip),
             limit=10,
-            window=60  # 1分鐘
+            window=60
         ):
             violations.append(SecurityViolation(
                 violation_type='rate_limit_exceeded',
@@ -347,20 +322,16 @@ class SupportSecurityManager:
                 details={'limit': 10, 'window': 60}
             ))
         
-        # 2. 內容驗證
         body = form_data.get('body', '')
         
-        # 檢查垃圾內容
         spam_violation = ContentValidator.check_spam_content(body)
         if spam_violation:
             violations.append(spam_violation)
         
-        # 檢查惡意 URL
         url_violation = ContentValidator.check_malicious_urls(body)
         if url_violation:
             violations.append(url_violation)
         
-        # 記錄違規
         self.violations.extend(violations)
         
         return violations
@@ -370,17 +341,13 @@ class SupportSecurityManager:
         if not content:
             return ""
         
-        # 移除多餘空白
         content = re.sub(r'\s+', ' ', content.strip())
         
-        # HTML 清理
         if allow_html:
             content = sanitize_html(content)
         else:
-            # 移除所有 HTML 標籤
             content = re.sub(r'<[^>]+>', '', content)
         
-        # 移除控制字符（除了換行和製表符）
         content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', content)
         
         return content
@@ -393,22 +360,16 @@ class SupportSecurityManager:
                 f"[{violation.severity}] from {violation.client_ip}: {violation.message}"
             )
             
-            # 可以在這裡添加更多處理邏輯，如：
-            # - 發送警報給管理員
-            # - 記錄到專門的安全日誌資料庫
-            # - 觸發自動防護措施
     
     def should_block_request(self, violations: List[SecurityViolation]) -> bool:
         """判斷是否應該阻擋請求"""
         if not violations:
             return False
         
-        # 如果有高危或嚴重違規，直接阻擋
         for violation in violations:
             if violation.severity in ['high', 'critical']:
                 return True
         
-        # 如果中等違規超過 2 個，也阻擋
         medium_count = sum(1 for v in violations if v.severity == 'medium')
         if medium_count >= 2:
             return True
@@ -416,5 +377,4 @@ class SupportSecurityManager:
         return False
 
 
-# 全域安全管理器實例
 security_manager = SupportSecurityManager()

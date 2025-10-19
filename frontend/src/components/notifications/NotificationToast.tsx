@@ -48,6 +48,9 @@ const STYLE_MAP = {
   }
 }
 
+/**
+ *
+ */
 export default function NotificationToast({
   notification,
   onClose,
@@ -61,13 +64,11 @@ export default function NotificationToast({
   const IconComponent = ICON_MAP[icon]
   const styles = STYLE_MAP[icon]
 
-  // 進入動畫
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 100)
     return () => clearTimeout(timer)
   }, [])
 
-  // 自動隱藏（緊急通知不自動隱藏）
   useEffect(() => {
     if (notification.urgent) return
 
@@ -131,7 +132,7 @@ export default function NotificationToast({
         `}
         onClick={handleClick}
       >
-        {/* 頂部：關閉按鈕與時間 */}
+        
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs opacity-75">
             {formatTime(notification.timestamp)}
@@ -147,7 +148,7 @@ export default function NotificationToast({
           </button>
         </div>
 
-        {/* 主要內容 */}
+        
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0">
             <IconComponent className={`w-5 h-5 ${styles.icon}`} />
@@ -172,14 +173,14 @@ export default function NotificationToast({
           </div>
         </div>
 
-        {/* 未讀指示器 */}
+        
         {!notification.read && (
           <div className="absolute -top-1 -right-1">
             <div className="w-3 h-3 bg-primary rounded-full animate-pulse" />
           </div>
         )}
 
-        {/* 進度條（自動隱藏倒計時） */}
+        
         {!notification.urgent && (
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/10 dark:bg-white/10 rounded-b-xl overflow-hidden">
             <div 
@@ -214,13 +215,15 @@ interface NotificationToastContainerProps {
   maxVisible?: number
 }
 
+/**
+ *
+ */
 export function NotificationToastContainer({
   notifications,
   onClose,
   onMarkAsRead,
   maxVisible = 3
 }: NotificationToastContainerProps) {
-  // 只顯示最新的未讀通知
   const visibleNotifications = notifications
     .filter(n => !n.read)
     .slice(0, maxVisible)

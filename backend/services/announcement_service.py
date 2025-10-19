@@ -82,7 +82,6 @@ class AnnouncementService:
         """
         now = datetime.now(timezone.utc)
         
-        # 構建查詢條件
         conditions = [
             Announcement.is_active == True,
             or_(
@@ -95,7 +94,6 @@ class AnnouncementService:
             )
         ]
         
-        # 學校過濾：顯示全域公告和該學校的公告
         if school_id:
             conditions.append(
                 or_(
@@ -104,10 +102,8 @@ class AnnouncementService:
                 )
             )
         else:
-            # 如果沒有學校ID，只顯示全域公告
             conditions.append(Announcement.school_id.is_(None))
         
-        # 查詢公告
         announcements = session.query(Announcement).filter(
             and_(*conditions)
         ).order_by(
@@ -115,7 +111,6 @@ class AnnouncementService:
             Announcement.created_at.desc()
         ).limit(limit).all()
         
-        # 獲取用戶的閱讀狀態
         announcement_ids = [a.id for a in announcements]
         read_records = {}
         if announcement_ids:
@@ -125,7 +120,6 @@ class AnnouncementService:
             ).all()
             read_records = {r.announcement_id: r.read_at for r in reads}
         
-        # 構建返回數據
         result = []
         for announcement in announcements:
             if not include_read and announcement.id in read_records:
@@ -181,7 +175,6 @@ class AnnouncementService:
         """
         now = datetime.now(timezone.utc)
         
-        # 構建查詢條件
         conditions = [
             Announcement.is_active == True,
             or_(
@@ -194,24 +187,18 @@ class AnnouncementService:
             )
         ]
         
-        # 根據角色過濾公告
         if user_role == "campus_admin":
-            # 校內管理員：只顯示自己學校的公告
             if user_school_id:
                 conditions.append(Announcement.school_id == user_school_id)
             else:
                 return []  # 沒有學校ID，返回空列表
         elif user_role == "cross_admin":
-            # 跨校管理員：只顯示全域公告
             conditions.append(Announcement.school_id.is_(None))
         elif user_role == "dev_admin":
-            # 開發管理員：顯示所有公告
             pass  # 不過濾學校
         else:
-            # 其他角色：只顯示全域公告
             conditions.append(Announcement.school_id.is_(None))
         
-        # 查詢公告
         announcements = session.query(Announcement).filter(
             and_(*conditions)
         ).order_by(
@@ -219,7 +206,6 @@ class AnnouncementService:
             Announcement.created_at.desc()
         ).limit(limit).all()
         
-        # 獲取用戶的閱讀狀態
         announcement_ids = [a.id for a in announcements]
         read_records = {}
         if announcement_ids:
@@ -229,7 +215,6 @@ class AnnouncementService:
             ).all()
             read_records = {r.announcement_id: r.read_at for r in reads}
         
-        # 構建返回數據
         result = []
         for announcement in announcements:
             if not include_read and announcement.id in read_records:
@@ -278,7 +263,6 @@ class AnnouncementService:
         Returns:
             bool: 是否成功標記
         """
-        # 檢查是否已經讀過
         existing_read = session.query(AnnouncementRead).filter(
             AnnouncementRead.announcement_id == announcement_id,
             AnnouncementRead.user_id == user_id
@@ -287,7 +271,6 @@ class AnnouncementService:
         if existing_read:
             return True  # 已經讀過
         
-        # 創建閱讀記錄
         read_record = AnnouncementRead(
             announcement_id=announcement_id,
             user_id=user_id,
@@ -319,7 +302,6 @@ class AnnouncementService:
         """
         now = datetime.now(timezone.utc)
         
-        # 構建查詢條件
         conditions = [
             Announcement.is_active == True,
             or_(
@@ -332,7 +314,6 @@ class AnnouncementService:
             )
         ]
         
-        # 學校過濾
         if school_id:
             conditions.append(
                 or_(
@@ -343,7 +324,6 @@ class AnnouncementService:
         else:
             conditions.append(Announcement.school_id.is_(None))
         
-        # 查詢所有活躍公告
         active_announcements = session.query(Announcement).filter(
             and_(*conditions)
         ).all()
@@ -353,7 +333,6 @@ class AnnouncementService:
         
         announcement_ids = [a.id for a in active_announcements]
         
-        # 查詢已讀的公告
         read_announcements = session.query(AnnouncementRead.announcement_id).filter(
             AnnouncementRead.announcement_id.in_(announcement_ids),
             AnnouncementRead.user_id == user_id
@@ -361,7 +340,6 @@ class AnnouncementService:
         
         read_ids = {r.announcement_id for r in read_announcements}
         
-        # 計算未讀數量
         unread_count = len(announcement_ids) - len(read_ids)
         
         return max(0, unread_count)

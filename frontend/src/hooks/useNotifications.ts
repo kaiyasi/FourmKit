@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { Notification } from '@/types/notifications'
 import { notificationManager } from '@/lib/notificationManager'
 
-// 向後兼容：重新導出 Notification 類型
 export type { Notification } from '@/types/notifications'
 
 interface NotificationState {
@@ -21,6 +20,9 @@ interface NotificationState {
 const NOTIFICATION_STORAGE_KEY = 'forumkit_notifications'
 const MAX_NOTIFICATIONS = 50
 
+/**
+ *
+ */
 export function useNotifications() {
   const [state, setState] = useState<NotificationState>({
     notifications: [],
@@ -30,7 +32,6 @@ export function useNotifications() {
     lastNotificationTime: 0
   })
 
-  // 從 localStorage 載入通知
   const loadNotifications = useCallback(() => {
     try {
       const stored = localStorage.getItem(NOTIFICATION_STORAGE_KEY)
@@ -41,7 +42,6 @@ export function useNotifications() {
 
         setState(prev => {
           const lastNotificationTime = prev.lastNotificationTime || now
-          // 檢查是否在10秒內有新通知
           const showCount = (now - lastNotificationTime) < 10000 && unreadCount > 0
 
           return {
@@ -59,7 +59,6 @@ export function useNotifications() {
     }
   }, [])
 
-  // 儲存通知到 localStorage
   const saveNotifications = useCallback((notifications: Notification[]) => {
     try {
       localStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(notifications))
@@ -68,7 +67,6 @@ export function useNotifications() {
     }
   }, [])
 
-  // 新增通知
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {
       ...notification,
@@ -94,7 +92,6 @@ export function useNotifications() {
       }
     })
 
-    // 10秒後自動變為紅點
     setTimeout(() => {
       setState(prev => ({
         ...prev,
@@ -105,12 +102,10 @@ export function useNotifications() {
     return newNotification.id
   }, [saveNotifications])
 
-  // 初始化時設置 NotificationManager 的 addNotification 函數
   useEffect(() => {
     notificationManager.setAddNotificationFn(addNotification)
   }, [addNotification])
 
-  // 標記通知為已讀
   const markAsRead = useCallback((id: string) => {
     setState(prev => {
       const notifications = prev.notifications.map(n =>
@@ -130,7 +125,6 @@ export function useNotifications() {
     })
   }, [saveNotifications])
 
-  // 標記所有通知為已讀
   const markAllAsRead = useCallback(() => {
     setState(prev => {
       const notifications = prev.notifications.map(n => ({ ...n, read: true }))
@@ -146,7 +140,6 @@ export function useNotifications() {
     })
   }, [saveNotifications])
 
-  // 刪除通知
   const removeNotification = useCallback((id: string) => {
     setState(prev => {
       const notifications = prev.notifications.filter(n => n.id !== id)
@@ -164,7 +157,6 @@ export function useNotifications() {
     })
   }, [saveNotifications])
 
-  // 清除所有通知
   const clearAll = useCallback(() => {
     setState(prev => ({
       ...prev,
@@ -176,7 +168,6 @@ export function useNotifications() {
     saveNotifications([])
   }, [saveNotifications])
 
-  // 向後兼容：認證通知快捷方法（現在使用插件系統）
   const addAuthNotification = useCallback((
     event: 'register_success' | 'login_success' | 'password_changed' | 'google_linked',
     message?: string
@@ -184,7 +175,6 @@ export function useNotifications() {
     return notificationManager.emit('auth', { event, message })
   }, [])
 
-  // 向後兼容：審核通知快捷方法（現在使用插件系統）
   const addModerationNotification = useCallback((
     event: 'post_approved' | 'post_rejected' | 'comment_approved' | 'comment_rejected',
     postId?: number,
@@ -193,12 +183,10 @@ export function useNotifications() {
     return notificationManager.emit('moderation', { event, postId, reason })
   }, [])
 
-  // 初始化載入
   useEffect(() => {
     loadNotifications()
   }, [loadNotifications])
 
-  // 監聽其他頁面的通知變更（跨標籤頁同步）
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === NOTIFICATION_STORAGE_KEY) {

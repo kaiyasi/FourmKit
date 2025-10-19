@@ -6,6 +6,9 @@
 import { NotificationPlugin } from '@/types/notifications'
 import { ShieldAlert } from 'lucide-react'
 
+/**
+ *
+ */
 export interface ModerationNotificationData {
   event: 'post_approved' | 'post_rejected' | 'comment_approved' | 'comment_rejected'
   postId?: number
@@ -56,10 +59,8 @@ export const moderationNotificationPlugin: NotificationPlugin<ModerationNotifica
     }
   },
 
-  // Socket 事件處理
   socketEvent: 'moderation_result',
   socketHandler: (payload, emit) => {
-    // payload: { type: 'post_approved', post_id: 123, reason?: string }
     emit({
       event: payload.type,
       postId: payload.post_id,

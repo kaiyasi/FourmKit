@@ -71,7 +71,6 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
     setLoading(true);
     setError(null);
 
-    // 驗證
     if (!formData.display_name.trim()) {
       setError('請填寫顯示名稱');
       setLoading(false);
@@ -125,7 +124,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         </div>
       )}
 
-      {/* 字體家族名稱（唯讀）*/}
+      
       <div>
         <label className="block text-sm font-medium mb-1">字體家族名稱（唯讀）</label>
         <input
@@ -137,7 +136,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         <p className="text-xs text-muted mt-1">字體家族名稱無法修改</p>
       </div>
 
-      {/* 顯示名稱 */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">
           顯示名稱 <span className="text-danger">*</span>
@@ -151,7 +150,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         />
       </div>
 
-      {/* 描述 */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">描述</label>
         <textarea
@@ -162,7 +161,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         />
       </div>
 
-      {/* 中文支援 */}
+      
       <div>
         <label className="flex items-center gap-2">
           <input
@@ -175,7 +174,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         </label>
       </div>
 
-      {/* 字重和樣式 */}
+      
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium mb-1">字重</label>
@@ -210,7 +209,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         </div>
       </div>
 
-      {/* 作用範圍 */}
+      
       <div>
         <label className="block text-sm font-medium mb-1">作用範圍</label>
         <select
@@ -223,7 +222,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         </select>
       </div>
 
-      {/* 學校選擇（僅 SCHOOL 範圍） */}
+      
       {formData.scope === 'school' && (
         <div>
           <label className="block text-sm font-medium mb-1">
@@ -245,7 +244,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         </div>
       )}
 
-      {/* 使用統計（唯讀）*/}
+      
       <div className="bg-surface-hover border border-border rounded-lg p-3">
         <div className="text-sm font-medium mb-2">使用統計</div>
         <div className="text-xs text-muted space-y-1">
@@ -257,7 +256,7 @@ const FontEditForm: React.FC<FontEditFormProps> = ({ font, onSuccess, onCancel }
         </div>
       </div>
 
-      {/* 按鈕 */}
+      
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button
           type="button"

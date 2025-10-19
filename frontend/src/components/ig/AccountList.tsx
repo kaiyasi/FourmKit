@@ -120,7 +120,6 @@ const AccountList: React.FC<AccountListProps> = ({ onEdit, onRefresh }) => {
       });
       const data = await response.json();
       if (!response.ok) {
-        // 顯示更友好的錯誤訊息
         const errorMsg = data.message || data.error || 'Token 刷新失敗';
         throw new Error(errorMsg);
       }
@@ -201,7 +200,7 @@ const AccountList: React.FC<AccountListProps> = ({ onEdit, onRefresh }) => {
                 className="bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition"
               >
                 <div className="flex items-start justify-between">
-                  {/* 左側：帳號資訊 */}
+                  
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-semibold">@{account.username}</h3>
@@ -252,7 +251,7 @@ const AccountList: React.FC<AccountListProps> = ({ onEdit, onRefresh }) => {
                       )}
                     </div>
 
-                    {/* 錯誤訊息 */}
+                    
                     {account.last_error && (
                       <div className="mt-3 p-2 bg-warning-bg border border-warning-border rounded text-sm text-warning-text">
                         <div className="font-medium">最後錯誤：</div>
@@ -266,7 +265,7 @@ const AccountList: React.FC<AccountListProps> = ({ onEdit, onRefresh }) => {
                     )}
                   </div>
 
-                  {/* 右側：操作按鈕 */}
+                  
                   <div className="flex flex-col gap-2 ml-4">
                     <button
                       onClick={() => onEdit(account)}

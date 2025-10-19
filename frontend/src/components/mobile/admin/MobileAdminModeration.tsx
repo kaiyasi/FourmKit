@@ -40,6 +40,9 @@ interface ModerationStats {
   rejected: number
 }
 
+/**
+ *
+ */
 export function MobileAdminModeration() {
   const [items, setItems] = useState<ModerationItem[]>([])
   const [stats, setStats] = useState<ModerationStats>({
@@ -56,17 +59,14 @@ export function MobileAdminModeration() {
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set())
   const [showBatchActions, setShowBatchActions] = useState(false)
 
-  // 模擬載入數據
   useEffect(() => {
     loadModerationData()
   }, [filter])
 
   const loadModerationData = async () => {
     setLoading(true)
-    // 模擬 API 調用
     await new Promise(resolve => setTimeout(resolve, 1000))
     
-    // 模擬數據
     const mockItems: ModerationItem[] = [
       {
         id: 1,
@@ -114,7 +114,6 @@ export function MobileAdminModeration() {
         : item
     ))
 
-    // 模擬 API 調用
     await new Promise(resolve => setTimeout(resolve, 1000))
 
     setItems(prev => prev.filter(item => item.id !== itemId))
@@ -240,7 +239,7 @@ export function MobileAdminModeration() {
         </div>
       ) : undefined}
     >
-      {/* 統計概覽 */}
+      
       <div className="grid grid-cols-2 gap-3 mb-6">
         <MobileAdminStatCard
           title="待審核"
@@ -256,7 +255,7 @@ export function MobileAdminModeration() {
         />
       </div>
 
-      {/* 篩選器 */}
+      
       <div className="bg-surface border border-border rounded-2xl p-4 mb-4">
         <div className="flex items-center gap-3 mb-3">
           <Filter className="w-4 h-4 text-muted" />
@@ -294,7 +293,7 @@ export function MobileAdminModeration() {
         </div>
       </div>
 
-      {/* 批量操作提示 */}
+      
       {stats.pending > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-4 dark:bg-blue-900/10 dark:border-blue-800/30">
           <div className="flex items-center gap-2 mb-2">
@@ -315,10 +314,9 @@ export function MobileAdminModeration() {
         </div>
       )}
 
-      {/* 審核項目列表 */}
+      
       <div className="space-y-3">
         {loading ? (
-          // 載入骨架
           Array(3).fill(0).map((_, i) => (
             <MobileAdminCard key={i} title="" loading={true} />
           ))
@@ -368,7 +366,6 @@ export function MobileAdminModeration() {
                 ) : undefined
               }
               onClick={() => {
-                // 點擊查看詳情
                 console.log('查看詳情:', item.id)
               }}
             />

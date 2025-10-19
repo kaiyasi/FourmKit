@@ -17,11 +17,9 @@ TARGET_HTTP = 'http://forum.serelix.xyz'
 TARGET_HTTPS = 'https://forum.serelix.xyz'
 
 stmts = [
-    # IG 相關
     ("ig_posts", "generated_image"),
     ("ig_accounts", "profile_picture"),
     ("school_logos", "logo_url"),
-    # 若有一般貼文或媒體表，可按需加入
 ]
 
 with engine.begin() as conn:

@@ -9,10 +9,17 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import desc, func
 
+<<<<<<< Updated upstream
 from models.support import (
     SupportTicket, SupportMessage, SupportEvent, SupportLabel, SupportTicketLabel,
-    TicketStatus, TicketPriority, AuthorType, EventType
+    TicketStatus, AuthorType, EventType
 )
+=======
+from models.support import (
+    SupportTicket, SupportMessage, SupportEvent, SupportLabel, SupportTicketLabel,
+    TicketStatus, AuthorType, EventType
+)
+>>>>>>> Stashed changes
 from models.base import User
 from models.school import School
 from services.support_service import SupportService
@@ -43,20 +50,20 @@ def get_admin_tickets():
     """取得管理員支援單列表（含多條件搜尋）"""
     
     try:
-        # 取得查詢參數
         status = request.args.get('status')
         school_id = request.args.get('school_id', type=int)
         assigned_to = request.args.get('assigned_to', type=int)
         category = request.args.get('category')
-        _ = request.args.get('priority')
+<<<<<<< Updated upstream
+        # priority 參數已移除（資料模型不再使用）
+=======
+>>>>>>> Stashed changes
         search_query = request.args.get('q', '').strip()
         
-        # 分頁參數
         limit = min(int(request.args.get('limit', 50)), 100)
         offset = int(request.args.get('offset', 0))
         
         with get_session() as session:
-            # 取得當前用戶角色
             current_user_id = int(get_jwt_identity())
             current_user = session.get(User, current_user_id)
             user_role = current_user.role if current_user else None
@@ -75,7 +82,6 @@ def get_admin_tickets():
             
             tickets_data = []
             for ticket in tickets:
-                # 載入關聯資料
                 assignee_name = None
                 if ticket.assigned_to:
                     assignee = session.get(User, ticket.assigned_to)
@@ -86,16 +92,22 @@ def get_admin_tickets():
                     school = session.get(School, ticket.school_id)
                     school_name = school.name if school else None
                 
-                # 取得最後一條訊息
                 last_message = session.query(SupportMessage).filter_by(
                     ticket_id=ticket.id
                 ).order_by(desc(SupportMessage.created_at)).first()
                 
-                # 取得標籤
                 labels_query = session.query(SupportLabel).join(
                     SupportTicketLabel, SupportTicketLabel.label_id == SupportLabel.id
                 ).filter(SupportTicketLabel.ticket_id == ticket.id)
                 labels = [{'key': l.key, 'display_name': l.display_name, 'color': l.color} for l in labels_query]
+
+                requester_ip = None
+                try:
+                    create_event = session.query(SupportEvent).filter_by(ticket_id=ticket.id, event_type=EventType.TICKET_CREATED).order_by(desc(SupportEvent.created_at)).first()
+                    if create_event and isinstance(create_event.payload, dict):
+                        requester_ip = create_event.payload.get('client_ip')
+                except Exception:
+                    requester_ip = None
                 
                 ticket_data = {
                     'id': ticket.id,
@@ -103,7 +115,10 @@ def get_admin_tickets():
                     'subject': ticket.subject,
                     'status': ticket.status,
                     'category': ticket.category,
-                    'priority': ticket.priority,
+<<<<<<< Updated upstream
+                    # priority 已移除
+=======
+>>>>>>> Stashed changes
                     'submitter': ticket.get_display_name(),
                     'submitter_type': 'user' if ticket.user_id else 'guest',
                     'submitter_email': ticket.guest_email,
@@ -115,7 +130,8 @@ def get_admin_tickets():
                     'updated_at': ticket.updated_at.isoformat(),
                     'last_activity_at': ticket.last_activity_at.isoformat(),
                     'last_message_preview': last_message.body[:200] + ('...' if last_message and len(last_message.body) > 200 else '') if last_message else None,
-                    'labels': labels
+                    'labels': labels,
+                    'requester_ip': requester_ip
                 }
                 tickets_data.append(ticket_data)
             
@@ -147,17 +163,14 @@ def get_admin_ticket_detail(public_id: str):
             if not ticket:
                 return jsonify({'ok': False, 'error': 'SUPPORT_E_NOT_FOUND', 'msg': '工單不存在'}), 404
             
-            # 載入所有訊息（包含內部備註）
             messages = session.query(SupportMessage).filter_by(
                 ticket_id=ticket.id
             ).order_by(SupportMessage.created_at).all()
             
-            # 載入事件歷史
             events = session.query(SupportEvent).filter_by(
                 ticket_id=ticket.id
             ).order_by(SupportEvent.created_at).all()
             
-            # 格式化工單資料
             assignee_name = None
             if ticket.assigned_to:
                 assignee = session.get(User, ticket.assigned_to)
@@ -168,7 +181,6 @@ def get_admin_ticket_detail(public_id: str):
                 school = session.get(School, ticket.school_id)
                 school_name = school.name if school else None
             
-            # 格式化訊息
             messages_data = []
             for msg in messages:
                 message_data = {
@@ -182,7 +194,6 @@ def get_admin_ticket_detail(public_id: str):
                 }
                 messages_data.append(message_data)
             
-            # 格式化事件
             events_data = []
             for event in events:
                 actor_name = None
@@ -205,7 +216,10 @@ def get_admin_ticket_detail(public_id: str):
                 'subject': ticket.subject,
                 'status': ticket.status,
                 'category': ticket.category,
-                'priority': ticket.priority,
+<<<<<<< Updated upstream
+                # priority 已移除
+=======
+>>>>>>> Stashed changes
                 'submitter': ticket.get_display_name(),
                 'submitter_type': 'user' if ticket.user_id else 'guest',
                 'submitter_email': ticket.guest_email,
@@ -218,7 +232,8 @@ def get_admin_ticket_detail(public_id: str):
                 'updated_at': ticket.updated_at.isoformat(),
                 'last_activity_at': ticket.last_activity_at.isoformat(),
                 'messages': messages_data,
-                'events': events_data
+                'events': events_data,
+                'requester_ip': (session.query(SupportEvent).filter_by(ticket_id=ticket.id, event_type=EventType.TICKET_CREATED).order_by(desc(SupportEvent.created_at)).first().payload or {}).get('client_ip') if True else None
             }
             
             return jsonify({'ok': True, 'ticket': ticket_data})
@@ -246,7 +261,6 @@ def update_ticket(public_id: str):
             admin_user = session.get(User, admin_user_id)
             changes = []
             
-            # 更新狀態
             if 'status' in data:
                 new_status = data['status']
                 if new_status != ticket.status:
@@ -256,6 +270,7 @@ def update_ticket(public_id: str):
                     ):
                         changes.append(f"狀態: {ticket.status} → {new_status}")
             
+<<<<<<< Updated upstream
             # 更新指派
             if 'assigned_to' in data:
                 new_assignee = data['assigned_to']  # 可能是 None
@@ -263,40 +278,23 @@ def update_ticket(public_id: str):
                     if SupportService.assign_ticket(
                         session, ticket.id, new_assignee, admin_user_id
                     ):
-                        old_name = "未指派"
-                        new_name = "未指派"
                         if ticket.assigned_to:
                             old_user = session.get(User, ticket.assigned_to)
                             old_name = old_user.username if old_user else f"用戶#{ticket.assigned_to}"
+                        else:
+                            old_name = "未分配"
                         if new_assignee:
                             new_user = session.get(User, new_assignee)
                             new_name = new_user.username if new_user else f"用戶#{new_assignee}"
-                        changes.append(f"指派: {old_name} → {new_name}")
-            
-            # 更新優先級
-            if 'priority' in data:
-                new_priority = data['priority']
-                if new_priority != ticket.priority and new_priority in [p.value for p in TicketPriority]:
-                    old_priority = ticket.priority
-                    ticket.priority = new_priority
-                    
-                    # 記錄事件
-                    event = SupportEvent(
-                        ticket_id=ticket.id,
-                        event_type=EventType.PRIORITY_CHANGED,
-                        actor_user_id=admin_user_id,
-                        payload={'old_priority': old_priority, 'new_priority': new_priority}
-                    )
-                    session.add(event)
-                    changes.append(f"優先級: {old_priority} → {new_priority}")
-            
+                            changes.append(f"指派: {old_name} → {new_name}")
+                        else:
+                            changes.append(f"指派: {old_name} → 未分配")
+
             # 更新標籤
-            if 'labels' in data:
+            if 'labels' in data and isinstance(data['labels'], list):
                 label_keys = data['labels']  # 標籤 key 列表
-                
                 # 移除現有標籤
                 session.query(SupportTicketLabel).filter_by(ticket_id=ticket.id).delete()
-                
                 # 添加新標籤
                 if label_keys:
                     labels = session.query(SupportLabel).filter(SupportLabel.key.in_(label_keys)).all()
@@ -307,14 +305,13 @@ def update_ticket(public_id: str):
                             added_by=admin_user_id
                         )
                         session.add(ticket_label)
-                
                 changes.append(f"標籤已更新: {', '.join(label_keys) if label_keys else '無'}")
-            
+
             # 更新最後活動時間
             if changes:
                 ticket.last_activity_at = datetime.now(timezone.utc)
                 session.commit()
-            
+
             # 發送通知
             if changes:
                 try:
@@ -331,12 +328,71 @@ def update_ticket(public_id: str):
                     )
                 except Exception as e:
                     current_app.logger.warning(f"Failed to send admin event: {e}")
-            
+
             return jsonify({
-                'ok': True, 
+                'ok': True,
                 'msg': '工單已更新',
                 'changes': changes
             })
+=======
+            if 'assigned_to' in data:
+                new_assignee = data['assigned_to']
+                if new_assignee != ticket.assigned_to:
+                    if SupportService.assign_ticket(
+                        session, ticket.id, new_assignee, admin_user_id
+                    ):
+                        if ticket.assigned_to:
+                            old_user = session.get(User, ticket.assigned_to)
+                            old_name = old_user.username if old_user else f"用戶#{ticket.assigned_to}"
+                        else:
+                            old_name = "未分配"
+                        if new_assignee:
+                            new_user = session.get(User, new_assignee)
+                            new_name = new_user.username if new_user else f"用戶#{new_assignee}"
+                            changes.append(f"指派: {old_name} → {new_name}")
+                        else:
+                            changes.append(f"指派: {old_name} → 未分配")
+
+            if 'labels' in data and isinstance(data['labels'], list):
+                label_keys = data['labels']
+                session.query(SupportTicketLabel).filter_by(ticket_id=ticket.id).delete()
+                if label_keys:
+                    labels = session.query(SupportLabel).filter(SupportLabel.key.in_(label_keys)).all()
+                    for label in labels:
+                        ticket_label = SupportTicketLabel(
+                            ticket_id=ticket.id,
+                            label_id=label.id,
+                            added_by=admin_user_id
+                        )
+                        session.add(ticket_label)
+                changes.append(f"標籤已更新: {', '.join(label_keys) if label_keys else '無'}")
+
+            if changes:
+                ticket.last_activity_at = datetime.now(timezone.utc)
+                session.commit()
+
+            if changes:
+                try:
+                    send_admin_event(
+                        kind="support_ticket_updated",
+                        title=f"工單已更新：{ticket.subject}",
+                        description=f"管理員 {admin_user.username} 更新了工單",
+                        fields=[
+                            {"name": "工單編號", "value": ticket.public_id, "inline": True},
+                            {"name": "變更內容", "value": '\n'.join(changes), "inline": False}
+                        ],
+                        source=f"/api/admin/support/tickets/{public_id}",
+                        actor=admin_user.username
+                    )
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to send admin event: {e}")
+
+            return jsonify({
+                'ok': True,
+                'msg': '工單已更新',
+                'changes': changes
+            })
+>>>>>>> Stashed changes
     
     except ValueError as e:
         return jsonify({'ok': False, 'error': 'SUPPORT_E_VALIDATION', 'msg': str(e)}), 400
@@ -364,7 +420,6 @@ def add_internal_note(public_id: str):
             if not ticket:
                 return jsonify({'ok': False, 'error': 'SUPPORT_E_NOT_FOUND', 'msg': '工單不存在'}), 404
             
-            # 新增內部備註
             message = SupportService.add_message(
                 session=session,
                 ticket_id=ticket.id,
@@ -412,7 +467,6 @@ def admin_reply(public_id: str):
             if not ticket:
                 return jsonify({'ok': False, 'error': 'SUPPORT_E_NOT_FOUND', 'msg': '工單不存在'}), 404
             
-            # 新增回覆
             message = SupportService.add_message(
                 session=session,
                 ticket_id=ticket.id,
@@ -425,7 +479,6 @@ def admin_reply(public_id: str):
             
             admin_user = session.get(User, admin_user_id)
             
-            # 發送通知
             try:
                 send_admin_event(
                     kind="support_admin_replied",
@@ -470,8 +523,6 @@ def get_support_stats():
         with get_session() as session:
             stats = SupportService.get_support_stats(session, school_id)
             
-            # 額外的管理員統計
-            # SLA 統計（24小時內首次回覆率）
             from datetime import timedelta
             sla_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
             
@@ -484,7 +535,6 @@ def get_support_stats():
             
             overdue_tickets = overdue_query.count()
             
-            # 未分配工單
             unassigned_query = session.query(SupportTicket).filter(
                 SupportTicket.assigned_to.is_(None),
                 SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.AWAITING_ADMIN])
@@ -494,7 +544,6 @@ def get_support_stats():
             
             unassigned_tickets = unassigned_query.count()
             
-            # 管理員工作負載
             admin_workload = session.query(
                 User.username,
                 func.count(SupportTicket.id)
@@ -560,19 +609,16 @@ def create_label():
     if not key or not display_name:
         return jsonify({'ok': False, 'error': 'SUPPORT_E_MISSING_PARAMS', 'msg': '請提供標籤鍵值和顯示名稱'}), 400
     
-    # 驗證顏色格式
     import re
     if not re.match(r'^#[0-9A-Fa-f]{6}$', color):
         color = '#6B7280'
     
     try:
         with get_session() as session:
-            # 檢查重複
             existing = session.query(SupportLabel).filter_by(key=key).first()
             if existing:
                 return jsonify({'ok': False, 'error': 'SUPPORT_E_DUPLICATE', 'msg': '標籤鍵值已存在'}), 400
             
-            # 創建標籤
             label = SupportLabel(
                 key=key,
                 display_name=display_name,
@@ -596,4 +642,8 @@ def create_label():
     
     except Exception as e:
         current_app.logger.error(f"Create label error: {e}")
+<<<<<<< Updated upstream
         return jsonify({'ok': False, 'error': 'SUPPORT_E_SERVER', 'msg': '系統錯誤'}), 500
+=======
+        return jsonify({'ok': False, 'error': 'SUPPORT_E_SERVER', 'msg': '系統錯誤'}), 500
+>>>>>>> Stashed changes

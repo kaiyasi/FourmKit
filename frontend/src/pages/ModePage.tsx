@@ -52,6 +52,9 @@ const MODE_CONFIGS: Record<ModeType, ModeConfig> = {
   }
 };
 
+/**
+ *
+ */
 export default function ModePage() {
   const { isLoggedIn } = useAuth()
   const [mode, setMode] = useState<ModeType>("normal");
@@ -63,12 +66,9 @@ export default function ModePage() {
   const [messageType, setMessageType] = useState<"success" | "error">("success");
   const [healthLoading, setHealthLoading] = useState(true);
   const [health, setHealth] = useState<any | null>(null);
-  // 發文內容規則
   const [enforceMinChars, setEnforceMinChars] = useState(true)
   const [minChars, setMinChars] = useState(15)
-  // 手機版維護（已移除）
 
-  // 初始化主題
   useEffect(() => {
     const html = document.documentElement
     if (!html.getAttribute('data-theme')) html.setAttribute('data-theme', 'beige')
@@ -81,7 +81,6 @@ export default function ModePage() {
     loadHealth();
   }, []);
 
-  // 每 30 秒自動刷新健康狀態
   useEffect(() => {
     const id = setInterval(loadHealth, 30000)
     return () => clearInterval(id)
@@ -94,7 +93,6 @@ export default function ModePage() {
       setMaintenanceMessage(r.maintenance_message || "");
       setMaintenanceUntil(r.maintenance_until || "");
       setLoginMode(r.login_mode || "admin_only");
-      // 移除 mobile_* 設定
       try {
         const cr = await ContentRulesAPI.get()
         if (typeof cr.enforce_min_post_chars === 'boolean') setEnforceMinChars(cr.enforce_min_post_chars)
@@ -119,7 +117,6 @@ export default function ModePage() {
     setLoading(true);
     try {
       const r = await ModeAPI.set(undefined, undefined, undefined, next);
-      // 以後端回傳為準；若無則採用 next
       const applied = (r as any)?.config?.login_mode || next;
       setLoginMode(applied);
       showMessage(`登入模式已更新為：${applied === "single" ? "單一模式" : applied === "admin_only" ? "管理組模式" : "全開模式"}`, "success");
@@ -153,7 +150,6 @@ export default function ModePage() {
       return;
     }
     
-    // 顯示確認對話框
     const confirmMessage = `確定要切換到「${MODE_CONFIGS[newMode].name}」嗎？`;
     if (!window.confirm(confirmMessage)) {
       return;
@@ -168,7 +164,6 @@ export default function ModePage() {
       );
       setMode(r.mode); 
       showMessage(`已切換至${MODE_CONFIGS[newMode].name}`, "success");
-      // 重新載入模式以獲取最新設定
       setTimeout(loadCurrentMode, 500);
       try { window.dispatchEvent(new Event('fk_mode_updated')) } catch {}
     } catch (e: any) {
@@ -216,7 +211,7 @@ export default function ModePage() {
       <MobileBottomNav />
 
       <div className="max-w-4xl mx-auto px-4 sm:pt-24 md:pt-28 pb-8">
-        {/* 標題區域 */}
+        
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-2">
             <Server className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
@@ -225,7 +220,7 @@ export default function ModePage() {
           <p className="text-muted">管理平台運行模式和維護設定</p>
         </div>
 
-        {/* 當前模式顯示 */}
+        
         <div className={`rounded-2xl border p-4 sm:p-6 mb-8 ${currentConfig.bgColor} border-current`}>
           <div className="flex items-center gap-4 mb-4">
             <div className={`p-3 rounded-xl bg-white/50 dark:bg-black/20`}>
@@ -259,7 +254,7 @@ export default function ModePage() {
           )}
         </div>
 
-        {/* 模式切換卡片 */}
+        
         <div className="grid gap-4 md:grid-cols-2 mb-8">
           {Object.entries(MODE_CONFIGS).map(([modeKey, config]) => {
             const isActive = mode === modeKey;
@@ -300,7 +295,7 @@ export default function ModePage() {
           })}
         </div>
 
-        {/* 登入模式設定 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Lock className="w-5 h-5 text-fg" />
@@ -308,7 +303,7 @@ export default function ModePage() {
           </div>
           
           <div className="grid gap-4 md:grid-cols-3">
-            {/* 單一模式 */}
+            
             <button
               onClick={() => saveLoginMode("single")}
               disabled={loading}
@@ -339,7 +334,7 @@ export default function ModePage() {
               </p>
             </button>
 
-            {/* 管理組模式 */}
+            
             <button
               onClick={() => saveLoginMode("admin_only")}
               disabled={loading}
@@ -370,7 +365,7 @@ export default function ModePage() {
               </p>
             </button>
 
-            {/* 全開模式 */}
+            
             <button
               onClick={() => saveLoginMode("open")}
               disabled={loading}
@@ -403,9 +398,9 @@ export default function ModePage() {
           </div>
         </div>
 
-        {/* 手機版維護設定已移除 */}
+        
 
-        {/* 健康檢查區塊 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-semibold text-fg">系統健康檢查</h3>
@@ -417,7 +412,7 @@ export default function ModePage() {
             <div className="py-8 text-center text-muted">檢查中...</div>
           ) : (
             <div className="space-y-4">
-              {/* 總狀態 */}
+              
               <div className={`rounded-xl border p-4 ${health?.ok ? 'bg-green-50 dark:bg-green-900/20 border-green-300/60' : 'bg-rose-50 dark:bg-rose-900/20 border-rose-300/60'}`}>
                 <div className="flex items-center gap-3 min-w-0">
                   <Activity className={`w-5 h-5 ${health?.ok ? 'text-green-600 dark:text-green-400' : 'text-rose-600 dark:text-rose-400'}`} />
@@ -435,9 +430,9 @@ export default function ModePage() {
                 </div>
               </div>
 
-              {/* 服務狀態網格 */}
+              
               <div className="grid gap-4 md:grid-cols-3">
-                {/* DB 狀態 */}
+                
                 <div className="rounded-xl border border-border p-4">
                   <div className="flex items-center gap-3 mb-2">
                     <Database className="w-5 h-5 text-fg" />
@@ -451,7 +446,7 @@ export default function ModePage() {
                   </div>
                 </div>
 
-                {/* Redis 狀態 */}
+                
                 <div className="rounded-xl border border-border p-4">
                   <div className="flex items-center gap-3 mb-2">
                     {health?.redis?.ok ? <Cloud className="w-5 h-5 text-fg" /> : <CloudOff className="w-5 h-5 text-fg" />}
@@ -464,7 +459,7 @@ export default function ModePage() {
                   </div>
                 </div>
 
-                {/* CDN 狀態 */}
+                
                 <div className="rounded-xl border border-border p-4">
                   <div className="flex items-center gap-3 mb-2">
                     <Cloud className="w-5 h-5 text-fg" />
@@ -491,7 +486,7 @@ export default function ModePage() {
           )}
         </div>
 
-        {/* 維護模式設定 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
           <h3 className="font-semibold text-fg mb-4">維護模式設定</h3>
           <div className="grid gap-4">
@@ -555,7 +550,7 @@ export default function ModePage() {
           </div>
         </div>
 
-        {/* 發文內容規則（獨立保存） */}
+        
         <div className="bg-surface border border-border rounded-2xl p-6 mb-8">
           <h3 className="font-semibold text-fg mb-4">發文內容規則</h3>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -580,7 +575,7 @@ export default function ModePage() {
 
         
 
-        {/* 權限提示和訊息 */}
+        
         <div className="space-y-4">
           {!isLoggedIn && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-xl p-4">

@@ -102,7 +102,7 @@ const PublishStats: React.FC = () => {
         ))}
       </div>
 
-      {/* 成功率 */}
+      
       <div className="bg-surface border border-border rounded-2xl p-4 shadow-soft">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-muted">

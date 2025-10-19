@@ -3,6 +3,9 @@ import { validateBeforeAdd, guessKindByName } from "../utils/validateFiles";
 
 type Props = { value: File[]; onChange: (files: File[]) => void; maxCount?: number; };
 
+/**
+ *
+ */
 export default function UploadArea({ value, onChange, maxCount = 4 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -31,7 +34,7 @@ export default function UploadArea({ value, onChange, maxCount = 4 }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* 改進的上傳區域 */}
+      
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -41,7 +44,7 @@ export default function UploadArea({ value, onChange, maxCount = 4 }: Props) {
         onClick={() => inputRef.current?.click()}
       >
         <div className="flex flex-col items-center gap-3">
-          {/* 上傳圖標 */}
+          
           <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
             dragOver ? 'bg-blue-500/20' : 'bg-slate-500/10'
           }`}>
@@ -65,7 +68,7 @@ export default function UploadArea({ value, onChange, maxCount = 4 }: Props) {
         <input ref={inputRef} type="file" accept=".jpg,.jpeg,.png,.webp" multiple className="hidden" onChange={onPick}/>
       </div>
 
-      {/* 錯誤提示 */}
+      
       {errors.length > 0 && (
         <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
           <div className="flex items-start gap-2">
@@ -82,7 +85,7 @@ export default function UploadArea({ value, onChange, maxCount = 4 }: Props) {
         </div>
       )}
 
-      {/* 已上傳的文件預覽 */}
+      
       {value.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">

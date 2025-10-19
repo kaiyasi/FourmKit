@@ -1,4 +1,7 @@
-# backend/models/comments.py
+"""
+Module: backend/models/comments.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -25,7 +28,6 @@ class Comment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # 關聯
     post: Mapped["Post"] = relationship("Post", back_populates="comments")
     author: Mapped["User"] = relationship("User", foreign_keys=[author_id], back_populates="comments")
     deleted_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[deleted_by], back_populates="deleted_comments")
@@ -37,13 +39,11 @@ class PostReaction(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    reaction_type: Mapped[str] = mapped_column(String(16), nullable=False)  # "like", "dislike", "love", "laugh", "angry"
+    reaction_type: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 每個用戶對每篇貼文的每種反應只能有一個（支援多種反應）
     __table_args__ = (UniqueConstraint('post_id', 'user_id', 'reaction_type', name='unique_user_post_reaction_type'),)
 
-    # 關聯
     post: Mapped["Post"] = relationship("Post", back_populates="reactions")
     user: Mapped["User"] = relationship("User")
 
@@ -57,9 +57,7 @@ class CommentReaction(Base):
     reaction_type: Mapped[str] = mapped_column(String(16), nullable=False)  # "like", "dislike"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # 每個用戶對每則留言只能有一種反應
     __table_args__ = (UniqueConstraint('comment_id', 'user_id', name='unique_user_comment_reaction'),)
 
-    # 關聯
     comment: Mapped["Comment"] = relationship("Comment")
     user: Mapped["User"] = relationship("User")

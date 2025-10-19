@@ -8,6 +8,9 @@ import { useAuth } from '@/contexts/AuthContext'
 type PageSlug = 'about' | 'rules'
 type Scope = 'school' | 'cross' | 'global'
 
+/**
+ *
+ */
 export default function AdminPagesEditor() {
   const { role, schoolId } = useAuth()
   const [slug, setSlug] = useState<PageSlug>('about')
@@ -32,7 +35,6 @@ export default function AdminPagesEditor() {
     return () => html.classList.remove('theme-ready')
   }, [])
 
-  // 載入學校清單
   useEffect(() => {
     (async () => {
       try {
@@ -40,7 +42,6 @@ export default function AdminPagesEditor() {
         if (!r.ok) return
         const j = await r.json()
         if (Array.isArray(j?.items)) setSchools(j.items)
-        // campus_admin 預設為自己學校
         if (role === 'campus_admin') {
           const mine = (j.items || []).find((x: any) => Number(x.id) === Number(schoolId))
           if (mine) setSelectedSchool(mine.slug)
@@ -80,7 +81,6 @@ export default function AdminPagesEditor() {
 
 
 
-  // Markdown 工具欄功能
   const insertText = (before: string, after = '', placeholder = '') => {
     const textarea = textareaRef.current
     if (!textarea) return
@@ -93,7 +93,6 @@ export default function AdminPagesEditor() {
     const newText = markdown.slice(0, start) + replacement + markdown.slice(end)
     setMarkdown(newText)
 
-    // 重新設置光標位置
     setTimeout(() => {
       const newCursorPos = start + before.length + (selectedText || placeholder).length
       textarea.setSelectionRange(newCursorPos, newCursorPos)
@@ -101,7 +100,6 @@ export default function AdminPagesEditor() {
     }, 0)
   }
 
-  // 工具欄按鈕
   const toolbarButtons = [
     { icon: Bold, action: () => insertText('**', '**', '粗體文字'), title: '粗體' },
     { icon: Italic, action: () => insertText('*', '*', '斜體文字'), title: '斜體' },
@@ -111,7 +109,6 @@ export default function AdminPagesEditor() {
     { icon: Code, action: () => insertText('`', '`', '程式碼'), title: '行內程式碼' },
   ]
 
-  // 檔案匯入匯出
   const exportMarkdown = () => {
     const blob = new Blob([markdown], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
@@ -155,7 +152,7 @@ export default function AdminPagesEditor() {
       <NavBar pathname="/admin/pages" />
       <MobileBottomNav />
       <main className="mx-auto max-w-6xl px-3 sm:px-4 pt-20 sm:pt-24 md:pt-28 pb-8">
-        {/* 頁首 */}
+        
         <div className="bg-surface border border-border rounded-2xl p-4 sm:p-6 shadow-soft mb-4">
           <div className="flex items-center gap-3 mb-2">
             <button
@@ -196,7 +193,7 @@ export default function AdminPagesEditor() {
           <div className="bg-surface border border-border rounded-2xl p-8 text-center text-muted">載入中...</div>
         ) : (
           <div className="bg-surface border border-border rounded-2xl shadow-soft overflow-hidden">
-            {/* 上方控制列：頁面、範圍與學校選擇 */}
+            
             <div className="border-b border-border p-4 flex flex-wrap gap-3 items-center">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted">頁面</span>
@@ -250,7 +247,7 @@ export default function AdminPagesEditor() {
                 </button>
               </div>
             </div>
-            {/* 工具欄 */}
+            
             {!previewMode && (
               <div className="border-b border-border p-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -280,7 +277,7 @@ export default function AdminPagesEditor() {
             )}
 
             <div className="flex flex-col lg:flex-row min-h-[600px]">
-              {/* 編輯區 */}
+              
               {!previewMode && (
                 <div className="flex-1 p-4">
                   <textarea
@@ -312,7 +309,7 @@ export default function AdminPagesEditor() {
                 </div>
               )}
 
-              {/* 預覽區 */}
+              
               {(previewMode || (!previewMode && preview)) && (
                 <div className={`${!previewMode ? 'flex-1 border-l border-border' : 'w-full'} p-4`}>
                   {!previewMode && <h3 className="font-semibold dual-text mb-3">即時預覽</h3>}

@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 
+/**
+ *
+ */
 export interface PlatformInfo {
   isMobile: boolean
   isTablet: boolean
@@ -14,6 +17,9 @@ export interface PlatformInfo {
   isTouchDevice: boolean
 }
 
+/**
+ *
+ */
 export function usePlatform(): PlatformInfo {
   const [platformInfo, setPlatformInfo] = useState<PlatformInfo>({
     isMobile: false,
@@ -35,19 +41,15 @@ export function usePlatform(): PlatformInfo {
       const height = window.innerHeight
       const userAgent = navigator.userAgent
       
-      // 檢測觸控設備
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
       
-      // 檢測設備類型
       const isMobileDevice = /Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
       const isTabletDevice = /iPad|Android(?=.*\bMobile\b)(?=.*\bSafari\b)/i.test(userAgent) || 
                             (width >= 768 && width <= 1024 && isTouchDevice)
       
-      // 螢幕尺寸分類
       const isSmallScreen = width < 768
       const isTinyScreen = width < 640
       
-      // 設備類型判斷
       let deviceType: 'mobile' | 'tablet' | 'desktop' = 'desktop'
       if (isMobileDevice && !isTabletDevice) {
         deviceType = 'mobile'
@@ -55,7 +57,6 @@ export function usePlatform(): PlatformInfo {
         deviceType = 'tablet'
       }
       
-      // 方向檢測
       const orientation = width > height ? 'landscape' : 'portrait'
       
       setPlatformInfo({
@@ -73,10 +74,8 @@ export function usePlatform(): PlatformInfo {
       })
     }
 
-    // 初始化
     updatePlatformInfo()
     
-    // 監聽視窗大小變化
     window.addEventListener('resize', updatePlatformInfo)
     window.addEventListener('orientationchange', updatePlatformInfo)
     
@@ -89,7 +88,6 @@ export function usePlatform(): PlatformInfo {
   return platformInfo
 }
 
-// 平台特定的斷點常量
 export const PLATFORM_BREAKPOINTS = {
   MOBILE: 768,
   TABLET: 1024,
@@ -101,22 +99,33 @@ export const PLATFORM_BREAKPOINTS = {
   XLARGE: 1536
 } as const
 
-// 平台特定的 Hook
+/**
+ *
+ */
 export function useMobile() {
   const { isMobile } = usePlatform()
   return isMobile
 }
 
+/**
+ *
+ */
 export function useDesktop() {
   const { isDesktop } = usePlatform()
   return isDesktop
 }
 
+/**
+ *
+ */
 export function useTablet() {
   const { isTablet } = usePlatform()
   return isTablet
 }
 
+/**
+ *
+ */
 export function useSmallScreen() {
   const { isSmallScreen } = usePlatform()
   return isSmallScreen

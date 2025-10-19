@@ -46,6 +46,9 @@ interface CreateTicketData {
   email?: string
 }
 
+/**
+ *
+ */
 export default function MobileSupportPage() {
   const navigate = useNavigate()
   const [currentView, setCurrentView] = useState<'list' | 'create' | 'track'>('list')
@@ -56,7 +59,6 @@ export default function MobileSupportPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
-  // Create ticket form state
   const [createForm, setCreateForm] = useState<CreateTicketData>({
     subject: '',
     body: '',
@@ -67,21 +69,17 @@ export default function MobileSupportPage() {
   const [createStep, setCreateStep] = useState(1)
   const [submitLoading, setSubmitLoading] = useState(false)
 
-  // Track ticket state
   const [trackForm, setTrackForm] = useState({
     ticket_id: '',
     email: ''
   })
 
-  // 附件上傳相關狀態
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
 
-  // 使用 useMemo 優化字數計算，避免不必要的重新渲染
   const subjectLength = useMemo(() => createForm.subject.length, [createForm.subject])
   const bodyLength = useMemo(() => createForm.body.length, [createForm.body])
 
-  // 檔案處理函數
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     setSelectedFiles(prev => [...prev, ...files])
@@ -99,7 +97,6 @@ export default function MobileSupportPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  // 拖拉處理函數
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(true)
@@ -118,9 +115,20 @@ export default function MobileSupportPage() {
     setSelectedFiles(prev => [...prev, ...files])
   }
 
+  const getToken = (): string | null => {
+    try {
+      return localStorage.getItem('token') || localStorage.getItem('access_token') || sessionStorage.getItem('token') || null
+    } catch {
+      try { return sessionStorage.getItem('token') } catch { return null }
+    }
+  }
+
   useEffect(() => {
+<<<<<<< Updated upstream
     // 檢查登入狀態
-    const token = localStorage.getItem('access_token')
+=======
+>>>>>>> Stashed changes
+    const token = getToken()
     setIsLoggedIn(!!token)
     
     if (token) {
@@ -132,10 +140,10 @@ export default function MobileSupportPage() {
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('access_token')
+      const token = getToken()
       const response = await fetch('/api/support/my-tickets', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
       })
       
@@ -167,13 +175,11 @@ export default function MobileSupportPage() {
     setError(null)
 
     try {
-      const token = localStorage.getItem('access_token')
+      const token = getToken()
       
-      // 如果有附件，使用 FormData；否則使用 JSON
       let response: Response
       
       if (selectedFiles.length > 0) {
-        // 使用 FormData 上傳附件
         const formData = new FormData()
         formData.append('subject', createForm.subject)
         formData.append('body', createForm.body)
@@ -183,7 +189,6 @@ export default function MobileSupportPage() {
           formData.append('email', createForm.email || '')
         }
         
-        // 添加附件
         selectedFiles.forEach((file, index) => {
           formData.append(`attachments`, file)
         })
@@ -199,7 +204,6 @@ export default function MobileSupportPage() {
           body: formData
         })
       } else {
-        // 沒有附件，使用 JSON
         const headers: Record<string, string> = {
           'Content-Type': 'application/json'
         }
@@ -221,7 +225,6 @@ export default function MobileSupportPage() {
       if (response.ok) {
         const data = await response.json()
         
-        // 重置表單和附件
         setCreateForm({
           subject: '',
           body: '',
@@ -232,32 +235,38 @@ export default function MobileSupportPage() {
         setSelectedFiles([])
         setCreateStep(1)
         
-        // 顯示成功訊息
-        const priorityText = data.ticket?.priority === 'low' ? '低' : 
-                            data.ticket?.priority === 'medium' ? '中' : 
-                            data.ticket?.priority === 'high' ? '高' : '緊急';
-        
+<<<<<<< Updated upstream
+        // 顯示成功訊息（採用後端新回應欄位）
+=======
+>>>>>>> Stashed changes
+        const ticketId = data.ticket_id || data.public_id || data.id
+        const subject = data.subject || createForm.subject
+        const status = data.status || 'open'
+        const category = data.category || createForm.category
+
         const successMsg = isLoggedIn 
-          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${data.ticket?.public_id}\n• 優先級：${priorityText}\n\n您可以在工單列表中查看進度。`
-          : `✅ 支援單已建立！\n\n📋 工單編號：#${data.ticket?.public_id}\n• 優先級：${priorityText}\n\n請記住您的工單編號以便日後追蹤。`;
+          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${ticketId}\n• 狀態：${status === 'open' ? '已開啟' : status}\n• 分類：${category}\n\n您可以在工單列表中查看進度。`
+          : `✅ 支援單已建立！\n\n📋 工單編號：#${ticketId}\n• 狀態：${status === 'open' ? '已開啟' : status}\n• 分類：${category}\n\n請記住您的工單編號以便日後追蹤。`;
         
         alert(successMsg)
         
-        // 如果已登入，重新載入支援單列表
         if (isLoggedIn) {
           setCurrentView('list')
           fetchMyTickets()
         } else {
-          // 訪客：導向追蹤頁面
-          if (data.tracking_url) {
-            window.location.href = data.tracking_url
+<<<<<<< Updated upstream
+          // 訪客：導向追蹤頁面（有 guest_token 則帶 sig）
+=======
+>>>>>>> Stashed changes
+          if (data.guest_token) {
+            window.location.href = `/support/track?ticket=${encodeURIComponent(String(ticketId))}&sig=${encodeURIComponent(data.guest_token)}`
           } else {
             setCurrentView('track')
           }
         }
       } else {
-        const errorData = await response.json()
-        throw new Error(errorData.msg || '建立支援單失敗')
+        const errorData = await response.json().catch(()=>({}))
+        throw new Error(errorData?.msg || errorData?.error || '建立支援單失敗')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '未知錯誤')
@@ -311,7 +320,7 @@ export default function MobileSupportPage() {
 
   const renderTopBar = () => (
     <div className="sticky top-0 bg-surface/80 backdrop-blur-md border-b border-border z-10">
-      {/* 手機安全區域留空 */}
+      
       <div className="pt-safe-top" />
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
@@ -393,14 +402,14 @@ export default function MobileSupportPage() {
           </button>
         )}
       </div>
-      {/* 手機底部安全區域留空 */}
+      
       <div className="pb-safe-bottom" />
     </div>
   )
 
   const renderTicketList = () => (
     <div className="flex flex-col h-full">
-      {/* 搜尋和篩選 */}
+      
       <div className="p-4 space-y-3">
         <div className="relative">
           <input
@@ -433,7 +442,7 @@ export default function MobileSupportPage() {
         </div>
       </div>
 
-      {/* 支援單列表 */}
+      
       <div className="flex-1 px-4 pb-4">
         {error && (
           <div className="mb-4 p-3 bg-danger-bg border border-danger-border rounded-lg">
@@ -487,7 +496,7 @@ export default function MobileSupportPage() {
           </div>
         )}
 
-        {/* 步驟指示器 */}
+        
         <div className="flex items-center justify-between mb-6">
           {[1, 2, 3].map(step => (
             <div key={step} className="flex items-center">
@@ -527,19 +536,55 @@ export default function MobileSupportPage() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">優先級</label>
-              <select
-                value={createForm.priority}
-                onChange={(e) => setCreateForm(prev => ({ ...prev, priority: e.target.value }))}
-                className="w-full p-3 border border-border rounded-lg"
-              >
-                <option value="low">低優先級</option>
-                <option value="medium">中優先級</option>
-                <option value="high">高優先級</option>
-                <option value="urgent">緊急</option>
-              </select>
-            </div>
+
+
+<<<<<<< Updated upstream
+// ... (其他代碼)
+=======
+>>>>>>> Stashed changes
+
+    formData.append('subject', createForm.subject);
+    formData.append('category', createForm.category);
+    formData.append('body', createForm.body);
+
+<<<<<<< Updated upstream
+// ... (其他代碼)
+=======
+>>>>>>> Stashed changes
+
+        const successMessage = resp.ok && resp.ticket?.public_id
+          ? `✅ 支援單已成功建立！\n\n📋 工單編號：#${resp.ticket?.public_id}\n\n您可以在工單列表中查看進度。`
+          : `✅ 支援單已建立！\n\n📋 工單編號：#${resp.ticket?.public_id}\n\n請記住您的工單編號以便日後追蹤。`;
+
+<<<<<<< Updated upstream
+// ... (其他代碼)
+=======
+>>>>>>> Stashed changes
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">分類</label>
+                <select 
+                  value={createForm.category}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, category: e.target.value }))}
+                  className="support-input w-full"
+                >
+                  <option value="other">其他問題</option>
+                  <option value="technical">技術問題</option>
+                  <option value="account">帳戶問題</option>
+                  <option value="feature">功能建議</option>
+                  <option value="bug">錯誤回報</option>
+                  <option value="abuse">濫用檢舉</option>
+                </select>
+              </div>
+
+<<<<<<< Updated upstream
+// ... (其他代碼)
+=======
+>>>>>>> Stashed changes
+
+              <div><strong>主旨：</strong>{createForm.subject}</div>
+              <div><strong>分類：</strong>{createForm.category}</div>
+              <div><strong>內容：</strong><pre className="whitespace-pre-wrap font-sans">{createForm.body}</pre></div>
 
             <div>
               <label className="block text-sm font-medium mb-2">問題主題</label>
@@ -602,7 +647,7 @@ export default function MobileSupportPage() {
               </div>
             )}
 
-            {/* 附件上傳 */}
+            
             <div>
               <label className="block text-sm font-medium mb-2">附件（可選）</label>
               <div 
@@ -630,7 +675,7 @@ export default function MobileSupportPage() {
                 </label>
               </div>
               
-              {/* 已選擇的檔案列表 */}
+              
               {selectedFiles.length > 0 && (
                 <div className="mt-3 space-y-2">
                   <p className="text-sm font-medium">已選擇的檔案：</p>
@@ -670,7 +715,7 @@ export default function MobileSupportPage() {
         )}
       </div>
 
-      {/* 底部按鈕 */}
+      
       <div className="p-4 border-t border-border bg-surface">
         <div className="flex gap-3">
           {createStep > 1 && (
@@ -722,8 +767,13 @@ export default function MobileSupportPage() {
   )
 
   const renderTrackForm = () => (
+<<<<<<< Updated upstream
     <div className="max-w-md mx-auto p-6">
-      <div className="bg-surface border border-border rounded-lg p-6">
+      <div className="bg-surface border border-border rounded-lg p-6 mobile-card w-full">
+=======
+    <div className="max-w-md mx-auto p-6">
+      <div className="bg-surface border border-border rounded-lg p-6 mobile-card w-full">
+>>>>>>> Stashed changes
         <div className="text-center mb-6">
           <Search className="w-12 h-12 mx-auto text-muted mb-4" />
           <h1 className="text-xl font-bold mb-2">追蹤支援單</h1>
@@ -804,4 +854,8 @@ export default function MobileSupportPage() {
       {renderBottomNav()}
     </div>
   )
+<<<<<<< Updated upstream
 }
+=======
+}
+>>>>>>> Stashed changes

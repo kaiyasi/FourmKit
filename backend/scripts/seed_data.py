@@ -6,7 +6,6 @@
 import sys
 import os
 
-# 確保可以導入模組：添加父目錄到 Python 路徑
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import User, UserRole, School, Post
@@ -18,11 +17,9 @@ def seed_data():
     print("=== ForumKit 資料庫初始化 ===")
     
     try:
-        # 初始化資料庫
         print("1. 初始化資料庫連接...")
         init_engine_session()
         
-        # 重新導入 db_session
         from utils.db import db_session
         print("✅ 資料庫連接成功")
     except Exception as e:
@@ -30,7 +27,6 @@ def seed_data():
         return False
     
     try:
-        # 建立測試學校
         print("2. 檢查/建立測試學校...")
         ncku = db_session.query(School).filter_by(slug="ncku").first()
         if not ncku:
@@ -50,10 +46,8 @@ def seed_data():
         else:
             print(f"   ✓ 學校已存在: {ntu.name} (ID: {ntu.id})")
         
-        # 建立管理員帳戶
         print("3. 檢查/建立管理員帳戶...")
         
-        # 開發者管理員
         dev_admin = db_session.query(User).filter_by(username="dev_admin").first()
         if not dev_admin:
             dev_admin = User(
@@ -68,7 +62,6 @@ def seed_data():
         else:
             print("   ✓ 開發者管理員已存在: dev_admin")
         
-        # 校內管理員
         campus_admin = db_session.query(User).filter_by(username="campus_admin").first()
         if not campus_admin:
             campus_admin = User(
@@ -83,7 +76,6 @@ def seed_data():
         else:
             print("   ✓ 校內管理員已存在: campus_admin")
         
-        # 跨校管理員
         cross_admin = db_session.query(User).filter_by(username="cross_admin").first()
         if not cross_admin:
             cross_admin = User(
@@ -98,7 +90,6 @@ def seed_data():
         else:
             print("   ✓ 跨校管理員已存在: cross_admin")
         
-        # 系統用戶（用於預設貼文）
         system_user = db_session.query(User).filter_by(username="system").first()
         if not system_user:
             system_user = User(
@@ -113,7 +104,6 @@ def seed_data():
         else:
             print("   ✓ 系統用戶已存在: system")
 
-        # 測試用戶
         test_user = db_session.query(User).filter_by(username="testuser").first()
         if not test_user:
             test_user = User(
@@ -131,21 +121,20 @@ def seed_data():
         db_session.commit()
         print("   ✓ 所有用戶帳戶處理完成")
         
-        # 建立測試貼文
         print("4. 檢查/建立測試貼文...")
         existing_posts = db_session.query(Post).filter(Post.status == "approved").count()
         print(f"   當前已核准貼文數量: {existing_posts}")
         
-        if existing_posts < 4:  # 增加到4篇（包含隱藏的主題頁面）
+        if existing_posts < 4:
             sample_posts = [
                 {
                     "content": "<h1>🎉 歡迎來到 ForumKit - 校園匿名討論平台</h1><p>Hello！歡迎來到由 <strong>Serelix Studio</strong> 開發的 ForumKit 校園匿名討論平台！這裡是屬於學生們的自由交流空間。</p><h2>✨ 平台特色</h2><ul><li><strong>🔐 完全匿名</strong> - 保護您的隱私，安心發言</li><li><strong>🏫 校園專屬</strong> - 僅限學術機構成員使用</li><li><strong>📱 響應式設計</strong> - 手機、平板、電腦都能完美使用</li><li><strong>💬 即時互動</strong> - Socket.IO 實時留言系統</li><li><strong>🖼️ 多媒體支援</strong> - 圖片、影片上傳無障礙</li><li><strong>🛡️ 智慧審核</strong> - AI + 人工雙重把關</li></ul><h2>🚀 快速開始</h2><ol><li>使用學校 Google 帳號登入</li><li>選擇您的學校或跨校討論</li><li>開始匿名發文和留言</li><li>享受安全友善的交流環境</li></ol><p><em>讓我們一起建立更好的校園討論文化！</em> 💪</p>",
-                    "school_id": None,  # 跨校歓迎貼文
+                    "school_id": None,
                     "created_at": datetime.now() - timedelta(hours=3)
                 },
                 {
                     "content": "<h1>📋 平台使用規範 - 共同維護友善環境</h1><p>為了讓 ForumKit 成為所有人都能安心使用的平台，請大家共同遵守以下規範：</p><h2>🤝 基本原則</h2><ul><li><strong>尊重包容</strong> - 尊重不同觀點，禁止歧視、仇恨言論</li><li><strong>理性討論</strong> - 就事論事，避免人身攻擊</li><li><strong>內容品質</strong> - 發文請言之有物，提供有價值的內容</li><li><strong>隱私保護</strong> - 不洩露個人或他人資訊</li></ul><h2>🚫 禁止內容</h2><ol><li>人身攻擊、網路霸凌</li><li>色情、暴力、仇恨內容</li><li>政治煽動、極端言論</li><li>商業廣告、垃圾訊息</li><li>盜版、侵權內容</li><li>謠言、不實資訊</li></ol><h2>⚖️ 違規處理</h2><ul><li><strong>輕微違規</strong> - 內容移除、警告通知</li><li><strong>重複違規</strong> - 暫時停權、限制功能</li><li><strong>嚴重違規</strong> - 永久停權、移除帳戶</li></ul><p>如有問題或申訴，請聯繫管理團隊。讓我們共同維護友善的討論環境！ 🌟</p>",
-                    "school_id": None,  # 跨校規範
+                    "school_id": None,
                     "created_at": datetime.now() - timedelta(hours=2)
                 },
                 {
@@ -155,7 +144,7 @@ def seed_data():
                 },
                 {
                     "content": "<h1>🎨 ForumKit 主題定製服務</h1><p>想要為 ForumKit 設計專屬主題嗎？我們提供完整的主題定製服務！</p><h2>🎯 定製內容</h2><ul><li><strong>色彩配置</strong> - 主色調、輔助色、強調色</li><li><strong>字體樣式</strong> - 標題字體、內文字體、特殊效果</li><li><strong>介面元素</strong> - 按鈕、卡片、導航欄設計</li><li><strong>動畫效果</strong> - 過渡動畫、互動回饋</li><li><strong>響應式佈局</strong> - 手機、平板、電腦適配</li></ul><h2>🛠️ 提交方式</h2><ol><li><strong>個人收藏</strong> - 儲存至個人帳戶（需登入）</li><li><strong>平台實裝</strong> - 提交給開發團隊審核</li></ol><p><strong>立即開始設計：</strong></p><p>🎨 <strong><a href=\"/theme-designer\" target=\"_blank\">進入主題設計工具</a></strong></p><p>💡 <strong>功能特色：</strong></p><ul><li>🎯 即時預覽效果</li><li>💾 個人主題收藏</li><li>📤 一鍵提交給開發團隊</li><li>🔄 主題匯入匯出</li><li>🎨 完整的視覺編輯器</li></ul><hr><p><small>💫 由 Serelix Studio 開發維護 | 讓校園討論更精彩</small></p>",
-                    "school_id": ncku.id,  # 指定成功大學
+                    "school_id": ncku.id,
                     "created_at": datetime.now() - timedelta(minutes=45)
                 }
             ]
@@ -167,7 +156,7 @@ def seed_data():
                         content=post_data["content"],
                         status="approved",
                         school_id=post_data["school_id"],
-                        author_id=system_user.id,  # 由系統用戶發布
+                        author_id=system_user.id,
                         client_id=f"seed_client_{i+1}",
                         ip="127.0.0.1",
                         created_at=post_data["created_at"]

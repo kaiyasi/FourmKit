@@ -12,6 +12,9 @@ interface ResizableDividerProps {
   usePixels?: boolean       // 使用像素寬度而非百分比
 }
 
+/**
+ *
+ */
 export function ResizableDivider({
   leftContent,
   rightContent,
@@ -43,11 +46,9 @@ export function ResizableDivider({
       let newLeftWidth: number
       
       if (usePixels) {
-        // 像素模式：直接使用像素值
         newLeftWidth = mouseX
         newLeftWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, newLeftWidth))
       } else {
-        // 百分比模式：轉換為百分比
         newLeftWidth = (mouseX / containerWidth) * 100
         newLeftWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, newLeftWidth))
       }
@@ -72,7 +73,7 @@ export function ResizableDivider({
       className={`flex h-full ${className}`}
       style={{ cursor: isDragging ? 'col-resize' : 'default' }}
     >
-      {/* 左側內容 */}
+      
       <div 
         className="overflow-hidden"
         style={{ 
@@ -83,7 +84,7 @@ export function ResizableDivider({
         {leftContent}
       </div>
 
-      {/* 拖拽分隔條 */}
+      
       {!disabled && (
         <div
           className={`
@@ -97,7 +98,7 @@ export function ResizableDivider({
             maxWidth: isDragging ? '8px' : '4px'
           }}
         >
-          {/* 拖拽指示器 */}
+          
           <div className={`
             w-0.5 h-8 bg-gray-400/60 dark:bg-gray-300/60 rounded-full 
             ${isDragging ? 'opacity-100' : 'opacity-0 hover:opacity-70'}
@@ -106,7 +107,7 @@ export function ResizableDivider({
         </div>
       )}
 
-      {/* 右側內容 */}
+      
       <div 
         className={`overflow-hidden ${disabled ? 'flex-1' : 'flex-1'}`}
         style={{ 

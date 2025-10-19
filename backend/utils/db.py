@@ -1,4 +1,7 @@
-# backend/utils/db.py
+"""
+Module: backend/utils/db.py
+Unified comment style: module docstring + minimal inline notes.
+"""
 from __future__ import annotations
 from typing import Generator
 import os
@@ -18,7 +21,6 @@ EFFECTIVE_DB_URL = ""
 def _normalize_url(url: str) -> str:
     if not url:
         return url
-    # 自動將舊驅動前綴改為 psycopg（v3）
     return url.replace("postgresql://", "postgresql+psycopg://") if url.startswith("postgresql://") else url
 
 
@@ -34,7 +36,6 @@ def init_engine_session():
     if DB_URL:
         candidates.append(DB_URL)
     else:
-        # 預設 Postgres（與 docker-compose.yml 對齊）
         candidates.append("postgresql+psycopg://forumkit:forumkit_password@127.0.0.1:12007/forumkit")
 
     last_err: Exception | None = None
@@ -42,9 +43,7 @@ def init_engine_session():
         url = _normalize_url(raw)
         try:
             eng = create_engine(url, pool_pre_ping=True)
-            # 立刻測試一次連線，避免把壞 URL 留到後面出錯
             with eng.connect() as conn:
-                # SQLAlchemy 2.0 需要使用 exec_driver_sql 或 text()
                 conn.exec_driver_sql("SELECT 1")
             _engine = eng
             SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
@@ -60,7 +59,6 @@ def init_engine_session():
             print(f"[ForumKit] DB connect failed for {url}: {e}")
             continue
 
-    # 若皆失敗，往外拋出最後一個錯誤
     if last_err:
         raise last_err
 
@@ -92,7 +90,6 @@ def get_db_health() -> dict:
     try:
         if _engine is None:
             init_engine_session()
-        # 再次 ping 確認連線健康
         with _engine.connect() as conn:  # type: ignore[arg-type]
             conn.exec_driver_sql("SELECT 1")
         ok = True
