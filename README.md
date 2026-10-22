@@ -4,7 +4,7 @@
 
 > **Version 4.0.0 開始平台內開始加入隱私資料與程式碼 故將不針對 V4.0.0 後發佈更新檔**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: KYL Noncommercial](https://img.shields.io/badge/License-KYL%20Noncommercial-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat\&logo=docker\&logoColor=white)](https://www.docker.com/)
 
 ---
@@ -72,7 +72,7 @@ ForumKit 是一個專為校園環境設計的**半匿名/完全匿名發文平�
 
 ## 📄 授權條款
 
-MIT License - 詳見 [LICENSE](LICENSE) 檔案
+KYL Noncommercial License - 詳見 [LICENSE](LICENSE) 檔案
 
 ---
 
@@ -98,3 +98,6 @@ MIT License - 詳見 [LICENSE](LICENSE) 檔案
 
 
 
+
+
+See [LICENSING.md](LICENSING.md) for license scope, third-party exceptions, and earlier-version notices.

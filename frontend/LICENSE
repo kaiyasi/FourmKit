@@ -1,0 +1,126 @@
+KYL Noncommercial License
+Version 1.0
+
+Copyright (c) 2025 ForumKit Contributors
+Copyright (c) 2026 Kaiyasi
+
+1. Definitions
+
+"Covered Software" means the source files to which a copyright holder has
+expressly applied this License, their modifications, and source files containing
+copied portions of those files other than trivial excerpts. Separate files that
+merely use or interface with Covered Software are not Covered Software.
+"Source" means the preferred form for making modifications, including necessary
+build scripts. "Executable" means any non-Source form. "Contributor" means a
+copyright holder who makes a contribution available under this License.
+"You" means any person or legal entity exercising rights under this License.
+
+"Commercial Use" means use, modification, distribution, or operation of Covered
+Software (a) in exchange for payment or commercial advantage; (b) as part of a
+paid, advertising-supported, or otherwise monetized product or service; (c) in
+the operations of a for-profit legal entity, including internal use; or (d) in
+paid work performed for another party. Personal unpaid learning or evaluation
+outside a for-profit entity's operations is not Commercial Use. An unconditional
+donation with no access, service, or other benefit in return does not by itself
+make an otherwise noncommercial activity Commercial Use. Nonprofit or educational
+status does not exempt an activity that otherwise meets this definition.
+
+2. Copyright and Patent Grants
+
+Each Contributor grants You a worldwide, royalty-free, non-exclusive copyright
+license to use, reproduce, modify, distribute, and make available their
+contribution, including as part of a larger work, solely for purposes other than
+Commercial Use. These grants last for the applicable term of protection and are
+irrevocable except as expressly provided in Section 6.
+
+Each Contributor also grants You a worldwide, royalty-free, non-exclusive patent
+license to make, have made, use, offer for sale, sell, and import their contribution
+alone or in combination with the Covered Software to which it was contributed,
+solely for purposes other than Commercial Use, under patent claims they control that are necessarily infringed by that contribution
+or that combination. No patent rights are granted for infringement caused only by
+Your subsequent modifications or other combinations.
+
+3. Distribution and File-Level Reciprocity
+
+When distributing Covered Software, retain existing copyright, license, patent,
+and attribution notices, include this License, and identify modified files as
+changed. Preserve an existing upstream source URL when provided in a notice;
+no new project URL is required. Reasonable changes to inaccurate notices are allowed.
+
+Distribute Source of Covered Software, including Your modifications, under this
+same version of this License. Do not add terms that restrict recipients' rights
+to that Source under this License.
+
+When distributing Executables, also make the corresponding Source of the Covered
+Software available to each recipient by an accompanying copy or a clearly stated
+download location. Charge no more than the reasonable cost of delivering Source.
+If using a download location, keep Source available there for as long as You offer
+the corresponding Executables. Executable terms may differ but must not limit
+rights to the corresponding Source under this License.
+
+You may combine Covered Software with separate files under other licenses and
+distribute the larger work under terms of Your choice, provided the requirements
+above remain satisfied for Covered Software. You need not disclose separate files.
+Private modification and use, including operating a network service without
+distributing copies, do not by themselves require Source disclosure.
+
+Recipients receive their rights directly from each Contributor without signing
+an additional agreement. Rights do not depend on inclusion in a particular product,
+distribution, technology, or interface. These rights remain subject to the Commercial Use restriction in Section 2.
+
+Commercial Use requires a separate written agreement from all copyright holders
+whose permission is needed, or their authorized licensing representative. Neither
+publication of Source nor payment for an unrelated service grants that permission.
+A separate agreement changes obligations only for the rights and parties it covers.
+For Kaiyasi-owned contributions, contact zengeric0315@gmail.com. This contact is
+not represented as having authority over other Contributors' rights.
+
+4. Other Rights and Contributions
+
+This License grants no trademark rights except descriptive use needed to preserve
+required notices. Third-party materials retain their own licenses. This License
+does not authorize You to relicense rights You do not control.
+
+If You intentionally submit a contribution for inclusion under this License, You
+offer the rights You control in that contribution under this License, unless You
+clearly state otherwise before submission. This does not assign copyright or
+authorize others to offer Your contribution under a separate proprietary license.
+
+5. No Warranty; Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, COVERED SOFTWARE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, INCLUDING MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, TITLE, OR NON-INFRINGEMENT. NO CONTRIBUTOR SHALL BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM COVERED SOFTWARE OR ITS
+USE, WHETHER IN CONTRACT, TORT, OR OTHERWISE. THIS SECTION DOES NOT EXCLUDE
+LIABILITY OR RIGHTS THAT APPLICABLE LAW DOES NOT ALLOW TO BE EXCLUDED.
+
+6. Termination and Reinstatement
+
+Rights under this License terminate automatically if You fail to comply with its
+conditions. If You cure the violation, rights from a Contributor are reinstated
+provisionally unless that Contributor explicitly and finally terminates them, and
+permanently if that Contributor does not notify You within 60 days after cure.
+Rights are also reinstated permanently if this is the first notice of a violation
+You have received from that Contributor and You cure it within 30 days of receipt.
+
+If You initiate patent litigation alleging that Covered Software infringes a
+patent, patent grants to You under this License terminate on filing. The cure
+provisions above do not apply to this patent termination.
+
+Termination of Your rights does not terminate licenses of recipients who remain
+in compliance. Sections 1, 4, 5, and 6 survive termination as applicable.
+
+7. License Identity
+
+This License grants no automatic right to use a later license version. Only
+copyright holders may offer their own contributions under additional terms.
+If a provision is unenforceable, the remaining provisions remain in effect to
+the extent permitted by law. Everyone may copy and distribute this license text
+verbatim. Changed license texts must use a different name.
+
+Suggested file notice (replace the year and copyright holder as appropriate):
+
+    Copyright (c) 2026 Kaiyasi
+    Licensed under the KYL Noncommercial License, version 1.0.
+    See LICENSE for the full terms.
